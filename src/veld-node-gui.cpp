@@ -1376,9 +1376,11 @@ bool VerifySignedPackage(const std::filesystem::path& module,
     }
 
     std::unordered_set<std::string> seen;
+    // The current executable is added below.  Do not require a byte-identical
+    // second GUI executable in bin/: one signed launcher plus the node and
+    // wallet helpers is the complete runtime layout.
     std::unordered_set<std::string> required{
-        "bin/veld-node.exe", "bin/veld-node-gui.exe",
-        "bin/veld-wallet.exe", "veld node.exe"};
+        "bin/veld-node.exe", "bin/veld-wallet.exe"};
     const std::string current_relative = launched_from_bin
         ? "bin/" + module.filename().string() : module.filename().string();
     required.insert(LowerAscii(current_relative));

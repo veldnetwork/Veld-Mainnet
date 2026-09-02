@@ -43,8 +43,8 @@ $RequiredPackageFiles = if ($Distribution -eq 'Terminal') {
       'Start Mining (Clearnet).bat', 'Start Validator.bat', 'tor-setup.ps1',
       'tor-watchdog.ps1', 'CHANGES.txt')
 } else {
-    @('bin/veld-node.exe', 'bin/veld-node-gui.exe', 'bin/veld-wallet.exe',
-      'Veld Node.exe', 'veld-update.ps1', 'Start Veld Node.bat')
+    @('bin/veld-node.exe', 'bin/veld-wallet.exe', 'Veld Node.exe',
+      'veld-update.ps1', 'tor-setup.ps1', 'CHANGES.txt')
 }
 $Node = Join-Path $InstallDir 'bin\veld-node.exe'
 $LocalManifest = Join-Path $InstallDir 'SHA256SUMS.txt'
