@@ -237,9 +237,33 @@ for index in "${!c_sources[@]}"; do
 done
 
 artifact="$output/bin/$binary"
+
+# Public Windows packages must run on a stock supported Windows installation.
+# Link the CLANG64 C++ runtime and LevelDB into each release-role executable so
+# users never need loose MSYS2 DLLs beside the client or a developer toolchain
+# on PATH. System DLLs remain ordinary Windows imports.
+static_runtime_archives=(
+  "$MINGW_PREFIX/lib/libc++.a"
+  "$MINGW_PREFIX/lib/libc++abi.a"
+  "$MINGW_PREFIX/lib/libunwind.a"
+)
+for archive in "${static_runtime_archives[@]}"; do
+  [[ -f $archive ]] || {
+    echo "missing required static runtime archive: $archive" >&2
+    exit 2
+  }
+done
+static_role_archives=()
+if [[ $role != keygen && $role != validator && $role != gui ]]; then
+  leveldb_archive="$MINGW_PREFIX/lib/libleveldb.a"
+  [[ -f $leveldb_archive ]] || {
+    echo "missing required static LevelDB archive: $leveldb_archive" >&2
+    exit 2
+  }
+  static_role_archives+=("$leveldb_archive")
+fi
 libraries=(-lssl -lcrypto -lws2_32 -ladvapi32 -lbcrypt -liphlpapi \
   -lshell32 -lole32 -luuid -lgdi32)
-[[ $role == keygen || $role == validator || $role == gui ]] || libraries+=(-lleveldb)
 [[ $role != desktop ]] || libraries+=(-lwinhttp -lcrypt32 -lcomctl32)
 extra_objects=()
 link_flags=()
@@ -252,10 +276,12 @@ if [[ $role == gui ]]; then
   libraries+=(-lwinhttp -lcrypt32 -lcomctl32 -lcomdlg32 -ldwmapi -luser32)
   link_flags+=(-D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 -mwindows -municode)
 fi
-command=(clang++ -std=c++20 -O2 -DNDEBUG -pthread -I"$src/include" \
+command=(clang++ -std=c++20 -O2 -DNDEBUG -pthread -nostdlib++ \
+  -I"$src/include" \
   -I"$src/vendor/pqc" -I"$src/vendor/pqc/mldsa65" \
   "${definitions[@]}" "${link_flags[@]}" "$src/$source_file" "${objects[@]}" \
-  "${extra_objects[@]}" "${libraries[@]}" -o "$artifact")
+  "${extra_objects[@]}" "${static_role_archives[@]}" \
+  "${static_runtime_archives[@]}" "${libraries[@]}" -o "$artifact")
 printf 'COMMAND'; printf ' %q' "${command[@]}"; printf '\n'
 "${command[@]}"
 
@@ -288,6 +314,11 @@ fi
 
 file "$artifact" | tee "$output/binary-file.txt"
 objdump -p "$artifact" | tee "$output/binary-pe-metadata.txt"
+if grep -Eiq 'DLL Name:[[:space:]]*(libc\+\+|libc\+\+abi|libunwind|libleveldb|libwinpthread[^[:space:]]*)\.dll' \
+    "$output/binary-pe-metadata.txt"; then
+  echo "release artifact retains a forbidden loose-runtime DLL import" >&2
+  exit 2
+fi
 sha256sum "$artifact" | tee "$output/binary-sha256.txt"
 if [[ $role == gui ]]; then
   cp "$trusted_node" "$output/bin/veld-node.exe"
