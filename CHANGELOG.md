@@ -3,6 +3,23 @@
 All notable public-source changes are recorded here. Signed binary identity is
 recorded separately from source-publication commits.
 
+## 3.0.1 - 2026-09-02
+
+### Changed
+
+- Linked the Windows C++ runtime, unwind runtime, and LevelDB into the official
+  node, wallet, and GUI executables.
+- Reduced the graphical Windows client package to its required runtime files
+  and consolidated license notices.
+- Added a fail-closed PE import gate and regression coverage that prohibit
+  loose libc++, libc++abi, libunwind, LevelDB, and winpthread DLL dependencies.
+
+### Compatibility
+
+- Protocol version 2, `veld-public-mainnet-v2`, the production genesis,
+  consensus rules, state digest v8, addresses, wallets, and datadirs are
+  unchanged.
+
 ## 3.0.0 - 2026-09-02
 
 ### Changed

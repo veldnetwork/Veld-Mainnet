@@ -1,11 +1,25 @@
-# Veld 3.0.0 release notes
+# Veld 3.0.1 release notes
 
 Release date: 2026-09-02
-Status: released; public-mainnet-v2 initial stabilization
+Status: Windows client maintenance release candidate
+
+## 3.0.1 maintenance scope
+
+Veld 3.0.1 replaces the Windows client package with a genuinely
+self-contained build. The C++ runtime, unwind runtime, and LevelDB are linked
+into the official executables, so the package contains no DLL files and does
+not depend on MSYS2 being installed. The downloadable layout is reduced to the
+signed GUI launcher, node, wallet, updater, Tor setup script, change notice,
+consolidated license notices, and signed release metadata.
+
+This maintenance release does not change consensus, protocol version,
+deployment identity, genesis, state-digest format, or existing chain data.
+
+## Veld 3.0.0 launch identity
 
 ## Release identity
 
-- Version: `3.0.0`
+- Previous version: `3.0.0`
 - Release ID: `VELD-3.0.0-BUILD-02-03388b12-c540616f`
 - Launch source commit: `03388b12f8125ac0f321984730a9906064f48f62`
 - Launch source tree: `c540616f288fe38fffa1ce061598425b6e53fcbc`
