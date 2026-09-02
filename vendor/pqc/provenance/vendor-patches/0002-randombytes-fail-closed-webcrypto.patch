@@ -1,0 +1,113 @@
+diff --git a/vendor/pqc/randombytes.c b/vendor/pqc/randombytes.c
+--- a/vendor/pqc/randombytes.c
++++ b/vendor/pqc/randombytes.c
+@@ -296,17 +296,34 @@ static int randombytes_bsd_randombytes(void *buf, size_t n) {
+ #endif /* defined(BSD) */
+ 
+ #if defined(__EMSCRIPTEN__)
+-static int randombytes_js_randombytes_nodejs(void *buf, size_t n) {
++static int randombytes_js_webcrypto(void *buf, size_t n) {
+     const int ret = EM_ASM_INT({
+-        var crypto;
++        // Production serves this module in a browser, while the same artifact
++        // is exercised under Node during release tests.  Prefer the standards-
++        // based Web Crypto CSPRNG in either runtime and retain Node's crypto
++        // module only as a compatibility fallback.  getRandomValues limits one
++        // request to 65,536 bytes, so fill large callers in bounded chunks.
+         try {
+-            crypto = require('crypto');
+-        } catch (error) {
++            var root = (typeof globalThis !== 'undefined') ? globalThis
++                     : ((typeof self !== 'undefined') ? self : null);
++            var webcrypto = root && root.crypto;
++            if (webcrypto && typeof webcrypto.getRandomValues === 'function') {
++                var off = 0;
++                while (off < $1) {
++                    var take = Math.min(65536, $1 - off);
++                    webcrypto.getRandomValues(HEAPU8.subarray($0 + off, $0 + off + take));
++                    off += take;
++                }
++                return 0;
++            }
++            if (typeof require === 'function') {
++                var nodecrypto = require('crypto');
++                if (nodecrypto && typeof nodecrypto.randomBytes === 'function') {
++                    writeArrayToMemory(nodecrypto.randomBytes($1), $0);
++                    return 0;
++                }
++            }
+             return -2;
+-        }
+-        try {
+-            writeArrayToMemory(crypto.randomBytes($1), $0);
+-            return 0;
+         } catch (error) {
+             return -1;
+         }
+@@ -322,34 +339,52 @@ static int randombytes_js_randombytes_nodejs(void *buf, size_t n) {
+         return -1;
+     }
+     assert(false); // Unreachable
++    errno = EIO;
++    return -1;
+ }
+ #endif /* defined(__EMSCRIPTEN__) */
++
++/*
++ * ML-DSA nonce generation must not continue after an operating-system RNG
++ * failure. Abort instead of returning uninitialized entropy to callers that
++ * cannot safely recover. The return type remains compatible with PQClean.
++ */
++#include <stdio.h>
++#include <stdlib.h>
+ 
+ int randombytes(uint8_t *output, size_t n) {
+     void *buf = (void *)output;
++    int rc;
+     #if defined(__EMSCRIPTEN__)
+-    return randombytes_js_randombytes_nodejs(buf, n);
++    rc = randombytes_js_webcrypto(buf, n);
+     #elif defined(__linux__)
+     # if defined(USE_GLIBC)
+-    /* Use getrandom system call */
+-    return randombytes_linux_randombytes_getrandom(buf, n);
++    rc = randombytes_linux_randombytes_getrandom(buf, n);
+     # elif defined(SYS_getrandom)
+-    /* Use getrandom system call */
+-    return randombytes_linux_randombytes_getrandom(buf, n);
++    rc = randombytes_linux_randombytes_getrandom(buf, n);
+     # else
+-    /* When we have enough entropy, we can read from /dev/urandom */
+-    return randombytes_linux_randombytes_urandom(buf, n);
++    rc = randombytes_linux_randombytes_urandom(buf, n);
+     # endif
+     #elif defined(BSD)
+-    /* Use arc4random system call */
+-    return randombytes_bsd_randombytes(buf, n);
++    rc = randombytes_bsd_randombytes(buf, n);
+     #elif defined(_WIN32)
+-    /* Use windows API */
+-    return randombytes_win32_randombytes(buf, n);
++    rc = randombytes_win32_randombytes(buf, n);
+     #elif defined(__wasi__)
+-    /* Use WASI */
+-    return randombytes_wasi_randombytes(buf, n);
++    rc = randombytes_wasi_randombytes(buf, n);
+     #else
+ # error "randombytes(...) is not supported on this platform"
+     #endif
+-}
++
++    if (rc != 0) {
++        fprintf(stderr, "\n"
++            "  FATAL: platform CSPRNG failed (randombytes returned %d, errno may be set).\n"
++            "  Refusing to continue with uninitialised entropy buffers.\n"
++            "  Common causes: exhausted file descriptors (/dev/urandom),\n"
++            "  seccomp filter blocking getrandom(), broken Windows CAPI provider,\n"
++            "  unavailable browser Web Crypto, or a broken runtime crypto provider.\n",
++            rc);
++        fflush(stderr);
++        abort();
++    }
++    return 0;
++}

@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""Source/profile assertions for public-release convenience-feature reductions."""
+
+import os
+from pathlib import Path
+import socket
+import subprocess
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parents[1]
+checks = 0
+
+
+def check(condition: bool, message: str) -> None:
+    global checks
+    if not condition:
+        raise AssertionError(message)
+    checks += 1
+
+
+constants = (ROOT / "include/core/constants.h").read_text(encoding="utf-8")
+rpc = (ROOT / "include/network/rpc.h").read_text(encoding="utf-8")
+desktop = (ROOT / "src/veld-desktop.cpp").read_text(encoding="utf-8")
+ui = (ROOT / "include/network/ui_desktop.h").read_text(encoding="utf-8")
+wallet_cli = (ROOT / "include/wallet/cli.h").read_text(encoding="utf-8")
+node_main = (ROOT / "src/veld-node.cpp").read_text(encoding="utf-8")
+node = (ROOT / "include/node/node.h").read_text(encoding="utf-8")
+nat = (ROOT / "include/network/nat_traversal.h").read_text(encoding="utf-8")
+linux = (ROOT / "build/mainnet-v2-linux.sh").read_text(encoding="utf-8")
+windows = (ROOT / "build/mainnet-v2-windows.sh").read_text(encoding="utf-8")
+launcher = (ROOT / "pkg/Start Mining.bat").read_text(encoding="utf-8")
+clearnet_launcher = (ROOT / "pkg/Start Mining (Clearnet).bat").read_text(
+    encoding="utf-8")
+portal = (ROOT / "src/veld-miner-portal.py").read_text(encoding="utf-8")
+gui = (ROOT / "src/veld-node-gui.cpp").read_text(encoding="utf-8")
+explorer = (ROOT / "include/network/explorer.h").read_text(encoding="utf-8")
+
+check("VELD_ENABLE_DIAGNOSTIC_TX_HISTORY" in constants,
+      "missing public/history profile interlock")
+check("VELD_ENABLE_SNAPSHOT_BOOTSTRAP" in constants,
+      "missing public/snapshot profile interlock")
+check("VELD_ENABLE_UPNP" in constants or "VELD_ENABLE_UPNP" in nat,
+      "missing public/UPnP profile interlock")
+check('methods_["gettxhistory"]' not in rpc and "gettxhistory" not in rpc,
+      "legacy gettxhistory scanner/source remains in the RPC registry")
+check('methods_["getearnings"]' not in rpc and "getearnings" not in rpc,
+      "unbounded local earnings/history scanner remains in the RPC registry")
+
+allowlist = desktop[desktop.index("REMOTE_ALLOWED_METHODS"):]
+allowlist = allowlist[:allowlist.index("};")]
+check('"gettxhistory"' not in allowlist,
+      "hosted/public desktop allow-list still exposes gettxhistory")
+check("VELD_PUBLIC_HISTORY_UNAVAILABLE" in ui,
+      "desktop does not fail safely with a visible history-unavailable state")
+check("rpc('gettxhistory'" not in ui and 'rpc("gettxhistory"' not in ui,
+      "desktop still contains a gettxhistory RPC call")
+check("getearnings" not in desktop and "getearnings" not in ui and
+      "getearnings" not in wallet_cli,
+      "desktop or wallet still retains the unbounded earnings/history method")
+history_helper = ui[ui.index("function publicHistoryUnavailable()"):
+                    ui.index("function rpc(method, params)")]
+check("return Promise.resolve([])" in history_helper and
+      "fetch(" not in history_helper and "rpc(" not in history_helper and
+      "setTimeout" not in history_helper and "setInterval" not in history_helper,
+      "desktop history-unavailable helper can reject, retry, or touch the network")
+earnings_helper = ui[ui.index("function loadEarningsPage(addr) {"):
+                     ui.index("function loadPayoutEndorsements() {")]
+check("Earnings and payout history are unavailable in this release." in
+      earnings_helper and "rpc(" not in earnings_helper and
+      "fetch(" not in earnings_helper and "Promise" not in earnings_helper and
+      "setTimeout" not in earnings_helper and "setInterval" not in earnings_helper,
+      "desktop earnings view does not fail explicitly without network/retry")
+check('method == "gettxhistory"' not in wallet_cli and
+      'method\":\"gettxhistory' not in wallet_cli,
+      "wallet CLI still tells users to call unavailable history")
+check("txhistory" not in explorer.lower(),
+      "legacy explorer txhistory route/scanner remains in source")
+
+check("PublicSnapshotDatadirRefusal" in node,
+      "public startup has no snapshot-import marker refusal")
+check(".snapshot-fast-start-revoked" in node,
+      "public startup omits the snapshot revocation marker")
+check("public mainnet does not support snapshot bootstrap" in node_main.lower(),
+      "public CLI does not state/refuse snapshot bootstrap")
+check("#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)" in rpc and
+      'methods_["dumpsnapshot"]' in rpc,
+      "snapshot RPC is not compile-profile gated")
+check("MaybePreferSnapshotAtStartup" not in node_main and
+      "TryAutoSnapshotBootstrap" not in node,
+      "remote snapshot preference/acquisition entrypoint remains in source")
+check('#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)\n#include "snapshot_manifest.h"' in node and
+      "SetBackgroundValidationOnly" in node and
+      "SnapshotValidationBase" in node,
+      "generic snapshot implementation is not behind its explicit profile")
+check("#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)\n    background_validation_base =" in node_main and
+      "#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)\n        if (node.SnapshotBackgroundVerificationFailed())" in node_main,
+      "snapshot background-validation launcher/runtime is not profile-gated")
+snapshot_impl = node[node.index("void ValidateStoredChainOnly"):]
+snapshot_impl_prefix = node[:node.index("void ValidateStoredChainOnly")]
+check("#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)" in
+      snapshot_impl_prefix[-700:],
+      "snapshot validate/download/promote entrypoints remain in public preprocessing")
+check("--bootstrap-only" not in launcher and "--no-snapshot" not in launcher and
+      "--full-ibd" in launcher,
+      "shipped Windows launcher still selects a snapshot path or rejected flag")
+check('data-mode="snapshot"' not in portal and
+      'payload["mode"] != "full"' in portal,
+      "portal still offers or accepts snapshot preference")
+check('next.snapshot_eligible = false' in gui and
+      'L"Snapshot bootstrap: disabled in public mainnet' in gui,
+      "GUI still reports snapshot eligibility")
+check("may use a signed recovery snapshot" not in explorer and
+      "Snapshot download, import, preference, promotion" in explorer,
+      "Explorer rules still advertise public snapshot recovery")
+check("defined(VELD_PUBLIC_TESTNET) || defined(VELD_PUBLIC_RELEASE)" in node_main,
+      "public deep-gap watcher can still persist a snapshot recovery request")
+start_body = node[node.index("    void Start() {"):node.index("    void Stop() {")]
+check(start_body.index("PublicSnapshotDatadirRefusal") <
+      start_body.index("tcp_server_ = std::make_unique"),
+      "public snapshot marker refusal does not precede service construction")
+
+check("#if defined(VELD_ENABLE_UPNP)" in nat,
+      "UPnP implementation is not compile-profile gated")
+check("TryUpnp(localip" in nat and
+      nat.index("#if defined(VELD_ENABLE_UPNP)", nat.index("void RunLoop")) <
+      nat.index("TryUpnp(localip", nat.index("void RunLoop")),
+      "worker can still call UPnP without the opt-in profile")
+check('arg == "--upnp"' in node_main and
+      '<< " is not supported in the "' in node_main and
+      "Veld 3.0.0 public release" in node_main,
+      "public CLI does not explicitly reject --upnp")
+check("NAT-PMP/PCP" in node_main and "NAT-PMP/PCP/UPnP" not in node_main,
+      "public help still advertises UPnP")
+check("UPnP" not in clearnet_launcher and "NAT-PMP/PCP" in clearnet_launcher,
+      "clearnet launcher still advertises public UPnP")
+check('arg.find("snapshot")' in node_main and
+      'arg.rfind("--upnp=", 0)' in node_main,
+      "public pre-scan does not reject snapshot/UPnP assignment aliases")
+check("veld-node: unknown option '" in node_main,
+      "node parser still silently ignores unknown options")
+
+for controller, text in (("linux", linux), ("windows", windows)):
+    for forbidden in (
+        "-DVELD_ENABLE_DIAGNOSTIC_TX_HISTORY",
+        "-DVELD_ENABLE_SNAPSHOT_BOOTSTRAP",
+        "-DVELD_ENABLE_UPNP",
+    ):
+        check(forbidden not in text,
+              f"{controller} public controller enables forbidden feature {forbidden}")
+
+
+binary_value = os.environ.get("VELD_PUBLIC_NODE_UNDER_TEST", "")
+if binary_value:
+    binary = Path(binary_value)
+    check(binary.is_file(), "VELD_PUBLIC_NODE_UNDER_TEST is not a file")
+
+    def run_node(*arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(binary), *arguments], cwd=ROOT, text=True,
+            capture_output=True, timeout=20,
+        )
+
+    rejected = (
+        ("--snapshot", "--help"),
+        ("--snapshot=fixture", "--help"),
+        ("--snapshot-anything", "--help"),
+        ("--foo-snapshot-alias=fixture", "--help"),
+        ("--snapshot-url=https://127.0.0.1/archive", "--help"),
+        ("--snapshot-path", "fixture", "--help"),
+        ("--snapshot-path=fixture", "--help"),
+        ("--prefer-snapshot=1", "--help"),
+        ("--no-snapshot=0", "--help"),
+        ("--bootstrap-only", "--help"),
+        ("--bootstrap-only=1", "--help"),
+        ("--verify-snapshot=fixture", "--help"),
+        ("--upnp", "--help"),
+        ("--upnp=1", "--help"),
+        ("--upnp-enabled", "--help"),
+        ("--upnp-mode=igd", "--help"),
+        ("--definitely-unknown", "--help"),
+        ("--help", "--definitely-unknown"),
+    )
+    for arguments in rejected:
+        result = run_node(*arguments)
+        check(result.returncode == 2,
+              f"public node accepted {arguments}: rc={result.returncode} "
+              f"stdout={result.stdout!r} stderr={result.stderr!r}")
+    help_result = run_node("--help")
+    check(help_result.returncode == 0 and "Usage: veld-node" in help_result.stdout,
+          "ordinary public help probe failed")
+    deployment = run_node("--deployment-info")
+    check(deployment.returncode == 0 and
+          '"profile_id":"veld-public-mainnet-v2"' in deployment.stdout,
+          "ordinary public deployment-info probe failed")
+
+    # Exercise the launcher's retained ordinary-validation selector through
+    # the real parser without opening listeners: offline reindex is expected
+    # to stop at the deliberately empty fixture database, after accepting
+    # --full-ibd and binding the public network identity.
+    with tempfile.TemporaryDirectory(prefix="veld-public-full-ibd-") as datadir:
+        full_ibd = run_node("--full-ibd", "--reindex-canonical",
+                            "--datadir", datadir)
+        check(full_ibd.returncode == 1 and
+              "offline reindex requires an existing" in full_ibd.stderr and
+              "unknown option" not in full_ibd.stderr and
+              "snapshot bootstrap" not in full_ibd.stderr,
+              "ordinary --full-ibd launcher path was rejected by the parser")
+        check((Path(datadir) / "network.identity").is_file(),
+              "ordinary --full-ibd path did not bind the public datadir identity")
+
+    def unused_loopback_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            return int(listener.getsockname()[1])
+
+    def port_is_closed(port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+            client.settimeout(0.25)
+            return client.connect_ex(("127.0.0.1", port)) != 0
+
+    markers = (
+        Path("db/.snapshot-consensus-replay-required"),
+        Path(".background-chainstate-required"),
+        Path(".snapshot-recovery-requested"),
+        Path(".snapshot-fast-start-revoked"),
+    )
+    for relative_marker in markers:
+        with tempfile.TemporaryDirectory(
+                prefix="veld-public-snapshot-marker-") as datadir:
+            identity = run_node("--full-ibd", "--reindex-canonical",
+                                "--datadir", datadir)
+            check(identity.returncode == 1 and
+                  (Path(datadir) / "network.identity").is_file(),
+                  f"could not bind public identity for {relative_marker}")
+            marker = Path(datadir) / relative_marker
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("public-refusal-fixture\n", encoding="utf-8")
+            rpc_port = unused_loopback_port()
+            p2p_port = unused_loopback_port()
+            while p2p_port == rpc_port:
+                p2p_port = unused_loopback_port()
+            refusal = run_node(
+                "--nomine", "--no-prompt", "--full-ibd",
+                "--datadir", datadir,
+                "--rpcport", str(rpc_port),
+                "--p2pport", str(p2p_port),
+                "--connect", "127.0.0.1:1",
+            )
+            check(refusal.returncode == 1 and
+                  "public mainnet refuses a datadir marked as snapshot-imported" in
+                  refusal.stderr and relative_marker.name in refusal.stderr,
+                  f"public startup did not refuse {relative_marker}: "
+                  f"rc={refusal.returncode} stdout={refusal.stdout!r} "
+                  f"stderr={refusal.stderr!r}")
+            check(port_is_closed(rpc_port) and port_is_closed(p2p_port),
+                  f"{relative_marker} refusal exposed a listener")
+
+print(f"PASS daybreak_public_release_reductions_tests checks={checks}")

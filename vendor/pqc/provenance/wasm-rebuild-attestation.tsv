@@ -1,0 +1,11 @@
+status	PASS
+toolchain_identity	emsdk-windows-x86_64-4.0.10-releases-8103ffedfb0c42d231c6af6859a5a1a832260b43
+rebuild_platform	windows-x86_64
+emsdk_revision	62a853cd3b3134398ce85cde8bb5cbb2ef0194cb
+emcc_version	4.0.10
+input_digest	5951d69c23432d16237bbbff92545661b569fb134556090965cccb23ea8da1d0
+artifact_sha256	1487789537d80a584b2745132c86bdc8b8f40800359e1500757aa81ec17031df
+embedded_header_sha256	70bc510ace3fcd18014004d8099c1c9798664f0c43f389e4f70776be4872bf95
+rebuild_command	scripts/rebuild-pqc-wasm.py
+runtime_smoke	PASS
+reason	full activated raw tool trees matched before and after use; two rebuilds were byte-identical and passed keygen sign verify tamper and WebCrypto runtime smoke

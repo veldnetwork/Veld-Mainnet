@@ -1,0 +1,23 @@
+* text=auto eol=lf
+
+# Native Windows launchers are the only text files shipped with CRLF.
+*.bat text eol=crlf
+
+# Never apply text or line-ending conversion to binary release/source assets.
+*.a binary
+*.gz binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.png binary
+*.wasm binary
+*.zip binary
+
+# The attested Emscripten artifact and its byte-preserving C++ wrapper contain
+# generator-specific line endings. Never normalize their raw provenance bytes.
+vendor/pqc/dilithium_wasm.js -text whitespace=cr-at-eol
+include/network/dilithium_wasm_js.h -text whitespace=cr-at-eol
+
+# This unified diff has mandatory blank context lines represented by one space.
+vendor/pqc/provenance/vendor-patches/0002-randombytes-fail-closed-webcrypto.patch whitespace=-blank-at-eol

@@ -1,0 +1,8 @@
+path	action	reason
+README.md	updated	release status and public links only
+CHANGELOG.md	updated	release date and status only
+BUILDING.md	updated	official-package verification wording only
+RELEASE_NOTES.md	updated	public release summary replacing private qualification chronology
+SOURCE_IDENTITY.md	added	bind public publication to the exact BUILD-02 launch source
+LIVE_MAINNET_CHECKS.md	added	public operator monitoring guidance
+PHASE8_DEADLOCK_REMEDIATION.md	omitted	private qualification-session chronology not required to build or operate Veld

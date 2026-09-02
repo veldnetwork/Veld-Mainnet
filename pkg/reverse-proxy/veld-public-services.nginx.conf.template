@@ -1,0 +1,106 @@
+# Veld 3.0.0 production reverse-proxy template.
+#
+# Provision independent random 32-byte tokens as 64 lowercase hex characters.
+# Each backend copy must be an owner-only, regular file:
+#   /var/lib/veld/explorer-proxy.token                       mode 0600
+#   /var/lib/veld-monitor/portal-proxy.token                 mode 0600
+# The nginx master loads each value from its matching owner-only include:
+#   /etc/nginx/veld-explorer-proxy-auth-header.conf          mode 0600
+#   /etc/nginx/veld-portal-proxy-auth-header.conf            mode 0600
+# Each include contains only:
+#   proxy_set_header X-Veld-Proxy-Authorization "VeldProxy v1=<64hex>";
+#
+# Portal startup:
+#   veld-miner-portal.py --listen 127.0.0.1 --port 8787 \
+#     --trusted-proxy-peer 127.0.0.1 \
+#     --proxy-token-file /var/lib/veld-monitor/portal-proxy.token
+#
+# Node datadir owner-only file `explorer-proxy.conf`:
+#   VELD_EXPLORER_PROXY_V1
+#   peer=127.0.0.1
+#   token_file=/var/lib/veld/explorer-proxy.token
+#
+# Never derive X-Veld-Client-IP from an inbound forwarding header.  If another
+# proxy/CDN is in front of nginx, $remote_addr intentionally becomes a bounded
+# shared upstream identity unless that additional trust boundary is separately
+# authenticated and reviewed.
+
+limit_req_zone $binary_remote_addr zone=veld_client:10m rate=20r/s;
+limit_req_zone $server_name       zone=veld_global:1m rate=500r/s;
+limit_conn_zone $binary_remote_addr zone=veld_conn_client:10m;
+limit_conn_zone $server_name zone=veld_conn_global:1m;
+
+upstream veld_explorer_backend {
+    server 127.0.0.1:8080;
+    keepalive 8;
+}
+
+upstream veld_portal_backend {
+    server 127.0.0.1:8787;
+    keepalive 8;
+}
+
+# Include this template from nginx's `http` context after replacing the
+# certificate/key placeholders with deployment-owned paths.
+server {
+  listen 443 ssl http2;
+  server_name explorer.veld.network;
+  ssl_certificate /PATH/TO/explorer/fullchain.pem;
+  ssl_certificate_key /PATH/TO/explorer/privkey.pem;
+
+  location / {
+    limit_req zone=veld_client burst=40 nodelay;
+    limit_req zone=veld_global burst=250 nodelay;
+    limit_conn veld_conn_client 16;
+    limit_conn veld_conn_global 512;
+
+    proxy_pass http://veld_explorer_backend;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Veld-Client-IP $remote_addr;
+    include /etc/nginx/veld-explorer-proxy-auth-header.conf;
+    proxy_set_header X-Forwarded-For "";
+    proxy_set_header X-Real-IP "";
+    proxy_set_header Forwarded "";
+    proxy_pass_request_headers on;
+    proxy_request_buffering on;
+    proxy_buffering on;
+    client_max_body_size 256k;
+    proxy_connect_timeout 3s;
+    proxy_send_timeout 10s;
+    proxy_read_timeout 15s;
+  }
+}
+
+# Authenticated operator portal uses an independent TLS virtual host.
+server {
+  listen 443 ssl http2;
+  server_name portal.veld.network;
+  ssl_certificate /PATH/TO/portal/fullchain.pem;
+  ssl_certificate_key /PATH/TO/portal/privkey.pem;
+
+  location / {
+    limit_req zone=veld_client burst=20 nodelay;
+    limit_req zone=veld_global burst=100 nodelay;
+    limit_conn veld_conn_client 8;
+    limit_conn veld_conn_global 128;
+
+    proxy_pass http://veld_portal_backend;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Veld-Client-IP $remote_addr;
+    include /etc/nginx/veld-portal-proxy-auth-header.conf;
+    proxy_set_header X-Forwarded-For "";
+    proxy_set_header X-Real-IP "";
+    proxy_set_header Forwarded "";
+    proxy_pass_request_headers on;
+    proxy_request_buffering on;
+    proxy_buffering on;
+    client_max_body_size 32k;
+    proxy_connect_timeout 3s;
+    proxy_send_timeout 10s;
+    proxy_read_timeout 15s;
+  }
+}
