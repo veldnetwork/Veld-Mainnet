@@ -29,7 +29,7 @@ REM -- Fleet anchor (mining gate): a fresh download has no anchor peer and would
 REM    HALT mining ("[mining] HALTED: no anchor peer connected"). Seed the fleet
 REM    anchor IPs by default so mining works out of the box. Operators can still
 REM    override by setting VELD_FLEET_ANCHOR_IPS before launch.
-if not defined VELD_FLEET_ANCHOR_IPS set "VELD_FLEET_ANCHOR_IPS=108.61.119.29,5.78.107.166,5.78.97.56,5.78.127.51"
+if not defined VELD_FLEET_ANCHOR_IPS set "VELD_FLEET_ANCHOR_IPS=5.78.107.166,5.78.97.56,5.78.127.51"
 
 REM --- Interrupted-update recovery --------------------------------
 REM The updater keeps a fixed, signed-tree transaction journal beside this

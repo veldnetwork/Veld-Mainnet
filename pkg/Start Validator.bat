@@ -46,7 +46,7 @@ cd /d "%~dp0"
 REM -- Fleet anchor: a validator with no anchor peer would stall out of the box.
 REM    Seed the fleet anchor IPs by default so the node joins the mesh. Operators
 REM    can override by setting VELD_FLEET_ANCHOR_IPS before launch.
-if not defined VELD_FLEET_ANCHOR_IPS set "VELD_FLEET_ANCHOR_IPS=108.61.119.29,5.78.107.166,5.78.97.56,5.78.127.51"
+if not defined VELD_FLEET_ANCHOR_IPS set "VELD_FLEET_ANCHOR_IPS=5.78.107.166,5.78.97.56,5.78.127.51"
 
 set CLIENT_VERSION=3.0.0
 title Veld Validator v%CLIENT_VERSION% (endorse-only)

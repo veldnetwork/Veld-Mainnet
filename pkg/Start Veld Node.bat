@@ -15,7 +15,7 @@ set "VELD_REACHABILITY=%VELD_HOME%veld-reachability.ps1"
 REM Mining work admission requires at least one explicitly configured outbound
 REM anchor. Keep the established terminal-client defaults while allowing an
 REM operator to replace the complete set before launch.
-if not defined VELD_FLEET_ANCHOR_IPS set "VELD_FLEET_ANCHOR_IPS=108.61.119.29,5.78.107.166,5.78.97.56,5.78.127.51"
+if not defined VELD_FLEET_ANCHOR_IPS set "VELD_FLEET_ANCHOR_IPS=5.78.107.166,5.78.97.56,5.78.127.51"
 
 if not exist "%VELD_NODE%" goto :missing
 if not exist "%VELD_GUI%" goto :missing
