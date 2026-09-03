@@ -20,7 +20,11 @@ require(
 )
 require("const CACHE='veld-portal-shell-v18';", "PWA shell cache remains on the existing v18 identifier")
 require('id="mobile-nav" aria-label="Primary" hidden', "mobile nav starts hidden until session recovery")
-require('$("mobile-nav").hidden=false', "mobile nav is revealed directly after session recovery")
+require('$("mobile-nav").hidden=!d', "mobile nav visibility follows paired-machine availability")
+require('$("app-view").classList.toggle("unpaired",!d)', "pair screen receives the unpaired layout state")
+require('.app.unpaired .main{padding-bottom:20px!important}', "pair screen does not reserve navbar spacing")
+if '$("mobile-nav").hidden=false' in PORTAL:
+    raise AssertionError("pair screen must not reveal the navbar before a machine exists")
 require('</div>\n<nav id="mobile-nav"', "mobile nav is a direct body child, outside the app layout")
 require(".side{display:none!important}", "desktop sidebar is hidden on mobile")
 require("#mobile-nav{display:flex!important;position:fixed;bottom:0;left:0;right:0;z-index:500;height:68px;min-height:68px;max-height:68px;",
@@ -47,4 +51,4 @@ for page in ("overview", "blockchain", "mining", "explorer", "more"):
     if f'data-page="{page}"' not in mobile_nav:
         raise AssertionError(f"mobile nav is missing {page}")
 
-print("PASS portal_mobile_nav_tests checks=22")
+print("PASS portal_mobile_nav_tests checks=25")
