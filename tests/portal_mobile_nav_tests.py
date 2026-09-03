@@ -14,6 +14,11 @@ def require(fragment: str, label: str) -> None:
 
 
 require('id="mobile-nav"', "dedicated mobile nav exists")
+require(
+    '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
+    "portal uses the wallet iOS standalone viewport mode",
+)
+require("const CACHE='veld-portal-shell-v15';", "corrected PWA shell is cache-busted")
 require('id="mobile-nav" aria-label="Primary" hidden', "mobile nav starts hidden until session recovery")
 require('$("mobile-nav").hidden=false', "mobile nav is revealed directly after session recovery")
 require('</div>\n<nav id="mobile-nav"', "mobile nav is a direct body child, outside the app layout")
@@ -41,4 +46,4 @@ for page in ("overview", "blockchain", "mining", "explorer", "more"):
     if f'data-page="{page}"' not in desktop_nav:
         raise AssertionError(f"mobile nav source is missing {page}")
 
-print("PASS portal_mobile_nav_tests checks=19")
+print("PASS portal_mobile_nav_tests checks=21")
