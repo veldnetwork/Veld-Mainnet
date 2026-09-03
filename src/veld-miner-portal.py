@@ -253,61 +253,15 @@ PORTAL_HTML = r"""<!doctype html>
       body,.app,.main{background:var(--bg)!important}
       .app{display:block;min-height:100vh;min-height:100dvh}
       .side{display:none!important}
-      #mobile-nav{
-        position:fixed!important;
-        left:0!important;
-        right:0!important;
-        top:auto!important;
-        bottom:calc(0px - env(safe-area-inset-bottom,0px))!important;
-        z-index:1000!important;
-        width:100%!important;
-        height:68px!important;
-        min-height:68px!important;
-        max-height:68px!important;
-        display:grid!important;
-        grid-template-columns:repeat(5,minmax(0,1fr))!important;
-        margin:0!important;
-        padding:0!important;
-        gap:0!important;
-        overflow:hidden!important;
-        background:#0d100e!important;
-        border:0!important;
-        border-top:1px solid var(--line)!important;
-        box-shadow:0 -8px 28px rgba(0,0,0,.38)!important;
-        transform:none!important;
-        -webkit-transform:none!important;
-        will-change:auto!important;
-      }
-      #mobile-nav .portal-tab{
-        position:relative!important;
-        width:100%!important;
-        min-width:0!important;
-        height:68px!important;
-        min-height:68px!important;
-        max-height:68px!important;
-        margin:0!important;
-        padding:7px 2px 6px!important;
-        border:0!important;
-        border-radius:0!important;
-        display:flex!important;
-        flex-direction:column!important;
-        align-items:center!important;
-        justify-content:center!important;
-        gap:3px!important;
-        background:transparent!important;
-        color:var(--muted)!important;
-        box-shadow:none!important;
-        font:600 10px/1 system-ui,-apple-system,"Segoe UI",sans-serif!important;
-        letter-spacing:.02em!important;
-        text-align:center!important;
-        appearance:none!important;
-        -webkit-appearance:none!important;
-        -webkit-tap-highlight-color:transparent;
-        touch-action:manipulation;
-      }
-      #mobile-nav .portal-tab.active{color:var(--text)!important}
-      #mobile-nav .portal-tab.active:before{content:"";position:absolute;top:0;left:50%;width:32px;height:2px;transform:translateX(-50%);border-radius:0 0 3px 3px;background:var(--text)}
-      #mobile-nav .nav-icon{display:block!important;width:22px!important;height:22px!important;flex:0 0 22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+      #mobile-nav{display:flex!important;position:fixed;bottom:0;left:0;right:0;z-index:500;height:68px;min-height:68px;max-height:68px;background:linear-gradient(0deg,rgba(3,5,3,.98),rgba(7,10,7,.95));backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-top:1px solid rgba(50,240,110,.15);box-shadow:0 -8px 32px rgba(50,240,110,.06),0 -2px 8px rgba(50,240,110,.04);padding:0;box-sizing:border-box;animation:navGlow 3s ease infinite;transform:translateZ(0);will-change:transform}
+      #mobile-nav .mob-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--muted);font-size:10px;letter-spacing:.5px;text-transform:uppercase;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:600;border:none;background:none;padding:4px 2px;transition:all .15s;-webkit-tap-highlight-color:transparent;height:68px;min-height:68px;max-height:68px;min-width:0;overflow:hidden;position:relative;box-sizing:border-box}
+      #mobile-nav .mob-tab .mob-icon{font-size:24px;line-height:1;transition:all .2s;font-variant-emoji:text;-webkit-font-feature-settings:"liga" 0;display:inline-block;max-height:28px;overflow:hidden}
+      #mobile-nav .mob-tab .mob-icon svg{display:block;width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+      #mobile-nav .mob-tab .mob-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+      #mobile-nav .mob-tab.active{color:var(--green)}
+      #mobile-nav .mob-tab.active::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:3px;background:var(--green);border-radius:0 0 5px 5px;box-shadow:0 4px 20px rgba(50,240,110,.7),0 0 6px var(--green)}
+      #mobile-nav .mob-tab.active .mob-icon{filter:drop-shadow(0 0 14px rgba(50,240,110,.8));transform:translateY(-2px) scale(1.08)}
+      #mobile-nav .mob-tab:active{opacity:.4}
       .main{padding:max(20px,env(safe-area-inset-top)) 14px 0;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important}
       .main{padding-bottom:88px!important}
       .top{align-items:stretch;flex-direction:column;gap:14px;margin-bottom:18px}
@@ -341,7 +295,7 @@ PORTAL_HTML = r"""<!doctype html>
       .topology-legend{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 14px}
       .auth-shell{align-items:start;padding:max(22px,env(safe-area-inset-top)) 14px}
       .auth{padding:22px 18px;margin-top:5vh}
-      .portal-more{position:fixed;left:0;right:0;bottom:calc(68px - env(safe-area-inset-bottom,0px))!important;z-index:1100;display:none;padding:14px;background:rgba(13,16,14,.98);border-top:1px solid var(--line);box-shadow:0 -14px 28px rgba(0,0,0,.35);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+      .portal-more{position:fixed;left:0;right:0;bottom:68px!important;z-index:1100;display:none;padding:14px;background:rgba(13,16,14,.98);border-top:1px solid var(--line);box-shadow:0 -14px 28px rgba(0,0,0,.35);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
       .portal-more[data-open="1"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
       .portal-more button{min-height:58px;border:1px solid var(--line);border-radius:7px;background:var(--button);color:var(--text);display:flex;align-items:center;justify-content:flex-start;gap:11px;padding:11px 14px;text-align:left}
       .portal-more button:hover{background:var(--button-hover)}
@@ -352,6 +306,7 @@ PORTAL_HTML = r"""<!doctype html>
     @media(max-width:520px){.topology{aspect-ratio:420/390}}
     @media(max-width:390px){.top-actions{grid-template-columns:minmax(0,1fr) auto}.top-actions .status{grid-row:2;grid-column:1}.top-actions .button{grid-row:2;grid-column:2}.cards{grid-template-columns:1fr}.cards.network-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.wide{grid-column:auto}.card{min-height:0}.kv{grid-template-columns:1fr}.more-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:340px){.cards.network-cards{grid-template-columns:1fr}}
+    @keyframes navGlow{0%,100%{box-shadow:0 -4px 20px rgba(50,240,110,.05),0 -1px 6px rgba(50,240,110,.04)}50%{box-shadow:0 -6px 28px rgba(50,240,110,.1),0 -2px 10px rgba(50,240,110,.06)}}
     #mobile-nav{display:none}#mobile-nav[hidden]{display:none!important}
     @media(min-width:901px){#mobile-nav{display:none!important}}
   </style>
@@ -362,7 +317,13 @@ PORTAL_HTML = r"""<!doctype html>
   <aside class="side"><div class="brand"><div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><defs><linearGradient id="side-veld-mark" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse"><stop stop-color="#97D222"/><stop offset=".52" stop-color="#5FAC18"/><stop offset="1" stop-color="#329418"/></linearGradient></defs><path d="M12 2.5 21.5 12 12 21.5 2.5 12Z" stroke="url(#side-veld-mark)" stroke-width="2.2"/><path d="M12 7 17 12 12 17 7 12Z" stroke="url(#side-veld-mark)" stroke-width="1.9"/></svg></div><div><b>VELD NODE</b></div></div><nav class="nav" id="nav"><button data-page="overview" class="active mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20h-6v-5h-4v5H4z"/></svg><span>Overview</span></button><button data-page="blockchain" class="mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4-8 4-8-4 8-4Z"/><path d="m4 12 8 4 8-4M4 17l8 4 8-4"/></svg><span>Chain</span></button><button data-page="mining" class="mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M1308 1634Q1362 1634 1408.0 1630.0Q1454 1626 1486 1621Q1525 1617 1554 1610V1577Q1539 1577 1496.5 1575.0Q1454 1573 1392.5 1560.5Q1331 1548 1251.0 1525.0Q1171 1502 1081.5 1459.0Q992 1416 894.0 1353.0Q796 1290 697 1199L1897 1L1786 -108L588 1090Q519 1015 466.0 939.0Q413 863 373.5 787.5Q334 712 306.5 641.5Q279 571 260 509Q217 363 207 228H174Q166 257 162 296Q157 329 154.0 374.5Q151 420 151 476Q151 555 162.0 651.5Q173 748 204.0 851.5Q235 955 289.5 1061.0Q344 1167 432 1266L251 1497L283 1530L520 1353Q619 1439 723.5 1494.5Q828 1550 931.5 1580.5Q1035 1611 1131.0 1622.5Q1227 1634 1308 1634Z" transform="translate(0.270332 20.739977) scale(0.01145475 -0.01145475)" fill="currentColor" stroke="none"/></svg><span>Mining</span></button><button data-page="workers">Workers</button><button data-page="explorer" class="mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></svg><span>Explorer</span></button><button data-page="network">Network</button><button data-page="logs">Logs</button><button data-page="settings">Settings</button><button data-page="more" class="mobile" aria-expanded="false" aria-controls="portal-more-menu"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button></nav><div class="side-foot"><span>Remote operations portal</span><a href="https://x.com/VeldNetwork" rel="noreferrer">Follow on X @VeldNetwork</a></div></aside>
   <main class="main"><header class="top"><div class="page-title"><h1 id="page-title">Overview</h1><p id="page-subtitle">Your node at a glance.</p></div><div class="top-actions"><select id="device-select" class="device-select"></select><span id="online" class="status">Offline</span><button id="logout" class="button ghost">Log out</button></div></header><div id="page"></div></main>
 </div>
-<nav id="mobile-nav" aria-label="Primary" hidden></nav>
+<nav id="mobile-nav" aria-label="Primary" hidden>
+  <button type="button" class="mob-tab active" data-page="overview"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20h-6v-5h-4v5H4z"/></svg></span><span class="mob-label">Overview</span></button>
+  <button type="button" class="mob-tab" data-page="blockchain"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4-8 4-8-4 8-4Z"/><path d="m4 12 8 4 8-4M4 17l8 4 8-4"/></svg></span><span class="mob-label">Chain</span></button>
+  <button type="button" class="mob-tab" data-page="mining"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1308 1634Q1362 1634 1408.0 1630.0Q1454 1626 1486 1621Q1525 1617 1554 1610V1577Q1539 1577 1496.5 1575.0Q1454 1573 1392.5 1560.5Q1331 1548 1251.0 1525.0Q1171 1502 1081.5 1459.0Q992 1416 894.0 1353.0Q796 1290 697 1199L1897 1L1786 -108L588 1090Q519 1015 466.0 939.0Q413 863 373.5 787.5Q334 712 306.5 641.5Q279 571 260 509Q217 363 207 228H174Q166 257 162 296Q157 329 154.0 374.5Q151 420 151 476Q151 555 162.0 651.5Q173 748 204.0 851.5Q235 955 289.5 1061.0Q344 1167 432 1266L251 1497L283 1530L520 1353Q619 1439 723.5 1494.5Q828 1550 931.5 1580.5Q1035 1611 1131.0 1622.5Q1227 1634 1308 1634Z" transform="translate(0.270332 20.739977) scale(0.01145475 -0.01145475)" fill="currentColor" stroke="none"/></svg></span><span class="mob-label">Mining</span></button>
+  <button type="button" class="mob-tab" data-page="explorer"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></svg></span><span class="mob-label">Explorer</span></button>
+  <button type="button" class="mob-tab" data-page="more" aria-expanded="false" aria-controls="portal-more-menu"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span><span class="mob-label">More</span></button>
+</nav>
 <div class="portal-more" id="portal-more-menu" data-open="0" aria-hidden="true">
   <button type="button" data-more-page="workers"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14v10H5zM8 4v3m8-3v3M8 17v3m8-3v3"/></svg><span>Workers</span></button>
   <button type="button" data-more-page="network"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="17" r="2"/><path d="m10.9 7.7-3.8 7.6m6-7.6 3.8 7.6M8 17h8"/></svg><span>Network</span></button>
@@ -411,7 +372,6 @@ function action(name,payload={}){actionQueue=actionQueue.then(()=>signedAction(n
 function firstPair(){return `<section class="section"><div class="section-head"><div><h2>Pair your first machine</h2><p>Enable Remote access in the Veld desktop client, then enter the one-time pairing code shown there.</p></div></div><div class="pair"><input id="pair-code" maxlength="9" inputmode="text" autocomplete="one-time-code" placeholder="PAIR CODE"><button class="button" data-portal-action="claim">Pair machine</button></div><div id="pair-error" class="error"></div><div class="local-only">The portal receives operational status only. Commands are signed by a non-exportable key in this app and every change must still be approved on the paired machine. Wallet keys, passphrases, RPC credentials, peer addresses, and identity files never leave it.</div></section>`}
 function pageScrollState(){const state={};document.querySelectorAll("#page [data-scroll-key]").forEach(el=>state[el.dataset.scrollKey]=el.scrollLeft);return state}
 function restorePageScroll(state){requestAnimationFrame(()=>document.querySelectorAll("#page [data-scroll-key]").forEach(el=>{const value=state[el.dataset.scrollKey];if(Number.isFinite(value))el.scrollLeft=value}))}
-document.querySelectorAll("#nav button.mobile").forEach(button=>{const clone=button.cloneNode(true);clone.classList.add("portal-tab");$("mobile-nav").appendChild(clone)});
 function render(){const scroll=pageScrollState();const d=current();const meta=d?titles[page]:["Pair a machine","Connect your first Veld node or miner."];$("page-title").textContent=meta[0];$("page-subtitle").textContent=meta[1];const extra=["workers","network","logs","settings"];document.querySelectorAll("#nav button,#mobile-nav button").forEach(b=>b.classList.toggle("active",!!d&&(b.dataset.page===page||(b.dataset.page==="more"&&extra.includes(page)))));if(!d){$("online").className="status";$("online").textContent="Offline";setHtml($("page"),firstPair());return}$("online").className="status "+(d.online?"online":"");$("online").textContent=d.online?"Online":"Offline";const fn={overview,blockchain,mining,workers,explorer,network,logs,settings,more}[page];setHtml($("page"),fn(d,snap(d)));restorePageScroll(scroll)}
 function overview(d,s){return `<div class="cards">${metric(n(d.height),"Block height","green")}${metric(d.sync_lag?n(d.sync_lag)+" behind":"100.0%","Synchronization")}${metric(n(d.peers),"P2P peers")}${metric(n(d.hashrate,1)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(d.workers),"CPU workers")}${metric(n(s.mempool),"Mempool transactions")}${metric(n(s.supply,2)+" VELD","Circulating supply")}</div><section class="section"><div class="section-head"><div><h2>Node status</h2><p>${esc(d.warning||"Consensus validation is active inside veld-node.")}</p></div><div class="controls"><span class="status ${d.online?'online':''}">${esc(d.mining_state)}</span><button class="button" data-command="${s.process_running?'node.stop':'node.start'}"${s.process_running?' data-confirm="Stop this node gracefully?"':''}>${s.process_running?'Stop node':'Start node'}</button></div></div><div class="kv"><div><b>${d.sync_lag?'Syncing':'Validated'}</b><span>Chain</span></div><div><b>${n(d.peers)}</b><span>Connections</span></div><div><b>${s.mining_ready?'Ready':'Waiting'}</b><span>Work admission</span></div><div><b>v${esc(d.version)}</b><span>Client build</span></div></div>${d.last_command?`<div class="warning">Last command: ${esc(d.last_command.action)} | ${esc(d.last_command.state)}</div>`:""}</section><section class="section"><div class="section-head"><div><h2>Chain activity</h2><p>Locally reported verified chain height over the last hour.</p></div></div>${spark(d.history,"height","Verified chain height")}</section>`}
 function blockchain(d,s){return `<div class="cards">${metric(n(d.height),"Locally verified height","green")}${metric(d.sync_lag?n(d.sync_lag):"0","Blocks behind")}${metric(bytes(s.chain_bytes),"Chain storage")}${metric("Signed + verified","Snapshot bootstrap")}</div><section class="section"><div class="section-head"><div><h2>Synchronization mode</h2><p>Snapshot starts remain quarantined until an independent genesis validation matches exactly.</p></div></div><div class="control-row"><div><h3>Signed snapshot</h3><p>Fast startup with independent full-chain validation in the background.</p></div><button class="button" data-command="sync.mode" data-mode="snapshot">Select</button></div><div class="control-row"><div><h3>Full initial block download</h3><p>Download and validate the complete chain from genesis before services open.</p></div><button class="button" data-command="sync.mode" data-mode="full">Select</button></div></section>`}

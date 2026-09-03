@@ -18,32 +18,33 @@ require(
     '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
     "portal uses the wallet iOS standalone viewport mode",
 )
-require("const CACHE='veld-portal-shell-v18';", "Safari bottom-offset correction is cache-busted")
+require("const CACHE='veld-portal-shell-v18';", "PWA shell cache remains on the existing v18 identifier")
 require('id="mobile-nav" aria-label="Primary" hidden', "mobile nav starts hidden until session recovery")
 require('$("mobile-nav").hidden=false', "mobile nav is revealed directly after session recovery")
 require('</div>\n<nav id="mobile-nav"', "mobile nav is a direct body child, outside the app layout")
 require(".side{display:none!important}", "desktop sidebar is hidden on mobile")
-require("position:fixed!important;", "mobile nav is fixed")
-require("bottom:calc(0px - env(safe-area-inset-bottom,0px))!important;",
-        "mobile nav row uses Safari-compatible subtraction for the iPhone bottom inset")
-require("height:68px!important", "mobile nav has a bounded height")
-require("z-index:1000!important", "mobile nav stays above portal content")
-require("transform:none!important", "navbar does not create a competing containing block")
+require("#mobile-nav{display:flex!important;position:fixed;bottom:0;left:0;right:0;z-index:500;height:68px;min-height:68px;max-height:68px;",
+        "mobile nav uses the wallet navbar's fixed bottom geometry")
+require("transform:translateZ(0);will-change:transform", "mobile nav uses the wallet compositor behavior")
+require("#mobile-nav .mob-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;",
+        "mobile buttons use the wallet tab layout")
+require("height:68px;min-height:68px;max-height:68px", "mobile nav has the wallet's bounded height")
 require(".main{padding-bottom:88px!important}", "page content clears the navbar")
-require("bottom:calc(68px - env(safe-area-inset-bottom,0px))!important",
-        "More menu opens directly above the fixed wallet navbar")
+require("bottom:68px!important", "More menu opens directly above the fixed wallet navbar")
 if "box-shadow:0 96px 0 96px" in PORTAL:
     raise AssertionError("legacy oversized navbar shadow must stay removed")
+if "#mobile-nav" in PORTAL and "bottom:calc(0px - env(safe-area-inset-bottom" in PORTAL:
+    raise AssertionError("the discarded safe-area-offset navbar must stay removed")
 
-require(
-    'document.querySelectorAll("#nav button.mobile").forEach(button=>{const clone=button.cloneNode(true);clone.classList.add("portal-tab");$("mobile-nav").appendChild(clone)})',
-    "mobile nav reuses the exact existing buttons and icons",
-)
-desktop_nav_start = PORTAL.index('<nav class="nav" id="nav"')
-desktop_nav_end = PORTAL.index("</nav>", desktop_nav_start)
-desktop_nav = PORTAL[desktop_nav_start:desktop_nav_end]
+if 'cloneNode(true)' in PORTAL:
+    raise AssertionError("the discarded cloned-navbar implementation must stay removed")
+mobile_nav_start = PORTAL.index('<nav id="mobile-nav"')
+mobile_nav_end = PORTAL.index("</nav>", mobile_nav_start)
+mobile_nav = PORTAL[mobile_nav_start:mobile_nav_end]
+if mobile_nav.count('class="mob-tab') != 5:
+    raise AssertionError("mobile nav must contain exactly five wallet-style tabs")
 for page in ("overview", "blockchain", "mining", "explorer", "more"):
-    if f'data-page="{page}"' not in desktop_nav:
-        raise AssertionError(f"mobile nav source is missing {page}")
+    if f'data-page="{page}"' not in mobile_nav:
+        raise AssertionError(f"mobile nav is missing {page}")
 
-print("PASS portal_mobile_nav_tests checks=21")
+print("PASS portal_mobile_nav_tests checks=22")
