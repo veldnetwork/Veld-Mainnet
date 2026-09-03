@@ -208,7 +208,7 @@ PORTAL_MANIFEST = {
     ],
 }
 PORTAL_OFFLINE_HTML = b"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a09"><title>Veld Portal offline</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#080a09;color:#f2f5f2;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(430px,100%);padding:25px;border:1px solid #343a36;border-radius:10px;background:#101311}h1{margin:0 0 8px;font:700 24px ui-monospace,Consolas,monospace}p{margin:0;color:#c5cbc7}</style><main class="card"><h1>Portal offline</h1><p>Reconnect to the internet, then reopen or refresh the app. Your node continues running independently.</p></main></html>"""
-PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v13';
+PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v14';
 const ASSETS=['/manifest.webmanifest','/icon.png?v=6','/offline'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
@@ -253,7 +253,21 @@ PORTAL_HTML = r"""<!doctype html>
     @media(max-width:520px){.topology{aspect-ratio:420/390}}
     @media(max-width:390px){.top-actions{grid-template-columns:minmax(0,1fr) auto}.top-actions .status{grid-row:2;grid-column:1}.top-actions .button{grid-row:2;grid-column:2}.cards{grid-template-columns:1fr}.cards.network-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.wide{grid-column:auto}.card{min-height:0}.kv{grid-template-columns:1fr}.more-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:340px){.cards.network-cards{grid-template-columns:1fr}}
-    #mobile-nav{display:none!important}
+    #mobile-nav{display:none}#mobile-nav[hidden]{display:none!important}
+    @keyframes navGlow{0%,100%{box-shadow:0 -4px 20px rgba(50,240,110,.05),0 -1px 6px rgba(50,240,110,.04)}50%{box-shadow:0 -6px 28px rgba(50,240,110,.1),0 -2px 10px rgba(50,240,110,.06)}}
+    @media(max-width:900px){
+      .side{display:none!important}
+      #mobile-nav{display:flex!important;position:fixed!important;bottom:0!important;left:0!important;right:0!important;top:auto!important;z-index:500!important;height:68px!important;min-height:68px!important;max-height:68px!important;background:linear-gradient(0deg,rgba(3,5,3,.98),rgba(7,10,7,.95))!important;backdrop-filter:blur(24px)!important;-webkit-backdrop-filter:blur(24px)!important;border-top:1px solid rgba(50,240,110,.15)!important;box-shadow:0 -8px 32px rgba(50,240,110,.06),0 -2px 8px rgba(50,240,110,.04)!important;padding:0!important;box-sizing:border-box!important;animation:navGlow 3s ease infinite!important;transform:translateZ(0)!important;-webkit-transform:translateZ(0)!important;will-change:transform!important}
+      #mobile-nav .mob-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--muted);font-size:10px;letter-spacing:.5px;text-transform:uppercase;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:600;border:none;background:none;padding:4px 2px;transition:all .15s;-webkit-tap-highlight-color:transparent;height:68px;min-height:68px;max-height:68px;min-width:0;overflow:hidden;position:relative;box-sizing:border-box}
+      #mobile-nav .mob-tab.active{color:var(--green)}
+      #mobile-nav .mob-tab.active::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:3px;background:var(--green);border-radius:0 0 5px 5px;box-shadow:0 4px 20px rgba(50,240,110,.7),0 0 6px var(--green)}
+      #mobile-nav .mob-tab.active .nav-icon{filter:drop-shadow(0 0 14px rgba(50,240,110,.8));transform:translateY(-2px) scale(1.08)}
+      #mobile-nav .mob-tab:active{opacity:.4}
+      #mobile-nav .nav-icon{display:block!important;width:23px!important;height:23px!important;flex:0 0 23px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+      .main{padding-bottom:calc(94px + env(safe-area-inset-bottom,0))!important}
+      .portal-more{bottom:68px!important}
+    }
+    @media(min-width:901px){#mobile-nav{display:none!important}}
   </style>
 </head>
 <body>
