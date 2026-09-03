@@ -1,4 +1,21 @@
-# Veld 3.0.1 release notes
+# Veld 3.0.2 release notes
+
+Release date: pending
+Status: Windows client maintenance candidate
+
+## 3.0.2 maintenance scope
+
+Veld 3.0.2 prevents repeated IBD request streams from exhausting peer response
+budgets while block validation is still advancing. It also adds official
+signed-snapshot bootstrap. Imported state is replayed locally and remains
+quarantined from RPC, inbound P2P, explorer, mining, and validator signing
+until an independent genesis IBD reaches the exact same tip and complete state
+digest. Full IBD remains available with `--full-ibd` or `--no-snapshot`.
+
+This maintenance release does not change consensus, protocol version,
+deployment identity, genesis, state-digest format, or existing chain data.
+
+## Veld 3.0.1 release notes
 
 Release date: 2026-09-02
 Status: Windows client maintenance release candidate
@@ -57,8 +74,10 @@ live operational gates and must not be reported as complete before execution.
 
 BUILD-02 contains the resolved local-work admission deadlock fix and binds
 external block-template submission to exact, short-lived, one-use authority.
-Public-mainnet binaries also refuse snapshot bootstrap, UPnP, test profiles,
-and public whole-chain transaction-history scans.
+Veld 3.0.1 public-mainnet binaries refuse snapshot bootstrap, UPnP, test
+profiles, and public whole-chain transaction-history scans. Veld 3.0.2 replaces
+that snapshot refusal with the signed, independently validated quarantine
+design described above.
 
 Only packages whose signed manifest and file hashes validate as BUILD-02 are
 official binaries. Source publication does not alter or re-sign those packages.

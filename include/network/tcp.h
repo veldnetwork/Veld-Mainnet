@@ -6159,6 +6159,14 @@ private:
     StepResult PeerProtocolStep(PeerState& ps, Connection& conn,
                                 PeerManager& pm, const P2PMessage& msg,
                                 const std::string& key, bool ) {
+        if (background_sync_mode_ &&
+            !IsBackgroundValidationInboundCommand(msg.command)) {
+            // Deliberately consume instead of falling through to the legacy
+            // dispatcher. The connection remains useful for block download,
+            // but an unvalidated snapshot can neither serve nor mutate any
+            // unrelated protocol surface.
+            return StepResult::Handled;
+        }
         if (msg.command == MessageType::PING) {
             uint64_t nonce = 0;
             if (msg.payload.size() >= 8)

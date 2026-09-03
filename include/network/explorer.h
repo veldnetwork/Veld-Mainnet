@@ -2606,9 +2606,9 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="syncing">16. Syncing &amp; trust</h2>
-  <p>Every Veld 3.0.0 public-mainnet node performs a <strong>full IBD from genesis</strong>. The node verifies every block, proof-of-work result, transaction, and state transition before wallet authority, mempool admission, mining, or validator signing can open.</p>
-  <p>Snapshot download, import, preference, promotion, command-line flags, and RPCs are not available in the Veld 3.0.0 public-mainnet profile. A datadir carrying a snapshot-import or snapshot-recovery marker is refused rather than reinterpreted as ordinary validated history.</p>
-  <p>Ordinary peer synchronization remains available. Mining and endorsement remain paused until startup replay, independent chain validation, and synchronization complete against the canonical network and datadir identity.</p>
+  <p>Veld 3.0.2 public-mainnet nodes can start from an <strong>official signed snapshot</strong> or perform a full IBD from genesis. Snapshot bytes are consensus-replayed locally before use and are bound to this deployment, genesis, launch-chain anchor, height, tip, and complete state schema.</p>
+  <p>A snapshot is an availability optimization, not a consensus authority. RPC, inbound P2P, explorer, mining, and validator signing remain quarantined while an independent genesis IBD downloads and validates every block and proof of work into a separate chainstate. Those services activate only after the independent chain reaches the exact snapshot tip and complete state digest.</p>
+  <p>If the signed snapshot is missing, stale, malformed, from a different chain, or fails validation, the client rejects it and falls back to ordinary peer synchronization. <code>--full-ibd</code> or <code>--no-snapshot</code> always selects validation from genesis without importing a snapshot.</p>
   <p>Before validator finality activates, a fresh node relies on independently verified proof of work and the bounded reorganization horizon. After it observes a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that locally verified floor and rejects histories that conflict with it.</p>
 </div>
 

@@ -51,7 +51,7 @@ REM   Bump this string EVERY TIME a new Windows client zip is published.
 REM   Format: MAJOR.MINOR.PATCH (strict semantic versioning).
 REM   It's displayed in the welcome banner so users can confirm they're
 REM   on the current release at a glance.
-set CLIENT_VERSION=3.0.0
+set CLIENT_VERSION=3.0.2
 title Veld Desktop Mining Client v%CLIENT_VERSION%
 
 echo.
@@ -254,9 +254,10 @@ REM    launcher is the only supported opt-out and must set VELD_CLEARNET=1.
 REM    A missing, empty, false, or legacy VELD_TOR value always stays on Tor.
 if not exist "%~dp0veld-data" mkdir "%~dp0veld-data"
 
-REM Veld 3.0.0 public mainnet supports ordinary validation from genesis only.
-REM Snapshot download, import, preference, and promotion are not packaged.
-set "SYNCFLAG=--full-ibd"
+REM Prefer the official signed snapshot when it is newer. The node keeps RPC,
+REM inbound P2P, explorer, and mining disabled until an independent background
+REM sync from genesis reaches the exact same tip and state digest.
+set "SYNCFLAG=--snapshot-bootstrap"
 
 REM Clearnet requires an exact affirmative opt-in supplied by
 REM "Start Mining (Clearnet).bat".  Never fail open or infer consent merely
@@ -379,9 +380,9 @@ REM batch job (Y/N)?", and the window would never close.
 if !_exit_code! EQU -1073741510 goto :user_stop
 if !_exit_code! EQU 3221225786  goto :user_stop
 REM Exit code 75 = node requested clean restart (chain replay handles it).
-REM Exit code 76 is reserved for a validation failure that requires explicit
-REM operator recovery. Public launchers must never rename chain data or select
-REM an imported snapshot automatically.
+REM Exit code 76 is reserved for a snapshot/background-validation mismatch that
+REM requires explicit operator recovery. Signed snapshot imports are quarantined
+REM until independent genesis IBD matches exactly.
 if !_exit_code! EQU 75 (
     echo   [restart] Clean restart requested.
     set _restart_count=0

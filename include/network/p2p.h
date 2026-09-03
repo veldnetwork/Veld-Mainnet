@@ -8,6 +8,7 @@
 #include "../core/transaction.h"
 #include "../consensus/finality_wire_profile.h"
 #include <string>
+#include <string_view>
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -103,6 +104,19 @@ namespace MessageType {
 #else
     constexpr uint64_t REQUIRED_NETWORK_IDENTITY_SERVICES = 0;
 #endif
+}
+
+// An independently validating snapshot chainstate may consume only the small
+// set of messages required to identify peers and download canonical blocks. It
+// must not act as a transaction relay, finality participant, work server,
+// address server, hole-punch endpoint, or onion advertisement endpoint while
+// imported history is still quarantined.
+inline bool IsBackgroundValidationInboundCommand(std::string_view command) {
+    return command == MessageType::VERSION || command == MessageType::VERACK ||
+           command == MessageType::PING || command == MessageType::PONG ||
+           command == MessageType::INV || command == MessageType::ADDR ||
+           command == MessageType::TIPSIG || command == MessageType::BLOCK ||
+           command == MessageType::REJECT;
 }
 
 enum class InvType : uint32_t {

@@ -82,8 +82,9 @@ base_definitions=(
 )
 definitions=("${base_definitions[@]}")
 case "$role" in
-  node|desktop) definitions+=(-DVELD_USE_LEVELDB) ;;
-  fleet) definitions+=(-DVELD_USE_LEVELDB -DVELD_FLEET_NO_MINE) ;;
+  node) definitions+=(-DVELD_USE_LEVELDB -DVELD_ENABLE_SNAPSHOT_BOOTSTRAP) ;;
+  desktop) definitions+=(-DVELD_USE_LEVELDB) ;;
+  fleet) definitions+=(-DVELD_USE_LEVELDB -DVELD_FLEET_NO_MINE -DVELD_ENABLE_SNAPSHOT_BOOTSTRAP) ;;
 esac
 if [[ $role == gui ]]; then
   : "${VELD_TRUSTED_NODE_BUILD:?gui role requires VELD_TRUSTED_NODE_BUILD}"
@@ -347,6 +348,7 @@ case "$role" in
     grep -F '"reserve_service_capability_required":true' "$output/deployment-info.txt"
     grep -F '"state_digest_version":8' "$output/deployment-info.txt"
     grep -F '"storage_backend":"leveldb"' "$output/deployment-info.txt"
+    grep -F '"snapshot_bootstrap_compiled":true' "$output/deployment-info.txt"
     ;;
   desktop)
     grep -F '"binary_role":"desktop-client"' "$output/deployment-info.txt"
@@ -386,6 +388,7 @@ case "$role" in
     grep -F '"reserve_service_capability_required":true' "$output/deployment-info.txt"
     grep -F '"state_digest_version":8' "$output/deployment-info.txt"
     grep -F '"storage_backend":"leveldb"' "$output/deployment-info.txt"
+    grep -F '"snapshot_bootstrap_compiled":true' "$output/deployment-info.txt"
     ;;
 esac
 

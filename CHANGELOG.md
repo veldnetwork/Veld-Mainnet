@@ -3,6 +3,19 @@
 All notable public-source changes are recorded here. Signed binary identity is
 recorded separately from source-publication commits.
 
+## 3.0.2 - 2026-09-03
+
+### Fixed
+
+- Prevented repeated IBD block-request streams from exhausting peer
+  response-work budgets while consensus validation is still advancing.
+
+### Added
+
+- Added signed public-mainnet snapshot bootstrap with launch-chain anchoring,
+  strict archive extraction, and service quarantine until an independent full
+  genesis IBD reaches the exact same tip and consensus-state digest.
+
 ## 3.0.1 - 2026-09-02
 
 ### Changed
