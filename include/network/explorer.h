@@ -4550,7 +4550,7 @@ document.getElementById('gsearch-btn').addEventListener('click',doSearch);
 document.getElementById('gsearch').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});
 var knownH=0;
 function loadStats(){
-  fetch('/api/stats').then(function(r){return r.json();}).then(function(d){
+  fetch('/api/stats').then(function(r){if(!r.ok)throw new Error('stats unavailable');return r.json();}).then(function(d){
     var h=d.height||0;
     document.getElementById('s-height-big').textContent=h.toLocaleString();
     var sup=parseFloat(d.supply_veld||0);
@@ -4625,7 +4625,7 @@ loadStats();
   function tick(){
     var now=Date.now();
     var heartbeat=(now-_lastHeavy)>=60000;
-    fetch('/api/stats').then(function(r){return r.json();}).then(function(d){
+    fetch('/api/stats').then(function(r){if(!r.ok)throw new Error('stats unavailable');return r.json();}).then(function(d){
       var h=(d&&typeof d.height==='number')?d.height:-1;
       if(h===-1)return;
       if(h!==_lastTip||heartbeat){_lastTip=h;_lastHeavy=now;loadStats();}

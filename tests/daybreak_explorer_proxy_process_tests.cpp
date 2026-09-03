@@ -169,6 +169,15 @@ int main() {
     check(blocks_html.body.find("/api/v1/blocks/") != std::string::npos);
     check(blocks_html.body.find("Promise.all(ps)") == std::string::npos);
     check(blocks_html.body.find("if(!r.ok)") != std::string::npos);
+    const auto landing_html = RequestWithBody(port, "/", page_headers);
+    check(landing_html.status == 200);
+    const std::string stats_guard =
+        "fetch('/api/stats').then(function(r){if(!r.ok)";
+    const auto first_stats_guard = landing_html.body.find(stats_guard);
+    check(first_stats_guard != std::string::npos);
+    check(landing_html.body.find(stats_guard,
+                                 first_stats_guard + stats_guard.size()) !=
+          std::string::npos);
 
     // Both rich-list representations must invalidate immediately at a new
     // chain height and preserve the protocol's full eight-decimal precision.
