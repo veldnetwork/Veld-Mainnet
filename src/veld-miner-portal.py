@@ -208,7 +208,7 @@ PORTAL_MANIFEST = {
     ],
 }
 PORTAL_OFFLINE_HTML = b"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a09"><title>Veld Portal offline</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#080a09;color:#f2f5f2;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(430px,100%);padding:25px;border:1px solid #343a36;border-radius:10px;background:#101311}h1{margin:0 0 8px;font:700 24px ui-monospace,Consolas,monospace}p{margin:0;color:#c5cbc7}</style><main class="card"><h1>Portal offline</h1><p>Reconnect to the internet, then reopen or refresh the app. Your node continues running independently.</p></main></html>"""
-PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v17';
+PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v18';
 const ASSETS=['/manifest.webmanifest','/icon.png?v=6','/offline'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
@@ -258,7 +258,7 @@ PORTAL_HTML = r"""<!doctype html>
         left:0!important;
         right:0!important;
         top:auto!important;
-        bottom:calc(-1 * env(safe-area-inset-bottom,0px))!important;
+        bottom:calc(0px - env(safe-area-inset-bottom,0px))!important;
         z-index:1000!important;
         width:100%!important;
         height:68px!important;

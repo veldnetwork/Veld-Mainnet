@@ -18,14 +18,14 @@ require(
     '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
     "portal uses the wallet iOS standalone viewport mode",
 )
-require("const CACHE='veld-portal-shell-v17';", "rebuilt PWA shell is cache-busted")
+require("const CACHE='veld-portal-shell-v18';", "Safari bottom-offset correction is cache-busted")
 require('id="mobile-nav" aria-label="Primary" hidden', "mobile nav starts hidden until session recovery")
 require('$("mobile-nav").hidden=false', "mobile nav is revealed directly after session recovery")
 require('</div>\n<nav id="mobile-nav"', "mobile nav is a direct body child, outside the app layout")
 require(".side{display:none!important}", "desktop sidebar is hidden on mobile")
 require("position:fixed!important;", "mobile nav is fixed")
-require("bottom:calc(-1 * env(safe-area-inset-bottom,0px))!important;",
-        "mobile nav row is lowered through the iPhone bottom inset")
+require("bottom:calc(0px - env(safe-area-inset-bottom,0px))!important;",
+        "mobile nav row uses Safari-compatible subtraction for the iPhone bottom inset")
 require("height:68px!important", "mobile nav has a bounded height")
 require("z-index:1000!important", "mobile nav stays above portal content")
 require("transform:none!important", "navbar does not create a competing containing block")
