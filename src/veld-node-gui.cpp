@@ -6286,7 +6286,7 @@ private:
         }
         ClearSessionPassphrase();
         MessageBoxW(hwnd_,
-            L"A new mining identity was created. It will also endorse automatically when registered as a validator.",
+            L"A new mining identity was created. The same encrypted identity was saved as miner.key and as a portable .veld-keys file in the Veld data folder. The .veld-keys file can be imported into both Veld Wallet and Veld Node using the same passphrase.",
             L"Veld Node", MB_OK | MB_ICONINFORMATION);
     }
 

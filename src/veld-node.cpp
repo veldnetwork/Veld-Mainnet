@@ -597,10 +597,12 @@ static bool _wiz_is_encrypted(const std::string& file) {
     return encrypted;
 }
 
-static bool _wiz_save_key_encrypted(const std::string& key_file,
-                                     const veld::Secp256k1PrivKey& priv,
-                                     const std::string& passphrase,
-                                     bool testnet = false) {
+static bool _wiz_encrypt_key_record(const veld::Secp256k1PrivKey& priv,
+                                    const std::string& passphrase,
+                                    bool testnet,
+                                    std::vector<uint8_t>& encrypted,
+                                    std::string* address = nullptr) {
+    encrypted.clear();
     auto pub  = veld::DerivePublicKey(priv);
     auto addr = veld::PubKeyToAddress(pub, testnet);
     static constexpr char hex[] = "0123456789abcdef";
@@ -620,8 +622,19 @@ static bool _wiz_save_key_encrypted(const std::string& key_file,
         priv_hex, pub_hex, addr);
     veld::WipeString(priv_hex);
     veld::WipeString(pub_hex);
-    auto encrypted = veld::wallet_crypto::EncryptWallet(plaintext, passphrase);
+    encrypted = veld::wallet_crypto::EncryptWallet(plaintext, passphrase);
     veld::WipeString(plaintext);
+    if (address) *address = std::move(addr);
+    return !encrypted.empty();
+}
+
+static bool _wiz_save_key_encrypted(const std::string& key_file,
+                                     const veld::Secp256k1PrivKey& priv,
+                                     const std::string& passphrase,
+                                     bool testnet = false) {
+    std::vector<uint8_t> encrypted;
+    if (!_wiz_encrypt_key_record(
+            priv, passphrase, testnet, encrypted)) return false;
     std::string error;
     const bool ok = veld::channel::secure_file::AtomicWrite(
         key_file, encrypted, &error, /*require_private_parent=*/true);
@@ -629,6 +642,99 @@ static bool _wiz_save_key_encrypted(const std::string& key_file,
         veld::compat::SecureZero(encrypted.data(), encrypted.size());
     return ok;
 }
+
+#ifndef VELD_PUBLIC_TESTNET
+static bool _wiz_create_portable_key_bundle(
+        const std::string& datadir,
+        const veld::Secp256k1PrivKey& private_key,
+        const std::string& passphrase,
+        bool testnet,
+        std::string& address,
+        std::string& portable_path,
+        std::string& error) {
+    address.clear();
+    portable_path.clear();
+    error.clear();
+
+    std::vector<uint8_t> encrypted;
+    struct EncryptedWiper {
+        std::vector<uint8_t>& value;
+        ~EncryptedWiper() {
+            if (!value.empty())
+                veld::compat::SecureZero(value.data(), value.size());
+        }
+    } wipe_encrypted{encrypted};
+    try {
+        if (!_wiz_encrypt_key_record(
+                private_key, passphrase, testnet, encrypted, &address)) {
+            error = "could not encrypt the mining identity";
+            return false;
+        }
+    } catch (const std::exception& e) {
+        error = std::string("could not encrypt the mining identity: ") + e.what();
+        return false;
+    }
+
+    const std::string operational_path = datadir + "/miner.key";
+    portable_path = datadir + "/veld-wallet-" + address.substr(0, 8)
+        + ".veld-keys";
+    if (std::filesystem::exists(operational_path)) {
+        error = "refusing to replace an existing miner.key";
+        return false;
+    }
+    if (std::filesystem::exists(portable_path)) {
+        error = "refusing to replace an existing portable Veld keyfile";
+        return false;
+    }
+
+    // Publish the portable recovery copy first. If the second write fails, the
+    // encrypted identity remains recoverable and can be imported through the
+    // ordinary node or wallet importer. Both names receive the exact same
+    // versioned ciphertext bytes; no format conversion or re-encryption occurs.
+    if (!veld::channel::secure_file::AtomicWriteNew(
+            portable_path, encrypted, &error,
+            /*require_private_parent=*/true)) {
+        return false;
+    }
+    if (!veld::channel::secure_file::AtomicWriteNew(
+            operational_path, encrypted, &error,
+            /*require_private_parent=*/true)) {
+        error = "portable Veld keyfile was created, but miner.key could not be "
+            "published: " + error;
+        return false;
+    }
+
+    std::vector<uint8_t> operational_bytes;
+    std::vector<uint8_t> portable_bytes;
+    struct ReadbackWiper {
+        std::vector<uint8_t>& first;
+        std::vector<uint8_t>& second;
+        ~ReadbackWiper() {
+            if (!first.empty())
+                veld::compat::SecureZero(first.data(), first.size());
+            if (!second.empty())
+                veld::compat::SecureZero(second.data(), second.size());
+        }
+    } wipe_readback{operational_bytes, portable_bytes};
+    std::string read_error;
+    if (!_wiz_read_private_bytes(
+            operational_path, operational_bytes,
+            WIZ_MAX_OPERATIONAL_SECRET_BYTES, &read_error)
+        || !_wiz_read_private_bytes(
+            portable_path, portable_bytes,
+            WIZ_MAX_OPERATIONAL_SECRET_BYTES, &read_error)
+        || operational_bytes.size() != encrypted.size()
+        || portable_bytes.size() != encrypted.size()
+        || !std::equal(encrypted.begin(), encrypted.end(),
+                       operational_bytes.begin())
+        || !std::equal(encrypted.begin(), encrypted.end(),
+                       portable_bytes.begin())) {
+        error = "mining identity readback did not match its portable keyfile";
+        return false;
+    }
+    return true;
+}
+#endif
 
 static bool _wiz_parse_key_record(std::string_view content,
                                   veld::RealKeyPair& kp,
@@ -2022,10 +2128,10 @@ int main(int argc, char* argv[]) {
 #ifndef VELD_PUBLIC_TESTNET
 #ifdef VELD_FLEET_NO_MINE
                       << "  --import-miner-key <file>  Validate and install an encrypted validator identity\n"
-                      << "  --create-miner-key  Create a new encrypted validator identity and exit\n"
+                      << "  --create-miner-key  Create encrypted miner.key and portable .veld-keys files, then exit\n"
 #else
                       << "  --import-miner-key <file>  Validate an encrypted .veld-keys file and atomically install it as this datadir's mining/validator identity\n"
-                      << "  --create-miner-key  Create a new encrypted mining/validator identity and exit\n"
+                      << "  --create-miner-key  Create encrypted miner.key and portable .veld-keys files, then exit\n"
 #endif
 #endif
                       << "  --rpcport <port>     RPC port (default: " << MainnetConfig().rpc_port << ")\n"
@@ -2266,13 +2372,26 @@ int main(int argc, char* argv[]) {
         }
         veld::RealKeyPair created = veld::GenerateKeyPair(
             config.IsTestNetwork());
-        if (!_wiz_save_key_encrypted(destination, created.private_key,
-                                     passphrase, config.IsTestNetwork())) {
-            std::cerr << "veld-node: could not write the protected mining identity\n";
+        struct CreatedPrivateKeyWiper {
+            veld::RealKeyPair& value;
+            ~CreatedPrivateKeyWiper() {
+                veld::compat::SecureZero(
+                    value.private_key.data(), value.private_key.size());
+            }
+        } wipe_created{created};
+        std::string address;
+        std::string portable_path;
+        std::string create_error;
+        if (!_wiz_create_portable_key_bundle(
+                opt_datadir, created.private_key, passphrase,
+                config.IsTestNetwork(), address, portable_path,
+                create_error)) {
+            std::cerr << "veld-node: could not create the protected mining "
+                         "identity bundle: " << create_error << "\n";
             return 1;
         }
         std::cout << "MINER-KEY-CREATE-COMPLETE address="
-                  << created.address << "\n";
+                  << address << " keyfile=" << portable_path << "\n";
         return 0;
     }
 
