@@ -1026,33 +1026,27 @@ public:
         // explicit --connect entries; an absent inventory is a startup error.
         return {};
 #else
-        // Connect to the four fleet relays plus the independent peer05 public
-        // node. The fleet names remain replaceable through DNS. peer05 uses
-        // its stable address until a dedicated public DNS name is available;
-        // it is discovery capacity only and is not part of the fleet clock
-        // quorum.
+        // Connect to the three currently operated public fleet relays. Offline
+        // historical hosts are intentionally absent so normal bootstrap does
+        // not spend every watchdog cycle retrying retired infrastructure.
         static const std::vector<std::string> kSeedHosts = {
             "node1.veld.network",
             "node2.veld.network",
             "node3.veld.network",
-            "node4.veld.network",
-            "140.82.19.106", // peer05 independent public node
         };
         return kSeedHosts;
 #endif
     }
 
-    // Signed canonical addresses for the four operated mainnet fleet anchors.
+    // Signed canonical addresses for the three operated mainnet fleet anchors.
     // Discovery still uses replaceable DNS names, but anchor authority is
     // assigned only from this release-bound exact-IP inventory. This prevents
-    // a DNS response from granting clock-anchor status while preserving stable
-    // Fleet 01..04 numbering. Independent public nodes are intentionally absent.
+    // a DNS response from granting clock-anchor status.
     static std::vector<std::string> GetHardcodedFleetAnchorIps() {
 #ifdef VELD_PUBLIC_TESTNET
         return {};
 #else
         return {
-            "108.61.119.29",
             "5.78.107.166",
             "5.78.97.56",
             "5.78.127.51",
@@ -1074,8 +1068,8 @@ public:
         // authorities.  Testnet Tor bootstrap remains unconfigured/fail-closed.
         return {};
 #else
-        // The four-node published fleet plus the independent peer05 public node.
-        // Every entry is a rotation-proof handle (onion or
+        // The three-node published fleet. Every entry is a rotation-proof
+        // handle (onion or
         // DNS) so an OCI micro changing its IP on restart is a one-line DNS edit,
         // never a rebuild. A --tor-only client reaches all of them with ZERO IP/
         // DNS exposure: ConnectTo() routes EVERY dial through Socks5Connect, which
@@ -1086,22 +1080,12 @@ public:
         // still cover the fleet. Keep node*.veld.network DNS-only (grey cloud) on
         // Cloudflare — proxying would hand out web IPs and break P2P.
         return {
-            // Uniform node numbering == nodeN.veld.network. n2/n3 are the Ubuntu
-            // hubs via their v3 hidden services (end-to-end Tor, no exit hop).
-            "wii2qlhlxsxufavkxpo2aqxszuwxnriv6aaxly3vyzfr2tiymykdwjad.onion", // n2 (Ubuntu hub, node2) 5.78.107.166
-            "sduu6rrra4k6wvwyp33qz5te5c3s4jhkdj2gbvs2zuv73dhiv4dtktad.onion", // n3 (Ubuntu hub, node3) 5.78.97.56
-            "node1.veld.network", // node1 (Vultr custody+seed) -> 108.61.119.29
-            "node4.veld.network", // node4 (Hetzner seed)      -> 5.78.127.51
-            "140.82.19.106",      // peer05 (independent Vultr public node; not retired node5)
-            // Live published fleet = node1-4 (2 hubs + node1 + node4). node5
-            // (129.158.232.88, 498 MB OL9 micro) PULLED — too small to
-            // hold the tip on a fast-mining chain (swap-thrashed, perpetually
-            // lagging); removed from DNS + seeds so clients never dial a stale
-            // node. Earlier drops: old node4 (193.122.198.64, ) + node7
-            // (137.131.47.50, ). DNS is the live control point — this
-            // source rides the next client rebuild; deployed clients NXDOMAIN-skip
-            // node5 once its record is deleted. Next good box (A1.Flex) becomes
-            // node5 — add its name here + a Cloudflare A record + a seeds entry.
+            // n1/n2 are the Ubuntu hubs via their persistent v3 hidden services
+            // (end-to-end Tor, no exit hop). n3 is reached through a Tor exit
+            // with remote DNS resolution until it has a dedicated onion service.
+            "wii2qlhlxsxufavkxpo2aqxszuwxnriv6aaxly3vyzfr2tiymykdwjad.onion", // n1, 5.78.107.166
+            "sduu6rrra4k6wvwyp33qz5te5c3s4jhkdj2gbvs2zuv73dhiv4dtktad.onion", // n2, 5.78.97.56
+            "node3.veld.network", // n3, 5.78.127.51
         };
 #endif
     }

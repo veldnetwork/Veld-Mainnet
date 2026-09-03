@@ -6,6 +6,7 @@
 #include <iostream>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -87,10 +88,14 @@ int main() {
     size_t relay_events = 0;
     size_t on_block_events = 0;
     std::unordered_map<std::string, std::vector<uint8_t>> durable_bodies;
+    std::unordered_set<std::string> reject_body_writes_once;
     chain.SetDurableBlockBodyWriter(
         [&](const Hash256& hash, const std::vector<uint8_t>& raw) {
+            const std::string hash_hex = HashToHex(hash);
+            if (reject_body_writes_once.erase(hash_hex) != 0)
+                return false;
             ++durable_side_writes;
-            durable_bodies[HashToHex(hash)] = raw;
+            durable_bodies[hash_hex] = raw;
             return true;
         });
     chain.SetHistoricalBlockLoader([&](const Hash256& hash)
@@ -106,10 +111,14 @@ int main() {
         ++on_block_events;
     };
     chain.SetOnCommit(
-        [&](const Block&,
+        [&](const Block& committed,
             const std::vector<std::pair<Hash256, uint32_t>>&,
             const std::vector<UTXO>&, bool from_reorg) {
-            if (from_reorg) ++published_reorg_blocks;
+            if (from_reorg) {
+                ++published_reorg_blocks;
+                Check(durable_bodies.count(HashToHex(committed.GetHash())) == 1,
+                      "reorg callback sees exact candidate body durably available");
+            }
             return true;
         });
 
@@ -290,6 +299,19 @@ int main() {
 
     std::this_thread::sleep_for(retry_window +
                                 std::chrono::milliseconds(100));
+    reject_body_writes_once.insert(HashToHex(fork.back().GetHash()));
+    const auto persist_deferred = chain.AddBlockDirect(
+        fork.back(), false, true, false, context_c);
+    observe_peer_boundary(persist_deferred);
+    Check(persist_deferred.IsDeferred() &&
+              Blockchain::GetLastRejectTag() ==
+                  "reorg_candidate_body_persist_failed",
+          "winning volatile body write failure defers without blacklisting");
+    Check(chain.Height() == 3 && chain.Tip().GetHash() == original_tip &&
+              published_reorg_blocks == 0 && chain.BadAltTipCount() == 0,
+          "body persistence failure restores the complete canonical frame");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1'100));
     const auto completed = chain.AddBlockDirect(
         fork.back(), false, true, false, context_c);
     observe_peer_boundary(completed);
@@ -300,12 +322,12 @@ int main() {
           "retry applies the exact higher-work branch");
     Check(published_reorg_blocks == fork.size(),
           "durable publication begins only after complete replay validation");
-    Check(durable_side_writes == fork.size() - 1 &&
+    Check(durable_side_writes == fork.size() &&
               peer_credit_events == fork.size() &&
               relay_events == fork.size() &&
               on_block_events == fork.size() &&
               chain.VolatileSideQuarantineCount() == 0,
-          "winning volatile tip becomes canonical without a premature side-body write");
+          "winning volatile tip is durably published only after complete replay");
     Check(chain.BadAltTipCount() == 0,
           "successful retry leaves no false bad-tip residue");
     Check(source_c->Stats().attempts == 0,

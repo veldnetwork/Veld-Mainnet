@@ -1477,6 +1477,13 @@ public:
                 "background validation mode must be selected before Start");
         background_validation_only_ = enabled;
     }
+    void SetSnapshotQuarantineOnly(bool enabled) {
+        if (running_.load(std::memory_order_acquire) || tcp_server_)
+            throw std::logic_error(
+                "snapshot quarantine mode must be selected before Start");
+        snapshot_quarantine_only_ = enabled;
+    }
+    bool SnapshotQuarantineOnly() const { return snapshot_quarantine_only_; }
 #endif
 
     // Install the locally-observed Bitcoin-anchored floor (VLF1) for this
@@ -2344,7 +2351,8 @@ public:
                 "FATAL: public-testnet runtime limits are missing, malformed, or expired");
         }
 #endif
-#ifdef VELD_PUBLIC_MAINNET
+#if defined(VELD_PUBLIC_MAINNET) && \
+    !defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         std::string public_snapshot_marker;
         if (PublicSnapshotDatadirRefusal(&public_snapshot_marker)) {
             throw std::runtime_error(
@@ -2418,18 +2426,12 @@ public:
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         const bool snapshot_replay_pending =
             ReadSnapshotReplayRequirement_().has_value();
-#ifdef VELD_PUBLIC_MAINNET
-        // Public mainnet never promotes imported state or suppresses historical
-        // PoW because of a snapshot handoff marker.  The marker is refused
-        // above before databases, RPC, or P2P are opened.
-        constexpr bool trusted_snapshot_replay = false;
-#else
         const bool trusted_snapshot_replay =
-            snapshot_replay_pending && snapshot_fast_start_eligible_;
+            snapshot_replay_pending && snapshot_fast_start_eligible_ &&
+            !full_ibd_;
         snapshot_state_clean_.store(
             !trusted_snapshot_replay && !snapshot_replay_pending,
             std::memory_order_release);
-#endif
 #else
         constexpr bool snapshot_replay_pending = false;
         constexpr bool trusted_snapshot_replay = false;
@@ -3419,7 +3421,7 @@ public:
         }
 #endif
         bool p2p_started = false;
-        if (background_validation_only_) {
+        if (background_validation_only_ || snapshot_quarantine_only_) {
             p2p_started = tcp_server_->Start({}, /*accept_inbound=*/false);
         } else {
 #ifdef VELD_PUBLIC_TESTNET
@@ -3433,8 +3435,9 @@ public:
         }
         if (p2p_started) {
             if (!quiet_boot_ && veld::DiagVerbose().load())
-                std::cout << (background_validation_only_
-                                  ? "  P2P background sync is outbound-only\n"
+                std::cout << ((background_validation_only_ ||
+                               snapshot_quarantine_only_)
+                                  ? "  P2P validation sync is outbound-only\n"
                                   : "  P2P listening on port " +
                                         std::to_string(actual_port) + "\n");
         } else {
@@ -3453,12 +3456,12 @@ public:
         // The independent chainstate is connected explicitly by the caller
         // after any Tor-only routing policy is installed. Starting anchor
         // dials here would create a brief clearnet race on private miners.
-        if (!background_validation_only_)
+        if (!background_validation_only_ && !snapshot_quarantine_only_)
             tcp_server_->DialAnchorsAsync();
 
         LoadPeerTipsCache();
 
-        if (!background_validation_only_) {
+        if (!background_validation_only_ && !snapshot_quarantine_only_) {
 #ifdef VELD_PUBLIC_TESTNET
             if (!PublicTestnetRestartAuthorityFreshNow()) {
                 tcp_server_->Stop();
@@ -5220,6 +5223,22 @@ public:
         return false;
     }
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    // Prepare an isolated extracted candidate for the same consensus replay
+    // used by Start().  The durable marker is written before any historical
+    // PoW may be deferred, and successful replay writes the independent-IBD
+    // requirement which travels with the staged tree during publication.
+    void PrepareSnapshotCandidateReplay(uint64_t height,
+                                        const std::string& tip_hash) {
+        if (running_.load(std::memory_order_acquire) || tcp_server_ ||
+            height == 0 || !SnapshotManifestIsHex64(tip_hash) ||
+            !WriteSnapshotReplayRequirementAt_(
+                SnapshotReplayRequirementPath_(), height, tip_hash)) {
+            throw std::runtime_error(
+                "cannot durably prepare isolated snapshot candidate replay");
+        }
+        SetSnapshotFastStartEligible(true, height, tip_hash);
+    }
+
     void SetSnapshotFastStartEligible(bool v,
                                       uint64_t validated_height = 0,
                                       const std::string& validated_tip = {}) {
@@ -7925,6 +7944,7 @@ private:
     std::atomic<bool>   mining_;
     std::atomic<bool>   ibd_complete_{false};
     bool                background_validation_only_{false};
+    bool                snapshot_quarantine_only_{false};
     mutable std::atomic<bool> anchor_floor_ibd_refusal_logged_{false};
     bool                full_ibd_ = false;   // --full-ibd/--no-snapshot: never bootstrap from a snapshot
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
@@ -13801,6 +13821,21 @@ private:
             if (snapshot_requirement) {
                 if (verify_historical_pow) {
                     RemoveSnapshotReplayRequirement_();
+                    std::error_code background_marker_error;
+                    if (std::filesystem::exists(
+                            IndependentValidationRequirementPath_(),
+                            background_marker_error)) {
+                        if (background_marker_error)
+                            throw std::runtime_error(
+                                "cannot inspect background validation marker after full replay");
+                        DurableRemoveControlFile_(
+                            IndependentValidationRequirementPath_());
+                    } else if (background_marker_error) {
+                        throw std::runtime_error(
+                            "cannot inspect background validation marker after full replay");
+                    }
+                    snapshot_state_clean_.store(true,
+                                                std::memory_order_release);
                     std::cerr << "  [snapshot] signed tip handoff satisfied by "
                                  "full foreground replay; marker removed before "
                                  "network startup.\n";

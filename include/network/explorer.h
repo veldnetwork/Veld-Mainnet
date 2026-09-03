@@ -1504,55 +1504,109 @@ self.addEventListener('fetch', event => {
                 return HttpResponse::JSON(j.str());
             }
 
-            if (resource == "block" && parts.size() >= 4) {
-                auto blockToJSON = [&](const Block& b) -> std::string {
-                    std::ostringstream j;
-                    j << std::fixed << std::setprecision(8);
-                    double reward = b.transactions.empty() ? 0.0 :
-                        (double)b.transactions[0].TotalOutput() / VELD_UNITS;
-                    std::string miner_addr;
-                    if (!b.transactions.empty()) {
-                        for (const auto& out : b.transactions[0].outputs) {
-                            if (out.script_pubkey.size() == 25 && out.script_pubkey[0] == 0x76) {
-                                std::string addr = ScriptToAddress(out.script_pubkey);
-                                if (!addr.empty() && addr != VAULT_ADDRESS) { miner_addr = addr; break; }
-                            }
-                        }
-                    }
-                    j << "{"
-                      << "\"height\":" << b.height << ","
-                      << "\"hash\":\"" << HashToHex(b.GetHash()) << "\","
-                      << "\"prev_hash\":\"" << HashToHex(b.header.prev_block_hash) << "\","
-                      << "\"merkle_root\":\"" << HashToHex(b.header.merkle_root) << "\","
-                      << "\"time\":" << (uint64_t)b.header.timestamp << ","
-                      << "\"bits\":" << b.header.bits << ","
-                      << "\"nonce\":" << (uint64_t)b.header.nonce << ","
-                      << "\"tx_count\":" << b.transactions.size() << ","
-                      << "\"reward_veld\":" << reward << ","
-                      << "\"miner\":\"" << miner_addr << "\","
-                      << "\"winner\":\"" << miner_addr << "\","
-                      << "\"tx\":[";
-                    for (size_t i = 0; i < b.transactions.size(); ++i) {
-                        if (i) j << ",";
-                        j << "\"" << HashToHex(b.transactions[i].GetTxID()) << "\"";
-                    }
-                    j << "]}";
-                    return j.str();
-                };
-                try {
-                    uint64_t h = std::stoull(parts[3]);
-                    try {
-                        Block b = chain_.GetBlock(h);
-                        return HttpResponse::JSON(blockToJSON(b));
-                    } catch (...) {
-                        return HttpResponse::NotFound("block at height " + parts[3]);
-                    }
-                } catch (...) {
-                    Hash256 hash = HexToHash(parts[3]);
-                    auto b = chain_.GetBlockByHash(hash);
-                    if (!b) return HttpResponse::NotFound("block " + parts[3]);
-                    return HttpResponse::JSON(blockToJSON(*b));
+            // One bounded request serves a complete history page.  The old UI
+            // issued 25 individual block requests, which exhausted the
+            // per-client safety budget after only a few pages when requests
+            // arrived through one reverse-proxy identity.
+            if (resource == "blocks" && parts.size() == 5) {
+                uint64_t limit_u64 = 0;
+                if (!ParseExplorerHeight_(parts[4], limit_u64)
+                        || limit_u64 == 0 || limit_u64 > 50) {
+                    return HttpResponse::JSON(
+                        "{\"error\":\"limit must be an integer from 1 to 50\"}",
+                        400);
                 }
+
+                const uint64_t tip_before = chain_.Height();
+                Block tip_block_before;
+                try {
+                    tip_block_before = chain_.GetBlock(tip_before);
+                } catch (...) {
+                    return HttpResponse::JSON(
+                        "{\"error\":\"canonical chain is not ready\"}", 503);
+                }
+                const std::string tip_hash_before =
+                    HashToHex(tip_block_before.GetHash());
+
+                uint64_t start = tip_before;
+                if (parts[3] != "latest") {
+                    if (!ParseExplorerHeight_(parts[3], start)) {
+                        return HttpResponse::JSON(
+                            "{\"error\":\"start height must be an integer or latest\"}",
+                            400);
+                    }
+                    if (start > tip_before) {
+                        return HttpResponse::JSON(
+                            "{\"error\":\"requested page is newer than the current tip\"}",
+                            409);
+                    }
+                }
+
+                const uint64_t count = std::min<uint64_t>(limit_u64, start + 1);
+                const uint64_t end = start + 1 - count;
+                std::vector<Block> ascending;
+                try {
+                    ascending = chain_.GetBlockRange(
+                        end, static_cast<size_t>(count));
+                } catch (...) {
+                    return HttpResponse::JSON(
+                        "{\"error\":\"canonical block page is unavailable\"}", 503);
+                }
+                if (ascending.size() != static_cast<size_t>(count)) {
+                    return HttpResponse::JSON(
+                        "{\"error\":\"canonical block page is incomplete\"}", 503);
+                }
+
+                const uint64_t tip_after = chain_.Height();
+                std::string tip_hash_after;
+                try {
+                    tip_hash_after = HashToHex(chain_.GetBlock(tip_after).GetHash());
+                } catch (...) {
+                    return HttpResponse::JSON(
+                        "{\"error\":\"canonical chain changed during page assembly\"}",
+                        409);
+                }
+                if (tip_after != tip_before || tip_hash_after != tip_hash_before) {
+                    return HttpResponse::JSON(
+                        "{\"error\":\"canonical chain changed during page assembly\"}",
+                        409);
+                }
+
+                std::ostringstream json;
+                json << "{\"tip_height\":" << tip_before
+                     << ",\"tip_hash\":\"" << tip_hash_before << "\""
+                     << ",\"start\":" << start
+                     << ",\"end\":" << end
+                     << ",\"blocks\":[";
+                for (size_t i = ascending.size(); i > 0; --i) {
+                    if (i != ascending.size()) json << ",";
+                    json << BlockToJSON_(ascending[i - 1], false);
+                }
+                json << "]}";
+                return HttpResponse::JSON(json.str());
+            }
+
+            if (resource == "blocks") {
+                return HttpResponse::JSON(
+                    "{\"error\":\"expected /api/v1/blocks/<start|latest>/<limit>\"}",
+                    400);
+            }
+
+            if (resource == "block" && parts.size() >= 4) {
+                uint64_t height = 0;
+                if (ParseExplorerHeight_(parts[3], height)) {
+                    try {
+                        return HttpResponse::JSON(
+                            BlockToJSON_(chain_.GetBlock(height), true));
+                    } catch (...) {
+                        return HttpResponse::NotFound(
+                            "block at height " + parts[3]);
+                    }
+                }
+                Hash256 hash = HexToHash(parts[3]);
+                auto block = chain_.GetBlockByHash(hash);
+                if (!block) return HttpResponse::NotFound("block " + parts[3]);
+                return HttpResponse::JSON(BlockToJSON_(*block, true));
             }
 
             // Machine-readable per-block event feed (added for the
@@ -2007,6 +2061,66 @@ self.addEventListener('fetch', event => {
     }
 
 private:
+    static bool ParseExplorerHeight_(const std::string& text,
+                                     uint64_t& value) {
+        if (text.empty()) return false;
+        for (const unsigned char c : text)
+            if (c < '0' || c > '9') return false;
+        try {
+            size_t consumed = 0;
+            const uint64_t parsed = std::stoull(text, &consumed, 10);
+            if (consumed != text.size()) return false;
+            value = parsed;
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    static std::string BlockToJSON_(const Block& block,
+                                    bool include_transaction_ids) {
+        std::ostringstream json;
+        json << std::fixed << std::setprecision(8);
+        const double reward = block.transactions.empty() ? 0.0 :
+            static_cast<double>(block.transactions[0].TotalOutput()) / VELD_UNITS;
+        std::string miner_address;
+        if (!block.transactions.empty()) {
+            for (const auto& output : block.transactions[0].outputs) {
+                if (output.script_pubkey.size() == 25
+                        && output.script_pubkey[0] == 0x76) {
+                    const std::string address = ScriptToAddress(output.script_pubkey);
+                    if (!address.empty() && address != VAULT_ADDRESS) {
+                        miner_address = address;
+                        break;
+                    }
+                }
+            }
+        }
+        json << "{"
+             << "\"height\":" << block.height << ","
+             << "\"hash\":\"" << HashToHex(block.GetHash()) << "\","
+             << "\"prev_hash\":\"" << HashToHex(block.header.prev_block_hash) << "\","
+             << "\"merkle_root\":\"" << HashToHex(block.header.merkle_root) << "\","
+             << "\"time\":" << static_cast<uint64_t>(block.header.timestamp) << ","
+             << "\"bits\":" << block.header.bits << ","
+             << "\"nonce\":" << static_cast<uint64_t>(block.header.nonce) << ","
+             << "\"size\":" << block.SerializedSize() << ","
+             << "\"tx_count\":" << block.transactions.size() << ","
+             << "\"reward_veld\":" << reward << ","
+             << "\"miner\":\"" << miner_address << "\","
+             << "\"winner\":\"" << miner_address << "\"";
+        if (include_transaction_ids) {
+            json << ",\"tx\":[";
+            for (size_t i = 0; i < block.transactions.size(); ++i) {
+                if (i) json << ",";
+                json << "\"" << HashToHex(block.transactions[i].GetTxID()) << "\"";
+            }
+            json << "]";
+        }
+        json << "}";
+        return json.str();
+    }
+
     void LoadTrustedProxyConfiguration_() {
         trusted_proxy_.enabled = false;
         trusted_proxy_.peer.clear();
@@ -2606,9 +2720,9 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="syncing">16. Syncing &amp; trust</h2>
-  <p>Every Veld 3.0.0 public-mainnet node performs a <strong>full IBD from genesis</strong>. The node verifies every block, proof-of-work result, transaction, and state transition before wallet authority, mempool admission, mining, or validator signing can open.</p>
-  <p>Snapshot download, import, preference, promotion, command-line flags, and RPCs are not available in the Veld 3.0.0 public-mainnet profile. A datadir carrying a snapshot-import or snapshot-recovery marker is refused rather than reinterpreted as ordinary validated history.</p>
-  <p>Ordinary peer synchronization remains available. Mining and endorsement remain paused until startup replay, independent chain validation, and synchronization complete against the canonical network and datadir identity.</p>
+  <p>Veld 3.0.3 public-mainnet nodes can start from an <strong>official signed snapshot</strong> or perform a full IBD from genesis. Snapshot bytes are consensus-replayed locally before use and are bound to this deployment, genesis, launch-chain anchor, height, tip, and complete state schema.</p>
+  <p>A snapshot is an availability optimization, not a consensus authority. RPC, inbound P2P, explorer, mining, and validator signing remain quarantined while an independent genesis IBD downloads and validates every block and proof of work into a separate chainstate. Those services activate only after the independent chain reaches the exact snapshot tip and complete state digest.</p>
+  <p>If the signed snapshot is missing, stale, malformed, from a different chain, or fails validation, the client rejects it and falls back to ordinary peer synchronization. <code>--full-ibd</code> or <code>--no-snapshot</code> always selects validation from genesis without importing a snapshot.</p>
   <p>Before validator finality activates, a fresh node relies on independently verified proof of work and the bounded reorganization horizon. After it observes a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that locally verified floor and rejects histories that conflict with it.</p>
 </div>
 
@@ -3201,6 +3315,8 @@ private:
             if (second.rfind("utxos", 0) == 0) return "utxos";
             if (second == "v1" && req.path_parts.size() >= 3
                     && req.path_parts[2] == "address") return "address-api";
+            if (second == "v1" && req.path_parts.size() >= 3
+                    && req.path_parts[2] == "blocks") return "block";
             static const std::unordered_set<std::string> cheap = {
                 "stats", "blocks", "mempool", "mining", "balance",
                 "supply", "validators", "topology"
@@ -6695,6 +6811,8 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
   <button id="jump-go" class="btn">Go</button>
 </div>
 
+<div id="blocks-error" role="status" style="display:none;margin-bottom:12px;padding:10px 12px;border:1px solid var(--gold);border-radius:6px;color:var(--gold);font-size:12px"></div>
+
 <div id="blocks-container" class="list">)HTML";
         // 25 skeleton rows (same .bk height as real rows) so the page is already
         // full-height while loading — the real 25 rows swap in 1:1 with NO height
@@ -6712,76 +6830,91 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << ArcadeFoot();
 
         page << R"HTML(<script nonce="__CSP_NONCE__">
-var curPage=0,pageSize=25,tipHeight=0;
-var BLOCK_BADGE={btcveld_mint:['Mint','gold'],btcveld_redeem:['Redeem','gold'],btcveld_transfer:['btcVELD','gold'],amm_op:['AMM','blue'],stake_lock:['Stake','em'],stake_unlock:['Unstake','em'],endorsement:['Endorse','blue'],validator_register:['Validator','blue'],staking_distribution:['Payout','em'],endorsement_distribution:['Val payout','blue'],anchor_post:['Anchor','gold'],btc_header_relay:['BTC hdr','gold']};
+var curPage=0,pageSize=25,tipHeight=null,tipHash='',loading=false,retryTimer=null;
 function fmt(n,d){return parseFloat(n||0).toFixed(d!==undefined?d:2);}
 function shortHash(h){return h?h.slice(0,8)+'…'+h.slice(-6):'—';}
 function shortAddr(a){return a?a.slice(0,6)+'…'+a.slice(-4):'—';}
 function ago(t){var s=Math.floor(Date.now()/1000)-(t||0);if(s<0)s=0;if(s<60)return s+' s';if(s<3600)return Math.floor(s/60)+' m';if(s<86400)return Math.floor(s/3600)+' h';return Math.floor(s/86400)+' d';}
-function loadBlockBadges(blocks){
-  blocks.forEach(function(b){
-    if(!b||b.error||(b.tx_count||b.ntx||0)<=1)return;
-    fetch('/api/v1/events/'+b.height).then(function(r){return r.json();}).then(function(e){
-      if(!e||!Array.isArray(e.events))return;
-      var seen={},out='';
-      e.events.forEach(function(ev){
-        var t=ev&&ev.type;if(!t||seen[t])return;seen[t]=1;
-        var bd=BLOCK_BADGE[t];if(!bd)return;
-        out+='<span class="bk-badge '+bd[1]+'">'+bd[0]+'</span>';
-      });
-      if(!out)return;
-      var slot=document.querySelector('.bk-badges[data-bh="'+b.height+'"]');
-      if(slot)slot.innerHTML=out;
-    }).catch(function(){});
+function fetchJSON(url){
+  return fetch(url,{cache:'no-store'}).then(function(r){
+    if(!r.ok){var e=new Error('HTTP '+r.status);e.status=r.status;throw e;}
+    return r.json();
   });
 }
 function loadPage(){
-  fetch('/api/stats').then(function(r){return r.json();}).then(function(d){
-    tipHeight=parseInt(d.height||d.blocks||0);
-    var start=tipHeight-(curPage*pageSize);
-    var end=Math.max(0,start-pageSize+1);
-    document.getElementById('page-info').textContent=end.toLocaleString()+' – '+start.toLocaleString()+' of '+tipHeight.toLocaleString();
-    document.getElementById('page-count').textContent='Page '+(curPage+1);
-    document.getElementById('next-btn').disabled=(curPage===0);
-    document.getElementById('prev-btn').disabled=(end===0);
-    var ps=[];
-    for(var i=start;i>=end;i--){
-      (function(bh){ps.push(fetch('/api/v1/block/'+bh).then(function(r){return r.json();}).catch(function(){return null;}));})(i);
-    }
-    Promise.all(ps).then(function(bs){
+  if(loading)return;
+  loading=true;
+  var prev=document.getElementById('prev-btn'),next=document.getElementById('next-btn');
+  prev.disabled=true;next.disabled=true;
+  var requestedStart=(curPage===0||tipHeight===null)?'latest':String(Math.max(0,tipHeight-curPage*pageSize));
+  fetchJSON('/api/v1/blocks/'+requestedStart+'/'+pageSize).then(function(d){
+      if(!d||!Number.isSafeInteger(d.tip_height)||d.tip_height<0||
+          typeof d.tip_hash!=='string'||!/^[0-9a-f]{64}$/.test(d.tip_hash)||
+          !Number.isSafeInteger(d.start)||!Number.isSafeInteger(d.end)||
+          d.start<d.end||!Array.isArray(d.blocks)||
+          d.blocks.length!==d.start-d.end+1){
+        throw new Error('invalid block-history response');
+      }
+      for(var vi=0;vi<d.blocks.length;vi++){
+        var vb=d.blocks[vi];
+        if(!vb||vb.height!==d.start-vi||typeof vb.hash!=='string'||
+            !/^[0-9a-f]{64}$/.test(vb.hash)){
+          throw new Error('invalid block-history row');
+        }
+      }
+      if(curPage===0){tipHeight=d.tip_height;tipHash=d.tip_hash;}
+      var shownTip=(tipHeight===null)?d.tip_height:tipHeight;
+      document.getElementById('page-info').textContent=d.end.toLocaleString()+' – '+d.start.toLocaleString()+' of '+shownTip.toLocaleString();
+      document.getElementById('page-count').textContent='Page '+(curPage+1);
+      next.disabled=(curPage===0);
+      prev.disabled=(d.end===0);
+      var bs=d.blocks;
       var html='';
       bs.forEach(function(b){
-        if(!b||b.error)return;
         var tx=b.tx_count||b.ntx||0;
         var size=b.size_kb||Math.round((b.size||0)/102.4)/10;
         var reward=b.reward_veld?fmt(b.reward_veld,2):'—';
         var fee=b.fee_total_veld?fmt(b.fee_total_veld,4):'';
-        var isFresh=(curPage===0&&b.height===tipHeight);
+        var isFresh=(curPage===0&&b.height===d.tip_height);
         html+='<a class="bk'+(isFresh?' fresh':'')+'" href="/block/height/'+b.height+'">'+
           '<div class="ic">'+(Math.floor(b.height/1000))+'k</div>'+
-          '<div class="info"><div class="h">#'+b.height.toLocaleString()+'<span class="bk-badges" data-bh="'+b.height+'"></span></div>'+
+          '<div class="info"><div class="h">#'+b.height.toLocaleString()+'</div>'+
           '<div class="s">'+shortHash(b.hash)+(b.miner?' · '+shortAddr(b.miner):'')+'</div></div>'+
           '<div class="right"><div class="ago">'+ago(b.time)+'</div>'+
           '<div class="tx">'+tx+' tx · '+size+' KB</div></div>'+
           '</a>';
       });
       var c=document.getElementById('blocks-container');
-      if(c)c.innerHTML=html||'<div style="color:var(--fg3);text-align:center;padding:22px">No blocks on this page</div>';
-      loadBlockBadges(bs);
-    });
+      if(c)c.innerHTML=html;
+      var err=document.getElementById('blocks-error');err.style.display='none';err.textContent='';
+      loading=false;
+    }).catch(function(e){
+      loading=false;
+      next.disabled=(curPage===0);
+      prev.disabled=false;
+      var err=document.getElementById('blocks-error');
+      err.textContent='Block history could not refresh. The last verified page is still shown; retrying.';
+      err.style.display='block';
+      if(e&&e.status===409){curPage=0;tipHeight=null;tipHash='';}
+      clearTimeout(retryTimer);retryTimer=setTimeout(loadPage,1000);
   });
 }
 document.getElementById('prev-btn').addEventListener('click',function(){curPage++;loadPage();});
 document.getElementById('next-btn').addEventListener('click',function(){if(curPage>0){curPage--;loadPage();}});
 function jumpHeight(){
-  var h=parseInt(document.getElementById('jump-height').value);
-  if(isNaN(h))return;
-  fetch('/api/stats').then(function(r){return r.json();}).then(function(d){
-    tipHeight=parseInt(d.height||d.blocks||0);
+  var text=document.getElementById('jump-height').value.trim();
+  if(!/^\d+$/.test(text))return;
+  var h=Number(text);if(!Number.isSafeInteger(h))return;
+  function jump(){
     curPage=Math.floor((tipHeight-h)/pageSize);
     if(curPage<0)curPage=0;
     loadPage();
-  });
+  }
+  if(tipHeight!==null){jump();return;}
+  fetchJSON('/api/v1/blocks/latest/1').then(function(d){
+    if(!d||!Number.isSafeInteger(d.tip_height)||typeof d.tip_hash!=='string')return;
+    tipHeight=d.tip_height;tipHash=d.tip_hash;jump();
+  }).catch(function(){});
 }
 document.getElementById('jump-go').addEventListener('click',jumpHeight);
 document.getElementById('jump-height').addEventListener('keydown',function(e){if(e.key==='Enter')jumpHeight();});

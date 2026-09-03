@@ -28,17 +28,22 @@ static uint16_t FreePort() {
     return port;
 }
 
-static int Request(uint16_t port, const std::string& path,
-                   const std::string& headers = {}) {
+struct TestResponse {
+    int status = 0;
+    std::string body;
+};
+
+static TestResponse RequestWithBody(uint16_t port, const std::string& path,
+                                    const std::string& headers = {}) {
     SocketHandle fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (!veld::compat::IsValidSocket(fd)) return 0;
+    if (!veld::compat::IsValidSocket(fd)) return {};
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_port = htons(port);
     ::inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
     if (::connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
         VELD_CLOSE_SOCKET(fd);
-        return 0;
+        return {};
     }
     const std::string wire = "GET " + path + " HTTP/1.1\r\n"
         "Host: explorer.test\r\nConnection: close\r\n" + headers + "\r\n";
@@ -46,21 +51,30 @@ static int Request(uint16_t port, const std::string& path,
     while (offset < wire.size()) {
         const int sent = ::send(fd, wire.data() + offset,
             static_cast<int>(wire.size() - offset), 0);
-        if (sent <= 0) { VELD_CLOSE_SOCKET(fd); return 0; }
+        if (sent <= 0) { VELD_CLOSE_SOCKET(fd); return {}; }
         offset += static_cast<size_t>(sent);
     }
     std::string response;
     char buffer[4096];
-    while (response.size() < 64 * 1024) {
+    while (response.size() < 1024 * 1024) {
         const int got = ::recv(fd, buffer, sizeof(buffer), 0);
         if (got <= 0) break;
         response.append(buffer, static_cast<size_t>(got));
     }
     VELD_CLOSE_SOCKET(fd);
     const auto first_space = response.find(' ');
-    if (first_space == std::string::npos || first_space + 4 > response.size()) return 0;
-    try { return std::stoi(response.substr(first_space + 1, 3)); }
-    catch (...) { return 0; }
+    if (first_space == std::string::npos || first_space + 4 > response.size()) return {};
+    TestResponse result;
+    try { result.status = std::stoi(response.substr(first_space + 1, 3)); }
+    catch (...) { return {}; }
+    const auto separator = response.find("\r\n\r\n");
+    if (separator != std::string::npos) result.body = response.substr(separator + 4);
+    return result;
+}
+
+static int Request(uint16_t port, const std::string& path,
+                   const std::string& headers = {}) {
+    return RequestWithBody(port, path, headers).status;
 }
 
 static std::string ProxyHeaders(const std::string& client,
@@ -103,6 +117,9 @@ int main() {
 
     veld::Blockchain chain;
     veld::Mempool mempool;
+    check(chain.AddBlockDirect(
+              veld::CreateGenesisBlock(), true, true, false,
+              veld::mining::PowAdmissionContext::Internal()).IsAccepted());
     const uint16_t port = FreePort();
     check(port != 0);
     veld::explorer::BlockExplorer explorer(chain, mempool, port);
@@ -110,6 +127,23 @@ int main() {
     check(explorer.ProxyConfigurationError().empty());
     check(explorer.Start());
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    const auto page_headers = ProxyHeaders("198.51.100.40", token);
+    const auto block_page = RequestWithBody(
+        port, "/api/v1/blocks/latest/25", page_headers);
+    check(block_page.status == 200);
+    check(block_page.body.find("\"tip_height\":0") != std::string::npos);
+    check(block_page.body.find("\"start\":0,\"end\":0") != std::string::npos);
+    check(block_page.body.find("\"blocks\":[{\"height\":0") != std::string::npos);
+    check(Request(port, "/api/v1/blocks/0/0", page_headers) == 400);
+    check(Request(port, "/api/v1/blocks/0/51", page_headers) == 400);
+    check(Request(port, "/api/v1/blocks/0x/25", page_headers) == 400);
+    check(Request(port, "/api/v1/blocks/1/25", page_headers) == 409);
+    const auto blocks_html = RequestWithBody(port, "/blocks", page_headers);
+    check(blocks_html.status == 200);
+    check(blocks_html.body.find("/api/v1/blocks/") != std::string::npos);
+    check(blocks_html.body.find("Promise.all(ps)") == std::string::npos);
+    check(blocks_html.body.find("if(!r.ok)") != std::string::npos);
 
     check(Request(port, "/notfound", "X-Forwarded-For: 198.51.100.9\r\n") == 403);
     check(Request(port, "/notfound", "X-Real-IP: 198.51.100.9\r\n") == 403);

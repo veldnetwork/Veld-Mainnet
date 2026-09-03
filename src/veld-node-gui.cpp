@@ -1376,9 +1376,11 @@ bool VerifySignedPackage(const std::filesystem::path& module,
     }
 
     std::unordered_set<std::string> seen;
+    // The current executable is added below.  Do not require a byte-identical
+    // second GUI executable in bin/: one signed launcher plus the node and
+    // wallet helpers is the complete runtime layout.
     std::unordered_set<std::string> required{
-        "bin/veld-node.exe", "bin/veld-node-gui.exe",
-        "bin/veld-wallet.exe", "veld node.exe"};
+        "bin/veld-node.exe", "bin/veld-wallet.exe"};
     const std::string current_relative = launched_from_bin
         ? "bin/" + module.filename().string() : module.filename().string();
     required.insert(LowerAscii(current_relative));
@@ -1885,11 +1887,14 @@ public:
         std::filesystem::create_directories(state_dir_, state_error);
         (void)LoadPortalTrust(state_dir_ / L"remote-trust.dat", remote_trust_);
         LoadSettings();
-        // Veld 3.0.0 public mainnet has one synchronization policy: ordinary
-        // full validation.  A prior local receipt may accelerate an exact
-        // restart inside the node, but it never enables snapshot import.
-        full_ibd_choice_ = true;
-        sync_choice_explicit_ = true;
+        // Prefer authenticated snapshot bootstrap on a new installation. The
+        // node itself keeps every service quarantined until an independent
+        // genesis IBD matches the imported tip and complete state digest.
+        // Keep an explicit choice already loaded from local settings.
+        if (!sync_choice_explicit_) {
+            full_ibd_choice_ = false;
+            sync_choice_explicit_ = true;
+        }
     }
 
     ~NodeGuiApp() {
@@ -1940,7 +1945,8 @@ public:
         RECT desired{0, 0, 1440, 900};
         AdjustWindowRectEx(&desired, WS_OVERLAPPEDWINDOW, FALSE, 0);
         hwnd_ = CreateWindowExW(
-            0, wc.lpszClassName, L"Veld Node", WS_OVERLAPPEDWINDOW,
+            0, wc.lpszClassName, L"Veld Node",
+            WS_OVERLAPPEDWINDOW | WS_VSCROLL,
             window_x_, window_y_, window_width_ > 0 ? window_width_ :
                 desired.right - desired.left,
             window_height_ > 0 ? window_height_ : desired.bottom - desired.top,
@@ -1963,6 +1969,7 @@ private:
     HWND hwnd_{nullptr};
     UINT dpi_{96};
     Page page_{Page::Overview};
+    std::array<int, 8> page_scroll_offsets_{};
     std::filesystem::path node_path_;
     std::filesystem::path wallet_path_;
     std::filesystem::path data_dir_;
@@ -2082,6 +2089,54 @@ private:
         return MulDiv(value, static_cast<int>(dpi_), 96);
     }
 
+    size_t PageIndex() const {
+        return static_cast<size_t>(page_);
+    }
+
+    int PageContentHeight(const RECT& client) const {
+        const int minimum = page_ == Page::Settings ? S(930) : S(900);
+        return std::max(static_cast<int>(client.bottom), minimum);
+    }
+
+    int MaxPageScroll(const RECT& client) const {
+        return std::max(0, PageContentHeight(client) -
+                           static_cast<int>(client.bottom));
+    }
+
+    int CurrentPageScroll(const RECT& client) {
+        int& offset = page_scroll_offsets_[PageIndex()];
+        offset = std::clamp(offset, 0, MaxPageScroll(client));
+        return offset;
+    }
+
+    POINT ContentPoint(POINT point) {
+        RECT client{};
+        GetClientRect(hwnd_, &client);
+        if (point.x >= S(252)) point.y += CurrentPageScroll(client);
+        return point;
+    }
+
+    void SetPageScroll(int requested) {
+        RECT client{};
+        GetClientRect(hwnd_, &client);
+        page_scroll_offsets_[PageIndex()] =
+            std::clamp(requested, 0, MaxPageScroll(client));
+        InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+
+    void UpdatePageScrollBar(const RECT& client) {
+        const int offset = CurrentPageScroll(client);
+        SCROLLINFO info{};
+        info.cbSize = sizeof(info);
+        info.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+        info.nMin = 0;
+        info.nMax = PageContentHeight(client) - 1;
+        info.nPage = static_cast<UINT>(std::max<LONG>(1, client.bottom));
+        info.nPos = offset;
+        SetScrollInfo(hwnd_, SB_VERT, &info, TRUE);
+        ShowScrollBar(hwnd_, SB_VERT, MaxPageScroll(client) > 0);
+    }
+
     size_t NetworkHoverTarget(POINT point) const {
         for (size_t i = 0; i < network_peer_rects_.size(); ++i) {
             if (PtInRect(&network_peer_rects_[i], point)) return i + 1;
@@ -2112,15 +2167,17 @@ private:
         return RECT{left, top, left + width, top + height};
     }
 
-    bool IsInteractivePoint(POINT point) const {
-        const RECT* persistent_controls[] = {
+    bool IsInteractivePoint(POINT point) {
+        const RECT* sidebar_controls[] = {
             &overview_nav_, &blockchain_nav_, &mining_nav_, &workers_nav_,
             &explorer_nav_, &network_nav_, &logs_nav_,
-            &settings_nav_, &action_button_, &follow_x_link_
+            &settings_nav_, &follow_x_link_
         };
-        for (const RECT* control : persistent_controls) {
+        for (const RECT* control : sidebar_controls) {
             if (control && PtInRect(control, point)) return true;
         }
+        point = ContentPoint(point);
+        if (PtInRect(&action_button_, point)) return true;
         auto inside_any = [&](std::initializer_list<const RECT*> controls) {
             for (const RECT* control : controls)
                 if (control && PtInRect(control, point)) return true;
@@ -2291,7 +2348,7 @@ private:
             case WM_GETMINMAXINFO: {
                 auto* info = reinterpret_cast<MINMAXINFO*>(lp);
                 info->ptMinTrackSize.x = S(1050);
-                info->ptMinTrackSize.y = S(900);
+                info->ptMinTrackSize.y = S(640);
                 return 0;
             }
             case WM_DPICHANGED: {
@@ -2308,6 +2365,42 @@ private:
             case WM_LBUTTONUP:
                 OnClick(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
                 return 0;
+            case WM_MOUSEWHEEL: {
+                POINT point{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+                ScreenToClient(hwnd_, &point);
+                if (point.x >= S(252)) {
+                    RECT client{};
+                    GetClientRect(hwnd_, &client);
+                    const int steps = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
+                    SetPageScroll(CurrentPageScroll(client) - steps * S(64));
+                }
+                return 0;
+            }
+            case WM_VSCROLL: {
+                RECT client{};
+                GetClientRect(hwnd_, &client);
+                int requested = CurrentPageScroll(client);
+                switch (LOWORD(wp)) {
+                    case SB_LINEUP: requested -= S(48); break;
+                    case SB_LINEDOWN: requested += S(48); break;
+                    case SB_PAGEUP: requested -= std::max(1L, client.bottom); break;
+                    case SB_PAGEDOWN: requested += std::max(1L, client.bottom); break;
+                    case SB_THUMBPOSITION:
+                    case SB_THUMBTRACK: {
+                        SCROLLINFO info{};
+                        info.cbSize = sizeof(info);
+                        info.fMask = SIF_TRACKPOS;
+                        if (GetScrollInfo(hwnd_, SB_VERT, &info))
+                            requested = info.nTrackPos;
+                        break;
+                    }
+                    case SB_TOP: requested = 0; break;
+                    case SB_BOTTOM: requested = MaxPageScroll(client); break;
+                    default: return 0;
+                }
+                SetPageScroll(requested);
+                return 0;
+            }
             case WM_MOUSEMOVE:
             {
                 const POINT next_hover{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
@@ -2322,13 +2415,15 @@ private:
                     next_hover.y != hover_point_.y) {
                     const POINT prior_hover = hover_point_;
                     const size_t prior_network_target =
-                        NetworkHoverTarget(prior_hover);
+                        NetworkHoverTarget(ContentPoint(prior_hover));
                     const size_t next_network_target =
-                        NetworkHoverTarget(next_hover);
+                        NetworkHoverTarget(ContentPoint(next_hover));
                     hover_point_ = next_hover;
                     if (page_ == Page::Network &&
-                        (PtInRect(&network_graph_rect_, prior_hover) ||
-                         PtInRect(&network_graph_rect_, next_hover))) {
+                        (PtInRect(&network_graph_rect_,
+                                  ContentPoint(prior_hover)) ||
+                         PtInRect(&network_graph_rect_,
+                                  ContentPoint(next_hover)))) {
                         if (prior_network_target != next_network_target)
                             InvalidateRect(hwnd_, &network_graph_rect_, FALSE);
                     } else {
@@ -2375,6 +2470,20 @@ private:
                          LOWORD(lp) == WM_CONTEXTMENU) ShowTrayMenu();
                 return 0;
             case WM_KEYDOWN:
+                if (wp == VK_UP || wp == VK_DOWN || wp == VK_PRIOR ||
+                    wp == VK_NEXT || wp == VK_HOME || wp == VK_END) {
+                    RECT client{};
+                    GetClientRect(hwnd_, &client);
+                    int requested = CurrentPageScroll(client);
+                    if (wp == VK_UP) requested -= S(48);
+                    else if (wp == VK_DOWN) requested += S(48);
+                    else if (wp == VK_PRIOR) requested -= std::max(1L, client.bottom);
+                    else if (wp == VK_NEXT) requested += std::max(1L, client.bottom);
+                    else if (wp == VK_HOME) requested = 0;
+                    else requested = MaxPageScroll(client);
+                    SetPageScroll(requested);
+                    return 0;
+                }
                 if (wp == '1') page_ = Page::Overview;
                 if (wp == '2') page_ = Page::Blockchain;
                 if (wp == '3') page_ = Page::Mining;
@@ -2456,8 +2565,7 @@ private:
                 full_ibd_choice_ = true;
                 sync_choice_explicit_ = true;
             } else if (line == "sync=snapshot") {
-                // Retire legacy preference without acting on it.
-                full_ibd_choice_ = true;
+                full_ibd_choice_ = false;
                 sync_choice_explicit_ = true;
             }
             else if (line == "reference_display=0")
@@ -2532,7 +2640,8 @@ private:
             output << "reachable=" << (reachable_choice_ ? 1 : 0) << "\n"
                    << "tor=" << (tor_choice_ ? 1 : 0) << "\n"
                    << "mining=" << (mining_enabled_ ? 1 : 0) << "\n"
-                   << "sync=full\n"
+                   << "sync=" << (full_ibd_choice_ ? "full" : "snapshot")
+                   << "\n"
                    << "reference_display="
                    << (reference_display_enabled_.load() ? 1 : 0) << "\n"
                    << "remote_monitoring="
@@ -2678,6 +2787,11 @@ private:
         HDC target = BeginPaint(hwnd_, &ps);
         RECT client{};
         GetClientRect(hwnd_, &client);
+        UpdatePageScrollBar(client);
+        GetClientRect(hwnd_, &client);
+        const int page_scroll = CurrentPageScroll(client);
+        RECT page_client = client;
+        page_client.bottom = PageContentHeight(client);
         HDC dc = CreateCompatibleDC(target);
         HBITMAP bitmap = CreateCompatibleBitmap(
             target, client.right - client.left, client.bottom - client.top);
@@ -2717,16 +2831,22 @@ private:
         network_topology_rects_.clear();
         network_topology_indices_.clear();
         DrawSidebar(dc, client, live);
+        const POINT raw_hover = hover_point_;
+        hover_point_ = ContentPoint(raw_hover);
+        const int saved_dc = SaveDC(dc);
+        SetViewportOrgEx(dc, 0, -page_scroll, nullptr);
         switch (page_) {
-            case Page::Overview: DrawOverview(dc, client, live); break;
-            case Page::Blockchain: DrawBlockchain(dc, client, live); break;
-            case Page::Mining: DrawMining(dc, client, live); break;
-            case Page::Workers: DrawWorkers(dc, client, live); break;
-            case Page::Explorer: DrawExplorer(dc, client, live); break;
-            case Page::Network: DrawNetwork(dc, client, live); break;
-            case Page::Logs: DrawLogs(dc, client, live); break;
-            case Page::Settings: DrawSettings(dc, client, live); break;
+            case Page::Overview: DrawOverview(dc, page_client, live); break;
+            case Page::Blockchain: DrawBlockchain(dc, page_client, live); break;
+            case Page::Mining: DrawMining(dc, page_client, live); break;
+            case Page::Workers: DrawWorkers(dc, page_client, live); break;
+            case Page::Explorer: DrawExplorer(dc, page_client, live); break;
+            case Page::Network: DrawNetwork(dc, page_client, live); break;
+            case Page::Logs: DrawLogs(dc, page_client, live); break;
+            case Page::Settings: DrawSettings(dc, page_client, live); break;
         }
+        RestoreDC(dc, saved_dc);
+        hover_point_ = raw_hover;
 
         BitBlt(target, 0, 0, client.right, client.bottom, dc, 0, 0, SRCCOPY);
         SelectObject(dc, old_bitmap);
@@ -3314,16 +3434,18 @@ private:
         const int choice_top = cards_top + S(132);
         const int choice_w = (total_w - gap) / 2;
         full_ibd_card_ = {left, choice_top, left + choice_w, choice_top + S(120)};
-        snapshot_card_ = {};
+        snapshot_card_ = {left + choice_w + gap, choice_top, right,
+                          choice_top + S(120)};
         DrawSyncChoice(dc, full_ibd_card_, L"Full IBD",
                        live.process_running
                             ? L"Keep snapshot imports disabled on the next start."
                             : L"Sync from genesis on first use; reuse verified local history later.",
                        full_ibd_choice_, true);
-        DrawSyncChoice(dc, {left + choice_w + gap, choice_top, right,
-                            choice_top + S(120)}, L"Snapshot unavailable",
-                       L"Veld 3.0.0 public mainnet does not support snapshot bootstrap.",
-                       false, false);
+        DrawSyncChoice(dc, snapshot_card_, L"Signed snapshot",
+                       live.process_running
+                            ? L"Use on the next start; services stay locked while genesis validation catches up."
+                            : L"Start quickly from an official signed snapshot and validate it independently in the background.",
+                       !full_ibd_choice_, true);
 
         RECT verify{left, choice_top + S(140), right, client.bottom - S(30)};
         FillRound(dc, verify, C_PANEL, C_BORDER);
@@ -3334,7 +3456,7 @@ private:
         RECT verify_text{verify.left + S(22), verify.top + S(46),
                          verify.right - S(22), verify.bottom - S(15)};
         const std::wstring detail =
-            L"Full IBD validates every block from genesis on first use. Later starts authenticate the exact local receipt and verify newer proof of work while rebuilding consensus state. Snapshot imports are unavailable.";
+            L"Signed snapshots are replayed before use and remain quarantined from RPC, inbound peers, mining, and wallet access until a separate genesis IBD matches the exact tip and state digest. Full IBD remains available.";
         DrawTextAt(dc, detail, verify_text, font_small_, C_SUBTEXT,
                    DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
     }
@@ -5115,8 +5237,10 @@ private:
             << L"Peers: " << live.local.peers << L"\r\n"
             << L"Mempool: " << live.local.mempool_size << L"\r\n"
             << L"Local chain data: " << FormatBytes(live.chain_bytes) << L"\r\n"
-            << L"Sync mode: full IBD\r\n"
-            << L"Snapshot bootstrap: disabled in public mainnet\r\n"
+            << L"Sync mode: "
+            << (full_ibd_choice_ ? L"full IBD" : L"signed snapshot with independent genesis validation")
+            << L"\r\n"
+            << L"Snapshot bootstrap: available\r\n"
             << L"Transport: " << (tor_choice_ ? L"Tor only" :
                 (reachable_choice_ ? L"Clearnet reachable" : L"Clearnet outbound"))
             << L"\r\n"
@@ -5450,7 +5574,7 @@ private:
     }
 
     void OnClick(int x, int y) {
-        POINT p{x, y};
+        POINT p = ContentPoint(POINT{x, y});
         if (PtInRect(&overview_nav_, p)) page_ = Page::Overview;
         else if (PtInRect(&blockchain_nav_, p)) page_ = Page::Blockchain;
         else if (PtInRect(&mining_nav_, p)) page_ = Page::Mining;
@@ -5481,6 +5605,11 @@ private:
         }
         else if (page_ == Page::Blockchain && PtInRect(&full_ibd_card_, p)) {
             full_ibd_choice_ = true;
+            sync_choice_explicit_ = true;
+            SaveSettings();
+        } else if (page_ == Page::Blockchain &&
+                   PtInRect(&snapshot_card_, p)) {
+            full_ibd_choice_ = false;
             sync_choice_explicit_ = true;
             SaveSettings();
         } else if (page_ == Page::Logs &&
@@ -6157,7 +6286,7 @@ private:
         }
         ClearSessionPassphrase();
         MessageBoxW(hwnd_,
-            L"A new mining identity was created. It will also endorse automatically when registered as a validator.",
+            L"A new mining identity was created. The same encrypted identity was saved as miner.key and as a portable .veld-keys file in the Veld data folder. The .veld-keys file can be imported into both Veld Wallet and Veld Node using the same passphrase.",
             L"Veld Node", MB_OK | MB_ICONINFORMATION);
     }
 
@@ -6201,125 +6330,13 @@ private:
     }
 
     void OpenTrustedWallet() {
-        if (!std::filesystem::is_regular_file(wallet_path_)) {
-            MessageBoxW(hwnd_,
-                L"The trusted local wallet was not found in this signed Veld package. Reinstall the current package before entering a wallet key.",
-                L"Veld Wallet", MB_OK | MB_ICONERROR);
-            return;
-        }
-        const uint16_t ui_port = veld::CompiledPublicWalletUiPort();
-        const uint16_t rpc_port = veld::CompiledPublicRpcPort();
-        auto wallet_ready = [&]() {
-            return HttpGetJson(L"127.0.0.1", ui_port, L"/manifest.json",
-                               false, 500).ok;
-        };
-        const bool owned_wallet_running = wallet_process_ &&
-            WaitForSingleObject(wallet_process_, 0) == WAIT_TIMEOUT;
-        if (!owned_wallet_running) {
-            if (wallet_process_) CloseHandle(wallet_process_);
-            wallet_process_ = nullptr;
-            if (!wallet_signer_token_.empty()) {
-                SecureZeroMemory(wallet_signer_token_.data(),
-                                 wallet_signer_token_.size());
-                wallet_signer_token_.clear();
-            }
-            HANDLE verified_wallet = OpenVerifiedTrustedFile(
-                wallet_path_, VELD_TRUSTED_WALLET_SHA256);
-            if (verified_wallet == INVALID_HANDLE_VALUE) {
-                MessageBoxW(hwnd_,
-                    L"The local wallet does not match the signer built into this signed Veld Node app. Reinstall the complete current package before entering a wallet key.",
-                    L"Veld Wallet", MB_OK | MB_ICONERROR);
-                return;
-            }
-            wallet_signer_token_ = NewDeviceToken();
-            if (wallet_signer_token_.size() != 43) {
-                CloseHandle(verified_wallet);
-                MessageBoxW(hwnd_,
-                    L"A secure local wallet launch capability could not be created.",
-                    L"Veld Wallet", MB_OK | MB_ICONERROR);
-                return;
-            }
-            std::wstring command = L"\"" + wallet_path_.wstring() +
-                L"\" --wallet --rpcurl http://127.0.0.1:" +
-                std::to_wstring(rpc_port) + L" --uiport " +
-                std::to_wstring(ui_port) + L" --datadir \"" +
-                data_dir_.wstring() + L"\"";
-            std::vector<wchar_t> mutable_command(command.begin(), command.end());
-            mutable_command.push_back(L'\0');
-            auto environment =
-                ChildEnvironmentWithSignerToken(wallet_signer_token_);
-            if (environment.empty()) {
-                CloseHandle(verified_wallet);
-                SecureZeroMemory(wallet_signer_token_.data(),
-                                 wallet_signer_token_.size());
-                wallet_signer_token_.clear();
-                MessageBoxW(hwnd_,
-                    L"A secure local wallet environment could not be created.",
-                    L"Veld Wallet", MB_OK | MB_ICONERROR);
-                return;
-            }
-            STARTUPINFOW si{};
-            si.cb = sizeof(si);
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-            PROCESS_INFORMATION pi{};
-            const BOOL created = CreateProcessW(
-                wallet_path_.c_str(), mutable_command.data(), nullptr, nullptr,
-                FALSE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
-                environment.data(),
-                wallet_path_.parent_path().c_str(), &si, &pi);
-            SecureZeroMemory(environment.data(),
-                             environment.size() * sizeof(wchar_t));
-            if (!created) {
-                CloseHandle(verified_wallet);
-                SecureZeroMemory(wallet_signer_token_.data(),
-                                 wallet_signer_token_.size());
-                wallet_signer_token_.clear();
-                MessageBoxW(hwnd_,
-                    L"The trusted local wallet could not be started.",
-                    L"Veld Wallet", MB_OK | MB_ICONERROR);
-                return;
-            }
-            CloseHandle(pi.hThread);
-            wallet_process_ = pi.hProcess;
-            for (int attempt = 0; attempt < 50; ++attempt) {
-                if (WaitForSingleObject(wallet_process_, 0) != WAIT_TIMEOUT)
-                    break;
-                if (wallet_ready()) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-            CloseHandle(verified_wallet);
-        }
-        if (!wallet_process_ ||
-            WaitForSingleObject(wallet_process_, 0) != WAIT_TIMEOUT ||
-            !wallet_ready()) {
-            if (wallet_process_ &&
-                WaitForSingleObject(wallet_process_, 0) == WAIT_TIMEOUT) {
-                TerminateProcess(wallet_process_, ERROR_CANCELLED);
-                WaitForSingleObject(wallet_process_, 2000);
-            }
-            if (wallet_process_) CloseHandle(wallet_process_);
-            wallet_process_ = nullptr;
-            if (!wallet_signer_token_.empty()) {
-                SecureZeroMemory(wallet_signer_token_.data(),
-                                 wallet_signer_token_.size());
-                wallet_signer_token_.clear();
-            }
-            MessageBoxW(hwnd_,
-                L"The signed local wallet did not claim its loopback listener. Another process may be using the wallet port, so no wallet page was opened.",
-                L"Veld Wallet", MB_OK | MB_ICONWARNING);
-            return;
-        }
-        std::wstring url = L"http://127.0.0.1:" +
-            std::to_wstring(ui_port) + L"/";
-        if (!wallet_signer_token_.empty())
-            url += L"?signer=" + Utf8ToWide(wallet_signer_token_);
         const auto opened = reinterpret_cast<INT_PTR>(ShellExecuteW(
-            hwnd_, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
-        if (opened > 32 && !wallet_signer_token_.empty()) {
-            SecureZeroMemory(wallet_signer_token_.data(),
-                             wallet_signer_token_.size());
-            wallet_signer_token_.clear();
+            hwnd_, L"open", L"https://wallet.veld.network/",
+            nullptr, nullptr, SW_SHOWNORMAL));
+        if (opened <= 32) {
+            MessageBoxW(hwnd_,
+                L"The Veld Wallet website could not be opened. Visit https://wallet.veld.network/ in your browser.",
+                L"Veld Wallet", MB_OK | MB_ICONERROR);
         }
     }
 
@@ -6388,7 +6405,8 @@ private:
             command += L" --threads " + std::to_wstring(mining_thread_count_);
         if (tor_choice_) command += L" --tor-only";
         else if (reachable_choice_) command += L" --reachable";
-        command += L" --full-ibd";
+        command += full_ibd_choice_
+            ? L" --full-ibd" : L" --snapshot-bootstrap";
         std::vector<wchar_t> mutable_command(command.begin(), command.end());
         mutable_command.push_back(L'\0');
 
@@ -6663,10 +6681,8 @@ private:
         } else if (command.action == "sync.mode") {
             if (live.process_running)
                 reject("Stop the node before changing synchronization mode");
-            else if (command.mode != "full")
-                reject("Snapshot recovery is unavailable in Veld 3.0.0 public mainnet");
             else {
-                full_ibd_choice_ = true;
+                full_ibd_choice_ = command.mode == "full";
                 sync_choice_explicit_ = true;
                 SaveSettings();
                 complete("Synchronization preference saved");

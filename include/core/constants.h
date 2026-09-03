@@ -33,9 +33,12 @@
 // failure rather than a runtime configuration choice.
 #if defined(VELD_PUBLIC_RELEASE) && \
     (defined(VELD_ENABLE_DIAGNOSTIC_TX_HISTORY) || \
-     defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP) || \
      defined(VELD_ENABLE_UPNP))
-#error "public releases cannot contain diagnostic history, snapshot bootstrap, or UPnP"
+#error "public releases cannot contain diagnostic history or UPnP"
+#endif
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP) && \
+    !defined(VELD_USE_LEVELDB)
+#error "snapshot bootstrap requires the canonical LevelDB storage backend"
 #endif
 
 // `VELD_REGTEST_FIXED_DIFF` is also the externally reported executable
@@ -518,6 +521,13 @@ static_assert(genesis_iso::parse(GENESIS_TIMESTAMP_STR) != 0,
 constexpr uint64_t    GENESIS_NONCE          = 187948ULL;
 constexpr const char* GENESIS_HASH =
     "880a0057852ffcfa35119a83e556802848ed5cb469b260fb9fbd20e8b97ae77b";
+// The first launch-chain block is a second, signed-snapshot identity boundary.
+// It prevents a snapshot from another history which reused the compiled
+// genesis from being accepted. This is the node's canonical internal hash
+// rendering, not a DNS, website, or operator-supplied value.
+constexpr uint64_t SNAPSHOT_LAUNCH_ANCHOR_HEIGHT = 1;
+constexpr const char* SNAPSHOT_LAUNCH_ANCHOR_HASH =
+    "c595cc31fe47999186a402ee7c6fb8bdf97415e4e9d9e643733a828e2ce573d1";
 constexpr uint64_t    GENESIS_TIME           = 1785599160;
 static_assert(sizeof(std::time_t) >= 8,
               "Veld requires 64-bit time_t");

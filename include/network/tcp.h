@@ -5736,6 +5736,8 @@ private:
     std::unordered_map<std::string, size_t> orphan_count_by_ip_;
     std::unordered_map<std::string, size_t> orphan_bytes_by_ip_;
     static constexpr size_t   MAX_ORPHAN_PER_PEER       = 32;
+    static_assert(IBD_GETBLOCKS_BATCH_BLOCKS <= MAX_ORPHAN_PER_PEER,
+                  "IBD responses must fit the per-peer orphan frontier");
     static constexpr size_t   MAX_ORPHAN_BYTES_PER_PEER = 16 * 1024 * 1024;
     static constexpr uint64_t ORPHAN_TTL_SECONDS        = 600;
 
@@ -6157,6 +6159,14 @@ private:
     StepResult PeerProtocolStep(PeerState& ps, Connection& conn,
                                 PeerManager& pm, const P2PMessage& msg,
                                 const std::string& key, bool ) {
+        if (background_sync_mode_ &&
+            !IsBackgroundValidationInboundCommand(msg.command)) {
+            // Deliberately consume instead of falling through to the legacy
+            // dispatcher. The connection remains useful for block download,
+            // but an unvalidated snapshot can neither serve nor mutate any
+            // unrelated protocol surface.
+            return StepResult::Handled;
+        }
         if (msg.command == MessageType::PING) {
             uint64_t nonce = 0;
             if (msg.payload.size() >= 8)
@@ -6494,8 +6504,10 @@ private:
 
             if (just_became_ready) {
                 if (conn.TrySend(BuildChainLocatorGetBlocks())) {
-                    ps.last_getblocks = std::chrono::steady_clock::now();
-                    ps.ibd_blocks_since_getblocks = 0;
+                    const auto now = std::chrono::steady_clock::now();
+                    ps.last_getblocks = now;
+                    ps.last_ibd_progress = now;
+                    ps.ibd_observed_height = chain_.Height();
                 }
                 conn.TrySend(P2PMessage(magic_, MessageType::MEMPOOL));
             }
@@ -6539,14 +6551,14 @@ private:
             //
             // BIT-IDENTICAL to inline. Notable preservation points:
             //   - This handler MUTATES PeerState: version_acked,
-            //     handshake_done, last_getblocks, ibd_blocks_since_
-            //     getblocks. All access through ps.<field>.
+            //     handshake_done, last_getblocks and IBD progress state.
+            //     All access is through ps.<field>.
             //   - handshake_done = (version_sent && version_acked &&
             //     their_version) — three-way AND. version_sent is set
             //     in HandlePeer's prologue (Send VERSION on connect);
             //     their_version is set in the VERSION handler.
             //   - On handshake_done: send GETBLOCKS (chain locator),
-            //     reset last_getblocks timer + IBD batch counter, send
+            //     reset the last-GETBLOCKS and IBD-progress timers, send
             //     MEMPOOL request, and proactively
             //     push blocks if we're past the peer's start_height.
             //   - Proactive push gated on ibd_complete_flag_ — a
@@ -6582,8 +6594,10 @@ private:
 
             if (just_became_ready) {
                 if (conn.TrySend(BuildChainLocatorGetBlocks())) {
-                    ps.last_getblocks = std::chrono::steady_clock::now();
-                    ps.ibd_blocks_since_getblocks = 0;
+                    const auto now = std::chrono::steady_clock::now();
+                    ps.last_getblocks = now;
+                    ps.last_ibd_progress = now;
+                    ps.ibd_observed_height = chain_.Height();
                 }
                 P2PMessage mempool_req(magic_, MessageType::MEMPOOL);
                 conn.TrySend(mempool_req);
@@ -7789,8 +7803,6 @@ private:
             //   6) Pre-rejected-cache short-circuit: silent drop.
             //
             // PeerState mutations (via ps.<field>):
-            //   - ps.last_block_accepted = now() on accept.
-            //   - ps.ibd_blocks_since_getblocks++ on accept.
             //   - ps.last_getblocks = now() after post-IBD GETBLOCKS.
             //
             // External state mutations:
@@ -7911,12 +7923,6 @@ private:
                         // Queue saturation is flow control, not peer misconduct.
                         // Drop the message without assigning ban weight.
                         RecordViolation(conn.RemoteAddr(), 0, "block_ingest_overflow");
-                    } else if (enq == IngestEnqueueResult::Queued) {
-                        // This timer/cadence state tracks successfully queued
-                        // block ingress, not trust evidence. The worker alone
-                        // publishes peer height/tip after consensus acceptance.
-                        ps.last_block_accepted = std::chrono::steady_clock::now();
-                        ps.ibd_blocks_since_getblocks++;
                     }
                     // Duplicate means this exact block hash is already pending
                     // consensus validation. It changes neither accounting nor
@@ -7989,8 +7995,6 @@ private:
                     );
                 }
                 ProcessOrphanChain(new_block.GetHash(), pm, conn, key);
-                ps.last_block_accepted = std::chrono::steady_clock::now();
-                ps.ibd_blocks_since_getblocks++;
                 if (ibd_complete_flag_.load()) {
                     conn.Send(BuildChainLocatorGetBlocks());
                     ps.last_getblocks = std::chrono::steady_clock::now();
@@ -8504,22 +8508,16 @@ private:
         if (ps.handshake_done) {
             bool in_ibd = !ibd_complete_flag_.load();
             auto ms_since_gb = std::chrono::duration_cast<std::chrono::milliseconds>(now - ps.last_getblocks).count();
-            auto ms_since_blk = std::chrono::duration_cast<std::chrono::milliseconds>(now - ps.last_block_accepted).count();
             bool should_request = false;
             if (in_ibd) {
-                if (ps.ibd_blocks_since_getblocks >= MAX_GETBLOCKS_RESPONSE)
-                    should_request = true;
-                else if (ps.ibd_blocks_since_getblocks > 0 && ms_since_blk >= 500)
-                    should_request = true;
-                else if (ps.ibd_blocks_since_getblocks == 0 && ms_since_gb >= 5000)
-                    should_request = true;
+                should_request = IbdGetBlocksRetryDue(
+                    ps, chain_.Height(), now);
             } else {
                 if (ms_since_gb >= 5000) should_request = true;
             }
             if (should_request) {
                 if (conn.TrySend(BuildChainLocatorGetBlocks())) {
                     ps.last_getblocks = now;
-                    ps.ibd_blocks_since_getblocks = 0;
                 }
             }
         }
@@ -11021,14 +11019,12 @@ private:
         uint64_t& their_start_height    = ps.their_start_height;
         auto& last_ping                 = ps.last_ping;
         auto& last_getblocks            = ps.last_getblocks;
-        auto& last_block_accepted       = ps.last_block_accepted;
         auto& conn_started              = ps.conn_started;
         auto& last_mempool_req          = ps.last_mempool_req;
-        uint64_t& ibd_blocks_since_getblocks = ps.ibd_blocks_since_getblocks;
         (void)version_sent; (void)version_acked; (void)their_version;
         (void)handshake_done; (void)getaddr_sent; (void)their_start_height;
-        (void)last_ping; (void)last_getblocks; (void)last_block_accepted;
-        (void)conn_started; (void)last_mempool_req; (void)ibd_blocks_since_getblocks;
+        (void)last_ping; (void)last_getblocks;
+        (void)conn_started; (void)last_mempool_req;
         while (conn->IsConnected() && running_) {
             if (RunPeerTimers(ps, *conn, pm)) break;
             auto msg_opt = conn->RecvMessage(magic_);
@@ -11079,7 +11075,8 @@ private:
         FinalizePeerConnection_(key, conn);
     }
 
-    static constexpr size_t MAX_GETBLOCKS_RESPONSE = 2000;
+    static constexpr size_t MAX_GETBLOCKS_RESPONSE =
+        IBD_GETBLOCKS_BATCH_BLOCKS;
     static constexpr size_t MAX_GETBLOCKS_RESPONSE_BYTES = 64 * 1024 * 1024;
 };
 

@@ -261,6 +261,112 @@ inline std::string TrustedSystemCurlExecutable() {
 #endif
 }
 
+// Resolve the operating-system archive reader without consulting PATH.  The
+// snapshot bootstrap uses this only after a signed archive digest and a
+// bounded member listing have been verified.  Refuse reparse/symlinked tools
+// and writable non-system locations.
+inline std::string TrustedSystemTarExecutable() {
+#ifdef _WIN32
+    std::vector<char> windows_buffer(32768);
+    std::vector<char> system_buffer(32768);
+    const UINT windows_length = ::GetWindowsDirectoryA(
+        windows_buffer.data(), static_cast<UINT>(windows_buffer.size()));
+    const UINT system_length = ::GetSystemDirectoryA(
+        system_buffer.data(), static_cast<UINT>(system_buffer.size()));
+    if (windows_length == 0 || windows_length >= windows_buffer.size() ||
+        system_length == 0 || system_length >= system_buffer.size()) return {};
+
+    auto canonicalize = [](const std::string& path) -> std::string {
+        std::vector<char> buffer(32768);
+        const DWORD length = ::GetFullPathNameA(
+            path.c_str(), static_cast<DWORD>(buffer.size()), buffer.data(),
+            nullptr);
+        if (length == 0 || length >= buffer.size()) return {};
+        return std::string(buffer.data(), static_cast<size_t>(length));
+    };
+    auto same_path = [](const std::string& left, const std::string& right) {
+        return ::_stricmp(left.c_str(), right.c_str()) == 0;
+    };
+    auto safe_component = [](const std::string& path, bool directory) {
+        const DWORD attributes = ::GetFileAttributesA(path.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES ||
+            (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) return false;
+        return ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) == directory;
+    };
+
+    const std::string windows_directory = canonicalize(std::string(
+        windows_buffer.data(), static_cast<size_t>(windows_length)));
+    const std::string system_directory = canonicalize(std::string(
+        system_buffer.data(), static_cast<size_t>(system_length)));
+    const size_t separator = system_directory.find_last_of("\\/");
+    if (windows_directory.empty() || system_directory.empty() ||
+        separator == std::string::npos ||
+        !same_path(system_directory.substr(0, separator), windows_directory) ||
+        !safe_component(windows_directory, true) ||
+        !safe_component(system_directory, true)) return {};
+
+    const std::string candidate = canonicalize(system_directory + "\\tar.exe");
+    if (candidate.empty() || !safe_component(candidate, false)) return {};
+    HANDLE file = ::CreateFileA(
+        candidate.c_str(), FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+        nullptr);
+    if (file == INVALID_HANDLE_VALUE) return {};
+    BY_HANDLE_FILE_INFORMATION information{};
+    LARGE_INTEGER size{};
+    const bool regular_nonempty =
+        ::GetFileType(file) == FILE_TYPE_DISK &&
+        ::GetFileInformationByHandle(file, &information) != FALSE &&
+        (information.dwFileAttributes &
+         (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) == 0 &&
+        ::GetFileSizeEx(file, &size) != FALSE && size.QuadPart > 0;
+    std::vector<char> final_buffer(32768);
+    const DWORD final_length = regular_nonempty
+        ? ::GetFinalPathNameByHandleA(
+              file, final_buffer.data(), static_cast<DWORD>(final_buffer.size()),
+              FILE_NAME_NORMALIZED | VOLUME_NAME_DOS)
+        : 0;
+    ::CloseHandle(file);
+    if (final_length == 0 || final_length >= final_buffer.size()) return {};
+    std::string final_path(final_buffer.data(), final_length);
+    if (final_path.rfind("\\\\?\\", 0) == 0) final_path.erase(0, 4);
+    final_path = canonicalize(final_path);
+    if (!same_path(final_path, candidate)) return {};
+    return candidate;
+#else
+    static constexpr const char* candidates[] = {"/usr/bin/tar", "/bin/tar"};
+    auto secure_directory = [](const std::string& path) {
+        struct stat status{};
+        return ::lstat(path.c_str(), &status) == 0 &&
+               S_ISDIR(status.st_mode) && status.st_uid == 0 &&
+               (status.st_mode & (S_IWGRP | S_IWOTH)) == 0;
+    };
+    for (const char* candidate : candidates) {
+        char* resolved = ::realpath(candidate, nullptr);
+        if (!resolved) continue;
+        const std::string canonical(resolved);
+        std::free(resolved);
+        if (canonical != "/usr/bin/tar" && canonical != "/bin/tar") continue;
+        bool parents_ok = secure_directory("/");
+        size_t start = 1;
+        while (parents_ok && start < canonical.size()) {
+            const size_t slash = canonical.find('/', start);
+            if (slash == std::string::npos) break;
+            parents_ok = secure_directory(canonical.substr(0, slash));
+            start = slash + 1;
+        }
+        struct stat status{};
+        if (parents_ok && ::lstat(canonical.c_str(), &status) == 0 &&
+            S_ISREG(status.st_mode) && status.st_uid == 0 && status.st_size > 0 &&
+            (status.st_mode & (S_IWGRP | S_IWOTH)) == 0 &&
+            (status.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0 &&
+            ::access(canonical.c_str(), X_OK) == 0) return canonical;
+    }
+    return {};
+#endif
+}
+
 #ifdef _WIN32
 inline std::string QuoteWindowsArg(const std::string& arg) {
     if (arg.empty()) return "\"\"";

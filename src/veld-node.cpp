@@ -69,6 +69,9 @@
 #endif
 #include "../include/node/node.h"
 #include "../include/node/ibd_policy.h"
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+#include "../include/node/public_snapshot_bootstrap.h"
+#endif
 #include "../include/network/rpc_http.h"
 
 #ifdef _WIN32
@@ -594,10 +597,12 @@ static bool _wiz_is_encrypted(const std::string& file) {
     return encrypted;
 }
 
-static bool _wiz_save_key_encrypted(const std::string& key_file,
-                                     const veld::Secp256k1PrivKey& priv,
-                                     const std::string& passphrase,
-                                     bool testnet = false) {
+static bool _wiz_encrypt_key_record(const veld::Secp256k1PrivKey& priv,
+                                    const std::string& passphrase,
+                                    bool testnet,
+                                    std::vector<uint8_t>& encrypted,
+                                    std::string* address = nullptr) {
+    encrypted.clear();
     auto pub  = veld::DerivePublicKey(priv);
     auto addr = veld::PubKeyToAddress(pub, testnet);
     static constexpr char hex[] = "0123456789abcdef";
@@ -617,8 +622,19 @@ static bool _wiz_save_key_encrypted(const std::string& key_file,
         priv_hex, pub_hex, addr);
     veld::WipeString(priv_hex);
     veld::WipeString(pub_hex);
-    auto encrypted = veld::wallet_crypto::EncryptWallet(plaintext, passphrase);
+    encrypted = veld::wallet_crypto::EncryptWallet(plaintext, passphrase);
     veld::WipeString(plaintext);
+    if (address) *address = std::move(addr);
+    return !encrypted.empty();
+}
+
+static bool _wiz_save_key_encrypted(const std::string& key_file,
+                                     const veld::Secp256k1PrivKey& priv,
+                                     const std::string& passphrase,
+                                     bool testnet = false) {
+    std::vector<uint8_t> encrypted;
+    if (!_wiz_encrypt_key_record(
+            priv, passphrase, testnet, encrypted)) return false;
     std::string error;
     const bool ok = veld::channel::secure_file::AtomicWrite(
         key_file, encrypted, &error, /*require_private_parent=*/true);
@@ -626,6 +642,99 @@ static bool _wiz_save_key_encrypted(const std::string& key_file,
         veld::compat::SecureZero(encrypted.data(), encrypted.size());
     return ok;
 }
+
+#ifndef VELD_PUBLIC_TESTNET
+static bool _wiz_create_portable_key_bundle(
+        const std::string& datadir,
+        const veld::Secp256k1PrivKey& private_key,
+        const std::string& passphrase,
+        bool testnet,
+        std::string& address,
+        std::string& portable_path,
+        std::string& error) {
+    address.clear();
+    portable_path.clear();
+    error.clear();
+
+    std::vector<uint8_t> encrypted;
+    struct EncryptedWiper {
+        std::vector<uint8_t>& value;
+        ~EncryptedWiper() {
+            if (!value.empty())
+                veld::compat::SecureZero(value.data(), value.size());
+        }
+    } wipe_encrypted{encrypted};
+    try {
+        if (!_wiz_encrypt_key_record(
+                private_key, passphrase, testnet, encrypted, &address)) {
+            error = "could not encrypt the mining identity";
+            return false;
+        }
+    } catch (const std::exception& e) {
+        error = std::string("could not encrypt the mining identity: ") + e.what();
+        return false;
+    }
+
+    const std::string operational_path = datadir + "/miner.key";
+    portable_path = datadir + "/veld-wallet-" + address.substr(0, 8)
+        + ".veld-keys";
+    if (std::filesystem::exists(operational_path)) {
+        error = "refusing to replace an existing miner.key";
+        return false;
+    }
+    if (std::filesystem::exists(portable_path)) {
+        error = "refusing to replace an existing portable Veld keyfile";
+        return false;
+    }
+
+    // Publish the portable recovery copy first. If the second write fails, the
+    // encrypted identity remains recoverable and can be imported through the
+    // ordinary node or wallet importer. Both names receive the exact same
+    // versioned ciphertext bytes; no format conversion or re-encryption occurs.
+    if (!veld::channel::secure_file::AtomicWriteNew(
+            portable_path, encrypted, &error,
+            /*require_private_parent=*/true)) {
+        return false;
+    }
+    if (!veld::channel::secure_file::AtomicWriteNew(
+            operational_path, encrypted, &error,
+            /*require_private_parent=*/true)) {
+        error = "portable Veld keyfile was created, but miner.key could not be "
+            "published: " + error;
+        return false;
+    }
+
+    std::vector<uint8_t> operational_bytes;
+    std::vector<uint8_t> portable_bytes;
+    struct ReadbackWiper {
+        std::vector<uint8_t>& first;
+        std::vector<uint8_t>& second;
+        ~ReadbackWiper() {
+            if (!first.empty())
+                veld::compat::SecureZero(first.data(), first.size());
+            if (!second.empty())
+                veld::compat::SecureZero(second.data(), second.size());
+        }
+    } wipe_readback{operational_bytes, portable_bytes};
+    std::string read_error;
+    if (!_wiz_read_private_bytes(
+            operational_path, operational_bytes,
+            WIZ_MAX_OPERATIONAL_SECRET_BYTES, &read_error)
+        || !_wiz_read_private_bytes(
+            portable_path, portable_bytes,
+            WIZ_MAX_OPERATIONAL_SECRET_BYTES, &read_error)
+        || operational_bytes.size() != encrypted.size()
+        || portable_bytes.size() != encrypted.size()
+        || !std::equal(encrypted.begin(), encrypted.end(),
+                       operational_bytes.begin())
+        || !std::equal(encrypted.begin(), encrypted.end(),
+                       portable_bytes.begin())) {
+        error = "mining identity readback did not match its portable keyfile";
+        return false;
+    }
+    return true;
+}
+#endif
 
 static bool _wiz_parse_key_record(std::string_view content,
                                   veld::RealKeyPair& kp,
@@ -1516,6 +1625,12 @@ static void PrintDeploymentInfoJson() {
               << "\"reserve_service_capability_required\":false,"
               << "\"state_digest_version\":7,"
 #endif
+#ifdef VELD_ENABLE_SNAPSHOT_BOOTSTRAP
+              << "\"snapshot_bootstrap_compiled\":true,"
+              << "\"snapshot_validation_mode\":\"quarantined-independent-genesis-ibd\","
+#else
+              << "\"snapshot_bootstrap_compiled\":false,"
+#endif
               << "\"role\":\"" << veld::DEPLOYMENT_ROLE << "\","
               << "\"rpc_port\":" << config.rpc_port << ","
               << "\"wallet_ui_port\":"
@@ -1572,20 +1687,24 @@ int main(int argc, char* argv[]) {
             return 2;
         }
 #ifdef VELD_PUBLIC_MAINNET
-        // Reject the entire retired snapshot CLI namespace, including
-        // assignment spellings and legacy/future aliases such as
-        // --snapshot-url and --snapshot-path. Exact-name checks alone let
-        // those forms fall through and start an ordinary node rather than
-        // explicitly refusing the unsupported trust control.
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+        const bool allowed_snapshot_control =
+            arg == "--snapshot-bootstrap" || arg == "--no-snapshot" ||
+            arg == "--full-ibd" || arg == "--verify-snapshot";
+#else
+        constexpr bool allowed_snapshot_control = false;
+#endif
+        // The public client exposes only a boolean use/opt-out choice and the
+        // pinned signature verifier. It never accepts an operator-controlled
+        // URL, mirror, archive path, trust key, or alternate snapshot profile.
         const bool snapshot_control =
             (arg.rfind("--", 0) == 0 &&
              arg.find("snapshot") != std::string_view::npos) ||
-            arg == "--bootstrap-only" ||
-            arg.rfind("--bootstrap-only=", 0) == 0;
-        if (snapshot_control) {
+             arg == "--bootstrap-only" ||
+             arg.rfind("--bootstrap-only=", 0) == 0;
+        if (snapshot_control && !allowed_snapshot_control) {
             std::cerr << "veld-node: FATAL: " << arg
-                      << " is unavailable: Veld 3.0.0 public mainnet does "
-                         "not support snapshot bootstrap\n";
+                      << " is not an accepted public snapshot control\n";
             return 2;
         }
         if (arg == "--upnp" || arg.rfind("--upnp=", 0) == 0 ||
@@ -1767,9 +1886,16 @@ int main(int argc, char* argv[]) {
     std::string opt_import_miner_key = "";
     bool       opt_create_miner_key = false;
 #ifdef VELD_PUBLIC_MAINNET
-    bool       opt_full_ibd  = true;    // mandatory public-release behavior
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    bool       opt_full_ibd  = false;
+    bool       opt_snapshot_bootstrap = true;
+#else
+    bool       opt_full_ibd  = true;
+    bool       opt_snapshot_bootstrap = false;
+#endif
 #else
     bool       opt_full_ibd  = false;   // explicit non-public snapshot opt-out
+    bool       opt_snapshot_bootstrap = false;
 #endif
     bool       opt_verify_pow = false;  // --verify-pow: background re-verify PoW of the on-disk chain
     bool       opt_reindex_canonical = false;
@@ -1909,14 +2035,25 @@ int main(int argc, char* argv[]) {
         }
         else if (arg == "--bootstrap-only") {
             std::cerr << "veld-node: --bootstrap-only is unavailable: "
-                         "remote snapshot bootstrap was removed from Veld 3.0.0\n";
+                         "snapshot validation continues in the running node\n";
             return 2;
         }
-        else if (arg == "--full-ibd") { opt_full_ibd = true; }
-        else if (arg == "--no-snapshot") {
-            std::cerr << "veld-node: --no-snapshot is obsolete; snapshot "
-                         "bootstrap is not compiled in this release\n";
+        else if (arg == "--snapshot-bootstrap") {
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+            opt_snapshot_bootstrap = true;
+            opt_full_ibd = false;
+#else
+            std::cerr << "veld-node: snapshot bootstrap is not compiled in this build\n";
             return 2;
+#endif
+        }
+        else if (arg == "--full-ibd") {
+            opt_full_ibd = true;
+            opt_snapshot_bootstrap = false;
+        }
+        else if (arg == "--no-snapshot") {
+            opt_full_ibd = true;
+            opt_snapshot_bootstrap = false;
         }
         else if (arg == "--verify-pow") { opt_verify_pow = true; }
         else if (arg == "--reindex-canonical") { opt_reindex_canonical = true; }
@@ -1991,10 +2128,10 @@ int main(int argc, char* argv[]) {
 #ifndef VELD_PUBLIC_TESTNET
 #ifdef VELD_FLEET_NO_MINE
                       << "  --import-miner-key <file>  Validate and install an encrypted validator identity\n"
-                      << "  --create-miner-key  Create a new encrypted validator identity and exit\n"
+                      << "  --create-miner-key  Create encrypted miner.key and portable .veld-keys files, then exit\n"
 #else
                       << "  --import-miner-key <file>  Validate an encrypted .veld-keys file and atomically install it as this datadir's mining/validator identity\n"
-                      << "  --create-miner-key  Create a new encrypted mining/validator identity and exit\n"
+                      << "  --create-miner-key  Create encrypted miner.key and portable .veld-keys files, then exit\n"
 #endif
 #endif
                       << "  --rpcport <port>     RPC port (default: " << MainnetConfig().rpc_port << ")\n"
@@ -2006,7 +2143,9 @@ int main(int argc, char* argv[]) {
                       << "  --txindex            Maintain a txid->height index for O(1) getrawtransaction\n"
                       << "                       (off by default; non-consensus; one-time backfill on enable)\n"
 #ifdef VELD_PUBLIC_MAINNET
-                      << "  --full-ibd           Public-mainnet default. Veld 3.0.0 public mainnet does not support snapshot bootstrap.\n"
+                      << "  --snapshot-bootstrap Use the official signed snapshot when it is newer, then independently validate from genesis in the background (default).\n"
+                      << "  --full-ibd           Refuse snapshot import and perform ordinary peer IBD.\n"
+                      << "  --no-snapshot        Alias for --full-ibd.\n"
 #else
                       << "  --full-ibd           Refuse snapshot bootstrap and perform ordinary peer IBD.\n"
 #endif
@@ -2233,13 +2372,26 @@ int main(int argc, char* argv[]) {
         }
         veld::RealKeyPair created = veld::GenerateKeyPair(
             config.IsTestNetwork());
-        if (!_wiz_save_key_encrypted(destination, created.private_key,
-                                     passphrase, config.IsTestNetwork())) {
-            std::cerr << "veld-node: could not write the protected mining identity\n";
+        struct CreatedPrivateKeyWiper {
+            veld::RealKeyPair& value;
+            ~CreatedPrivateKeyWiper() {
+                veld::compat::SecureZero(
+                    value.private_key.data(), value.private_key.size());
+            }
+        } wipe_created{created};
+        std::string address;
+        std::string portable_path;
+        std::string create_error;
+        if (!_wiz_create_portable_key_bundle(
+                opt_datadir, created.private_key, passphrase,
+                config.IsTestNetwork(), address, portable_path,
+                create_error)) {
+            std::cerr << "veld-node: could not create the protected mining "
+                         "identity bundle: " << create_error << "\n";
             return 1;
         }
         std::cout << "MINER-KEY-CREATE-COMPLETE address="
-                  << created.address << "\n";
+                  << address << " keyfile=" << portable_path << "\n";
         return 0;
     }
 
@@ -2449,6 +2601,87 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "\n";
 
+#if defined(VELD_PUBLIC_MAINNET) && \
+    defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    // Acquire and validate a snapshot before constructing the live node, while
+    // no RPC, P2P, explorer, or mining surface exists. An invalid/unavailable
+    // signed snapshot is an availability miss and falls back to ordinary IBD.
+    if (opt_snapshot_bootstrap && !opt_regtest &&
+        !std::filesystem::exists(
+            std::filesystem::path(opt_datadir) /
+            "db/.snapshot-consensus-replay-required")) {
+        uint64_t local_height = 0;
+        try {
+            const auto db_root = std::filesystem::path(opt_datadir) / "db";
+            const bool any_existing = std::filesystem::exists(db_root / "blocks") ||
+                                      std::filesystem::exists(db_root / "utxo") ||
+                                      std::filesystem::exists(db_root / "index");
+            if (any_existing) {
+                db::VeldDB existing(db_root.string());
+                const auto tip = existing.ReadChainTipExact();
+                if (!tip) throw std::runtime_error(
+                    "existing chain has no exact durable tip");
+                local_height = tip->height;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "  [snapshot] existing chain preflight failed: "
+                      << e.what() << "\n";
+            return 1;
+        }
+
+        snapshot_bootstrap::PreparedPublicSnapshot prepared;
+        std::string snapshot_error;
+        if (snapshot_bootstrap::PreparePublicSnapshot(
+                opt_datadir, local_height, prepared, &snapshot_error)) {
+            snapshot_bootstrap::SnapshotCandidateValidation validation;
+            try {
+                const std::string candidate_root =
+                    (prepared.scratch_root / "extract").string();
+                {
+                    VeldNode candidate(config, candidate_root);
+                    candidate.SetQuietBoot(true);
+                    candidate.SetStakingActivation(STAKING_ACTIVATION_SUPPLY);
+                    candidate.PrepareSnapshotCandidateReplay(
+                        prepared.manifest.height,
+                        prepared.manifest.tip_hash);
+                    candidate.ValidateStoredChainOnly(
+                        prepared.manifest.height,
+                        prepared.manifest.tip_hash,
+                        /*verify_historical_pow=*/false);
+                    const Block anchor = candidate.GetChain().GetBlock(
+                        prepared.manifest.anchor_height);
+                    if (HashToHex(anchor.GetHash()) !=
+                        prepared.manifest.anchor_hash) {
+                        throw std::runtime_error(
+                            "snapshot launch-chain anchor does not match replay");
+                    }
+                    validation.consensus_state_sha256 =
+                        HashToHex(candidate.ConsensusStateDigest());
+                    validation.passed = true;
+                }
+                if (!snapshot_bootstrap::CommitPreparedPublicSnapshot(
+                        opt_datadir, prepared, validation, &snapshot_error)) {
+                    throw std::runtime_error(snapshot_error);
+                }
+                std::cout << "  [snapshot] authenticated snapshot h="
+                          << prepared.manifest.height
+                          << " installed; services remain quarantined while "
+                             "the same chain is independently rebuilt from genesis.\n";
+            } catch (const std::exception& e) {
+                std::error_code cleanup_error;
+                std::filesystem::remove_all(
+                    prepared.scratch_root, cleanup_error);
+                std::cerr << "  [snapshot] candidate rejected: " << e.what()
+                          << "; continuing with ordinary peer IBD.\n";
+            }
+        } else {
+            std::cerr << "  [snapshot] official snapshot not used: "
+                      << snapshot_error
+                      << "; continuing with ordinary peer IBD.\n";
+        }
+    }
+#endif
+
     std::unique_ptr<VeldNode> node_owner;
     try {
         node_owner = std::make_unique<VeldNode>(config, opt_datadir);
@@ -2469,6 +2702,25 @@ int main(int argc, char* argv[]) {
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     bool full_ibd_receipt_valid = false;
     snapshot_bootstrap::FullIbdReceipt full_ibd_receipt;
+    std::optional<SnapshotManifest> installed_snapshot_handoff;
+#if defined(VELD_PUBLIC_MAINNET)
+    if (std::filesystem::exists(
+            std::filesystem::path(opt_datadir) /
+            "db/.snapshot-consensus-replay-required")) {
+        if (!opt_full_ibd) {
+            std::string handoff_error;
+            installed_snapshot_handoff =
+                snapshot_bootstrap::VerifyInstalledSnapshotHandoff(
+                    opt_datadir, &handoff_error);
+            if (!installed_snapshot_handoff) {
+                std::cerr << "  [snapshot] FATAL: imported snapshot handoff "
+                             "verification failed: "
+                          << handoff_error << "\n";
+                return 1;
+            }
+        }
+    }
+#endif
 #endif
     RealKeyPair miner_kp;
     bool miner_key_ready = false;
@@ -2557,10 +2809,17 @@ int main(int argc, char* argv[]) {
     }
 #endif
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
-    node.SetSnapshotFastStartEligible(
-        full_ibd_receipt_valid,
-        full_ibd_receipt_valid ? full_ibd_receipt.height : 0,
-        full_ibd_receipt_valid ? full_ibd_receipt.tip_hash : std::string{});
+    if (installed_snapshot_handoff && !opt_full_ibd) {
+        node.SetSnapshotFastStartEligible(
+            true, installed_snapshot_handoff->height,
+            installed_snapshot_handoff->tip_hash);
+        node.SetSnapshotQuarantineOnly(true);
+    } else {
+        node.SetSnapshotFastStartEligible(
+            full_ibd_receipt_valid,
+            full_ibd_receipt_valid ? full_ibd_receipt.height : 0,
+            full_ibd_receipt_valid ? full_ibd_receipt.tip_hash : std::string{});
+    }
 #endif
 #ifdef VELD_PUBLIC_TESTNET
     try {
@@ -2666,7 +2925,11 @@ int main(int argc, char* argv[]) {
         node.SetAdvertisedServices(advertised_services);
     }
 
-    if (opt_reachable && node.GetTCPServer()) {
+    if (opt_reachable && node.GetTCPServer()
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+        && !node.SnapshotQuarantineOnly()
+#endif
+    ) {
         if (veld::DiagVerbose().load())
             std::cout << CYAN << "  [nat] automatic inbound mapping enabled"
                       << RESET << "\n";
@@ -2732,7 +2995,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (opt_mine) node.PrewarmHashDataset();
+    if (opt_mine
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+        && !node.SnapshotQuarantineOnly()
+#endif
+    ) node.PrewarmHashDataset();
 
     // Optional operator diagnostic. Full consensus replay already completed
     // synchronously before Start() opened any network service.
@@ -2996,7 +3263,12 @@ int main(int argc, char* argv[]) {
         return 78;
     }
 #endif
-    auto rpc_http_owned = try_bind_rpc();
+    std::unique_ptr<RpcHttpServer> rpc_http_owned;
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    if (!node.SnapshotQuarantineOnly()) rpc_http_owned = try_bind_rpc();
+#else
+    rpc_http_owned = try_bind_rpc();
+#endif
     if (rpc_http_owned && rpc_http_owned->ActivationGuardRefused()) {
         std::cerr << "veld-node: FATAL: public-testnet restart authority "
                      "refused at RPC activation\n";
@@ -3358,6 +3630,7 @@ int main(int argc, char* argv[]) {
     bool     fail_stop_exit = false;
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     bool     snapshot_verification_exit = false;
+    bool     snapshot_activation_restart = false;
 #endif
     bool     testnet_expiry_exit = false;
 
@@ -3561,6 +3834,57 @@ int main(int argc, char* argv[]) {
                 std::cout << "  [background-ibd] independent reconstruction "
                              "matched the snapshot base; snapshot trust retired.\n";
                 std::cout.flush();
+                if (node.SnapshotQuarantineOnly()) {
+                    const uint64_t validated_height = node.GetChain().Height();
+                    std::string validated_tip;
+                    try {
+                        validated_tip = HashToHex(
+                            node.GetChain().Tip().GetHash());
+                    } catch (...) {
+                        validated_tip.clear();
+                    }
+                    std::string receipt_error;
+                    bool receipt_written = false;
+#ifdef VELD_FLEET_NO_MINE
+                    if (fleet_validation_key_ready) {
+                        receipt_written =
+                            snapshot_bootstrap::WriteFleetIbdReceipt(
+                                opt_datadir, fleet_validation_kp,
+                                validated_height, validated_tip,
+                                &receipt_error);
+                    }
+#else
+                    if (miner_key_ready) {
+                        receipt_written =
+                            snapshot_bootstrap::WriteFullIbdReceipt(
+                                opt_datadir, miner_kp, validated_height,
+                                validated_tip, &receipt_error);
+                    }
+#endif
+                    if (!receipt_written) {
+                        std::cerr << "  [snapshot] FATAL: independent IBD "
+                                     "matched, but its authenticated restart "
+                                     "receipt could not be persisted: "
+                                  << (receipt_error.empty()
+                                          ? "role identity is unavailable"
+                                          : receipt_error)
+                                  << "\n";
+                        snapshot_verification_exit = true;
+                        g_shutdown.store(true);
+                        break;
+                    }
+                    full_ibd_receipt_valid = true;
+                    full_ibd_receipt.height = validated_height;
+                    full_ibd_receipt.tip_hash = validated_tip;
+                    std::cout << "  [snapshot] independent validation complete; "
+                                 "authenticated restart receipt persisted; "
+                                 "restarting once to activate RPC, inbound P2P, "
+                                 "explorer, and mining.\n";
+                    std::cout.flush();
+                    snapshot_activation_restart = true;
+                    g_shutdown.store(true);
+                    break;
+                }
             } else {
                 const uint64_t background_height =
                     background_chainstate->GetChain().Height();
@@ -4646,8 +4970,9 @@ int main(int argc, char* argv[]) {
     auto shutdown_start = std::chrono::steady_clock::now();
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     const int shutdown_exit_code = testnet_expiry_exit ? 78 :
+                                   (snapshot_activation_restart ? 75 :
                                    (snapshot_verification_exit ? 76 :
-                                   (fail_stop_exit ? 75 : 0));
+                                   (fail_stop_exit ? 75 : 0)));
 #else
     const int shutdown_exit_code = testnet_expiry_exit ? 78 :
                                    (fail_stop_exit ? 75 : 0);

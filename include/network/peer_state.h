@@ -29,11 +29,19 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
 namespace veld {
 namespace net {
+
+// A GETBLOCKS response must fit within the per-source orphan window. Sending
+// thousands of blocks to a node that can retain only a small bounded frontier
+// wastes the serving peer's response budget and can leave the downloader idle
+// until that budget rolls over.
+inline constexpr size_t IBD_GETBLOCKS_BATCH_BLOCKS = 32;
+inline constexpr auto IBD_GETBLOCKS_RETRY_IDLE = std::chrono::seconds(10);
 
 struct PeerState {
     bool version_sent   = true;
@@ -58,16 +66,33 @@ struct PeerState {
 
     tp_t conn_started        = clock_t::now();
     tp_t last_ping           = clock_t::now();
-    tp_t last_getblocks      = clock_t::now();
-    tp_t last_block_accepted = clock_t::now();
-    tp_t last_mempool_req    = clock_t::now();
+    tp_t last_getblocks       = clock_t::now();
+    tp_t last_ibd_progress    = clock_t::now();
+    tp_t last_mempool_req     = clock_t::now();
+    uint64_t ibd_observed_height = 0;
     // Inbound MEMPOOL inventory requests are substantially more expensive than
     // their empty wire payload suggests: they revalidate stateful roots and can
     // walk a large fee index.  Zero means this peer has not yet been served.
     tp_t last_mempool_served{};
 
-    uint64_t ibd_blocks_since_getblocks = 0;
 };
+
+// Observe canonical progress from the peer event loop. While expensive block
+// verification is advancing the chain, the former per-peer 500 ms retry cadence
+// repeatedly requested the same suffix from every peer. Those duplicate streams
+// exhausted the servers' reconnect-stable response-work buckets and produced
+// long IBD stalls. Retry only after the canonical height itself is idle.
+inline bool IbdGetBlocksRetryDue(PeerState& state,
+                                 uint64_t canonical_height,
+                                 PeerState::tp_t now) {
+    if (canonical_height != state.ibd_observed_height) {
+        state.ibd_observed_height = canonical_height;
+        state.last_ibd_progress = now;
+        return false;
+    }
+    return now - state.last_getblocks >= IBD_GETBLOCKS_RETRY_IDLE &&
+           now - state.last_ibd_progress >= IBD_GETBLOCKS_RETRY_IDLE;
+}
 
 using PeerStatePtr = std::shared_ptr<PeerState>;
 

@@ -39,7 +39,7 @@ explorer = (ROOT / "include/network/explorer.h").read_text(encoding="utf-8")
 check("VELD_ENABLE_DIAGNOSTIC_TX_HISTORY" in constants,
       "missing public/history profile interlock")
 check("VELD_ENABLE_SNAPSHOT_BOOTSTRAP" in constants,
-      "missing public/snapshot profile interlock")
+      "missing snapshot storage-profile interlock")
 check("VELD_ENABLE_UPNP" in constants or "VELD_ENABLE_UPNP" in nat,
       "missing public/UPnP profile interlock")
 check('methods_["gettxhistory"]' not in rpc and "gettxhistory" not in rpc,
@@ -78,17 +78,18 @@ check("txhistory" not in explorer.lower(),
       "legacy explorer txhistory route/scanner remains in source")
 
 check("PublicSnapshotDatadirRefusal" in node,
-      "public startup has no snapshot-import marker refusal")
+      "legacy public snapshot-marker boundary disappeared")
 check(".snapshot-fast-start-revoked" in node,
       "public startup omits the snapshot revocation marker")
-check("public mainnet does not support snapshot bootstrap" in node_main.lower(),
-      "public CLI does not state/refuse snapshot bootstrap")
+check("--snapshot-bootstrap" in node_main and
+      "--no-snapshot" in node_main and "--full-ibd" in node_main,
+      "public CLI does not expose the bounded snapshot/full-IBD choice")
 check("#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)" in rpc and
       'methods_["dumpsnapshot"]' in rpc,
       "snapshot RPC is not compile-profile gated")
 check("MaybePreferSnapshotAtStartup" not in node_main and
       "TryAutoSnapshotBootstrap" not in node,
-      "remote snapshot preference/acquisition entrypoint remains in source")
+      "retired mirror-driven snapshot entrypoint returned")
 check('#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)\n#include "snapshot_manifest.h"' in node and
       "SetBackgroundValidationOnly" in node and
       "SnapshotValidationBase" in node,
@@ -101,24 +102,24 @@ snapshot_impl_prefix = node[:node.index("void ValidateStoredChainOnly")]
 check("#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)" in
       snapshot_impl_prefix[-700:],
       "snapshot validate/download/promote entrypoints remain in public preprocessing")
-check("--bootstrap-only" not in launcher and "--no-snapshot" not in launcher and
-      "--full-ibd" in launcher,
-      "shipped Windows launcher still selects a snapshot path or rejected flag")
-check('data-mode="snapshot"' not in portal and
-      'payload["mode"] != "full"' in portal,
-      "portal still offers or accepts snapshot preference")
-check('next.snapshot_eligible = false' in gui and
-      'L"Snapshot bootstrap: disabled in public mainnet' in gui,
-      "GUI still reports snapshot eligibility")
-check("may use a signed recovery snapshot" not in explorer and
-      "Snapshot download, import, preference, promotion" in explorer,
-      "Explorer rules still advertise public snapshot recovery")
+check("--bootstrap-only" not in launcher and
+      "--snapshot-bootstrap" in launcher,
+      "shipped Windows launcher does not select signed snapshot bootstrap")
+check('data-mode="snapshot"' in portal and
+      'payload["mode"] not in {' in portal,
+      "portal does not offer the bounded snapshot/full synchronization modes")
+check('L"Snapshot bootstrap: available' in gui and
+      'L" --snapshot-bootstrap"' in gui,
+      "GUI does not expose signed snapshot bootstrap")
+check("A snapshot is an availability optimization" in explorer and
+      "independent genesis IBD" in explorer,
+      "Explorer rules omit the public snapshot trust boundary")
 check("defined(VELD_PUBLIC_TESTNET) || defined(VELD_PUBLIC_RELEASE)" in node_main,
       "public deep-gap watcher can still persist a snapshot recovery request")
 start_body = node[node.index("    void Start() {"):node.index("    void Stop() {")]
-check(start_body.index("PublicSnapshotDatadirRefusal") <
+check(start_body.index("ReadIndependentValidationRequirement_") <
       start_body.index("tcp_server_ = std::make_unique"),
-      "public snapshot marker refusal does not precede service construction")
+      "snapshot validation requirement is not loaded before service construction")
 
 check("#if defined(VELD_ENABLE_UPNP)" in nat,
       "UPnP implementation is not compile-profile gated")
@@ -143,11 +144,12 @@ check("veld-node: unknown option '" in node_main,
 for controller, text in (("linux", linux), ("windows", windows)):
     for forbidden in (
         "-DVELD_ENABLE_DIAGNOSTIC_TX_HISTORY",
-        "-DVELD_ENABLE_SNAPSHOT_BOOTSTRAP",
         "-DVELD_ENABLE_UPNP",
     ):
         check(forbidden not in text,
               f"{controller} public controller enables forbidden feature {forbidden}")
+    check("node)" in text and "-DVELD_ENABLE_SNAPSHOT_BOOTSTRAP" in text,
+          f"{controller} node build omits snapshot bootstrap")
 
 
 binary_value = os.environ.get("VELD_PUBLIC_NODE_UNDER_TEST", "")
@@ -170,7 +172,6 @@ if binary_value:
         ("--snapshot-path", "fixture", "--help"),
         ("--snapshot-path=fixture", "--help"),
         ("--prefer-snapshot=1", "--help"),
-        ("--no-snapshot=0", "--help"),
         ("--bootstrap-only", "--help"),
         ("--bootstrap-only=1", "--help"),
         ("--verify-snapshot=fixture", "--help"),
@@ -191,8 +192,15 @@ if binary_value:
           "ordinary public help probe failed")
     deployment = run_node("--deployment-info")
     check(deployment.returncode == 0 and
-          '"profile_id":"veld-public-mainnet-v2"' in deployment.stdout,
+          '"profile_id":"veld-public-mainnet-v2"' in deployment.stdout and
+          '"snapshot_bootstrap_compiled":true' in deployment.stdout,
           "ordinary public deployment-info probe failed")
+
+    for control in ("--snapshot-bootstrap", "--no-snapshot", "--full-ibd"):
+        controlled = run_node(control, "--deployment-info")
+        check(controlled.returncode == 0 and
+              '"snapshot_bootstrap_compiled":true' in controlled.stdout,
+              f"public node rejected exact synchronization control {control}")
 
     # Exercise the launcher's retained ordinary-validation selector through
     # the real parser without opening listeners: offline reindex is expected
@@ -218,42 +226,5 @@ if binary_value:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
             client.settimeout(0.25)
             return client.connect_ex(("127.0.0.1", port)) != 0
-
-    markers = (
-        Path("db/.snapshot-consensus-replay-required"),
-        Path(".background-chainstate-required"),
-        Path(".snapshot-recovery-requested"),
-        Path(".snapshot-fast-start-revoked"),
-    )
-    for relative_marker in markers:
-        with tempfile.TemporaryDirectory(
-                prefix="veld-public-snapshot-marker-") as datadir:
-            identity = run_node("--full-ibd", "--reindex-canonical",
-                                "--datadir", datadir)
-            check(identity.returncode == 1 and
-                  (Path(datadir) / "network.identity").is_file(),
-                  f"could not bind public identity for {relative_marker}")
-            marker = Path(datadir) / relative_marker
-            marker.parent.mkdir(parents=True, exist_ok=True)
-            marker.write_text("public-refusal-fixture\n", encoding="utf-8")
-            rpc_port = unused_loopback_port()
-            p2p_port = unused_loopback_port()
-            while p2p_port == rpc_port:
-                p2p_port = unused_loopback_port()
-            refusal = run_node(
-                "--nomine", "--no-prompt", "--full-ibd",
-                "--datadir", datadir,
-                "--rpcport", str(rpc_port),
-                "--p2pport", str(p2p_port),
-                "--connect", "127.0.0.1:1",
-            )
-            check(refusal.returncode == 1 and
-                  "public mainnet refuses a datadir marked as snapshot-imported" in
-                  refusal.stderr and relative_marker.name in refusal.stderr,
-                  f"public startup did not refuse {relative_marker}: "
-                  f"rc={refusal.returncode} stdout={refusal.stdout!r} "
-                  f"stderr={refusal.stderr!r}")
-            check(port_is_closed(rpc_port) and port_is_closed(p2p_port),
-                  f"{relative_marker} refusal exposed a listener")
 
 print(f"PASS daybreak_public_release_reductions_tests checks={checks}")

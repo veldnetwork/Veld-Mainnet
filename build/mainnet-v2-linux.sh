@@ -74,9 +74,9 @@ base_definitions=(
 )
 definitions=("${base_definitions[@]}")
 case "$role" in
-  node)    definitions+=(-DVELD_USE_LEVELDB) ;;
+  node)    definitions+=(-DVELD_USE_LEVELDB -DVELD_ENABLE_SNAPSHOT_BOOTSTRAP) ;;
   desktop) definitions+=(-DVELD_USE_LEVELDB -DVELD_DESKTOP_OPENSSL_TLS) ;;
-  fleet)   definitions+=(-DVELD_USE_LEVELDB -DVELD_FLEET_NO_MINE) ;;
+  fleet)   definitions+=(-DVELD_USE_LEVELDB -DVELD_FLEET_NO_MINE -DVELD_ENABLE_SNAPSHOT_BOOTSTRAP) ;;
 esac
 if [[ $role == operator ]]; then
   definitions=()
@@ -209,6 +209,7 @@ case "$role" in
     grep -F '"reserve_service_capability_required":true' "$output/deployment-info.txt"
     grep -F '"state_digest_version":8' "$output/deployment-info.txt"
     grep -F '"storage_backend":"leveldb"' "$output/deployment-info.txt"
+    grep -F '"snapshot_bootstrap_compiled":true' "$output/deployment-info.txt"
     ;;
   desktop)
     grep -F '"binary_role":"desktop-client"' "$output/deployment-info.txt"
@@ -229,7 +230,7 @@ case "$role" in
     ;;
   operator)
     grep -F '"binary_role":"operator-portal"' "$output/deployment-info.txt"
-    grep -F '"client_version":"3.0.0"' "$output/deployment-info.txt"
+    grep -F '"client_version":"3.0.3"' "$output/deployment-info.txt"
     grep -F '"public_gettxhistory_compiled":false' "$output/deployment-info.txt"
     grep -F '"snapshot_bootstrap_compiled":false' "$output/deployment-info.txt"
     grep -F '"upnp_compiled":false' "$output/deployment-info.txt"
@@ -244,6 +245,7 @@ case "$role" in
     grep -F '"reserve_service_capability_required":true' "$output/deployment-info.txt"
     grep -F '"state_digest_version":8' "$output/deployment-info.txt"
     grep -F '"storage_backend":"leveldb"' "$output/deployment-info.txt"
+    grep -F '"snapshot_bootstrap_compiled":true' "$output/deployment-info.txt"
     ;;
 esac
 

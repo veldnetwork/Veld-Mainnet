@@ -103,6 +103,7 @@ def fetch(client: Path, server: OneRequestServer, destination: Path,
 def main() -> None:
     process = (ROOT / "include" / "compat" / "process.h").read_text("utf-8")
     node = (ROOT / "include" / "node" / "node.h").read_text("utf-8")
+    public_snapshot = (ROOT / "include" / "node" / "public_snapshot_bootstrap.h").read_text("utf-8")
     checkpoints = (ROOT / "include" / "consensus" / "checkpoints.h").read_text("utf-8")
     updater = (ROOT / "pkg" / "veld-update.ps1").read_text("utf-8")
     tor_setup = (ROOT / "pkg" / "tor-setup.ps1").read_text("utf-8")
@@ -126,9 +127,15 @@ def main() -> None:
           "checkpoint loader retains a second complete copy")
     check("TryAutoSnapshotBootstrap" not in node and
           "MaybePreferSnapshotAtStartup" not in node and
-          "VELD_SNAPSHOT_MIRRORS" not in node and
-          "https://veld.network/downloads/latest.txt" not in node,
-          "remote snapshot downloader/preference source remains")
+          "VELD_SNAPSHOT_MIRRORS" not in public_snapshot and
+          '"https://veld.network/downloads/"' in public_snapshot and
+          "latest.txt" not in public_snapshot,
+          "snapshot acquisition is not pinned to the official fixed endpoint")
+    check("RunProcessToBoundedFile" in public_snapshot and
+          "PUBLIC_SNAPSHOT_MAX_ARCHIVE_BYTES" in public_snapshot and
+          "ValidateArchiveListings" in public_snapshot and
+          "ValidateExtractedLevelDbTree" in public_snapshot,
+          "snapshot transfer/extraction boundaries are incomplete")
     check("ValidateStoredChainOnly" in node and
           "VELD_ENABLE_SNAPSHOT_BOOTSTRAP" in node,
           "local non-public snapshot validation fixture was not preserved")
