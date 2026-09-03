@@ -8161,8 +8161,8 @@ private:
                 }
             }
             // Side bodies remain private/volatile while the bounded replay is
-            // validating or applying a reorg.  The reorg publication callback
-            // owns durable promotion only after the complete suffix succeeds.
+            // validating or applying a reorg.  They cross the durable body
+            // boundary only after the complete suffix succeeds below.
             if (!CommitBlock(block, /*persist_new_body=*/false)) {
                 bad_alt_tips_.insert(HashToHex(block.GetHash()));
                 bad_alt_tips_.insert(new_tip_hash);
@@ -8190,6 +8190,39 @@ private:
             if (!restore_after_failure())
                 return ReorgDisposition::ConsensusInvalid;
             return ReorgDisposition::Applied;
+        }
+
+        // CommitBlock deliberately avoids publishing a side-branch body while
+        // the replacement suffix is still being replay-validated.  It also
+        // evicts the temporary resident copy after applying the candidate.
+        // Persist every formerly-volatile candidate now, after the complete
+        // suffix has passed replay but before BeginReorgUTXO/on_commit asks the
+        // durable database to validate and atomically publish that suffix.
+        //
+        // A failed body write is an operational deferral, not a consensus
+        // invalidity.  Restore the exact old frame and retain the branch for a
+        // bounded retry.  Successfully written bodies may remain as harmless
+        // non-canonical recovery data if a later publication step aborts.
+        if (durable_block_body_writer_) {
+            for (const auto& block : alt_blocks) {
+                const std::string hash = HashToHex(block.GetHash());
+                if (!frame.candidate_volatile_side_hashes.count(hash))
+                    continue;
+                const std::vector<uint8_t> raw = block.Serialize();
+                bool written = raw.size() <= MAX_BLOCK_SIZE;
+                try {
+                    written = written && durable_block_body_writer_(
+                        block.GetHash(), raw);
+                } catch (...) {
+                    written = false;
+                }
+                if (!written) {
+                    restore_after_failure();
+                    last_reject_tag_ =
+                        "reorg_candidate_body_persist_failed";
+                    return ReorgDisposition::DeferredLocalWork;
+                }
+            }
         }
 
         for (const auto& old_block : frame.old_tail) {
