@@ -3057,9 +3057,23 @@ private:
                       L"P2P", live.local_online && live.local.peers > 0
                           ? L"Connected" : L"Waiting",
                       live.local_online && live.local.peers > 0 ? C_GREEN : C_MUTED);
+        const bool snapshot_selected = !full_ibd_choice_.load();
+        const bool snapshot_supported = live.mining_status_online &&
+            live.mining.snapshot_bootstrap_compiled;
+        const std::wstring snapshot_status = !live.process_running
+            ? (snapshot_selected ? L"Selected" : L"Full IBD")
+            : (!live.mining_status_online
+                ? L"Checking"
+                : (!snapshot_supported
+                    ? L"Unavailable"
+                    : (live.snapshot_eligible
+                        ? L"Eligible"
+                        : (live.mining.full_ibd ? L"IBD required"
+                                                : L"Validating"))));
+        const bool snapshot_good = snapshot_selected || live.snapshot_eligible;
         DrawStripItem(dc, {strip.left + 2 * total_w / 3, strip.top,
                            strip.right, strip.bottom}, L"Snapshot",
-                      L"Disabled", C_MUTED);
+                      snapshot_status, snapshot_good ? C_GREEN : C_MUTED);
     }
 
     void DrawCheck(HDC dc, int cx, int cy, bool good) {
@@ -6803,8 +6817,12 @@ private:
              << "\",\"warning\":\"" << JsonEscape(warning) << "\""
              << ",\"snapshot\":{"
              << "\"process_running\":" << (live.process_running ? "true" : "false")
-             << ",\"snapshot_eligible\":false"
-             << ",\"full_ibd\":true"
+             << ",\"snapshot_eligible\":"
+             << (live.snapshot_eligible ? "true" : "false")
+             << ",\"full_ibd\":"
+             << ((live.mining_status_online
+                    ? live.mining.full_ibd
+                    : full_ibd_choice_.load()) ? "true" : "false")
              << ",\"tor\":" << (tor_choice_ ? "true" : "false")
              << ",\"reachable\":" << (reachable_choice_ ? "true" : "false")
              << ",\"reference\":" << (reference_display_enabled_.load() ? "true" : "false")
@@ -7222,7 +7240,9 @@ private:
             }
             next.topology_online = cached_topology_ok;
             next.topology = cached_topology;
-            next.snapshot_eligible = false;
+            next.snapshot_eligible = next.mining_status_online &&
+                next.mining.snapshot_bootstrap_compiled &&
+                next.mining.snapshot_fast_start_eligible;
             next.log_lines = ReadLogTail(LogPath());
 
             if (remote_monitoring_enabled_.load()) {

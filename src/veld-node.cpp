@@ -734,6 +734,91 @@ static bool _wiz_create_portable_key_bundle(
     }
     return true;
 }
+
+// Once an encrypted mining identity has been authenticated, keep exactly one
+// portable copy beside miner.key.  This migrates identities created by older
+// clients without generating a replacement wallet or re-encrypting the key.
+// Existing matching bytes are accepted; conflicting bytes fail closed.
+static bool _wiz_ensure_portable_keyfile(
+        const std::string& datadir,
+        const std::string& address,
+        std::string& portable_path,
+        bool& created,
+        std::string& error) {
+    portable_path.clear();
+    created = false;
+    error.clear();
+    if (address.size() < 8) {
+        error = "mining identity has no canonical address";
+        return false;
+    }
+
+    const std::string operational_path = datadir + "/miner.key";
+    portable_path = datadir + "/veld-wallet-" + address.substr(0, 8)
+        + ".veld-keys";
+    if (!_wiz_is_encrypted(operational_path)) {
+        error = "portable keyfile requires an encrypted miner.key";
+        return false;
+    }
+
+    std::vector<uint8_t> operational_bytes;
+    std::vector<uint8_t> portable_bytes;
+    struct KeyfileBytesWiper {
+        std::vector<uint8_t>& first;
+        std::vector<uint8_t>& second;
+        ~KeyfileBytesWiper() {
+            if (!first.empty())
+                veld::compat::SecureZero(first.data(), first.size());
+            if (!second.empty())
+                veld::compat::SecureZero(second.data(), second.size());
+        }
+    } wipe_bytes{operational_bytes, portable_bytes};
+
+    if (!_wiz_read_private_bytes(
+            operational_path, operational_bytes,
+            WIZ_MAX_OPERATIONAL_SECRET_BYTES, &error)) {
+        return false;
+    }
+
+    std::error_code exists_error;
+    const bool portable_exists = std::filesystem::exists(
+        portable_path, exists_error);
+    if (exists_error) {
+        error = "cannot determine portable keyfile state";
+        return false;
+    }
+    if (portable_exists) {
+        if (!_wiz_read_private_bytes(
+                portable_path, portable_bytes,
+                WIZ_MAX_OPERATIONAL_SECRET_BYTES, &error)) {
+            return false;
+        }
+        if (portable_bytes.size() != operational_bytes.size() ||
+            !std::equal(operational_bytes.begin(), operational_bytes.end(),
+                        portable_bytes.begin())) {
+            error = "existing portable keyfile differs from miner.key";
+            return false;
+        }
+        return true;
+    }
+
+    if (!veld::channel::secure_file::AtomicWriteNew(
+            portable_path, operational_bytes, &error,
+            /*require_private_parent=*/true)) {
+        return false;
+    }
+    if (!_wiz_read_private_bytes(
+            portable_path, portable_bytes,
+            WIZ_MAX_OPERATIONAL_SECRET_BYTES, &error) ||
+        portable_bytes.size() != operational_bytes.size() ||
+        !std::equal(operational_bytes.begin(), operational_bytes.end(),
+                    portable_bytes.begin())) {
+        error = "portable keyfile readback differs from miner.key";
+        return false;
+    }
+    created = true;
+    return true;
+}
 #endif
 
 static bool _wiz_parse_key_record(std::string_view content,
@@ -3527,6 +3612,30 @@ int main(int argc, char* argv[]) {
             }
         }
 
+#ifndef VELD_PUBLIC_TESTNET
+        // A successful sign-in must leave one wallet/node-compatible portable
+        // keyfile for this identity.  This is an exact encrypted-byte copy,
+        // never a second key generation, and is idempotent on every restart.
+        if (miner_key_ready && !g_passphrase.empty()) {
+            std::string portable_path;
+            std::string portable_error;
+            bool portable_created = false;
+            if (!_wiz_ensure_portable_keyfile(
+                    opt_datadir, miner_kp.address, portable_path,
+                    portable_created, portable_error)) {
+                std::cerr << RED
+                          << "  FATAL: portable mining keyfile verification failed: "
+                          << portable_error << "\n" << RESET;
+                return 1;
+            }
+            if (portable_created) {
+                std::cout << GREEN
+                          << "  Portable wallet keyfile created: "
+                          << portable_path << "\n" << RESET;
+            }
+        }
+#endif
+
         if (!opt_miner_addr.empty()) {
             auto override_script = AddressToScript(opt_miner_addr);
             if (override_script.empty()) {
@@ -3670,6 +3779,14 @@ int main(int argc, char* argv[]) {
             const int64_t now_seconds = static_cast<int64_t>(std::time(nullptr));
 
             std::ostringstream status;
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+            const bool snapshot_bootstrap_compiled = true;
+            const bool snapshot_fast_start_eligible =
+                node.SnapshotFastStartEligible();
+#else
+            const bool snapshot_bootstrap_compiled = false;
+            const bool snapshot_fast_start_eligible = false;
+#endif
             status << std::fixed << std::setprecision(2)
                    << "{\"mining_configured\":"
                    << (node.IsMiningConfigured() ? "true" : "false")
@@ -3677,6 +3794,12 @@ int main(int argc, char* argv[]) {
                    << (node.IsMiningReady() ? "true" : "false")
                    << ",\"mining_active\":"
                    << (node.IsMiningActive() ? "true" : "false")
+                   << ",\"snapshot_bootstrap_compiled\":"
+                   << (snapshot_bootstrap_compiled ? "true" : "false")
+                   << ",\"snapshot_fast_start_eligible\":"
+                   << (snapshot_fast_start_eligible ? "true" : "false")
+                   << ",\"full_ibd\":"
+                   << (node.IsFullIbd() ? "true" : "false")
                    << ",\"work_state\":\""
                    << node.GetMiningWorkStateName() << "\""
                    << ",\"hashrate\":" << node.GetHashrate()
