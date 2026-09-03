@@ -2,7 +2,9 @@
 
 #include <chrono>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <thread>
 
 using veld::compat::SocketHandle;
@@ -83,6 +85,29 @@ static std::string ProxyHeaders(const std::string& client,
            "X-Veld-Client-IP: " + client + "\r\n";
 }
 
+static veld::Block RewardBlock(veld::Blockchain& chain,
+                               const std::vector<uint8_t>& miner_script) {
+    using namespace veld;
+    Block block;
+    block.height = chain.Height() + 1;
+    block.header.version = PROTOCOL_VERSION;
+    block.header.prev_block_hash = chain.TipCopy().GetHash();
+    block.header.timestamp = chain.TipCopy().header.timestamp + 1;
+    block.header.bits = chain.ComputeNextBits();
+    block.header.nonce = 1;
+    const uint64_t effective = std::min(
+        Blockchain::ExpectedBlockSubsidy(block.height),
+        MAX_SUPPLY_UNITS - chain.TotalSupplyUnits());
+    const uint64_t miner_cut = (effective * 50) / 100;
+    const uint64_t vault_cut = effective - miner_cut;
+    block.transactions.push_back(Transaction::CreateProportionalCoinbase(
+        {{miner_script, miner_cut},
+         {AddressToScript(VaultAddressAtHeight(block.height)), vault_cut}},
+        "explorer-richlist-cache"));
+    block.UpdateMerkleRoot();
+    return block;
+}
+
 int main() {
     veld::compat::InitNetwork();
     size_t checks = 0;
@@ -144,6 +169,36 @@ int main() {
     check(blocks_html.body.find("/api/v1/blocks/") != std::string::npos);
     check(blocks_html.body.find("Promise.all(ps)") == std::string::npos);
     check(blocks_html.body.find("if(!r.ok)") != std::string::npos);
+
+    // Both rich-list representations must invalidate immediately at a new
+    // chain height and preserve the protocol's full eight-decimal precision.
+    const auto rich_before = RequestWithBody(
+        port, "/api/v1/richlist", page_headers);
+    const auto rich_page_before = RequestWithBody(port, "/rich", page_headers);
+    check(rich_before.status == 200);
+    check(rich_page_before.status == 200);
+    const auto miner_script = veld::AddressToScript(veld::POOL_ADDRESS);
+    const uint64_t miner_reward =
+        (veld::Blockchain::ExpectedBlockSubsidy(1) * 50) / 100;
+    auto reward = RewardBlock(chain, miner_script);
+    check(chain.AddBlockDirect(
+              reward, true, true, false,
+              veld::mining::PowAdmissionContext::Internal()).IsAccepted());
+    std::ostringstream exact_balance;
+    exact_balance << std::fixed << std::setprecision(8)
+                  << static_cast<double>(miner_reward) / veld::VELD_UNITS;
+    const auto rich_after = RequestWithBody(
+        port, "/api/v1/richlist", page_headers);
+    const auto rich_page_after = RequestWithBody(port, "/rich", page_headers);
+    check(rich_after.status == 200);
+    check(rich_page_after.status == 200);
+    check(rich_after.body != rich_before.body);
+    check(rich_page_after.body != rich_page_before.body);
+    check(rich_after.body.find(
+              "\"address\":\"" + std::string(veld::POOL_ADDRESS) +
+              "\",\"balance_veld\":" + exact_balance.str()) !=
+          std::string::npos);
+    check(rich_page_after.body.find(exact_balance.str()) != std::string::npos);
 
     check(Request(port, "/notfound", "X-Forwarded-For: 198.51.100.9\r\n") == 403);
     check(Request(port, "/notfound", "X-Real-IP: 198.51.100.9\r\n") == 403);

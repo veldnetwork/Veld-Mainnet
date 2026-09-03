@@ -1150,21 +1150,9 @@ public:
         return proxy_configuration_error_;
     }
     void PrewarmRichList() {
-        if (!cache_dir_.empty()) {
-            std::string path = cache_dir_ + "/.richlist-cache.html";
-            std::ifstream f(path, std::ios::binary);
-            if (f.good()) {
-                std::stringstream ss;
-                ss << f.rdbuf();
-                std::string disk_body = ss.str();
-                if (!disk_body.empty()) {
-                    std::lock_guard<std::mutex> lk(richlist_cache_mu_);
-                    richlist_cache_body_  = disk_body;
-                    richlist_cache_until_ = std::chrono::steady_clock::now()
-                                          + std::chrono::seconds(5);
-                }
-            }
-        }
+        // A persisted HTML body cannot prove which active-chain height produced
+        // it. Rebuild from the current chain instead of briefly serving stale
+        // balances after startup or a reorganization.
         std::lock_guard<std::mutex> lk(prewarm_thread_mu_);
         if (prewarm_thread_.joinable()) prewarm_thread_.join();
         prewarm_thread_ = std::thread([this]() {
@@ -1687,14 +1675,13 @@ self.addEventListener('fetch', event => {
             }
 
             if (resource == "richlist") {
-                static std::mutex richlist_json_cache_mu;
-                static std::string richlist_json_cached_body;
-                static std::chrono::steady_clock::time_point richlist_json_cached_until;
+                const uint64_t richlist_height = chain_.Height();
                 {
-                    std::lock_guard<std::mutex> lk(richlist_json_cache_mu);
-                    if (!richlist_json_cached_body.empty()
-                        && std::chrono::steady_clock::now() < richlist_json_cached_until) {
-                        return HttpResponse::JSON(richlist_json_cached_body);
+                    std::lock_guard<std::mutex> lk(richlist_json_cache_mu_);
+                    if (!richlist_json_cache_body_.empty()
+                        && richlist_json_cache_height_ == richlist_height
+                        && std::chrono::steady_clock::now() < richlist_json_cache_until_) {
+                        return HttpResponse::JSON(richlist_json_cache_body_);
                     }
                 }
                 auto holders = chain_.GetTopHolders(50);
@@ -1742,24 +1729,25 @@ self.addEventListener('fetch', event => {
                     if (is_sys) {
                         j << "{\"rank\":null,\"is_system\":true"
                           << ",\"address\":\"" << addr << "\""
-                          << ",\"balance_veld\":" << bal
+                          << ",\"balance_veld\":" << std::setprecision(8) << bal
                           << ",\"pct_supply\":" << std::setprecision(4) << pct << "}";
                     } else {
                         ++rank;
                         j << "{\"rank\":" << rank
                           << ",\"address\":\"" << addr << "\""
-                          << ",\"balance_veld\":" << bal
+                          << ",\"balance_veld\":" << std::setprecision(8) << bal
                           << ",\"pct_supply\":" << std::setprecision(4) << pct << "}";
                     }
                     first = false;
                 }
                 j << "]";
                 std::string body = j.str();
-                {
-                    std::lock_guard<std::mutex> lk(richlist_json_cache_mu);
-                    richlist_json_cached_body = body;
-                    richlist_json_cached_until = std::chrono::steady_clock::now()
-                                                + std::chrono::seconds(30);
+                if (chain_.Height() == richlist_height) {
+                    std::lock_guard<std::mutex> lk(richlist_json_cache_mu_);
+                    richlist_json_cache_body_ = body;
+                    richlist_json_cache_height_ = richlist_height;
+                    richlist_json_cache_until_ = std::chrono::steady_clock::now()
+                                               + std::chrono::seconds(30);
                 }
                 return HttpResponse::JSON(body);
             }
@@ -2295,6 +2283,10 @@ private:
     std::string                                richlist_cache_body_;
     std::chrono::steady_clock::time_point      richlist_cache_until_;
     uint64_t                                   richlist_cache_height_ = 0;
+    mutable std::mutex                         richlist_json_cache_mu_;
+    std::string                                richlist_json_cache_body_;
+    std::chrono::steady_clock::time_point      richlist_json_cache_until_;
+    uint64_t                                   richlist_json_cache_height_ = 0;
     std::atomic<bool>                          richlist_refresh_in_flight_{false};
 
     std::string proposals_json_ = "[]";
@@ -6142,10 +6134,10 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
                 return HttpResponse::HTML(richlist_cache_body_);
             }
         }
-        return ServeRichListBuild();
+        return ServeRichListBuild(cur_h);
     }
 
-    HttpResponse ServeRichListBuild() {
+    HttpResponse ServeRichListBuild(uint64_t requested_height) {
         auto holders = chain_.GetTopHolders(50);
         auto pin_address = [&](const std::string& addr) {
             for (const auto& [a, b] : holders) {
@@ -6272,7 +6264,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             page << "</div>";
             page << "</div>";
             page << "<div class=\"rl-val\">";
-            page << "<div class=\"rl-v\" style=\"color:var(--em);font-size:16px\">" << std::fixed << std::setprecision(2) << bal << "</div>";
+            page << "<div class=\"rl-v\" style=\"color:var(--em);font-size:16px\">" << std::fixed << std::setprecision(8) << bal << "</div>";
             page << "<div class=\"rl-vs\">VELD</div>";
             page << "</div>";
             page << "</a>";
@@ -6281,28 +6273,12 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             page << "<div class=\"rl-row\" style=\"color:var(--muted);justify-content:center;font-style:italic\">No UTXO data yet.</div>";
         page << "</div></div>";
         std::string body = HtmlWrapArcade("Rich List", page.str(), "rich");
-        {
+        if (chain_.Height() == requested_height) {
             std::lock_guard<std::mutex> lk(richlist_cache_mu_);
             richlist_cache_body_   = body;
-            richlist_cache_height_ = chain_.Height();
+            richlist_cache_height_ = requested_height;
             richlist_cache_until_  = std::chrono::steady_clock::now()
                                    + std::chrono::seconds(60);
-        }
-        if (!cache_dir_.empty()) {
-            try {
-                std::string path     = cache_dir_ + "/.richlist-cache.html";
-                std::string tmp_path = path + ".tmp";
-                {
-                    std::ofstream f(tmp_path, std::ios::binary | std::ios::trunc);
-                    if (f.good()) {
-                        f.write(body.data(), (std::streamsize)body.size());
-                        f.close();
-                    }
-                }
-                std::error_code ec;
-                std::filesystem::rename(tmp_path, path, ec);
-                if (ec) std::filesystem::remove(tmp_path, ec);
-            } catch (...) {  }
         }
         return HttpResponse::HTML(body);
     }
