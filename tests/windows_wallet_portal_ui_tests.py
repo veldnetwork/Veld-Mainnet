@@ -34,13 +34,18 @@ for forbidden in (
         f"Wallet button must not use the retired local RPC launch path: {forbidden}",
     )
 
-require("const CACHE='veld-portal-shell-v8'" in PORTAL, "portal cache version")
-require("Match the wallet PWA's document-scrolling" in PORTAL, "mobile shell marker")
+require("const CACHE='veld-portal-shell-v9'" in PORTAL, "portal cache version")
+require("wallet PWA's proven architecture" in PORTAL, "mobile shell marker")
+require('id="mobile-nav"' in PORTAL, "portal needs a dedicated mobile navbar")
+require(".side{display:none!important}" in PORTAL, "desktop sidebar must be hidden on mobile")
+require(
+    'document.querySelectorAll("#nav button,#mobile-nav button")' in PORTAL,
+    "desktop and mobile navigation must share page state",
+)
 for required in (
     "height:auto!important",
     "min-height:100dvh!important",
     "position:fixed!important",
-    "inset:auto 0 0 0!important",
     "bottom:0!important",
     "height:68px!important",
     "will-change:transform!important",
@@ -48,4 +53,4 @@ for required in (
 ):
     require(required in PORTAL, f"portal mobile shell is missing {required}")
 
-print("PASS windows_wallet_portal_ui_tests checks=15")
+print("PASS windows_wallet_portal_ui_tests checks=18")
