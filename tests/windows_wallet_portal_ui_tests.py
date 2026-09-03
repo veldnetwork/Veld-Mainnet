@@ -34,7 +34,7 @@ for forbidden in (
         f"Wallet button must not use the retired local RPC launch path: {forbidden}",
     )
 
-require("const CACHE='veld-portal-shell-v9'" in PORTAL, "portal cache version")
+require("const CACHE='veld-portal-shell-v10'" in PORTAL, "portal cache version")
 require("wallet PWA's proven architecture" in PORTAL, "mobile shell marker")
 require('id="mobile-nav"' in PORTAL, "portal needs a dedicated mobile navbar")
 require(".side{display:none!important}" in PORTAL, "desktop sidebar must be hidden on mobile")

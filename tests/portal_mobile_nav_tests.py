@@ -14,6 +14,9 @@ def require(fragment: str, label: str) -> None:
 
 
 require('id="mobile-nav"', "dedicated mobile nav exists")
+require('id="mobile-nav" aria-label="Primary" hidden', "mobile nav starts hidden until session recovery")
+require('$("mobile-nav").hidden=false', "mobile nav is revealed directly after session recovery")
+require('</div>\n<nav id="mobile-nav"', "mobile nav is a direct body child, outside the app layout")
 require(".side{display:none!important}", "desktop sidebar is hidden on mobile")
 require("#mobile-nav{display:flex!important;position:fixed!important", "mobile nav is fixed")
 require("bottom:0!important", "mobile nav is anchored to the viewport bottom")
@@ -38,4 +41,4 @@ for page in ("overview", "blockchain", "mining", "explorer", "more"):
     if f'data-page="{page}"' not in desktop_nav:
         raise AssertionError(f"mobile nav source is missing {page}")
 
-print("PASS portal_mobile_nav_tests checks=16")
+print("PASS portal_mobile_nav_tests checks=19")
