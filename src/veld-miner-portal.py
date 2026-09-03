@@ -208,7 +208,7 @@ PORTAL_MANIFEST = {
     ],
 }
 PORTAL_OFFLINE_HTML = b"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a09"><title>Veld Portal offline</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#080a09;color:#f2f5f2;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(430px,100%);padding:25px;border:1px solid #343a36;border-radius:10px;background:#101311}h1{margin:0 0 8px;font:700 24px ui-monospace,Consolas,monospace}p{margin:0;color:#c5cbc7}</style><main class="card"><h1>Portal offline</h1><p>Reconnect to the internet, then reopen or refresh the app. Your node continues running independently.</p></main></html>"""
-PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v16';
+PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v17';
 const ASSETS=['/manifest.webmanifest','/icon.png?v=6','/offline'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
@@ -252,33 +252,14 @@ PORTAL_HTML = r"""<!doctype html>
       html,body{width:100%;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important;overflow-x:hidden!important;overscroll-behavior-y:none}
       body,.app,.main{background:var(--bg)!important}
       .app{display:block;min-height:100vh;min-height:100dvh}
-      .side{
+      .side{display:none!important}
+      #mobile-nav{
         position:fixed!important;
         left:0!important;
         right:0!important;
-        bottom:0!important;
         top:auto!important;
-        width:100%!important;
-        height:68px!important;
-        min-height:68px!important;
-        max-height:68px!important;
-        margin:0!important;
-        padding:0!important;
-        background:#0d100e!important;
-        border:0!important;
-        border-top:1px solid var(--line)!important;
-        display:block!important;
-        overflow:hidden!important;
+        bottom:calc(-1 * env(safe-area-inset-bottom,0px))!important;
         z-index:1000!important;
-        transform:none!important;
-        -webkit-transform:none!important;
-        will-change:auto!important;
-        box-shadow:0 -8px 28px rgba(0,0,0,.38)!important;
-      }
-      .side>.brand,.side-foot{display:none!important}
-      .nav{
-        position:absolute!important;
-        inset:0!important;
         width:100%!important;
         height:68px!important;
         min-height:68px!important;
@@ -288,14 +269,45 @@ PORTAL_HTML = r"""<!doctype html>
         margin:0!important;
         padding:0!important;
         gap:0!important;
+        overflow:hidden!important;
+        background:#0d100e!important;
+        border:0!important;
+        border-top:1px solid var(--line)!important;
+        box-shadow:0 -8px 28px rgba(0,0,0,.38)!important;
+        transform:none!important;
+        -webkit-transform:none!important;
+        will-change:auto!important;
       }
-      .app .side .nav button,.app .side .nav button:hover,.app .side .nav button.active{display:none;position:relative!important;min-width:0!important;width:100%!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--muted);text-align:center!important;padding:7px 2px 6px!important;font-size:10px!important;line-height:1!important;letter-spacing:.02em!important;appearance:none!important;-webkit-appearance:none!important;transform:none!important;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
-      .app .side .nav button,.app .side .nav button.mobile{height:68px!important;min-height:68px!important;max-height:68px!important;margin:0!important}
-      .app .side .nav button.mobile,.app .side .nav button.mobile:hover,.app .side .nav button.mobile.active{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:3px!important}
-      .app .side .nav button.active{color:var(--text)!important}
-      .app .side .nav button.active:before{content:"";position:absolute;top:0;left:50%;width:32px;height:2px;transform:translateX(-50%);border-radius:0 0 3px 3px;background:var(--text)}
-      .nav-icon{display:block!important;width:22px!important;height:22px!important;flex:0 0 22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
-      .nav-glyph{display:block!important;width:22px;height:22px;flex:0 0 22px;font:400 23px/22px "Segoe UI Symbol","Apple Symbols",sans-serif;color:currentColor}
+      #mobile-nav .portal-tab{
+        position:relative!important;
+        width:100%!important;
+        min-width:0!important;
+        height:68px!important;
+        min-height:68px!important;
+        max-height:68px!important;
+        margin:0!important;
+        padding:7px 2px 6px!important;
+        border:0!important;
+        border-radius:0!important;
+        display:flex!important;
+        flex-direction:column!important;
+        align-items:center!important;
+        justify-content:center!important;
+        gap:3px!important;
+        background:transparent!important;
+        color:var(--muted)!important;
+        box-shadow:none!important;
+        font:600 10px/1 system-ui,-apple-system,"Segoe UI",sans-serif!important;
+        letter-spacing:.02em!important;
+        text-align:center!important;
+        appearance:none!important;
+        -webkit-appearance:none!important;
+        -webkit-tap-highlight-color:transparent;
+        touch-action:manipulation;
+      }
+      #mobile-nav .portal-tab.active{color:var(--text)!important}
+      #mobile-nav .portal-tab.active:before{content:"";position:absolute;top:0;left:50%;width:32px;height:2px;transform:translateX(-50%);border-radius:0 0 3px 3px;background:var(--text)}
+      #mobile-nav .nav-icon{display:block!important;width:22px!important;height:22px!important;flex:0 0 22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
       .main{padding:max(20px,env(safe-area-inset-top)) 14px 0;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important}
       .main{padding-bottom:88px!important}
       .top{align-items:stretch;flex-direction:column;gap:14px;margin-bottom:18px}
@@ -329,7 +341,7 @@ PORTAL_HTML = r"""<!doctype html>
       .topology-legend{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 14px}
       .auth-shell{align-items:start;padding:max(22px,env(safe-area-inset-top)) 14px}
       .auth{padding:22px 18px;margin-top:5vh}
-      .portal-more{position:fixed;left:0;right:0;bottom:68px!important;z-index:1100;display:none;padding:14px;background:rgba(13,16,14,.98);border-top:1px solid var(--line);box-shadow:0 -14px 28px rgba(0,0,0,.35);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+      .portal-more{position:fixed;left:0;right:0;bottom:calc(68px - env(safe-area-inset-bottom,0px))!important;z-index:1100;display:none;padding:14px;background:rgba(13,16,14,.98);border-top:1px solid var(--line);box-shadow:0 -14px 28px rgba(0,0,0,.35);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
       .portal-more[data-open="1"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
       .portal-more button{min-height:58px;border:1px solid var(--line);border-radius:7px;background:var(--button);color:var(--text);display:flex;align-items:center;justify-content:flex-start;gap:11px;padding:11px 14px;text-align:left}
       .portal-more button:hover{background:var(--button-hover)}
@@ -399,7 +411,7 @@ function action(name,payload={}){actionQueue=actionQueue.then(()=>signedAction(n
 function firstPair(){return `<section class="section"><div class="section-head"><div><h2>Pair your first machine</h2><p>Enable Remote access in the Veld desktop client, then enter the one-time pairing code shown there.</p></div></div><div class="pair"><input id="pair-code" maxlength="9" inputmode="text" autocomplete="one-time-code" placeholder="PAIR CODE"><button class="button" data-portal-action="claim">Pair machine</button></div><div id="pair-error" class="error"></div><div class="local-only">The portal receives operational status only. Commands are signed by a non-exportable key in this app and every change must still be approved on the paired machine. Wallet keys, passphrases, RPC credentials, peer addresses, and identity files never leave it.</div></section>`}
 function pageScrollState(){const state={};document.querySelectorAll("#page [data-scroll-key]").forEach(el=>state[el.dataset.scrollKey]=el.scrollLeft);return state}
 function restorePageScroll(state){requestAnimationFrame(()=>document.querySelectorAll("#page [data-scroll-key]").forEach(el=>{const value=state[el.dataset.scrollKey];if(Number.isFinite(value))el.scrollLeft=value}))}
-document.querySelectorAll("#nav button.mobile").forEach(button=>{const clone=button.cloneNode(true);clone.classList.add("mob-tab");$("mobile-nav").appendChild(clone)});
+document.querySelectorAll("#nav button.mobile").forEach(button=>{const clone=button.cloneNode(true);clone.classList.add("portal-tab");$("mobile-nav").appendChild(clone)});
 function render(){const scroll=pageScrollState();const d=current();const meta=d?titles[page]:["Pair a machine","Connect your first Veld node or miner."];$("page-title").textContent=meta[0];$("page-subtitle").textContent=meta[1];const extra=["workers","network","logs","settings"];document.querySelectorAll("#nav button,#mobile-nav button").forEach(b=>b.classList.toggle("active",!!d&&(b.dataset.page===page||(b.dataset.page==="more"&&extra.includes(page)))));if(!d){$("online").className="status";$("online").textContent="Offline";setHtml($("page"),firstPair());return}$("online").className="status "+(d.online?"online":"");$("online").textContent=d.online?"Online":"Offline";const fn={overview,blockchain,mining,workers,explorer,network,logs,settings,more}[page];setHtml($("page"),fn(d,snap(d)));restorePageScroll(scroll)}
 function overview(d,s){return `<div class="cards">${metric(n(d.height),"Block height","green")}${metric(d.sync_lag?n(d.sync_lag)+" behind":"100.0%","Synchronization")}${metric(n(d.peers),"P2P peers")}${metric(n(d.hashrate,1)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(d.workers),"CPU workers")}${metric(n(s.mempool),"Mempool transactions")}${metric(n(s.supply,2)+" VELD","Circulating supply")}</div><section class="section"><div class="section-head"><div><h2>Node status</h2><p>${esc(d.warning||"Consensus validation is active inside veld-node.")}</p></div><div class="controls"><span class="status ${d.online?'online':''}">${esc(d.mining_state)}</span><button class="button" data-command="${s.process_running?'node.stop':'node.start'}"${s.process_running?' data-confirm="Stop this node gracefully?"':''}>${s.process_running?'Stop node':'Start node'}</button></div></div><div class="kv"><div><b>${d.sync_lag?'Syncing':'Validated'}</b><span>Chain</span></div><div><b>${n(d.peers)}</b><span>Connections</span></div><div><b>${s.mining_ready?'Ready':'Waiting'}</b><span>Work admission</span></div><div><b>v${esc(d.version)}</b><span>Client build</span></div></div>${d.last_command?`<div class="warning">Last command: ${esc(d.last_command.action)} | ${esc(d.last_command.state)}</div>`:""}</section><section class="section"><div class="section-head"><div><h2>Chain activity</h2><p>Locally reported verified chain height over the last hour.</p></div></div>${spark(d.history,"height","Verified chain height")}</section>`}
 function blockchain(d,s){return `<div class="cards">${metric(n(d.height),"Locally verified height","green")}${metric(d.sync_lag?n(d.sync_lag):"0","Blocks behind")}${metric(bytes(s.chain_bytes),"Chain storage")}${metric("Signed + verified","Snapshot bootstrap")}</div><section class="section"><div class="section-head"><div><h2>Synchronization mode</h2><p>Snapshot starts remain quarantined until an independent genesis validation matches exactly.</p></div></div><div class="control-row"><div><h3>Signed snapshot</h3><p>Fast startup with independent full-chain validation in the background.</p></div><button class="button" data-command="sync.mode" data-mode="snapshot">Select</button></div><div class="control-row"><div><h3>Full initial block download</h3><p>Download and validate the complete chain from genesis before services open.</p></div><button class="button" data-command="sync.mode" data-mode="full">Select</button></div></section>`}

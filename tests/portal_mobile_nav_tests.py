@@ -18,25 +18,25 @@ require(
     '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
     "portal uses the wallet iOS standalone viewport mode",
 )
-require("const CACHE='veld-portal-shell-v15';", "corrected PWA shell is cache-busted")
+require("const CACHE='veld-portal-shell-v17';", "rebuilt PWA shell is cache-busted")
 require('id="mobile-nav" aria-label="Primary" hidden', "mobile nav starts hidden until session recovery")
 require('$("mobile-nav").hidden=false', "mobile nav is revealed directly after session recovery")
 require('</div>\n<nav id="mobile-nav"', "mobile nav is a direct body child, outside the app layout")
 require(".side{display:none!important}", "desktop sidebar is hidden on mobile")
-require("#mobile-nav{display:flex!important;position:fixed!important", "mobile nav is fixed")
-require("bottom:0!important", "mobile nav is anchored to the viewport bottom")
+require("position:fixed!important;", "mobile nav is fixed")
+require("bottom:calc(-1 * env(safe-area-inset-bottom,0px))!important;",
+        "mobile nav row is lowered through the iPhone bottom inset")
 require("height:68px!important", "mobile nav has a bounded height")
-require("z-index:500!important", "mobile nav matches the wallet stacking layer")
-require("transform:translateZ(0)!important", "mobile compositor keeps nav fixed")
-require("padding-bottom:calc(94px + env(safe-area-inset-bottom,0))!important",
-        "page content uses the wallet navbar clearance")
-require(".portal-more{bottom:68px!important}",
+require("z-index:1000!important", "mobile nav stays above portal content")
+require("transform:none!important", "navbar does not create a competing containing block")
+require(".main{padding-bottom:88px!important}", "page content clears the navbar")
+require("bottom:calc(68px - env(safe-area-inset-bottom,0px))!important",
         "More menu opens directly above the fixed wallet navbar")
 if "box-shadow:0 96px 0 96px" in PORTAL:
     raise AssertionError("legacy oversized navbar shadow must stay removed")
 
 require(
-    'document.querySelectorAll("#nav button.mobile").forEach(button=>{const clone=button.cloneNode(true);clone.classList.add("mob-tab");$("mobile-nav").appendChild(clone)})',
+    'document.querySelectorAll("#nav button.mobile").forEach(button=>{const clone=button.cloneNode(true);clone.classList.add("portal-tab");$("mobile-nav").appendChild(clone)})',
     "mobile nav reuses the exact existing buttons and icons",
 )
 desktop_nav_start = PORTAL.index('<nav class="nav" id="nav"')
