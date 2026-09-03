@@ -3,6 +3,19 @@
 All notable public-source changes are recorded here. Signed binary identity is
 recorded separately from source-publication commits.
 
+## 3.0.3 - 2026-09-03
+
+### Fixed
+
+- Persisted every fully validated winning side-branch block body before the
+  canonical reorganization publication callback, preventing a valid fork from
+  repeatedly rolling back when its final candidate body had remained volatile.
+
+### Compatibility
+
+- Consensus rules, protocol version, deployment identity, genesis, state
+  digest v8, existing blocks, wallets, addresses, and datadirs are unchanged.
+
 ## 3.0.2 - 2026-09-03
 
 ### Fixed

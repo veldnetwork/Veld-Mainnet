@@ -1,7 +1,20 @@
-# Veld 3.0.2 release notes
+# Veld 3.0.3 release notes
 
 Release date: pending
 Status: Windows client maintenance candidate
+
+## 3.0.3 maintenance scope
+
+Veld 3.0.3 fixes canonical publication of a fully validated winning fork. A
+candidate block body that remained volatile through replay is now persisted
+before the database callback validates and publishes the complete replacement
+suffix. A failed body write restores the prior canonical frame and retries
+without treating the valid branch as a consensus failure.
+
+This maintenance release does not change consensus, protocol version,
+deployment identity, genesis, state-digest format, or existing chain data.
+
+## Veld 3.0.2 release notes
 
 ## 3.0.2 maintenance scope
 

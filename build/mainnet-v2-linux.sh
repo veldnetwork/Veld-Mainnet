@@ -230,7 +230,7 @@ case "$role" in
     ;;
   operator)
     grep -F '"binary_role":"operator-portal"' "$output/deployment-info.txt"
-    grep -F '"client_version":"3.0.2"' "$output/deployment-info.txt"
+    grep -F '"client_version":"3.0.3"' "$output/deployment-info.txt"
     grep -F '"public_gettxhistory_compiled":false' "$output/deployment-info.txt"
     grep -F '"snapshot_bootstrap_compiled":false' "$output/deployment-info.txt"
     grep -F '"upnp_compiled":false' "$output/deployment-info.txt"

@@ -48,7 +48,7 @@ REM    Seed the fleet anchor IPs by default so the node joins the mesh. Operator
 REM    can override by setting VELD_FLEET_ANCHOR_IPS before launch.
 if not defined VELD_FLEET_ANCHOR_IPS set "VELD_FLEET_ANCHOR_IPS=5.78.107.166,5.78.97.56,5.78.127.51"
 
-set CLIENT_VERSION=3.0.2
+set CLIENT_VERSION=3.0.3
 title Veld Validator v%CLIENT_VERSION% (endorse-only)
 
 echo.

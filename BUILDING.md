@@ -1,4 +1,4 @@
-# Veld 3.0.2 attested mainnet-v2 builds
+# Veld 3.0.3 attested mainnet-v2 builds
 
 These instructions build unsigned candidates from source. They do not sign,
 package, publish, deploy, or authorize a mainnet launch. The build must begin
@@ -30,7 +30,7 @@ definitions are refused.
 
 The Linux `operator` role is the checked-in Python operations portal. Its
 controller byte-copies the reviewed source, verifies its Python bytecode and
-runtime dependencies, and requires its immutable 3.0.2/public-mainnet-v2
+runtime dependencies, and requires its immutable 3.0.3/public-mainnet-v2
 deployment identity. It is not a native consensus binary and therefore does
 not claim C++ preprocessor definitions.
 

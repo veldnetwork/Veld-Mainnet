@@ -12,9 +12,9 @@ int main() {
 #error "daybreak_version_identity_tests requires the public-mainnet profile"
 #endif
 
-    static_assert(std::string_view(CLIENT_VERSION) == "3.0.2",
+    static_assert(std::string_view(CLIENT_VERSION) == "3.0.3",
                   "public release version changed");
-    static_assert(std::string_view(CLIENT_USER_AGENT) == "/Veld:3.0.2/",
+    static_assert(std::string_view(CLIENT_USER_AGENT) == "/Veld:3.0.3/",
                   "P2P client identity changed independently");
 
     // Release identity is intentionally separate from consensus identity.

@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 LOGGER = logging.getLogger(__name__)
 
-VELD_OPERATOR_VERSION = "3.0.2"
+VELD_OPERATOR_VERSION = "3.0.3"
 VELD_OPERATOR_PROFILE = "veld-public-mainnet-v2"
 
 MAX_BODY = 32 * 1024
