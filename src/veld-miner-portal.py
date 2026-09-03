@@ -208,7 +208,7 @@ PORTAL_MANIFEST = {
     ],
 }
 PORTAL_OFFLINE_HTML = b"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a09"><title>Veld Portal offline</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#080a09;color:#f2f5f2;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(430px,100%);padding:25px;border:1px solid #343a36;border-radius:10px;background:#101311}h1{margin:0 0 8px;font:700 24px ui-monospace,Consolas,monospace}p{margin:0;color:#c5cbc7}</style><main class="card"><h1>Portal offline</h1><p>Reconnect to the internet, then reopen or refresh the app. Your node continues running independently.</p></main></html>"""
-PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v7';
+PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v8';
 const ASSETS=['/manifest.webmanifest','/icon.png?v=6','/offline'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
@@ -252,6 +252,15 @@ PORTAL_HTML = r"""<!doctype html>
     @media(max-width:520px){.topology{aspect-ratio:420/390}}
     @media(max-width:390px){.top-actions{grid-template-columns:minmax(0,1fr) auto}.top-actions .status{grid-row:2;grid-column:1}.top-actions .button{grid-row:2;grid-column:2}.cards{grid-template-columns:1fr}.cards.network-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.wide{grid-column:auto}.card{min-height:0}.kv{grid-template-columns:1fr}.more-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:340px){.cards.network-cards{grid-template-columns:1fr}}
+    /* Match the wallet PWA's document-scrolling, fixed-bottom mobile shell.
+       The previous oversized downward box-shadow hid an initial iOS viewport
+       offset but left the controls above the physical bottom until reflow. */
+    @media(max-width:900px){
+      html,body{width:100%!important;height:auto!important;min-height:100vh!important;min-height:100dvh!important;overflow:visible!important;overflow-x:hidden!important;overscroll-behavior-y:none!important}
+      .app{display:block!important;min-height:100vh!important;min-height:100dvh!important}
+      .side{position:fixed!important;inset:auto 0 0 0!important;left:0!important;right:0!important;bottom:0!important;top:auto!important;width:100%!important;height:68px!important;min-height:68px!important;max-height:68px!important;margin:0!important;padding:0!important;overflow:hidden!important;transform:translateZ(0)!important;-webkit-transform:translateZ(0)!important;will-change:transform!important;box-shadow:0 -8px 28px rgba(0,0,0,.38)!important}
+      .main{height:auto!important;min-height:100vh!important;min-height:100dvh!important;overflow:visible!important}
+    }
   </style>
 </head>
 <body>

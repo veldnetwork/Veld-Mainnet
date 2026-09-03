@@ -6330,125 +6330,13 @@ private:
     }
 
     void OpenTrustedWallet() {
-        if (!std::filesystem::is_regular_file(wallet_path_)) {
-            MessageBoxW(hwnd_,
-                L"The trusted local wallet was not found in this signed Veld package. Reinstall the current package before entering a wallet key.",
-                L"Veld Wallet", MB_OK | MB_ICONERROR);
-            return;
-        }
-        const uint16_t ui_port = veld::CompiledPublicWalletUiPort();
-        const uint16_t rpc_port = veld::CompiledPublicRpcPort();
-        auto wallet_ready = [&]() {
-            return HttpGetJson(L"127.0.0.1", ui_port, L"/manifest.json",
-                               false, 500).ok;
-        };
-        const bool owned_wallet_running = wallet_process_ &&
-            WaitForSingleObject(wallet_process_, 0) == WAIT_TIMEOUT;
-        if (!owned_wallet_running) {
-            if (wallet_process_) CloseHandle(wallet_process_);
-            wallet_process_ = nullptr;
-            if (!wallet_signer_token_.empty()) {
-                SecureZeroMemory(wallet_signer_token_.data(),
-                                 wallet_signer_token_.size());
-                wallet_signer_token_.clear();
-            }
-            HANDLE verified_wallet = OpenVerifiedTrustedFile(
-                wallet_path_, VELD_TRUSTED_WALLET_SHA256);
-            if (verified_wallet == INVALID_HANDLE_VALUE) {
-                MessageBoxW(hwnd_,
-                    L"The local wallet does not match the signer built into this signed Veld Node app. Reinstall the complete current package before entering a wallet key.",
-                    L"Veld Wallet", MB_OK | MB_ICONERROR);
-                return;
-            }
-            wallet_signer_token_ = NewDeviceToken();
-            if (wallet_signer_token_.size() != 43) {
-                CloseHandle(verified_wallet);
-                MessageBoxW(hwnd_,
-                    L"A secure local wallet launch capability could not be created.",
-                    L"Veld Wallet", MB_OK | MB_ICONERROR);
-                return;
-            }
-            std::wstring command = L"\"" + wallet_path_.wstring() +
-                L"\" --wallet --rpcurl http://127.0.0.1:" +
-                std::to_wstring(rpc_port) + L" --uiport " +
-                std::to_wstring(ui_port) + L" --datadir \"" +
-                data_dir_.wstring() + L"\"";
-            std::vector<wchar_t> mutable_command(command.begin(), command.end());
-            mutable_command.push_back(L'\0');
-            auto environment =
-                ChildEnvironmentWithSignerToken(wallet_signer_token_);
-            if (environment.empty()) {
-                CloseHandle(verified_wallet);
-                SecureZeroMemory(wallet_signer_token_.data(),
-                                 wallet_signer_token_.size());
-                wallet_signer_token_.clear();
-                MessageBoxW(hwnd_,
-                    L"A secure local wallet environment could not be created.",
-                    L"Veld Wallet", MB_OK | MB_ICONERROR);
-                return;
-            }
-            STARTUPINFOW si{};
-            si.cb = sizeof(si);
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-            PROCESS_INFORMATION pi{};
-            const BOOL created = CreateProcessW(
-                wallet_path_.c_str(), mutable_command.data(), nullptr, nullptr,
-                FALSE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
-                environment.data(),
-                wallet_path_.parent_path().c_str(), &si, &pi);
-            SecureZeroMemory(environment.data(),
-                             environment.size() * sizeof(wchar_t));
-            if (!created) {
-                CloseHandle(verified_wallet);
-                SecureZeroMemory(wallet_signer_token_.data(),
-                                 wallet_signer_token_.size());
-                wallet_signer_token_.clear();
-                MessageBoxW(hwnd_,
-                    L"The trusted local wallet could not be started.",
-                    L"Veld Wallet", MB_OK | MB_ICONERROR);
-                return;
-            }
-            CloseHandle(pi.hThread);
-            wallet_process_ = pi.hProcess;
-            for (int attempt = 0; attempt < 50; ++attempt) {
-                if (WaitForSingleObject(wallet_process_, 0) != WAIT_TIMEOUT)
-                    break;
-                if (wallet_ready()) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-            CloseHandle(verified_wallet);
-        }
-        if (!wallet_process_ ||
-            WaitForSingleObject(wallet_process_, 0) != WAIT_TIMEOUT ||
-            !wallet_ready()) {
-            if (wallet_process_ &&
-                WaitForSingleObject(wallet_process_, 0) == WAIT_TIMEOUT) {
-                TerminateProcess(wallet_process_, ERROR_CANCELLED);
-                WaitForSingleObject(wallet_process_, 2000);
-            }
-            if (wallet_process_) CloseHandle(wallet_process_);
-            wallet_process_ = nullptr;
-            if (!wallet_signer_token_.empty()) {
-                SecureZeroMemory(wallet_signer_token_.data(),
-                                 wallet_signer_token_.size());
-                wallet_signer_token_.clear();
-            }
-            MessageBoxW(hwnd_,
-                L"The signed local wallet did not claim its loopback listener. Another process may be using the wallet port, so no wallet page was opened.",
-                L"Veld Wallet", MB_OK | MB_ICONWARNING);
-            return;
-        }
-        std::wstring url = L"http://127.0.0.1:" +
-            std::to_wstring(ui_port) + L"/";
-        if (!wallet_signer_token_.empty())
-            url += L"?signer=" + Utf8ToWide(wallet_signer_token_);
         const auto opened = reinterpret_cast<INT_PTR>(ShellExecuteW(
-            hwnd_, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
-        if (opened > 32 && !wallet_signer_token_.empty()) {
-            SecureZeroMemory(wallet_signer_token_.data(),
-                             wallet_signer_token_.size());
-            wallet_signer_token_.clear();
+            hwnd_, L"open", L"https://wallet.veld.network/",
+            nullptr, nullptr, SW_SHOWNORMAL));
+        if (opened <= 32) {
+            MessageBoxW(hwnd_,
+                L"The Veld Wallet website could not be opened. Visit https://wallet.veld.network/ in your browser.",
+                L"Veld Wallet", MB_OK | MB_ICONERROR);
         }
     }
 
