@@ -2,7 +2,7 @@ sha256	role	origin	upstream_revision	upstream_path	upstream_sha256	patch	path
 59538d1aed02ee4fcd5e858d3633ebc848d3ee5a5dd9723f1247c26d952a54e7	distributed-source	Veld	-	-	-	-	.gitattributes
 f3991b57179891246efe8e7ba1137aadada136e32193e5ebd80d851324f93869	distributed-source	Veld	-	-	-	-	.gitignore
 2712c6e470f165ec2a628eec255abaae5b1653ea5d6ff19b2f4ba905462feec6	license-notice	Veld	-	-	-	-	THIRD_PARTY_NOTICES.md
-53d311a3f634ea332b9e58777d20c9ae00bec231fef1a2f8f69b18677606640d	build-controller	Veld	-	-	-	-	build/mainnet-v2-linux.sh
+bf5886648ba816a44e185a7a91994902576c7595f31a81df97af053cd0a71e12	build-controller	Veld	-	-	-	-	build/mainnet-v2-linux.sh
 8ed8888174f492def39ec9ec2f7c5b7de633b2c7abdb6de0cbf24531a76b6199	build-controller	Veld	-	-	-	-	build/mainnet-v2-windows.sh
 815ba0a5536669f3e2652b94d560759e6b5037410f2011382e8c00a550ddfc8f	generated-kat-header	PQClean-generated	202a8f96315f9ed219387a50f7e40d04af037ea8	crypto_sign/ml-dsa-65/META.yml	e83150131384d5e43a2a59baedcef96c48f5bbf4dce9377094f9bdc3ed12f7d6	-	include/crypto/mldsa65_nist_kat.h
 88d5ad6faeb0e54a806563d4078845dd48e50ea4915d5d1410235d737bf52eb9	pinned-crypto-header	Veld	-	-	-	-	include/crypto/vendored.h
