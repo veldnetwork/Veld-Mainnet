@@ -4060,6 +4060,8 @@ input.search,select.search,.search,.fi,.type-select,.hero-search-input{padding:1
   .kv .row{flex-direction:column;align-items:flex-start;gap:4px}
   .kv .v{text-align:left}
   .pager{justify-content:center}
+  .block-detail-header{display:block!important}
+  .block-detail-pager{width:100%;justify-content:center!important;margin-top:14px}
 }
 
 /* ============== TIER COLORS + DIAMOND PRISMATIC SHIMMER ============== */
@@ -4721,12 +4723,12 @@ loadStats();
         std::string full_hash = HashToHex(block->GetHash());
 
         c << "<div class=\"crumbs\"><a href=\"/blocks\">Blocks</a> / Block #" << block->height << "</div>";
-        c << "<div class=\"pheader\" style=\"margin-bottom:22px;flex-wrap:wrap\">";
+        c << "<div class=\"pheader block-detail-header\" style=\"margin-bottom:22px;flex-wrap:wrap\">";
         c << "<div><div class=\"ptitle\">Block <span style=\"color:var(--em)\">#" << block->height << "</span></div></div>";
         {
             const char* pbtn = "display:inline-flex;align-items:center;gap:6px;text-decoration:none;padding:8px 14px;border:1px solid var(--b2);border-radius:10px;background:var(--s2);color:var(--text);font-size:12.5px;font-weight:600;font-family:var(--sans)";
             const char* pcur = "display:inline-flex;align-items:center;padding:8px 14px;border-radius:10px;background:var(--em-dim);color:var(--em);font-size:12.5px;font-weight:700;font-family:var(--sans)";
-            c << "<div class=\"pager\" style=\"display:flex;gap:8px;align-items:center;flex-wrap:wrap\">";
+            c << "<div class=\"pager block-detail-pager\" style=\"display:flex;gap:8px;align-items:center;flex-wrap:wrap\">";
             if (block->height > 0)
                 c << "<a href=\"/block/height/" << (block->height-1) << "\" style=\"" << pbtn << "\"><span style=\"color:var(--em);font-weight:700\">&larr;</span> Block " << (block->height-1) << "</a>";
             c << "<span style=\"" << pcur << "\">Block " << block->height << "</span>";
