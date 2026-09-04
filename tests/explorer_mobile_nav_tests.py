@@ -57,12 +57,14 @@ if "flex:1 1 20%;width:20%;min-width:0;max-width:20%" not in LIQUIDITY:
     raise AssertionError("Liquidity gives the More button the same width as the four link tabs")
 if "-webkit-appearance:none;appearance:none" not in LIQUIDITY:
     raise AssertionError("Liquidity removes platform-specific button geometry")
-if '<a href="#nav-more" class="nb-tab nb-more-btn active"' not in LIQUIDITY:
-    raise AssertionError("Liquidity More control uses the same native link geometry as every working tab")
-if ".nav-more:target{display:block!important}" not in LIQUIDITY:
-    raise AssertionError("Liquidity More menu opens through native fragment navigation")
-if 'nav-more-toggle' in LIQUIDITY or '<button type="button" class="nb-tab nb-more-btn' in LIQUIDITY:
-    raise AssertionError("Liquidity must not reintroduce a route-specific More control")
+if '<button type="button" class="nb-tab nb-more-btn active" data-nav-more="toggle">' not in LIQUIDITY:
+    raise AssertionError("Liquidity More control does not match the working Explorer button")
+if '.nav-more[data-open="1"]{display:block!important}' not in LIQUIDITY:
+    raise AssertionError("Liquidity More menu does not use the working Explorer open state")
+if "document.addEventListener('click',function(event){" not in LIQUIDITY or "},true);" not in LIQUIDITY:
+    raise AssertionError("Liquidity More control is not delegated in the capture phase")
+if "setOpen(!pane.hasAttribute('data-open'),button);" not in LIQUIDITY:
+    raise AssertionError("Liquidity More control does not toggle the working Explorer state")
 if 'max-width:100vw' not in LIQUIDITY or 'overflow-x:hidden' not in LIQUIDITY:
     raise AssertionError("Liquidity document is not constrained to the viewport")
 
@@ -78,4 +80,4 @@ if 'width:100vw!important;min-width:100vw!important;max-width:100vw!important' n
 if 'flex:0 0 20%!important;width:20%!important;min-width:0!important;max-width:20%!important' not in ROUTE_CONTEXT:
     raise AssertionError("Liquidity navbar tabs are not constrained to five equal viewport columns")
 
-print("PASS explorer_mobile_nav_tests checks=23")
+print("PASS explorer_mobile_nav_tests checks=25")

@@ -87,7 +87,7 @@ html[data-theme="light"] .nb-tab.active{color:var(--green-dark)}
 html[data-theme="light"] .nb-tab.active::before{background:var(--green-dark)}
 .nav-more{display:none;position:fixed;left:0;right:0;bottom:0;z-index:499;background:#0a0b0a;border-top:1px solid #353b36;padding:16px 12px 86px}
 html[data-theme="light"] .nav-more{background:#fff;border-color:var(--border)}
-.nav-more:target{display:block!important}
+.nav-more[data-open="1"]{display:block!important}
 .nm-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:780px;margin:0 auto}
 .nm-cell{display:flex;min-width:0;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px 8px;border:1px solid #343a35;border-radius:12px;background:#13141a;color:#c7cec9;font-family:var(--mono);font-size:10.5px;font-weight:600;line-height:1.5;letter-spacing:.45px;text-transform:uppercase;text-decoration:none}
 .nm-cell .ic{color:#dfe4e0;font-size:20px;line-height:1}
@@ -231,7 +231,7 @@ html[data-theme="light"] .liq-card{box-shadow:0 10px 28px rgba(31,58,37,.07)}
   <a href="/blocks" class="nb-tab"><span class="ic"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 8 4-8 4-8-4zM4 10l8 4 8-4M4 14l8 4 8-4M4 6v12l8 4 8-4V6"/></svg></span><span class="lb">Blocks</span></a>
   <a href="/mempool" class="nb-tab"><span class="ic"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M4 12h7M4 18h4M16 5h4l-3 4v5l-2 1V9z"/></svg></span><span class="lb">Mempool</span></a>
   <a href="/mining" class="nb-tab"><span class="ic">&#9935;&#xfe0e;</span><span class="lb">Mining</span></a>
-  <a href="#nav-more" class="nb-tab nb-more-btn active" data-nav-more="toggle" role="button" aria-controls="nav-more" aria-expanded="false"><span class="ic"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle class="nav-icon-dot" cx="8" cy="12" r="1"/><circle class="nav-icon-dot" cx="12" cy="12" r="1"/><circle class="nav-icon-dot" cx="16" cy="12" r="1"/></svg></span><span class="lb">More</span></a>
+  <button type="button" class="nb-tab nb-more-btn active" data-nav-more="toggle"><span class="ic"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle class="nav-icon-dot" cx="8" cy="12" r="1"/><circle class="nav-icon-dot" cx="12" cy="12" r="1"/><circle class="nav-icon-dot" cx="16" cy="12" r="1"/></svg></span><span class="lb">More</span></button>
 </nav>
 <div class="nav-more" id="nav-more"><div class="nm-grid">
   <a href="/staking" class="nm-cell"><span class="ic">%</span><span class="lb">Stake</span></a>
@@ -292,11 +292,35 @@ function syncThemeButtons(){
   var theme=document.documentElement.dataset.theme||'dark';
   document.querySelectorAll('[data-theme-toggle]').forEach(function(btn){btn.textContent=theme==='light'?'\u263e':'\u2600';btn.setAttribute('aria-label',theme==='light'?'Switch to dark mode':'Switch to light mode');});
 }
-var morePane=document.getElementById('nav-more');
-var moreLink=document.querySelector('a[href="#nav-more"]');
-function syncMoreState(){if(moreLink)moreLink.setAttribute('aria-expanded',location.hash==='#nav-more'?'true':'false');}
-function closeMore(){if(location.hash==='#nav-more'){history.replaceState(null,'',location.pathname+location.search);syncMoreState();}}
-window.addEventListener('hashchange',syncMoreState);
+function attachNavMore(){
+  var pane=document.getElementById('nav-more');
+  if(!pane)return;
+  function setOpen(open,button){
+    if(open){pane.setAttribute('data-open','1');if(button)button.classList.add('active');}
+    else{
+      pane.removeAttribute('data-open');
+      var activeButton=document.querySelector('[data-nav-more="toggle"]');
+      if(activeButton&&!activeButton.dataset.activeSticky)activeButton.classList.remove('active');
+    }
+  }
+  document.addEventListener('click',function(event){
+    var button=event.target.closest('[data-nav-more="toggle"]');
+    if(button){
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(!pane.hasAttribute('data-open'),button);
+      return;
+    }
+    if(!pane.hasAttribute('data-open'))return;
+    if(pane.contains(event.target))return;
+    if(event.target.closest('.nav-bar'))return;
+    setOpen(false);
+  },true);
+  document.addEventListener('keydown',function(event){if(event.key==='Escape')setOpen(false);});
+  var initialButton=document.querySelector('[data-nav-more="toggle"]');
+  if(initialButton&&initialButton.classList.contains('active'))initialButton.dataset.activeSticky='1';
+}
+attachNavMore();
 document.addEventListener('click',function(e){
   var themeButton=e.target.closest('[data-theme-toggle]');
   if(themeButton){
@@ -308,9 +332,7 @@ document.addEventListener('click',function(e){
     syncThemeButtons();
     return;
   }
-  if(location.hash==='#nav-more'&&morePane&&!morePane.contains(e.target)&&!e.target.closest('a[href="#nav-more"]'))closeMore();
 });
-document.addEventListener('keydown',function(e){if(e.key==='Escape')closeMore();});
 syncThemeButtons();
 load();
 setInterval(load,60000);
