@@ -8938,36 +8938,12 @@ function loadDashboard() {
       document.getElementById('d-dist-label').textContent = next ? 'blocks (~' + Math.round(next * 3) + 'min)' : 'blocks away';
     }).catch(function(){});
   }, 800);
-  // Hashrate estimation ( fix: use expected_hashes_per_block
-  // from getblockchaininfo rather than the missing `difficulty` field,
-  // and fall back to a single-block sample when chain is young so the
-  // dashboard isn't stuck on "—" during bringup).
+  // Use the current difficulty-implied network rate published by the node.
+  // Recent block intervals are intentionally excluded because a short sample
+  // is dominated by ordinary proof-of-work variance.
   setTimeout(function() {
-    rpc('getblockchaininfo').then(function(d) {
-      var h = d.blocks||d.height||0;
-      if (h < 1) return;
-      // expected_hashes_per_block is a decimal string (can exceed 2^53).
-      // parseFloat is precise enough for display — we're showing 2 sig figs.
-      var hpb = parseFloat(d.expected_hashes_per_block||'0') || 0;
-      if (!hpb) return;
-      var sample = Math.min(h, 10);
-      var p1 = rpc('getblockbyheight',[String(h)]).catch(function(){return null;});
-      var p2 = rpc('getblockbyheight',[String(Math.max(0, h - sample))]).catch(function(){return null;});
-      Promise.all([p1,p2]).then(function(r) {
-        if (!r[0] || !r[1] || !r[0].time || !r[1].time) {
-          // Fallback: assume the 180s target block time so the card still
-          // shows a number instead of a dash while the chain is young.
-          var est = hpb / 180;
-          showRate(est);
-          return;
-        }
-        var dt = r[0].time - r[1].time;
-        var blocks = Math.max(1, Math.min(h, sample));
-        var avgTime = Math.max(dt / blocks, 1);
-        // Hashrate = expected_hashes_per_block / avg_block_time
-        var hps = hpb / avgTime;
-        showRate(hps);
-      });
+    rpc('getminerstatus').then(function(d) {
+      showRate(parseFloat(d.network_hashrate_est || '0') || 0);
     }).catch(function(){});
     function showRate(hps) {
       var label;
@@ -15377,19 +15353,10 @@ function loadDashboardAdaptive() {
     }).catch(function(){});
   }, 1800);
 
-  // Hashrate for the Network Health card. The original
-  // `loadDashboard` fired this at line ~3567, but loadDashboardAdaptive
-  // (which replaces it at line ~6054) didn't — so d-hashrate stayed
-  // at "—". Now painted here in the same staggered pattern as the
-  // other NH tiles. Estimate = expected_hashes_per_block / avg_solve_time
-  // from a 10-block sample; falls back to hpb / TARGET_BLOCK_TIME on
-  // a young chain (avoids blank dash when h<10 but we still have bits).
+  // Keep the Network Health card aligned with the public Explorer by using
+  // the current difficulty-implied rate rather than recent solve-time noise.
   setTimeout(function() {
-    rpc('getblockchaininfo').then(function(d) {
-      var h = d.blocks || d.height || 0;
-      if (h < 1) return;
-      var hpb = parseFloat(d.expected_hashes_per_block || '0') || 0;
-      if (!hpb) return;
+    rpc('getminerstatus').then(function(d) {
       var showRate = function(hps) {
         var label;
         if (!isFinite(hps) || hps <= 0)       label = '—';
@@ -15401,18 +15368,7 @@ function loadDashboardAdaptive() {
         var el = document.getElementById('d-hashrate');
         if (el) el.textContent = label;
       };
-      var sample = Math.min(h, 10);
-      var p1 = rpc('getblockbyheight', [String(h)]).catch(function(){return null;});
-      var p2 = rpc('getblockbyheight', [String(Math.max(0, h - sample))]).catch(function(){return null;});
-      Promise.all([p1, p2]).then(function(r) {
-        if (!r[0] || !r[1] || !r[0].time || !r[1].time) {
-          showRate(hpb / 180); return;
-        }
-        var dt = r[0].time - r[1].time;
-        var blocks = Math.max(1, Math.min(h, sample));
-        var avgTime = Math.max(dt / blocks, 1);
-        showRate(hpb / avgTime);
-      });
+      showRate(parseFloat(d.network_hashrate_est || '0') || 0);
     }).catch(function(){});
   }, 2000);
 
