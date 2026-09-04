@@ -1333,9 +1333,13 @@ public:
         if (parts.size() == 1 && parts[0] == "sw.js") {
             static const std::string sw = R"VLDSW(
 const CACHE_PREFIX = 'veld-explorer-shell-';
-const CACHE = 'veld-explorer-shell-ui-20260814-wallet-footer-layout';
+const CACHE = 'veld-explorer-shell-ui-20260903-navigation-fallback';
 self.addEventListener('install', event => {
-  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE)
+      .then(cache => cache.addAll(['/', '/blocks']))
+      .then(() => self.skipWaiting())
+  );
 });
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(
@@ -1346,7 +1350,28 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   if (event.request.mode === 'navigate' || event.request.destination === 'document') {
-    event.respondWith(fetch(event.request, {cache:'no-store'}));
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      const url = new URL(event.request.url);
+      const canonical = new Request(url.origin + url.pathname, {
+        method: 'GET', credentials: 'same-origin'
+      });
+      try {
+        const response = await fetch(event.request, {cache:'no-store'});
+        if (response.ok) {
+          await cache.put(canonical, response.clone());
+          return response;
+        }
+        const saved = await cache.match(canonical)
+          || (url.pathname === '/blocks' ? await cache.match('/blocks') : null)
+          || await cache.match('/');
+        return saved || response;
+      } catch (_) {
+        return await cache.match(canonical)
+          || (url.pathname === '/blocks' ? await cache.match('/blocks') : null)
+          || await cache.match('/');
+      }
+    })());
   }
 });
 )VLDSW";
@@ -2749,7 +2774,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="syncing">16. Syncing &amp; trust</h2>
-  <p>Veld 3.0.3 public-mainnet nodes can start from an <strong>official signed snapshot</strong> or perform a full IBD from genesis. Snapshot bytes are consensus-replayed locally before use and are bound to this deployment, genesis, launch-chain anchor, height, tip, and complete state schema.</p>
+  <p>Veld 3.0.4 public-mainnet nodes can start from an <strong>official signed snapshot</strong> or perform a full IBD from genesis. Snapshot bytes are consensus-replayed locally before use and are bound to this deployment, genesis, launch-chain anchor, height, tip, and complete state schema.</p>
   <p>A snapshot is an availability optimization, not a consensus authority. RPC, inbound P2P, explorer, mining, and validator signing remain quarantined while an independent genesis IBD downloads and validates every block and proof of work into a separate chainstate. Those services activate only after the independent chain reaches the exact snapshot tip and complete state digest.</p>
   <p>If the signed snapshot is missing, stale, malformed, from a different chain, or fails validation, the client rejects it and falls back to ordinary peer synchronization. <code>--full-ibd</code> or <code>--no-snapshot</code> always selects validation from genesis without importing a snapshot.</p>
   <p>Before validator finality activates, a fresh node relies on independently verified proof of work and the bounded reorganization horizon. After it observes a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that locally verified floor and rejects histories that conflict with it.</p>
@@ -4432,7 +4457,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
   if(sheet)sheet.addEventListener('click',function(event){if(event.target===sheet)closeSheet();});
   document.addEventListener('keydown',function(event){if(event.key==='Escape')closeSheet();});
   if(isIOS&&!standalone)setTimeout(show,1200);
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js?ui=20260814-wallet-footer-layout',{scope:'/',updateViaCache:'none'}).catch(function(){});}
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js?ui=20260903-navigation-fallback',{scope:'/',updateViaCache:'none'}).catch(function(){});}
 
   var txPath=/^\/tx\/[0-9a-f]{64}$/i;
   function markMempoolContext(){

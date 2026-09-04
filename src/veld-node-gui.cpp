@@ -1887,6 +1887,10 @@ public:
         std::filesystem::create_directories(state_dir_, state_error);
         (void)LoadPortalTrust(state_dir_ / L"remote-trust.dat", remote_trust_);
         LoadSettings();
+        if (force_clearnet_) {
+            tor_choice_ = false;
+            reachable_choice_ = true;
+        }
         // Prefer authenticated snapshot bootstrap on a new installation. The
         // node itself keeps every service quarantined until an independent
         // genesis IBD matches the imported tip and complete state digest.
@@ -2005,6 +2009,7 @@ private:
     std::atomic<bool> mining_enabled_{true};
     std::atomic<bool> reachable_choice_{true};
     std::atomic<bool> tor_choice_{false};
+    bool force_clearnet_{false};
     uint32_t topology_role_index_{0};
     int mining_preset_{1};
     std::atomic<unsigned> mining_thread_count_{PresetThreadCount(1)};
@@ -2021,6 +2026,7 @@ private:
     std::chrono::steady_clock::time_point diagnostics_copied_until_{};
     std::atomic<bool> reference_display_enabled_{true};
     std::atomic<bool> remote_monitoring_enabled_{false};
+    std::atomic<bool> portal_pair_reset_requested_{false};
     std::mutex remote_monitor_mutex_;
     RemoteMonitorStatus remote_monitor_status_;
     std::mutex remote_command_mutex_;
@@ -2053,6 +2059,7 @@ private:
     RECT remote_monitor_toggle_{};
     RECT open_monitor_portal_button_{};
     RECT copy_monitor_code_button_{};
+    RECT reset_monitor_pairing_button_{};
     RECT mining_mode_toggle_{};
     RECT open_data_button_{};
     RECT import_key_button_{};
@@ -2543,6 +2550,8 @@ private:
                 data_dir_ = argv[++i];
             else if (arg == L"--node" && i + 1 < argc)
                 node_path_ = argv[++i];
+            else if (arg == L"--clearnet")
+                force_clearnet_ = true;
         }
         LocalFree(argv);
     }
@@ -5497,6 +5506,12 @@ private:
         } else {
             copy_monitor_code_button_ = {};
         }
+        reset_monitor_pairing_button_ = {
+            monitor.right - S(480), monitor.top + S(48),
+            monitor.right - S(330), monitor.top + S(87)};
+        DrawButton(dc, reset_monitor_pairing_button_, L"New pair code",
+                   remote_monitoring_enabled_.load()
+                       && monitor_status.credential_ready);
 
         const int paths_top = monitor.bottom + gap;
         RECT paths{left, paths_top, right, paths_top + S(144)};
@@ -5721,6 +5736,30 @@ private:
                 code = remote_monitor_status_.pair_code;
             }
             if (!code.empty()) CopyWideText(hwnd_, code);
+        } else if (page_ == Page::Settings &&
+                   PtInRect(&reset_monitor_pairing_button_, p) &&
+                   remote_monitoring_enabled_.load()) {
+            bool credential_ready = false;
+            {
+                std::lock_guard<std::mutex> lock(remote_monitor_mutex_);
+                credential_ready = remote_monitor_status_.credential_ready;
+            }
+            if (!credential_ready) return;
+            if (MessageBoxW(hwnd_,
+                    L"Create a new one-time pairing code?\n\nThis machine will "
+                    L"be removed from its current portal account and prior "
+                    L"portal command access will be revoked.",
+                    L"Reset Veld Portal pairing",
+                    MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES) {
+                portal_pair_reset_requested_.store(true);
+                {
+                    std::lock_guard<std::mutex> lock(remote_monitor_mutex_);
+                    remote_monitor_status_.detail =
+                        L"Requesting a new one-time pairing code...";
+                    remote_monitor_status_.report_ok = false;
+                }
+                worker_cv_.notify_all();
+            }
         } else if (page_ == Page::Settings &&
                    PtInRect(&check_update_button_, p)) {
             if (update_operation_.load() == UpdateOperation::None) {
@@ -7006,6 +7045,43 @@ private:
         }
     }
 
+    bool ResetRemotePairing(std::string& token) {
+        if (EnsureMonitoringToken(token).empty()) {
+            std::lock_guard<std::mutex> lock(remote_monitor_mutex_);
+            remote_monitor_status_.credential_ready = false;
+            remote_monitor_status_.report_ok = false;
+            remote_monitor_status_.detail =
+                L"The protected device credential could not be loaded.";
+            return false;
+        }
+        const auto trust_path = state_dir_ / L"remote-trust.dat";
+        std::error_code exists_error;
+        const bool trust_exists = std::filesystem::exists(trust_path, exists_error);
+        if (exists_error || (trust_exists && !DeleteFileW(trust_path.c_str()))) {
+            std::lock_guard<std::mutex> lock(remote_monitor_mutex_);
+            remote_monitor_status_.report_ok = false;
+            remote_monitor_status_.detail =
+                L"Local portal trust could not be cleared securely.";
+            return false;
+        }
+        {
+            std::lock_guard<std::mutex> lock(remote_trust_mutex_);
+            remote_trust_ = {};
+        }
+        const HttpResult response = HttpPostJson(
+            L"portal.veld.network", INTERNET_DEFAULT_HTTPS_PORT,
+            L"/api/v1/device/reset-pairing", "{}", token, 2500);
+        std::lock_guard<std::mutex> lock(remote_monitor_mutex_);
+        remote_monitor_status_.credential_ready = true;
+        remote_monitor_status_.report_ok = false;
+        remote_monitor_status_.pair_code.clear();
+        remote_monitor_status_.paired = false;
+        remote_monitor_status_.detail = response.ok
+            ? L"Pairing reset. Fetching the new one-time code..."
+            : L"Pairing reset failed. Try New pair code again.";
+        return response.ok;
+    }
+
     void PollLoop() {
         auto last_reference = std::chrono::steady_clock::time_point{};
         auto last_topology = std::chrono::steady_clock::time_point{};
@@ -7246,6 +7322,10 @@ private:
             next.log_lines = ReadLogTail(LogPath());
 
             if (remote_monitoring_enabled_.load()) {
+                if (portal_pair_reset_requested_.exchange(false)) {
+                    (void)ResetRemotePairing(monitoring_token);
+                    last_monitor_report = {};
+                }
                 if (last_monitor_report.time_since_epoch().count() == 0 ||
                     now - last_monitor_report >= std::chrono::seconds(5)) {
                     last_monitor_report = now;

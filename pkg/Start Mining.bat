@@ -51,7 +51,7 @@ REM   Bump this string EVERY TIME a new Windows client zip is published.
 REM   Format: MAJOR.MINOR.PATCH (strict semantic versioning).
 REM   It's displayed in the welcome banner so users can confirm they're
 REM   on the current release at a glance.
-set CLIENT_VERSION=3.0.3
+set CLIENT_VERSION=3.0.4
 title Veld Desktop Mining Client v%CLIENT_VERSION%
 
 echo.

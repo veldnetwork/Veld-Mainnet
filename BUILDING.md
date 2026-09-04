@@ -1,4 +1,4 @@
-# Veld 3.0.3 attested mainnet-v2 builds
+# Veld 3.0.4 attested mainnet-v2 builds
 
 These instructions build unsigned candidates from source. They do not sign,
 package, publish, deploy, or authorize a mainnet launch. The build must begin
@@ -30,14 +30,15 @@ definitions are refused.
 
 The Linux `operator` role is the checked-in Python operations portal. Its
 controller byte-copies the reviewed source, verifies its Python bytecode and
-runtime dependencies, and requires its immutable 3.0.3/public-mainnet-v2
+runtime dependencies, and requires its immutable 3.0.4/public-mainnet-v2
 deployment identity. It is not a native consensus binary and therefore does
 not claim C++ preprocessor definitions.
 
 Every public-mainnet role is also built with the release security reductions:
 node and fleet roles include signed snapshot bootstrap with independent
 genesis-validation quarantine; UPnP is compile-incompatible with the public
-profile; public transaction-history scanners are absent; and keygen accepts seed input
+profile; unbounded whole-chain transaction-history scanners are absent while
+bounded address history comes from a persistent derived index; and keygen accepts seed input
 only from a hidden terminal or explicitly inherited protected pipe/handle,
 never from argv. The controllers fail if test hooks or those optional public
 surfaces are enabled.

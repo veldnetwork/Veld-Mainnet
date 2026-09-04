@@ -3,6 +3,30 @@
 All notable public-source changes are recorded here. Signed binary identity is
 recorded separately from source-publication commits.
 
+## 3.0.4 - 2026-09-03
+
+### Fixed
+
+- Restored public address transaction history through a bounded persistent
+  index rather than request-time whole-chain scanning.
+- Made explorer document navigation retain the last successful shell during
+  transient upstream failures instead of displaying a white refresh page.
+- Preserved signed-snapshot eligibility across maintenance updates and exposed
+  the actual selected, eligible, validating, or unavailable state in the GUI.
+- Exported one portable encrypted `.veld-keys` copy of the mining identity
+  after successful sign-in without generating a second wallet.
+- Added a locally confirmed portal re-pair action that revokes prior portal
+  command trust and issues a new one-time pairing code.
+- Restored the signed `Start Veld Node.bat` launcher in the minimal Windows
+  package and made that launcher explicitly select clearnet.
+- Reworded the initial peer-discovery status so a normal connection delay is
+  not reported as a persistent no-peer warning.
+
+### Compatibility
+
+- Consensus rules, protocol version, deployment identity, genesis, state
+  digest v8, existing blocks, wallets, addresses, and datadirs are unchanged.
+
 ## 3.0.3 - 2026-09-03
 
 ### Fixed

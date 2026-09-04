@@ -44,7 +44,7 @@ $RequiredPackageFiles = if ($Distribution -eq 'Terminal') {
       'tor-watchdog.ps1', 'CHANGES.txt')
 } else {
     @('bin/veld-node.exe', 'bin/veld-wallet.exe', 'Veld Node.exe',
-      'veld-update.ps1', 'tor-setup.ps1', 'CHANGES.txt')
+      'Start Veld Node.bat', 'veld-update.ps1', 'tor-setup.ps1', 'CHANGES.txt')
 }
 $Node = Join-Path $InstallDir 'bin\veld-node.exe'
 $LocalManifest = Join-Path $InstallDir 'SHA256SUMS.txt'

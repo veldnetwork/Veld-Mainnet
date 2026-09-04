@@ -19,6 +19,7 @@ def check(condition: bool, message: str) -> None:
 build = (ROOT / "build/mainnet-v2-windows.sh").read_text(encoding="utf-8")
 gui = (ROOT / "src/veld-node-gui.cpp").read_text(encoding="utf-8")
 updater = (ROOT / "pkg/veld-update.ps1").read_text(encoding="utf-8")
+launcher = (ROOT / "pkg/Start Veld Node.bat").read_text(encoding="utf-8")
 
 for archive in ("libc++.a", "libc++abi.a", "libunwind.a", "libleveldb.a"):
     check(archive in build, f"Windows build does not pin {archive}")
@@ -58,12 +59,28 @@ for path in (
     "bin/veld-node.exe",
     "bin/veld-wallet.exe",
     "Veld Node.exe",
+    "Start Veld Node.bat",
     "veld-update.ps1",
     "tor-setup.ps1",
     "CHANGES.txt",
 ):
     check(f"'{path}'" in node_layout, f"updater does not require {path}")
-for redundant in ("bin/veld-node-gui.exe", "Start Veld Node.bat"):
+for redundant in ("bin/veld-node-gui.exe",):
     check(f"'{redundant}'" not in node_layout, f"updater still requires {redundant}")
+
+for staged in (
+    'cp "$src/pkg/Start Veld Node.bat" "$output/Start Veld Node.bat"',
+    'cp "$src/pkg/veld-update.ps1" "$output/veld-update.ps1"',
+    'cp "$src/pkg/tor-setup.ps1" "$output/tor-setup.ps1"',
+):
+    check(staged in build, f"GUI build does not stage {staged}")
+check('"%VELD_WINDOWED%" --clearnet --node' in launcher,
+      "Windows launcher does not force the requested clearnet mode")
+check("veld-reachability.ps1" not in launcher,
+      "minimal GUI launcher still requires the optional reachability helper")
+check("bin\\veld-node-gui.exe" not in launcher,
+      "minimal GUI launcher still requires a duplicate GUI executable")
+check('arg == L"--clearnet"' in gui and "force_clearnet_ = true" in gui,
+      "GUI does not honor the clearnet launcher override")
 
 print(f"PASS windows_self_contained_client_tests checks={checks}")

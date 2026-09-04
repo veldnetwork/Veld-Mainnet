@@ -1,7 +1,21 @@
-# Veld 3.0.3 release notes
+# Veld 3.0.4 release notes
 
 Release date: pending
 Status: Windows client maintenance candidate
+
+## 3.0.4 maintenance scope
+
+Veld 3.0.4 restores bounded indexed address history, keeps the explorer PWA on
+its last successful page during transient web failures, restores the signed
+clearnet batch launcher, exports one portable encrypted mining keyfile after
+sign-in, reports the real snapshot-bootstrap state, preserves snapshot
+eligibility across updates, and lets an operator explicitly request a new
+one-time portal pairing code from Settings.
+
+This maintenance release does not change consensus, protocol version,
+deployment identity, genesis, state-digest format, or existing chain data.
+
+## Veld 3.0.3 release notes
 
 ## 3.0.3 maintenance scope
 

@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 LOGGER = logging.getLogger(__name__)
 
-VELD_OPERATOR_VERSION = "3.0.3"
+VELD_OPERATOR_VERSION = "3.0.4"
 VELD_OPERATOR_PROFILE = "veld-public-mainnet-v2"
 
 MAX_BODY = 32 * 1024
@@ -476,7 +476,8 @@ def route_rate_bucket(path: str) -> str:
         "/", "/healthz", "/manifest.webmanifest", "/service-worker.js",
         "/offline.html", "/icon.png", "/api/v1/session", "/api/v1/devices",
         "/api/v1/register", "/api/v1/login", "/api/v1/logout",
-        "/api/v1/device/report", "/api/v1/devices/claim",
+        "/api/v1/device/report", "/api/v1/device/reset-pairing",
+        "/api/v1/devices/claim",
         "/api/v1/devices/trust-key", "/api/v1/devices/command",
         "/api/v1/devices/rename", "/api/v1/devices/revoke",
     }
@@ -1017,6 +1018,38 @@ class PortalStore:
                 ),
             )
             return cur.rowcount == 1
+
+    def reset_pairing(self, token: str) -> dict[str, int | str] | None:
+        """Detach one authenticated device and issue exactly one fresh code."""
+        now, token_hash = int(time.time()), self.token_hash(token)
+        with self.lock, self.database() as db:
+            row = db.execute(
+                "SELECT id FROM devices WHERE token_hash=?", (token_hash,)
+            ).fetchone()
+            if row is None:
+                return None
+            device_id = int(row["id"])
+            for _ in range(8):
+                code = self.pair_code()
+                expires = now + PAIR_SECONDS
+                try:
+                    db.execute(
+                        """UPDATE devices
+                           SET account_id=NULL,pair_code=?,pair_expires=?,
+                               command_key_x='',command_key_y='',command_key_id='',
+                               command_sequence=0
+                           WHERE id=?""",
+                        (code, expires, device_id),
+                    )
+                    db.execute(
+                        """UPDATE commands SET state='superseded',completed_at=?
+                           WHERE device_id=? AND state IN ('queued','delivered')""",
+                        (now, device_id),
+                    )
+                    return {"pair_code": code, "pair_expires": expires}
+                except sqlite3.IntegrityError:
+                    continue
+        raise RuntimeError("pair code allocation failed")
 
     def enroll_command_key(
         self, account_id: int, device_id: int, key: dict[str, str]
@@ -1963,6 +1996,31 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return self.reply(
                     200, self.app.store.report(token, validate_report(self.read_json()))
                 )
+
+            if path == "/api/v1/device/reset-pairing":
+                authorizations = self.headers.get_all("Authorization", [])
+                if len(authorizations) != 1:
+                    return self.reply(401, {"error": "Invalid device credential"})
+                authorization = authorizations[0]
+                token = authorization[7:] if authorization.startswith("Bearer ") else ""
+                if not DEVICE_TOKEN_RE.fullmatch(token):
+                    return self.reply(401, {"error": "Invalid device credential"})
+                if self.read_json() != {}:
+                    return self.reply(400, {"error": "Invalid reset request"})
+                token_identity = "device-token:" + hashlib.sha256(
+                    token.encode("ascii")
+                ).hexdigest()
+                if not self.app.limiter.allow_many(
+                    (
+                        (token_identity, "pairing-reset", 3, 3600),
+                        ("global", "pairing-reset", 300, 3600),
+                    )
+                ):
+                    return self.reply(429, {"error": "Pairing reset rate exceeded"})
+                replacement = self.app.store.reset_pairing(token)
+                if replacement is None:
+                    return self.reply(404, {"error": "Machine not found"})
+                return self.reply(200, {"ok": True, **replacement})
 
             row = self.authenticated(csrf=True)
             if not row:

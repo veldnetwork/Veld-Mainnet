@@ -3109,7 +3109,7 @@ int main(int argc, char* argv[]) {
             }
         }
         if (connected == 0) {
-            std::cerr << "  [WARN] No peers are reachable; sync will retry automatically.\n";
+            std::cout << "  Peer discovery is active; initial connections are still pending.\n";
         } else {
             std::cout << GREEN << "  Peers:   " << RESET << connected
                       << " connected\n";
