@@ -1,6 +1,10 @@
 (function () {
   'use strict';
 
+  var compactLayout = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+  var touchLayout = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  document.documentElement.dataset.deviceLayout = compactLayout || touchLayout ? 'mobile' : 'desktop';
+
   var txPath = /^\/tx\/[0-9a-f]{64}$/i;
 
   function removeLegacyMiningGuide() {

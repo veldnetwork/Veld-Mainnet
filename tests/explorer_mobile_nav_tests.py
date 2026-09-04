@@ -57,13 +57,15 @@ if "flex:1 1 20%;width:20%;min-width:0;max-width:20%" not in LIQUIDITY:
     raise AssertionError("Liquidity gives the More button the same width as the four link tabs")
 if "-webkit-appearance:none;appearance:none" not in LIQUIDITY:
     raise AssertionError("Liquidity removes platform-specific button geometry")
-if '<input class="nav-more-toggle" id="nav-more-toggle" type="checkbox"' not in LIQUIDITY:
-    raise AssertionError("Liquidity More menu has a native state control")
-if '<label for="nav-more-toggle" class="nb-tab nb-more-btn active"' not in LIQUIDITY:
-    raise AssertionError("Liquidity More tab uses link-equivalent flex geometry")
-if ".nav-more-toggle:checked~.nav-more{display:block}" not in LIQUIDITY:
-    raise AssertionError("Liquidity More menu opens without a JavaScript click dependency")
-if '<button type="button" class="nb-tab nb-more-btn' in LIQUIDITY:
-    raise AssertionError("Liquidity must not reintroduce its route-specific More button")
+if '<a href="#nav-more" class="nb-tab nb-more-btn active"' not in LIQUIDITY:
+    raise AssertionError("Liquidity More control uses the same native link geometry as every working tab")
+if ".nav-more:target{display:block!important}" not in LIQUIDITY:
+    raise AssertionError("Liquidity More menu opens through native fragment navigation")
+if 'nav-more-toggle' in LIQUIDITY or '<button type="button" class="nb-tab nb-more-btn' in LIQUIDITY:
+    raise AssertionError("Liquidity must not reintroduce a route-specific More control")
+
+ROUTE_CONTEXT = (ROOT / "resources" / "explorer-route-context-v1.js").read_text(encoding="utf-8")
+if "document.documentElement.dataset.deviceLayout = compactLayout || touchLayout ? 'mobile' : 'desktop';" not in ROUTE_CONTEXT:
+    raise AssertionError("Explorer selects its mobile shell before the first body paint")
 
 print("PASS explorer_mobile_nav_tests checks=18")
