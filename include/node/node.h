@@ -3087,18 +3087,11 @@ public:
             uint32_t bits = mining_bits_;
             if (bits == 0) bits = chain_.ComputeNextBits();
             double net_hr = 0.0;
-            {
-                uint32_t exp = bits >> 24;
-                uint32_t mantissa = bits & 0x007fffff;
-                if (mantissa > 0 && exp >= 3) {
-                    int shift_exp = 256 - 8 * ((int)exp - 3);
-                    if (shift_exp >= 0 && shift_exp < 1023) {
-                        double pow2 = std::ldexp(1.0, shift_exp);
-                        double target_f = pow2 / (double)mantissa;
-                        double T = (double)TARGET_BLOCK_TIME;
-                        if (T > 0) net_hr = target_f / T;
-                    }
-                }
+            PowDisplayMetrics metrics;
+            if (CalculatePowDisplayMetrics(bits, metrics) &&
+                TARGET_BLOCK_TIME > 0) {
+                net_hr = metrics.expected_hashes_per_block /
+                    static_cast<double>(TARGET_BLOCK_TIME);
             }
             std::ostringstream j;
             const bool mining_configured =

@@ -67,7 +67,11 @@ require("20260904-network-only" in EXPLORER,
         "explorer service-worker registration was not advanced")
 require("renderConsensusPhase" in ROUTE and "fetch('/api/stats'" in ROUTE,
         "deployed explorer presentation is not bound to live consensus phase")
+require("refreshObservedHashrate" in ROUTE and
+        "calculateExpectedHashes" in ROUTE and
+        "Hashrate (10-block estimate)" in ROUTE,
+        "explorer hashrate is not derived from canonical work and recent blocks")
 require("testnet" not in ROUTE.lower() and "test net" not in ROUTE.lower(),
         "explorer public runtime asset exposes a test-network reference")
 
-print("public mainnet surface checks: PASS (26 assertions)")
+print("public mainnet surface checks: PASS (27 assertions)")

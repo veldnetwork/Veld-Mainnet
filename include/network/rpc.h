@@ -1540,14 +1540,11 @@ private:
             uint32_t tip_bits = 0;
             if (!chain_.IsEmpty()) {
                 tip_bits = chain_.TipCopy().header.bits;
-                uint32_t exp  = tip_bits >> 24;
-                uint32_t mant = tip_bits & 0x7FFFFF;
-                if (exp > 0 && exp <= 32 && mant > 0) {
-                    double log2_expected = 256.0 - 8.0 * (double)((int)exp - 3) - std::log2((double)mant);
-                    expected_hashes_per_block = std::pow(2.0, log2_expected);
-                    double log2_diff1_expected = 256.0 - 8.0 * (double)(0x1d - 3) - std::log2((double)0x00ffff);
-                    double expected_diff1 = std::pow(2.0, log2_diff1_expected);
-                    difficulty = expected_hashes_per_block / expected_diff1;
+                PowDisplayMetrics metrics;
+                if (CalculatePowDisplayMetrics(tip_bits, metrics)) {
+                    expected_hashes_per_block =
+                        metrics.expected_hashes_per_block;
+                    difficulty = metrics.difficulty;
                 }
             }
             std::ostringstream diff_ss;

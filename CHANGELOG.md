@@ -7,6 +7,8 @@ recorded separately from source-publication commits.
 
 ### Fixed
 
+- Corrected public proof-of-work difficulty and hashrate metrics to use the
+  canonical compact target, and labeled the Explorer's live ten-block estimate.
 - Matched homepage, explorer, and wallet reward descriptions to the consensus
   transition: ordinary blocks pay 50% miner / 50% vault before staking
   activation, then 50% / 20% / 20% / 10% after activation.

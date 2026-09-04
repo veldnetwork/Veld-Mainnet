@@ -4554,7 +4554,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
   <div class="tile gold"><div class="l">Total supply</div><div class="v" id="s-supply">)HTML";
         page << std::fixed << std::setprecision(0) << supply;
         page << R"HTML(<span class="u">VELD</span></div></div>
-  <div class="tile"><div class="l">Hashrate</div><div class="v" id="s-hashrate">&mdash;<span class="u">KH/s</span></div></div>
+  <div class="tile"><div class="l">Hashrate (target estimate)</div><div class="v" id="s-hashrate">&mdash;<span class="u">KH/s</span></div></div>
   <div class="tile span2"><div class="l">Mempool</div><div class="v"><span id="s-mempool">&mdash;</span><span class="u">tx &middot; <span id="s-mempool-kb">&mdash;</span> KB &middot; <span id="s-peers">&mdash;</span> network nodes</span></div></div>
 </div>
 
@@ -5786,15 +5786,14 @@ loadStats();
             tip_ts = tip.header.timestamp;
         } catch (...) {}
         double difficulty = 0.0;
-        if (bits != 0) {
-            uint32_t exp = bits >> 24;
-            uint32_t mant = bits & 0xFFFFFF;
-            if (exp >= 3 && exp <= 32 && mant > 0)
-                difficulty = (double)0x00000808 / (double)mant * pow(256.0, (int)(0x1f - exp));
-        }
         double hashrate_hps = 0.0;
-        if (difficulty > 0.0 && TARGET_BLOCK_TIME > 0) {
-            hashrate_hps = difficulty * 4294967296.0 / (double)TARGET_BLOCK_TIME;
+        PowDisplayMetrics metrics;
+        if (bits != 0 && CalculatePowDisplayMetrics(bits, metrics)) {
+            difficulty = metrics.difficulty;
+            if (TARGET_BLOCK_TIME > 0) {
+                hashrate_hps = metrics.expected_hashes_per_block /
+                    static_cast<double>(TARGET_BLOCK_TIME);
+            }
         }
         j << "\"best_block_hash\":\"" << HashToHex(chain_.TipCopy().GetHash()) << "\","
           << "\"difficulty\":" << std::setprecision(4) << difficulty << ","

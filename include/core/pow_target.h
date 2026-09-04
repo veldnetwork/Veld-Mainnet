@@ -3,6 +3,7 @@
 #include "btc_pow.h"
 #include "hash.h"
 
+#include <cmath>
 #include <cstdint>
 
 namespace veld {
@@ -22,6 +23,11 @@ struct CanonicalPowTarget {
     uint32_t bits{0};
     btcspv::U256 value{};
     Hash256 bytes{};
+};
+
+struct PowDisplayMetrics {
+    double expected_hashes_per_block{0.0};
+    double difficulty{0.0};
 };
 
 inline btcspv::U256 VeldPowLimit() {
@@ -72,6 +78,38 @@ inline bool DecodeExpectedVeldTarget(
         return false;
     }
     return true;
+}
+
+// Derive operator-facing work metrics from the same canonical compact target
+// accepted by consensus. Difficulty is relative to Bitcoin's historical
+// difficulty-one target; expected_hashes_per_block is the display-precision
+// approximation of 2^256 / target used by the RPC and monitoring surfaces.
+inline bool CalculatePowDisplayMetrics(uint32_t raw_bits,
+                                       PowDisplayMetrics& out) {
+    out = PowDisplayMetrics{};
+    CanonicalPowTarget decoded;
+    if (!DecodeCanonicalVeldTarget(raw_bits, decoded)) return false;
+
+    const uint32_t exponent = raw_bits >> 24;
+    const uint32_t mantissa = raw_bits & 0x007fffffu;
+    if (exponent == 0 || exponent > 32 || mantissa == 0) return false;
+
+    const double log2_expected =
+        256.0 - 8.0 * static_cast<double>(static_cast<int>(exponent) - 3) -
+        std::log2(static_cast<double>(mantissa));
+    const double expected_hashes = std::exp2(log2_expected);
+    const double log2_diff1_expected =
+        256.0 - 8.0 * static_cast<double>(0x1d - 3) -
+        std::log2(static_cast<double>(0x00ffff));
+    const double diff1_expected = std::exp2(log2_diff1_expected);
+    if (!std::isfinite(expected_hashes) || expected_hashes <= 0.0 ||
+        !std::isfinite(diff1_expected) || diff1_expected <= 0.0) {
+        return false;
+    }
+
+    out.expected_hashes_per_block = expected_hashes;
+    out.difficulty = expected_hashes / diff1_expected;
+    return std::isfinite(out.difficulty) && out.difficulty > 0.0;
 }
 
 inline const char* CompactTargetErrorName(CompactTargetError error) {

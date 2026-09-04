@@ -98,15 +98,57 @@
       .catch(function () {});
   }
 
+  function calculateExpectedHashes(bits) {
+    var exponent = bits >>> 24;
+    var mantissa = bits & 0x007fffff;
+    if (exponent < 3 || exponent > 32 || mantissa <= 0) return 0;
+    return Math.pow(2, 256 - 8 * (exponent - 3) - Math.log2(mantissa));
+  }
+
+  function refreshObservedHashrate() {
+    if (window.location.pathname !== '/') return;
+    fetch('/api/stats', {cache: 'no-store', credentials: 'same-origin'})
+      .then(function (response) {
+        if (!response.ok) throw new Error('stats unavailable');
+        return response.json();
+      })
+      .then(function (stats) {
+        var height = Number(stats.height || 0);
+        if (!Number.isSafeInteger(height) || height < 1) return;
+        var sample = Math.min(height, 10);
+        return Promise.all([
+          fetch('/api/v1/block/' + height, {cache: 'no-store'}).then(function (r) { return r.json(); }),
+          fetch('/api/v1/block/' + (height - sample), {cache: 'no-store'}).then(function (r) { return r.json(); })
+        ]).then(function (blocks) {
+          var latest = blocks[0];
+          var earlier = blocks[1];
+          var elapsed = Number(latest.time) - Number(earlier.time);
+          var expected = calculateExpectedHashes(Number(latest.bits));
+          if (!(elapsed > 0) || !(expected > 0)) return;
+          var rate = expected / (elapsed / sample);
+          var value = document.getElementById('s-hashrate');
+          if (value) value.innerHTML = (rate / 1000).toFixed(1) + '<span class="u">KH/s</span>';
+          var tile = value && value.closest('.tile');
+          var label = tile && tile.querySelector('.l');
+          if (label) label.textContent = 'Hashrate (10-block estimate)';
+        });
+      })
+      .catch(function () {});
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', removeLegacyMiningGuide, { once: true });
     document.addEventListener('DOMContentLoaded', formatRichListBalances, { once: true });
     document.addEventListener('DOMContentLoaded', refreshConsensusPhase, { once: true });
+    document.addEventListener('DOMContentLoaded', refreshObservedHashrate, { once: true });
   } else {
     removeLegacyMiningGuide();
     formatRichListBalances();
     refreshConsensusPhase();
+    refreshObservedHashrate();
   }
+
+  window.setInterval(refreshObservedHashrate, 10000);
 
   function markMempoolContext() {
     document.querySelectorAll('.nav-bar .nb-tab.active, .side-nav .sn-link.active').forEach(function (item) {
