@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Veld public-mainnet-v2 is live: a memory-hard proof-of-work network whose native transaction and finality signatures use ML-DSA-65, with staking activation at 10,000 VELD mined.">
+<link rel="canonical" href="https://veld.network/">
+<title>Veld — Where Value Is Earned</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0B0A;--surface:#111311;--surface-2:#171A17;--surface-hover:#1A1D1A;
+  --border:rgba(255,255,255,.06);--border-strong:rgba(255,255,255,.11);
+  --text:#E5E8E5;--text-dim:#B0B3B0;--text-muted:#707570;
+  --em:#32F06E;--em-dim:rgba(50,240,110,.18);--em-bg:rgba(50,240,110,.07);
+  --em-bg-strong:rgba(50,240,110,.13);--em-glow:rgba(50,240,110,.35);
+  --gold:#FFD84A;--gold-bg:rgba(255,216,74,.08);
+  --button-bg:#303832;--button-bg-hover:#3A433C;--button-border:#59645B;--button-border-hover:#6B786E;--button-text:#F5F7F5;
+  --red:#FF6057;--blue:#4CB8FF;--purple:#B07CFF;
+  --font-sans:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --font-mono:'JetBrains Mono','SF Mono','Cascadia Code',Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;position:relative;overflow-x:hidden;letter-spacing:-.005em;font-feature-settings:"cv11","ss01"}
+a{color:var(--em);text-decoration:none}
+a:focus-visible{outline:2px solid var(--text);outline-offset:3px;border-radius:3px}
+
+/* ── Sleek scrollbars ── */
+*{scrollbar-width:thin;scrollbar-color:rgba(50,240,110,.22) transparent}
+::-webkit-scrollbar{width:6px;height:6px;background:transparent}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(50,240,110,.18);border-radius:6px;transition:background .2s}
+::-webkit-scrollbar-thumb:hover{background:rgba(50,240,110,.4)}
+*:not(:hover)::-webkit-scrollbar-thumb{background:rgba(50,240,110,.06)}
+*:hover::-webkit-scrollbar-thumb{background:rgba(50,240,110,.22)}
+
+/* ── Signature animations ── */
+@keyframes pulseGlow{0%,100%{text-shadow:0 0 20px rgba(50,240,110,.4),0 0 50px rgba(50,240,110,.1)}50%{text-shadow:0 0 32px rgba(50,240,110,.65),0 0 72px rgba(50,240,110,.2)}}
+@keyframes brandGlow{0%,100%{text-shadow:0 0 24px rgba(50,240,110,.75),0 0 48px rgba(50,240,110,.45),0 0 96px rgba(50,240,110,.18),0 0 140px rgba(50,240,110,.08)}50%{text-shadow:0 0 40px rgba(50,240,110,1),0 0 80px rgba(50,240,110,.65),0 0 140px rgba(50,240,110,.3),0 0 200px rgba(50,240,110,.15)}}
+@keyframes heartbeat{0%,70%,100%{transform:scale(1);box-shadow:0 0 5px rgba(50,240,110,.9)}30%{transform:scale(1.4);box-shadow:0 0 18px rgba(50,240,110,.5)}}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes shimmer{0%{transform:translateX(-120%) skewX(-18deg)}100%{transform:translateX(320%) skewX(-18deg)}}
+@keyframes cursorBlink{0%,50%{opacity:1}51%,100%{opacity:0}}
+@keyframes diamondShine{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+@keyframes hudFlicker{0%,92%,100%{opacity:1}94%{opacity:.6}96%{opacity:1}98%{opacity:.75}}
+@keyframes aurora{0%,100%{transform:translate(0,0) rotate(0deg);opacity:.22}33%{transform:translate(-40px,20px) rotate(3deg);opacity:.3}66%{transform:translate(30px,-10px) rotate(-2deg);opacity:.26}}
+
+/* ── Grid watermark ── */
+body::before{display:none!important}
+
+/* Page entry */
+body > *{animation:fadeInUp .55s ease both;position:relative;z-index:1}
+body > *:nth-child(2){animation-delay:60ms}
+body > *:nth-child(3){animation-delay:120ms}
+body > *:nth-child(4){animation-delay:180ms}
+body > *:nth-child(5){animation-delay:240ms}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}body::before{display:none!important}}
+
+/* HUD cards use clean borders without decorative corner brackets. */
+.hud::before,.hud::after{display:none!important;content:none!important}
+
+/* ── Nav ── */
+.nav-bar{position:sticky;top:0;z-index:10;background:rgba(10,11,10,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
+.nav-inner{max-width:1320px;margin:0 auto;padding:12px 20px;display:grid;grid-template-columns:auto minmax(150px,1fr) auto;align-items:center;gap:clamp(16px,2vw,30px)}
+.brand{display:inline-flex;align-items:center;flex:0 0 auto;font-weight:700;font-size:17px;letter-spacing:5px;color:var(--em);position:relative}
+.brand:hover{text-decoration:none}
+.brand .dot{color:var(--em)}
+.brand .dot{color:#fff;text-shadow:none}
+.nav-links{min-width:0;display:flex;gap:clamp(9px,1.1vw,18px);font-size:12px;align-items:center}
+.nav-links a{white-space:nowrap}
+.nav-links a:not(.btn){color:var(--text-dim);transition:color .15s,text-shadow .2s;font-weight:500}
+.nav-social{justify-self:start;display:inline-flex;align-items:center;white-space:nowrap;color:var(--text)!important;font-size:12px;font-weight:500}
+.nav-social .handle{color:var(--em);margin-left:4px}
+.nav-links a:hover{color:var(--em);text-shadow:0 0 12px rgba(50,240,110,.35)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:6px;font-size:13px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:background .18s,border-color .18s,transform .18s,box-shadow .18s;border:1px solid var(--button-border);background:linear-gradient(180deg,#343C36,var(--button-bg));color:var(--button-text);position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 5px 14px rgba(0,0,0,.2)}
+.btn:hover{background:var(--button-bg-hover);border-color:var(--button-border-hover);color:#fff;text-decoration:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 7px 18px rgba(0,0,0,.28);transform:translateY(-1px)}
+.btn:not(.ghost)::after{display:none}
+.btn.ghost{background:linear-gradient(180deg,#343C36,var(--button-bg));border-color:var(--button-border);color:var(--button-text)}
+.btn.ghost:hover{background:var(--button-bg-hover);border-color:var(--button-border-hover);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 7px 18px rgba(0,0,0,.28)}
+.btn.sm{padding:7px 13px;font-size:12px}
+
+@media (min-width:781px) and (max-width:1100px){
+  .nav-inner{padding:11px 14px;grid-template-columns:auto minmax(120px,1fr) auto;gap:14px}
+  .nav-links{gap:8px;font-size:11px}
+  .nav-social{font-size:11px}
+  .nav-links .btn.sm{padding:7px 9px;font-size:11px}
+}
+
+/* ── Hero (original-style) ── */
+.hero{min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:80px 28px 60px;position:relative;z-index:1;flex-direction:column}
+.hero::before{display:none}
+.hero-inner{max-width:920px;margin:0 auto;position:relative;z-index:1}
+.hero-logo{font-family:var(--font-mono);font-size:clamp(4rem,12vw,9rem);font-weight:900;color:var(--em);letter-spacing:8px;animation:pulseGlow 4s ease-in-out infinite;margin-bottom:14px;line-height:1;position:relative;isolation:isolate;display:inline-block;width:max-content;max-width:100%;text-shadow:0 0 26px rgba(50,240,110,.6),0 0 58px rgba(50,240,110,.25)}
+/* Tight halo hugging the letters only. Width:max-content on the parent
+   means the ::before inherits the TEXT width, not the hero column width,
+   so the glow sits directly behind "VELD." and no further. */
+.hero-logo::before{content:"";position:absolute;left:-6%;right:-6%;top:-18%;bottom:-18%;background:radial-gradient(ellipse at center,rgba(50,240,110,.55) 0%,rgba(50,240,110,.28) 35%,rgba(50,240,110,.1) 65%,transparent 92%);filter:blur(32px);z-index:-1;pointer-events:none;animation:heroHalo 4s ease-in-out infinite}
+.hero-logo .dot{color:#fff;font-family:Georgia,Times,'Times New Roman',serif;text-shadow:0 0 14px rgba(255,255,255,.5)}
+@keyframes heroHalo{0%,100%{opacity:.75;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}}
+.hero-tagline{font-size:clamp(1.15rem,2.6vw,1.5rem);color:var(--text-dim);margin-bottom:52px;font-weight:400;letter-spacing:.02em}
+.hero-ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.hero-btn{display:inline-flex;align-items:center;gap:8px;padding:13px 30px;border-radius:8px;font-family:var(--font-mono);font-size:13.5px;font-weight:600;text-decoration:none;transition:all .25s;cursor:pointer;border:1px solid transparent;letter-spacing:.3px;position:relative;overflow:hidden}
+.hero-btn.primary,.hero-btn.outline{background:linear-gradient(180deg,#343C36,var(--button-bg));color:var(--button-text);border-color:var(--button-border);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 7px 18px rgba(0,0,0,.24)}
+.hero-btn.primary:hover,.hero-btn.outline:hover{background:var(--button-bg-hover);border-color:var(--button-border-hover);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 9px 22px rgba(0,0,0,.32);transform:translateY(-2px);text-decoration:none}
+.hero-btn.primary::after{display:none}
+.hero-btn.gold{background:var(--gold);color:#0A0B0A;box-shadow:0 0 24px rgba(255,216,74,.22)}
+.hero-btn.gold:hover{box-shadow:0 0 40px rgba(255,216,74,.45);transform:translateY(-2px);text-decoration:none}
+.hero-btn.gold::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.32) 50%,transparent 70%);transform:translateX(-120%) skewX(-18deg);animation:shimmer 4.5s ease 1.5s infinite;pointer-events:none}
+
+/* ── Live stats strip (below hero) ── */
+.livebar{max-width:1080px;margin:64px auto 0;padding:18px 28px;border:1px solid var(--border);border-radius:10px;background:linear-gradient(180deg,var(--surface),rgba(17,19,17,.5));display:flex;gap:28px;flex-wrap:wrap;justify-content:center;align-items:center;font-family:var(--font-mono);font-size:13px;color:var(--text-muted);box-shadow:0 0 36px rgba(50,240,110,.05) inset;position:relative}
+.lv{display:flex;align-items:baseline;gap:10px}
+.lv .k{font-size:10px;text-transform:uppercase;letter-spacing:1.5px}
+.lv .v{color:var(--text);font-variant-numeric:tabular-nums}
+.lv .v.em{color:var(--em);text-shadow:0 0 12px rgba(50,240,110,.4)}
+.lv .pulse{width:7px;height:7px;border-radius:50%;background:var(--em);display:inline-block;animation:heartbeat 2.2s ease infinite;margin-right:4px}
+
+/* ── Section base ── */
+section{padding:90px 28px;position:relative;z-index:1}
+.inner{max-width:1080px;margin:0 auto}
+.section-label{font-family:var(--font-mono);font-size:13.5px;letter-spacing:3.2px;color:var(--em);text-transform:uppercase;margin-bottom:16px;text-shadow:0 0 14px rgba(50,240,110,.35);font-weight:500}
+h2{font-size:42px;font-weight:700;letter-spacing:-1px;color:#fff;margin-bottom:16px;line-height:1.1}
+h2 em{font-style:normal;color:var(--em);text-shadow:0 0 22px rgba(50,240,110,.4)}
+.lede{font-size:17px;color:var(--text-dim);max-width:680px;margin-bottom:48px}
+
+/* ── Card base ── */
+.card,.wc,.hc,.tk,.tier{background:var(--surface);border:1px solid var(--border);border-radius:10px;transition:border-color .25s,box-shadow .25s,background .2s;position:relative}
+.card:hover,.wc:hover,.hc:hover,.tk:hover,.tier:hover{border-color:rgba(50,240,110,.22);box-shadow:0 0 34px rgba(50,240,110,.08)}
+
+/* ── Why Veld grid ── */
+.why{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.wc{padding:26px 28px;overflow:hidden}
+.wc::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(50,240,110,.35),transparent);opacity:0;transition:opacity .3s}
+.wc:hover::before{opacity:1}
+.wc .ic{width:28px;height:28px;margin-bottom:16px;color:var(--em);display:inline-flex;filter:drop-shadow(0 0 8px rgba(50,240,110,.38))}
+.wc .ic svg{width:100%;height:100%}
+.wc h3{font-size:17px;font-weight:600;color:#fff;margin-bottom:8px}
+.wc p{font-size:14px;color:var(--text-dim);line-height:1.6}
+
+/* ── How it works (3 col numbered) ── */
+.how{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:10px}
+.hc{padding:24px 26px}
+.hc .n{font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;color:var(--em);text-transform:uppercase;margin-bottom:10px;text-shadow:0 0 10px rgba(50,240,110,.3);font-weight:500}
+.hc h3{font-size:18px;color:#fff;margin-bottom:8px;font-weight:600}
+.hc p{font-size:13.5px;color:var(--text-dim);line-height:1.6}
+.hc .meta{margin-top:14px;padding-top:14px;border-top:1px dashed var(--border);font-family:var(--font-mono);font-size:11.5px;color:var(--text-muted)}
+.hc .meta .k{color:var(--text-dim)}
+
+/* ── Reward split ring ── */
+.split-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;margin-top:32px;display:grid;grid-template-columns:240px 1fr;gap:36px;align-items:center;position:relative}
+.ring{width:220px;height:220px;position:relative}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--font-mono)}
+.ring .center .big{font-size:30px;color:var(--em);font-variant-numeric:tabular-nums;text-shadow:0 0 20px rgba(50,240,110,.45);font-weight:600}
+.ring .center .sub{font-size:10.5px;color:var(--text-muted);letter-spacing:1.5px;text-transform:uppercase;margin-top:4px}
+.split-legend{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px}
+.sl{display:grid;grid-template-columns:12px 1fr auto;gap:10px;align-items:center;font-size:13px;padding:8px 0;border-bottom:1px dashed var(--border)}
+.sl .sw{width:12px;height:12px;border-radius:3px}
+.sl .lbl{color:var(--text)}
+.sl .lbl small{display:block;color:var(--text-muted);font-size:11.5px;margin-top:2px}
+.sl .pct{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-weight:600}
+.sl.miner .pct{color:var(--em);text-shadow:0 0 10px rgba(50,240,110,.35)}
+.sl.comine .pct{color:var(--blue);text-shadow:0 0 10px rgba(76,184,255,.35)}
+.sl.vault .pct{color:var(--gold);text-shadow:0 0 10px rgba(255,216,74,.35)}
+.sl.endorse .pct{color:var(--purple);text-shadow:0 0 10px rgba(176,124,255,.35)}
+
+/* ── Tokenomics stats ── */
+.tokeno{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:30px}
+.tk{padding:20px}
+.tk .k{font-size:10.5px;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px;font-weight:600}
+.tk .v{font-family:var(--font-mono);font-size:22px;color:var(--em);letter-spacing:-.4px;font-variant-numeric:tabular-nums;text-shadow:0 0 16px rgba(50,240,110,.28);font-weight:600}
+.tk .v.gold{color:var(--gold);text-shadow:0 0 16px rgba(255,216,74,.22)}
+.tk .v.white{color:#fff;text-shadow:none}
+.tk .sub{font-size:12px;color:var(--text-dim);margin-top:5px;font-family:var(--font-mono)}
+
+/* ── Staking + Mining tier cards ── */
+.tiers{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:24px}
+.tier{padding:22px 18px;text-align:center}
+.tier:hover{transform:translateY(-2px)}
+.tier .t{font-size:11px;color:var(--text-muted);letter-spacing:1.5px;font-weight:600;text-transform:uppercase;margin-bottom:6px}
+.tier .d{font-size:14px;color:var(--text-dim);margin-bottom:14px}
+.tier .m{font-family:var(--font-mono);font-size:32px;color:#fff;letter-spacing:-.6px;font-variant-numeric:tabular-nums;font-weight:600}
+.tier .m .x{font-size:14px;color:var(--text-muted);margin-left:1px;font-weight:500}
+.tier.t4 .m{color:var(--em);text-shadow:0 0 18px rgba(50,240,110,.4)}
+/* mining tier colors (palette) — !important overrides the generic .tier .t/.d/.m color */
+.tier .t.tier-bronze,.tier .d.tier-bronze,.tier .m.tier-bronze,.tier-bronze{color:#CD7F32!important;text-shadow:0 0 10px rgba(205,127,50,.4)}
+.tier .t.tier-silver,.tier .d.tier-silver,.tier .m.tier-silver,.tier-silver{color:#D8D8D8!important;text-shadow:0 0 10px rgba(216,216,216,.3)}
+.tier .t.tier-gold,.tier .d.tier-gold,.tier .m.tier-gold,.tier-gold{color:#FFD700!important;text-shadow:0 0 14px rgba(255,215,0,.4)}
+.tier .t.tier-platinum,.tier .d.tier-platinum,.tier .m.tier-platinum,.tier-platinum{color:#E5E4E2!important;text-shadow:0 0 10px rgba(229,228,226,.4)}
+/* Diamond prismatic */
+.diamond-prismatic{background:linear-gradient(100deg,#B9F2FF 0%,#FFFFFF 20%,#E0FFFF 40%,#C8F0FF 60%,#FFFFFF 80%,#B9F2FF 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;font-weight:700;animation:diamondShine 3.2s ease-in-out infinite;filter:drop-shadow(0 0 6px rgba(185,242,255,.75)) drop-shadow(0 0 11px rgba(255,255,255,.3))}
+.diamond-badge{display:inline-block;padding:3px 10px;border-radius:6px;background:linear-gradient(100deg,rgba(185,242,255,.15),rgba(255,255,255,.22),rgba(224,255,255,.2),rgba(185,242,255,.15));background-size:200% 100%;animation:diamondShine 3.2s ease-in-out infinite;border:1px solid rgba(185,242,255,.55);font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:#E0FFFF;text-shadow:0 0 8px rgba(185,242,255,.95);text-transform:uppercase}
+.diamond-glow-border{border-color:rgba(185,242,255,.3)!important;box-shadow:0 0 22px rgba(185,242,255,.18),inset 0 0 20px rgba(185,242,255,.04)!important}
+
+/* ── Launch timeline ── */
+.launch{background:linear-gradient(180deg,var(--bg),var(--surface) 60%);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.timeline{margin-top:28px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:26px 28px;position:relative;overflow:hidden}
+.timeline::before{content:"";position:absolute;top:-40px;right:-40px;width:260px;height:260px;background:radial-gradient(circle,rgba(50,240,110,.07),transparent 70%);pointer-events:none;border-radius:50%;filter:blur(20px)}
+.tl-meta{display:flex;justify-content:space-between;font-size:12px;font-family:var(--font-mono);color:var(--text-muted);margin-bottom:14px;letter-spacing:.5px}
+.tl-bar{position:relative;height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden;margin-bottom:24px;box-shadow:inset 0 0 4px rgba(0,0,0,.4)}
+/* CSS fallback width is a rough placeholder; soak.js overwrites both
+   inline width on .tl-fill and inline left on .tl-now with the live
+   day-of-120 percentage. If JS fails the visitor still sees a
+   plausible "in progress" state rather than a fixed day-1 lie. */
+.tl-fill{position:absolute;top:0;left:0;bottom:0;width:16%;background:linear-gradient(90deg,var(--em),#6eff98);border-radius:3px;box-shadow:0 0 12px rgba(50,240,110,.5)}
+.tl-now{position:absolute;top:-4px;left:16%;width:14px;height:14px;border-radius:50%;background:#fff;transform:translateX(-50%);box-shadow:0 0 0 3px rgba(50,240,110,.5),0 0 18px rgba(50,240,110,.7);animation:heartbeat 2.2s ease infinite}
+.tl-stops{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;font-size:12px;color:var(--text-muted)}
+.tl-stops .s{border-left:2px solid var(--border);padding:6px 0 6px 12px;background:var(--surface);position:relative;z-index:1}
+.tl-stops .s.on{border-left-color:var(--em);background:linear-gradient(90deg,rgba(50,240,110,.06),transparent 60%);border-radius:0 6px 6px 0}
+.tl-stops .s .d{font-family:var(--font-mono);font-size:11px;color:var(--em);margin-bottom:2px;letter-spacing:.4px}
+.tl-stops .s .t{color:var(--text)}
+.tl-stops .s .sub{font-size:11.5px;color:var(--text-muted)}
+
+/* ── How-to index ── */
+.guide-index{margin-top:28px;border-top:1px solid var(--border)}
+.guide-link{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:16px;align-items:center;padding:17px 2px;border-bottom:1px solid var(--border);color:var(--text)}
+.guide-link:hover{color:var(--text);text-decoration:none;background:rgba(255,255,255,.015)}
+.guide-link .guide-num{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);letter-spacing:1px}
+.guide-link strong{display:block;font-size:14px;font-weight:600}
+.guide-link small{display:block;margin-top:3px;color:var(--text-muted);font-size:12.5px;line-height:1.45}
+.guide-link .guide-arrow{color:var(--text-muted);font-size:17px;padding-right:4px}
+.guide-all{margin-top:20px}
+
+/* ── Download CTA ── */
+.dl{background:linear-gradient(135deg,var(--surface) 0%,rgba(50,240,110,.04) 120%);border:1px solid rgba(50,240,110,.22);border-radius:12px;padding:30px 32px;display:flex;gap:28px;align-items:center;flex-wrap:wrap;box-shadow:0 0 30px rgba(50,240,110,.06);position:relative}
+.dl::before{content:"";position:absolute;top:-60px;right:-60px;width:320px;height:320px;background:radial-gradient(circle,rgba(50,240,110,.09),transparent 70%);pointer-events:none;border-radius:50%;filter:blur(22px)}
+.dl-left{flex:1;min-width:280px;position:relative;z-index:1}
+.dl h3{font-size:24px;font-weight:600;color:#fff;margin-bottom:8px}
+.dl p{color:var(--text-dim);font-size:14px;margin-bottom:0}
+.dl-right{display:flex;flex-direction:column;gap:10px;align-items:flex-end;position:relative;z-index:1;max-width:100%;min-width:0}
+.dl-btn{background:linear-gradient(180deg,#343C36,var(--button-bg));color:var(--button-text);padding:14px 24px;border-radius:8px;border:1px solid var(--button-border);font-weight:700;font-size:15px;display:inline-flex;gap:10px;align-items:center;position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 7px 18px rgba(0,0,0,.24);transition:background .18s,border-color .18s,transform .18s,box-shadow .18s}
+.dl-btn:hover{background:var(--button-bg-hover);border-color:var(--button-border-hover);color:#fff;text-decoration:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 9px 22px rgba(0,0,0,.32);transform:translateY(-1px)}
+.dl-btn::after{display:none}
+.dl-meta{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);line-height:1.6;text-align:left;width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:14px 22px;align-items:end;margin-top:18px;padding-top:18px;border-top:1px solid var(--border);position:relative;z-index:1}
+.dl-meta .hash{color:var(--text-dim);letter-spacing:.3px;font-size:10.5px;word-break:break-all;user-select:all;max-width:100%;overflow-wrap:break-word;white-space:normal;display:block}
+.dl-meta .hash-label{color:var(--text-muted);letter-spacing:1px;font-size:10px;text-transform:uppercase;display:block;margin-bottom:2px}
+.dl-steps{margin-top:22px;padding-top:22px;border-top:1px solid var(--border);width:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;position:relative;z-index:1}
+.dl-steps .s{display:flex;gap:12px;align-items:flex-start}
+.dl-steps .s .n{font-family:var(--font-mono);font-size:13px;color:var(--em);font-weight:700;min-width:24px;height:24px;background:var(--em-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;text-shadow:0 0 8px rgba(50,240,110,.5);box-shadow:0 0 14px rgba(50,240,110,.18) inset,0 0 10px rgba(50,240,110,.15)}
+.dl-steps .s .txt{font-size:13px;color:var(--text-dim);line-height:1.55}
+.dl-steps .s .txt strong{color:var(--text)}
+.dl-steps code{font-family:var(--font-mono);font-size:11.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px}
+.download-help{margin-top:22px;display:flex;align-items:center;justify-content:center;gap:6px 10px;flex-wrap:wrap;color:var(--text-muted);font-size:12.5px;text-align:center}
+.download-help a{display:inline-flex;align-items:center;min-height:44px;padding:0 3px;color:var(--text-dim);font-weight:600}
+.download-help a:hover{color:var(--em);text-decoration:none}
+
+/* ── Footer ── */
+footer{border-top:1px solid var(--border);padding:38px 28px;text-align:center;color:var(--text-muted);font-size:12.5px;position:relative;z-index:1}
+footer a{color:var(--text-dim);margin:0 12px;transition:color .15s,text-shadow .2s}
+footer a:hover{color:var(--em);text-shadow:0 0 10px rgba(50,240,110,.3)}
+footer .tag{margin-top:10px;color:var(--text-muted);font-family:var(--font-mono);font-size:11px;letter-spacing:1px}
+
+/* ── Responsive ── */
+@media (max-width:820px){
+  h1{font-size:42px}
+  h2{font-size:28px}
+  .why{grid-template-columns:1fr}
+  .how{grid-template-columns:1fr}
+  .tokeno{grid-template-columns:repeat(2,1fr)}
+  .tiers{grid-template-columns:repeat(2,1fr)!important}
+  .tl-stops{grid-template-columns:1fr 1fr}
+  section{padding:60px 22px}
+  .hero{padding:70px 22px 40px}
+  .split-card{grid-template-columns:1fr;text-align:center}
+  .ring{margin:0 auto}
+  .split-legend{grid-template-columns:1fr}
+  .dl-steps{grid-template-columns:1fr}
+  .dl{flex-direction:column;align-items:stretch;gap:20px}
+  .dl-left,.dl-right{width:100%;min-width:0}
+  .dl-right{align-items:stretch}
+  .dl-btn{width:100%;justify-content:center;text-align:center}
+  .nav-links a:not(.btn){display:none}
+  .nav-inner{padding:0 12px;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;grid-template-rows:48px;column-gap:8px;row-gap:0}
+  .nav-links{display:contents;font-size:10.5px}
+  .brand{grid-column:1;grid-row:1;min-height:48px}
+  .nav-social{display:inline-flex;grid-column:2;grid-row:1;justify-self:start;align-items:center;min-width:0;min-height:48px;padding:0;white-space:nowrap;font-size:10.5px}
+  .nav-links .btn.sm{min-height:36px;padding:7px 8px;font-size:10.5px;white-space:nowrap}
+  .nav-links .btn.ghost{grid-column:3;grid-row:1;z-index:1}
+  .nav-links .btn:not(.ghost){grid-column:4;grid-row:1;z-index:1}
+  /* Stack FIRST LAUNCH + ADVANCED cards vertically on mobile. */
+  .launch-grid{grid-template-columns:1fr!important}
+}
+
+@media (max-width:520px){
+  .nav-inner{padding-inline:9px;grid-template-columns:auto minmax(0,1fr) auto 40px;column-gap:6px}
+  .brand{font-size:15px;letter-spacing:3px}
+  .nav-social{font-size:9.5px;letter-spacing:-.02em}
+  .nav-social .handle{margin-left:3px}
+  .nav-links .btn.sm{padding:6px 7px;font-size:9.5px}
+  .nav-links .btn:not(.ghost){width:40px;padding:6px 0;justify-content:center}
+  .download-label{display:none}
+  .guide-link{grid-template-columns:34px minmax(0,1fr) auto;gap:10px;padding:15px 0}
+  .dl-meta{grid-template-columns:1fr;gap:10px}
+}
+
+@media (max-width:420px){
+  .tokeno,.tiers{grid-template-columns:1fr!important}
+}
+
+
+/* Normal system cursor (the custom green SVG cursor was removed). */
+a,button,.btn,[role=button],[onclick]{cursor:pointer}
+input,textarea,[contenteditable]{cursor:text}
+</style>
+</head>
+<body>
+
+<header class="nav-bar">
+  <div class="nav-inner">
+    <a class="brand" href="/" aria-label="Veld home">VELD<span class="dot">.</span></a>
+    <a class="nav-social" href="https://x.com/VeldNetwork" target="_blank" rel="noopener" aria-label="Follow Veld Network on X"><span class="follow-label">Follow on X</span> <span class="handle">@VeldNetwork</span></a>
+    <nav class="nav-links" aria-label="Primary navigation">
+      <a href="#why">Why Veld</a>
+      <a href="#how">How it works</a>
+      <a href="#tokenomics">Tokenomics</a>
+      <a href="#participate">Participate</a>
+      <a href="#launch">Launch</a>
+      <a href="https://explorer.veld.network" target="_blank">Explorer</a>
+      <a href="https://wallet.veld.network" target="_blank">Wallet</a>
+      <a href="#whitepaper">Whitepaper</a>
+      <a class="btn sm ghost" href="https://wallet.veld.network/">Wallet</a>
+      <a class="btn sm" href="#download" aria-label="Download Veld"><span class="download-label">Download</span><span aria-hidden="true">&darr;</span></a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="hero-inner">
+    <h1 class="hero-logo">VELD<span class="dot">.</span></h1>
+    <p class="hero-tagline">Where value is earned.</p>
+    <div class="hero-ctas">
+      <a href="https://wallet.veld.network" class="hero-btn outline">Wallet</a>
+      <a href="https://explorer.veld.network" class="hero-btn outline">Explorer</a>
+      <a href="#download" class="hero-btn gold">Download client</a>
+    </div>
+  </div>
+</section>
+
+<section id="why">
+  <div class="inner">
+    <div class="section-label">Why Veld</div>
+    <h2>Four design choices.<br>No compromise on any of them.</h2>
+    <p class="lede">All four are implemented in the source; launch-gated features remain closed until their on-chain activation conditions are met.</p>
+
+    <div class="why">
+      <div class="wc">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <h3>Post-quantum native signatures</h3>
+        <p>Native VELD transaction and finality signatures use ML-DSA-65. Native addresses currently use 160-bit HASH160 commitments, while btcVELD custody inherits Bitcoin Taproot&rsquo;s secp256k1/Schnorr assumptions.</p>
+      </div>
+      <div class="wc">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M3 12h18"/><path d="M5.6 5.6l12.8 12.8"/><path d="M5.6 18.4l12.8-12.8"/></svg></div>
+        <h3>Memory-hard PoW</h3>
+        <p>VeldHash is a deterministic, memory-hard CPU proof of work built around a 1 GB dataset. A laptop, desktop, or home rig can run the same full node and mining client.</p>
+      </div>
+      <div class="wc">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1v22"/><path d="M5 6l7-5 7 5"/><path d="M5 18l7 5 7-5"/></svg></div>
+        <h3>Rewards follow participation</h3>
+        <p>Before staking activates, ordinary blocks split 50% to the miner and 50% to the vault. After activation, ordinary blocks split 50% miner, 20% co-mining, 20% vault, and 10% validator pool. Combined multipliers cap at <strong>3.00×</strong>.</p>
+      </div>
+      <div class="wc">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></div>
+        <h3>Consensus-native. No VM.</h3>
+        <p>Core features are enforced directly by every node instead of a general-purpose smart-contract VM. btcVELD is a separately gated, Bitcoin-backed consensus asset; its issuer cannot override custody, mint, redeem, or supply rules.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="inner">
+    <div class="section-label">How it works</div>
+    <h2>Six ways to <em>participate</em>.<br>One network, one wallet.</h2>
+    <p class="lede">Mine, run a full node, stake, validate, co-mine, or provide liquidity when its activation gate opens.</p>
+
+    <div class="how">
+      <div class="hc">
+        <div class="n">— 01 MINE</div>
+        <h3>Run the client</h3>
+        <p>Download Veld Node and open <strong>Veld Node</strong>. The app validates the chain, manages your mining identity, and starts VeldHash mining when synchronization completes. The winning miner receives 50% of the block reward directly at their address.</p>
+        <div class="meta"><span class="k">Block reward:</span> 3.1393 VELD · ~<span class="k">180s</span> cadence</div>
+      </div>
+      <div class="hc">
+        <div class="n">— 02 STAKE</div>
+        <h3>Lock VELD, earn from vault</h3>
+        <p>After canonical issued supply reaches <strong>10,000 VELD mined</strong>, lock at least 1,000 VELD for 7 / 14 / 30 / 90 days. Longer lockups earn higher multipliers (1.00× → 1.50×). Every 480 blocks, the vault distributes up to 90% of that cycle's inflow and retains the rest as principal.</p>
+        <div class="meta"><span class="k">Vault fills with:</span> 50% of ordinary blocks before activation; 20% after · <span class="k">+ 100%</span> of every 100th block</div>
+      </div>
+      <div class="hc">
+        <div class="n">— 03 VALIDATE</div>
+        <h3>Endorse blocks, sign for rewards</h3>
+        <p>Once staking is active, bond 10,000 VELD and register your ML-DSA-65 public key. Your daemon endorses new blocks, and the endorsement pool pays active validators every 480 blocks.</p>
+        <div class="meta"><span class="k">Endorsement pool:</span> 10% of ordinary block rewards after staking activation</div>
+      </div>
+      <div class="hc">
+        <div class="n">— 04 CO-MINE</div>
+        <h3>Get paid for near-misses</h3>
+        <p>Mining contributes even when a hash does not win the block. Qualifying near-misses can place active miners into the co-mining draw, where the pool is shared among selected participants. The client handles submission automatically—run it, stay connected, and let the network account for your work.</p>
+        <div class="meta"><span class="k">Co-mine pool:</span> 20% of ordinary block rewards after staking activation</div>
+      </div>
+      <div class="hc" style="border-color:rgba(255,216,74,.2)">
+        <div class="n" style="color:var(--gold);text-shadow:0 0 10px rgba(255,216,74,.25)">— 05 PROVIDE</div>
+        <h3>Provide pool liquidity</h3>
+        <p>After btcVELD completes its one-time seven-validator activation, pool VELD with 1:1 Bitcoin-backed btcVELD and earn the fee retained by each swap. The entire pool fee accrues to liquidity providers; there is no protocol cut, and liquidity removal remains available.</p>
+        <div class="meta"><span class="k">Swap fee:</span> 0.30%–1.00% four-band · <span class="k">100%</span> to providers · <span class="k">exit</span> always open</div>
+      </div>
+      <div class="hc" style="border-color:rgba(76,184,255,.2)">
+        <div class="n" style="color:var(--blue);text-shadow:0 0 10px rgba(76,184,255,.25)">— 06 VERIFY</div>
+        <h3>Run your own full node</h3>
+        <p>Don't trust, verify. The same client that mines runs a full P2P node: it independently validates every block, native transaction and finality signatures, and every coinbase split. Nothing about the chain's state depends on a central server you have to trust.</p>
+        <div class="meta"><span class="k">RAM:</span> ~1.2 GB (VeldHash dataset) · <span class="k">Disk:</span> grows with chain history</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="tokenomics">
+  <div class="inner">
+    <div class="section-label">Tokenomics</div>
+    <h2>Fixed cap. Clean split.<br>No hidden cuts.</h2>
+    <p class="lede">Every VELD in existence is minted through consensus block rewards to miners or protocol reward pools. No pre-mine, no treasury, no founder allocation.</p>
+
+    <div class="tokeno">
+      <div class="tk hud">
+        <div class="k">Hard cap</div>
+        <div class="v">21,000,000</div>
+        <div class="sub">VELD total · ever</div>
+      </div>
+      <div class="tk">
+        <div class="k">Annual emission</div>
+        <div class="v">550,000</div>
+        <div class="sub">VELD · ~38 years to cap, then fee-funded</div>
+      </div>
+      <div class="tk">
+        <div class="k">Block reward</div>
+        <div class="v">3.1393</div>
+        <div class="sub">VELD · every ~180 s</div>
+      </div>
+      <div class="tk hud">
+        <div class="k">Pre-mine</div>
+        <div class="v white">0</div>
+        <div class="sub">none · zero allocation</div>
+      </div>
+    </div>
+
+    <div class="split-card">
+      <div class="ring">
+        <svg viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="14"/>
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#32F06E" stroke-width="14" stroke-dasharray="125.66 251.33" stroke-dashoffset="0" stroke-linecap="butt" style="filter:drop-shadow(0 0 7px rgba(50,240,110,.55))"/>
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#4CB8FF" stroke-width="14" stroke-dasharray="50.27 251.33" stroke-dashoffset="-125.66" stroke-linecap="butt" style="filter:drop-shadow(0 0 5px rgba(76,184,255,.45))"/>
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#FFD84A" stroke-width="14" stroke-dasharray="50.27 251.33" stroke-dashoffset="-175.93" stroke-linecap="butt" style="filter:drop-shadow(0 0 5px rgba(255,216,74,.45))"/>
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#B07CFF" stroke-width="14" stroke-dasharray="25.13 251.33" stroke-dashoffset="-226.20" stroke-linecap="butt" style="filter:drop-shadow(0 0 5px rgba(176,124,255,.45))"/>
+        </svg>
+        <div class="center"><div class="big">3.1393</div><div class="sub">VELD / block</div></div>
+      </div>
+      <div>
+        <div style="margin-bottom:16px;font-size:12px;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Post-activation ordinary block split</div>
+        <div class="split-legend">
+          <div class="sl miner"><span class="sw" style="background:#32F06E;box-shadow:0 0 8px rgba(50,240,110,.5)"></span><span class="lbl">Miner<small>Block-winner direct</small></span><span class="pct">50%</span></div>
+          <div class="sl comine"><span class="sw" style="background:#4CB8FF;box-shadow:0 0 8px rgba(76,184,255,.5)"></span><span class="lbl">Co-mining pool<small>Near-miss payouts</small></span><span class="pct">20%</span></div>
+          <div class="sl vault"><span class="sw" style="background:#FFD84A;box-shadow:0 0 8px rgba(255,216,74,.5)"></span><span class="lbl">Vault<small>Stakers, daily</small></span><span class="pct">20%</span></div>
+          <div class="sl endorse"><span class="sw" style="background:#B07CFF;box-shadow:0 0 8px rgba(176,124,255,.5)"></span><span class="lbl">Endorsement<small>Validators, daily</small></span><span class="pct">10%</span></div>
+        </div>
+        <div style="margin-top:14px;font-size:12.5px;color:var(--text-muted);font-family:var(--font-mono);line-height:1.7">Before activation, ordinary blocks split 50% miner / 50% vault.<br>+ every 100th block routes <span style="color:var(--gold)">100% to the vault</span>.<br>+ all TX fees flow to the vault during emission.</div>
+      </div>
+    </div>
+
+    <div style="margin-top:48px">
+      <div class="section-label" style="margin-bottom:10px">Staking lockup tiers</div>
+      <p style="color:var(--text-dim);font-size:14px;max-width:640px">Longer commitments earn more. The lockup multiplier stacks with your mining tier.</p>
+      <div class="tiers">
+        <div class="tier"><div class="t">Base</div><div class="d">7 days</div><div class="m">1.00<span class="x">×</span></div></div>
+        <div class="tier"><div class="t">Short</div><div class="d">14 days</div><div class="m">1.10<span class="x">×</span></div></div>
+        <div class="tier"><div class="t">Medium</div><div class="d">30 days</div><div class="m">1.25<span class="x">×</span></div></div>
+        <div class="tier t4"><div class="t">Long</div><div class="d">90 days</div><div class="m">1.50<span class="x">×</span></div></div>
+      </div>
+    </div>
+
+    <div style="margin-top:52px">
+      <div class="section-label" style="margin-bottom:10px">Mining tiers · rolling-window</div>
+      <p style="color:var(--text-dim);font-size:14px;max-width:680px">Mining tiers are recomputed each block from rolling activity windows. A day is 480 blocks (~24 h) and counts as active when the address mines at least one block.</p>
+      <div class="tiers" style="grid-template-columns:repeat(5,1fr)">
+        <div class="tier"><div class="t tier-bronze">Bronze</div><div class="d tier-bronze">7 of last 14 days</div><div class="m tier-bronze">1.10<span class="x">×</span></div></div>
+        <div class="tier"><div class="t tier-silver">Silver</div><div class="d tier-silver">25 of last 30 days</div><div class="m tier-silver">1.25<span class="x">×</span></div></div>
+        <div class="tier"><div class="t tier-gold">Gold</div><div class="d tier-gold">165 of last 180 days</div><div class="m tier-gold">1.50<span class="x">×</span></div></div>
+        <div class="tier"><div class="t tier-platinum">Platinum</div><div class="d tier-platinum">335 of last 365 days</div><div class="m tier-platinum">1.80<span class="x">×</span></div></div>
+        <div class="tier diamond-glow-border"><div class="t"><span class="diamond-badge">Diamond</span></div><div class="d diamond-prismatic" style="margin-top:14px">1000 of last 1,095 days</div><div class="m diamond-prismatic">3.00<span class="x" style="-webkit-text-fill-color:rgba(255,255,255,.45)">×</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="launch" class="launch">
+  <div class="inner">
+    <div class="section-label">Launch</div>
+    <h2>Mainnet is <em>live</em>.</h2>
+    <p class="lede">Veld 3.0.0 public-mainnet-v2 launched from fresh genesis on 2 September 2026. Initial stabilization is active. btcVELD minting and redemption remain unavailable until genuine seven-qualified-validator finality is reached.</p>
+
+    <div class="timeline">
+      <div class="tl-meta">
+        <span>2026-07-06 · launch preparation</span>
+        <span id="soak-day-counter">public mainnet live</span>
+        <span>2026-09-02 · public genesis</span>
+      </div>
+      <div class="tl-bar">
+        <div class="tl-fill" id="soak-fill"></div>
+        <div class="tl-now" id="soak-now-marker"></div>
+      </div>
+      <div class="tl-stops">
+        <div class="s"><div class="d">2026-07-06</div><div class="t">Launch preparation</div><div class="sub">Production-rule validation begins</div></div>
+        <div class="s"><div class="d">2026-08-31</div><div class="t">BUILD-02</div><div class="sub">Veld 3.0.0 release qualification</div></div>
+        <div class="s"><div class="d">2026-09-02</div><div class="t">Public genesis</div><div class="sub">Fresh public-mainnet-v2 chain</div></div>
+        <div class="s on"><div class="d" id="soak-now-date">live now</div><div class="t">Initial stabilization</div><div class="sub">Mining and public participation live</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="whitepaper">
+  <div class="inner">
+    <div class="section-label">Documentation</div>
+    <h2>The full picture, on paper.</h2>
+    <p class="lede">Consensus rules, native ML-DSA-65 transaction and finality signatures, lockup tiers, the equal-chance co-mining lottery, validator slashing, governance timelocks, and the 38-year issuance schedule. Everything you'd want to know &mdash; and a few things you probably wouldn't.</p>
+    <div style="margin-top:24px;display:flex;gap:12px;flex-wrap:wrap">
+      <a href="/whitepaper.pdf" target="_blank" class="btn">Download PDF</a>
+    </div>
+  </div>
+</section>
+
+<section id="participate">
+  <div class="inner">
+    <div class="section-label">Get started</div>
+    <h2>Three steps to a running node.<br>Everything else is optional.</h2>
+    <p class="lede">Download the client, pick a wallet, leave it running. No sign-up, no account, no KYC — your address is your identity.</p>
+
+    <div class="how">
+      <div class="hc">
+        <div class="n">— STEP 01</div>
+        <h3>Download &amp; extract</h3>
+        <p>Grab <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">VeldClient-Windows-x64.zip</code> from below. Extract anywhere on your PC. No install or administrator access is required, and your node syncs from the network&rsquo;s relay anchors on first run.</p>
+      </div>
+      <div class="hc">
+        <div class="n">— STEP 02</div>
+        <h3>Open Veld Node</h3>
+        <p>Open <strong>Veld Node</strong>, then create a protected mining identity or import an encrypted <code>.veld-keys</code> wallet file from Settings.</p>
+      </div>
+      <div class="hc">
+        <div class="n">— STEP 03</div>
+        <h3>Leave it running</h3>
+        <p>The node syncs with peers, then mining starts automatically. Mining auto-tunes across available physical cores while reserving roughly one core for the system. Close the window to stop. Everything you earn lands at your address directly.</p>
+      </div>
+    </div>
+
+    <div class="launch-grid" style="margin-top:22px;display:grid;grid-template-columns:1.2fr 1fr;gap:16px">
+      <div class="hc">
+        <div class="n">— FIRST LAUNCH</div>
+        <h3>What you'll see</h3>
+        <p style="margin-bottom:10px">The native app keeps first-time setup in one place:</p>
+        <div style="font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim);background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:14px 18px;line-height:1.9">
+          <div><span style="color:var(--em)">01</span> Create a new encrypted mining identity</div>
+          <div><span style="color:var(--em)">02</span> Import an encrypted wallet keyfile <span style="color:var(--text-muted)">(.veld-keys)</span></div>
+          <div><span style="color:var(--em)">03</span> Choose Clearnet or Tor-only networking</div>
+          <div><span style="color:var(--em)">04</span> Start mining after chain synchronization</div>
+        </div>
+        <p style="margin-top:12px">The selected identity becomes the mining reward address and automatically endorses blocks when that same address is registered as a validator.</p>
+      </div>
+      <div class="hc" style="border-color:rgba(255,216,74,.22);background:linear-gradient(135deg,var(--surface),rgba(255,216,74,.03))">
+        <div class="n" style="color:var(--gold);text-shadow:0 0 10px rgba(255,216,74,.3)">— ADVANCED</div>
+        <h3 style="color:var(--gold)">Validator setup</h3>
+        <p>Extra requirements if you want to endorse blocks for a share of the endorsement pool:</p>
+        <ul style="margin-top:10px;padding-left:0;list-style:none;font-size:13.5px;color:var(--text-dim);line-height:1.85">
+          <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Stake the validator minimum on a single address (10,000 VELD)</li>
+          <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Register pubkey via wallet's Validators tab</li>
+          <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Keep the node online 24/7 to endorse every block</li>
+          <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Payouts cadence: every 480 blocks (daily)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="guides">
+  <div class="inner">
+    <div class="section-label">How-to</div>
+    <h2>Clear help when you need it.</h2>
+    <p class="lede">Short, focused guides for installing Veld, opening an existing wallet, and securely managing a node from another device.</p>
+    <div class="guide-index">
+      <a class="guide-link" href="/how-to/install-verify-node/">
+        <span class="guide-num">01</span>
+        <span><strong>Install and verify Veld Node</strong><small>Download the official client, check its SHA256, and start safely.</small></span>
+        <span class="guide-arrow" aria-hidden="true">&rarr;</span>
+      </a>
+      <a class="guide-link" href="/how-to/import-keyfile/">
+        <span class="guide-num">02</span>
+        <span><strong>Import a wallet keyfile</strong><small>Find your encrypted <code>.veld-keys</code> file and open it in the Veld Wallet.</small></span>
+        <span class="guide-arrow" aria-hidden="true">&rarr;</span>
+      </a>
+      <a class="guide-link" href="/how-to/pair-veld-portal/">
+        <span class="guide-num">03</span>
+        <span><strong>Pair the Veld Portal</strong><small>Connect your node or miner for secure remote monitoring and controls.</small></span>
+        <span class="guide-arrow" aria-hidden="true">&rarr;</span>
+      </a>
+    </div>
+    <div class="guide-all"><a class="btn ghost" href="/how-to/">Browse all how-to guides</a></div>
+  </div>
+</section>
+
+<section id="download">
+  <div class="inner">
+    <div class="section-label">Download</div>
+    <h2>One app. Node, miner, validator.</h2>
+    <p class="lede">The desktop app runs a full P2P node, mines blocks, and endorses automatically when its identity is registered as a validator. Clearnet is the default, with Tor-only networking available in Settings.</p>
+
+    <div class="dl hud">
+      <div class="dl-left">
+                <h3>Veld Node 3.0.4</h3>
+        <p>Self-contained for Windows 10 / 11 with no bundled DLL files and no MSYS2 requirement. Extract it and double-click <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">Start Veld Node.bat</code> to start the signed client on clearnet. Windows may request approval once to allow inbound peer traffic on TCP 8333. RPC and local app ports remain closed. Initial sync uses the current official signed snapshot when eligible and otherwise safely validates from genesis; snapshot state is independently revalidated from genesis in the background. After sign-in the node keeps one portable encrypted <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">.veld-keys</code> file beside <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">miner.key</code>, and Settings can request a new portal pairing code.</p>
+      </div>
+      <div class="dl-right">
+        <a class="dl-btn" href="https://veld.network/downloads/VeldClient-Windows-x64.zip?release=3.0.4">↓ &nbsp; Download</a>
+      </div>
+
+      <div class="dl-steps">
+        <div class="s">
+          <div class="n">1</div>
+          <div class="txt"><strong>Extract</strong> the zip anywhere — desktop, <code>C:\Veld</code>, a thumb drive, wherever.</div>
+        </div>
+        <div class="s">
+          <div class="n">2</div>
+          <div class="txt"><strong>Double-click</strong> <code>Start Veld Node.bat</code> in the extracted folder.</div>
+        </div>
+        <div class="s">
+          <div class="n">3</div>
+          <div class="txt"><strong>Verify</strong> (optional) in PowerShell: <code>Get-FileHash -Algorithm SHA256 .\VeldClient-Windows-x64.zip</code> — match the ZIP SHA256 below.</div>
+        </div>
+      </div>
+      <div class="dl-meta">
+        <div class="hash"><span class="hash-label">ZIP SHA256</span>426c9f8563d121d90fe35f4140c1c797dcb47cdb6b35aae7c154de29ea26b588</div>
+        <div class="hash"><span class="hash-label">EXE SHA256</span>9b5cc95085130fadfdd843fd819783a81757427c528de2e69e3a9e1e4172b21d</div>
+        <div><a href="https://veld.network/downloads/SHA256SUMS.txt" style="color:var(--text-muted);text-decoration:underline">signed manifest</a></div>
+      </div>
+    </div>
+
+    <div class="download-help"><span>Need help with setup?</span><a href="/how-to/">View the how-to guides →</a></div>
+  </div>
+</section>
+
+<footer>
+  <div>
+    <a href="https://veld.network/whitepaper.pdf" target="_blank">Whitepaper</a>
+    <a href="https://explorer.veld.network" target="_blank">Explorer</a>
+    <a href="https://wallet.veld.network" target="_blank">Wallet</a>
+    <a href="/how-to/">How-to guides</a>
+    <a href="https://wallet.veld.network/">Wallet</a>
+    <a href="#download">Download</a>
+    <a href="https://x.com/VeldNetwork" target="_blank" rel="noopener">@VeldNetwork</a>
+  </div>
+  <div class="tag">Veld · Where value is earned.</div>
+</footer>
+
+
+
+<script src="/soak.js?v=20260902-mainnet1" defer></script>
+</body>
+</html>

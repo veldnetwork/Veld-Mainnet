@@ -1,7 +1,7 @@
 # Veld 3.0.4 release notes
 
-Release date: pending
-Status: Windows client maintenance candidate
+Release date: 2026-09-04
+Status: Public mainnet maintenance release
 
 ## 3.0.4 maintenance scope
 

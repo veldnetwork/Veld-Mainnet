@@ -1,9 +1,12 @@
 # Veld
 
 Veld is a CPU-mined blockchain with a fixed 21,000,000 VELD maximum supply,
-post-quantum transaction signatures, staking, and a seven-validator finality
-layer. This is the public source release for Veld 3.0.0 BUILD-02 on the live
-`veld-public-mainnet-v2` network.
+ML-DSA-65 native transaction and finality signatures, staking, and a
+seven-validator finality layer. Native addresses currently use 160-bit
+HASH160 commitments, and btcVELD custody inherits Bitcoin Taproot's current
+secp256k1/Schnorr assumptions. This maintenance source retains the immutable
+Veld 3.0.0 BUILD-02 launch identity on the live `veld-public-mainnet-v2`
+network and includes the Veld 3.0.4 non-consensus maintenance changes.
 
 The signed Windows client and its verification hashes are published at
 [veld.network](https://veld.network/). Live chain state is available through
@@ -13,7 +16,7 @@ and the documentation-only publication boundary.
 
 ## Mainnet profile
 
-- Client version: `3.0.0`
+- Client version: `3.0.4`
 - Deployment identity: `veld-public-mainnet-v2`
 - State digest: `VELD_STATE_DIGEST_v8`
 - Reserve wire formats: `RTP1` and `RVS1`
@@ -47,8 +50,7 @@ operating it.
 ## Supported roles
 
 - Windows mining packages run the mining-capable node and desktop wallet. The
-  standard `Start Mining.bat` launcher is Tor-default; the explicitly named
-  `Start Mining (Clearnet).bat` launcher enables clearnet operation.
+  signed `Start Veld Node.bat` launcher explicitly selects clearnet operation.
 - Linux operator builds provide the node, desktop client, key generator,
   standalone validator/finality daemon, authenticated operations portal, and
   fleet roles.
@@ -66,21 +68,21 @@ signatures.
 
 ## Public-release security reductions
 
-Veld 3.0.0 public mainnet deliberately omits several optional convenience
-features:
+Veld public mainnet applies these release security boundaries:
 
-- Snapshot bootstrap, snapshot download/import/promotion, and snapshot RPCs
-  are unavailable. Public nodes perform ordinary full validation, and startup
-  refuses datadirs marked as snapshot-imported or snapshot-revoked.
-- Legacy block-range scanners, including `gettxhistory` and `getearnings`,
-  remain unavailable. The desktop wallet and explorer use the bounded
+- Veld 3.0.4 supports an official signed snapshot as a startup optimization.
+  Snapshot state remains quarantined from RPC, inbound P2P, explorer, mining,
+  and validator signing until an independent genesis IBD reaches the exact
+  same tip and complete consensus-state digest. Full IBD remains available.
+- Legacy request-time whole-chain scanners remain unavailable. The desktop
+  wallet and explorer use the bounded
   `getaddresshistory` index instead: at most 50 rows per cursor page, with no
   block-body scan during a request.
 - Seed material is never accepted in command-line arguments. Key import uses
   hidden terminal input or an explicitly inherited protected pipe/handle.
 - UPnP is not compiled into public-mainnet artifacts, and `--upnp` is refused.
 
-These reductions do not change genesis, network magic, address encoding,
+These boundaries do not change genesis, network magic, address encoding,
 supply, finality, reserve accounting, state-digest version, or block validity.
 
 ## Build and contribute
@@ -92,6 +94,18 @@ not in a public issue. General contributions are described in
 
 Operators should also review [LIVE_MAINNET_CHECKS.md](LIVE_MAINNET_CHECKS.md)
 before running an Internet-facing node.
+
+## Public web sources
+
+- Homepage: `website/index.html`
+- Explorer pages and API: `include/network/explorer.h`
+- Hosted wallet and node wallet UI: `include/network/ui_desktop.h`
+- Operations portal: `src/veld-miner-portal.py`
+- Explorer deployment assets: `resources/explorer-*.js`
+
+Production web surfaces are mainnet-only. Non-production validation profiles
+are excluded by the production build controllers and are not deployed as
+public services.
 
 ## License
 

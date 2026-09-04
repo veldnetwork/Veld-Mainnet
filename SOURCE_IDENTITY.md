@@ -10,15 +10,19 @@ This public source release corresponds to the binaries launched as:
 - Network: `veld-public-mainnet-v2`
 - State digest: `VELD_STATE_DIGEST_v8`
 
-The public repository intentionally starts with a clean publication commit so
-private audit branches, operator evidence, and development-session history are
-not distributed. Every compiled program source, header, build controller,
-launcher, vendored dependency, resource, and package script is byte-identical
-to the launch source above. Only `README.md`, `CHANGELOG.md`, `BUILDING.md`, and
-`RELEASE_NOTES.md` were updated to describe the completed release; this file
-and `LIVE_MAINNET_CHECKS.md` were added. The internal remediation-session note
-was omitted. These changes do not affect compiled output or consensus behavior.
+The public repository intentionally started with a clean publication commit so
+private audit branches, operator evidence, and development-session history were
+not distributed. At that initial publication, every compiled program source,
+header, build controller, launcher, vendored dependency, resource, and package
+script was byte-identical to the launch source above.
 
-`PUBLICATION_SOURCE_MANIFEST.tsv` records every released file and its SHA-256.
-`LAUNCH_EQUIVALENCE.tsv` records the exact launch blob identity for every file
-that participates in builds or runtime packaging.
+The current maintenance lineage contains explicitly recorded non-consensus
+fixes after launch. Those commits do not rewrite the launch commit, launch
+tree, release tag, assets, genesis, protocol version, deployment identity, or
+state-digest format. They must be identified by their own maintenance commit
+and tree rather than being described as BUILD-02 byte equivalence.
+
+`PUBLICATION_SOURCE_MANIFEST.tsv` and `LAUNCH_EQUIVALENCE.tsv` are immutable
+launch records. They record the initial public release files and the exact
+launch blob identity for files that participated in BUILD-02; maintenance
+commits do not regenerate them or imply that later files existed at launch.

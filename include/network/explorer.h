@@ -1333,13 +1333,8 @@ public:
         if (parts.size() == 1 && parts[0] == "sw.js") {
             static const std::string sw = R"VLDSW(
 const CACHE_PREFIX = 'veld-explorer-shell-';
-const CACHE = 'veld-explorer-shell-ui-20260903-navigation-fallback';
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE)
-      .then(cache => cache.addAll(['/', '/blocks']))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(
@@ -1350,28 +1345,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   if (event.request.mode === 'navigate' || event.request.destination === 'document') {
-    event.respondWith((async () => {
-      const cache = await caches.open(CACHE);
-      const url = new URL(event.request.url);
-      const canonical = new Request(url.origin + url.pathname, {
-        method: 'GET', credentials: 'same-origin'
-      });
-      try {
-        const response = await fetch(event.request, {cache:'no-store'});
-        if (response.ok) {
-          await cache.put(canonical, response.clone());
-          return response;
-        }
-        const saved = await cache.match(canonical)
-          || (url.pathname === '/blocks' ? await cache.match('/blocks') : null)
-          || await cache.match('/');
-        return saved || response;
-      } catch (_) {
-        return await cache.match(canonical)
-          || (url.pathname === '/blocks' ? await cache.match('/blocks') : null)
-          || await cache.match('/');
-      }
-    })());
+    event.respondWith(fetch(event.request, {cache:'no-store'}));
   }
 });
 )VLDSW";
@@ -2358,6 +2332,8 @@ private:
 
     HttpResponse ServeMiningPage() {
         double supply = (double)chain_.TotalSupplyUnits() / VELD_UNITS;
+        const bool staking_active =
+            chain_.TotalSupplyUnits() >= chain_.GetStakingActivationUnits();
         double reward = (double)BLOCK_REWARD_UNITS / VELD_UNITS;
         uint64_t height = chain_.Height();
 
@@ -2379,10 +2355,15 @@ private:
         page << "<div class=\"card-title\">Coinbase Split</div>";
         page << "<div class=\"tbl-scroll\"><table class=\"tbl\"><thead><tr><th>Recipient</th><th>Share</th><th>Description</th></tr></thead><tbody>";
         page << "<tr><td style=\"color:var(--em);font-weight:600\">Miner</td><td><strong>50%</strong></td><td>Direct reward to block finder</td></tr>";
-        page << "<tr><td style=\"color:#4CB8FF;font-weight:600\">Co-Mining Pool</td><td><strong>20%</strong></td><td>Shared among uniformly drawn eligible near-miss miners every 100 blocks</td></tr>";
-        page << "<tr><td style=\"color:var(--gold);font-weight:600\">Vault</td><td><strong>20%</strong></td><td>Distributed to stakers every 480 blocks (daily)</td></tr>";
-        page << "<tr><td style=\"color:#B07CFF;font-weight:600\">Validators</td><td><strong>10%</strong></td><td>Paid to active validators every 480 blocks (daily)</td></tr>";
+        if (staking_active) {
+            page << "<tr><td style=\"color:#4CB8FF;font-weight:600\">Co-Mining Pool</td><td><strong>20%</strong></td><td>Shared among uniformly drawn eligible near-miss miners every 100 blocks</td></tr>";
+            page << "<tr><td style=\"color:var(--gold);font-weight:600\">Vault</td><td><strong>20%</strong></td><td>Distributed to stakers every 480 blocks (daily)</td></tr>";
+            page << "<tr><td style=\"color:#B07CFF;font-weight:600\">Validators</td><td><strong>10%</strong></td><td>Paid to active validators every 480 blocks (daily)</td></tr>";
+        } else {
+            page << "<tr><td style=\"color:var(--gold);font-weight:600\">Vault</td><td><strong>50%</strong></td><td>Accumulates until staking activates at 10,000 VELD issued supply</td></tr>";
+        }
         page << "</tbody></table></div></div>";
+        page << "<p style=\"color:var(--muted);font-size:12px\">Every 100th block routes the full subsidy to the vault in both phases.</p>";
 
         page << "<div class=\"card\">";
         page << "<div class=\"card-title\">Recent Blocks</div>";
@@ -2587,7 +2568,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="splits">2. Where each block reward goes</h2>
-  <p>Ordinary block rewards split four ways. Every node enforces the exact outputs; every 100th block is the stated exception and routes its full subsidy to the vault.</p>
+  <p>Before staking activates at 10,000 VELD issued supply, each ordinary block pays <strong>50% to the miner and 50% to the vault</strong>. After activation, ordinary blocks use the four-way split below. Every node enforces the exact outputs; in both phases every 100th block is the stated exception and routes its full subsidy to the vault.</p>
   <table class="tbl-rules">
     <tr><th>Stream</th><th>Share</th><th>Goes to</th></tr>
     <tr><td style="color:var(--em);font-weight:600">Block winner</td><td style="color:var(--em)"><strong>50%</strong></td><td>Whoever solved this block&#39;s proof-of-work</td></tr>
@@ -2670,7 +2651,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="endorse">9. Validators &amp; the validator pool</h2>
-  <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool collects <strong>10% of every block&#39;s reward</strong> and pays it out every <strong>480 blocks</strong> (daily) in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle.</p>
+  <p>After staking activates, validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool then receives <strong>10% of each ordinary block&#39;s reward</strong> and pays it out every <strong>480 blocks</strong> (daily) in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Before activation the validator-pool share is zero. Idle validators earn nothing for that cycle.</p>
   <ul>
     <li><strong>System unlock.</strong> Staking first activates when issued supply reaches 10,000 VELD. After that, the validator subsystem unlocks when aggregate ordinary stake reaches <strong>10,000 VELD</strong>. Until then, no endorsements are accepted and the 10% pool accumulates.</li>
     <li><strong>Register on-chain.</strong> You submit a <span class="formula">VELD_VALIDATOR|REGISTER</span> transaction binding your ML-DSA-65 public key. A matching <span class="formula">DEREGISTER</span> exits cleanly.</li>
@@ -2706,7 +2687,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="poolflush">11. Co-mining lottery</h2>
-  <p>Mining doesn't have to win the block to pay you. The 20% co-mining pool collects on every block and pays out every <strong>100 blocks</strong> through a simple uniform lottery:</p>
+  <p>After staking activates, mining doesn't have to win the block to pay you. The 20% co-mining pool receives its share from ordinary blocks and pays out every <strong>100 blocks</strong> through a simple uniform lottery. Before activation the co-mining-pool share is zero.</p>
   <ul>
     <li>Mine the chain. Your node automatically submits "near-misses" &mdash; hashes that came close to the target but didn't quite win the block.</li>
     <li>Have the minimum stake locked at your mining address. (Same stake as for vault distributions, no double-lock.)</li>
@@ -2734,7 +2715,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <li><strong>No deep rewrites.</strong> A branch that would remove 100 or more blocks is rejected. Once validator finality and a locally observed Bitcoin anchor floor exist, those retained checkpoints add stronger limits.</li>
     <li><strong>Vault drain protection.</strong> The 90% inflow cap (vault retains &ge;10% of every cycle's inflow as principal), 8% balance backstop, and 75% per-staker concentration limit collectively make vault drain impossible &mdash; the reserve grows monotonically.</li>
     <li><strong>Coinbase maturity.</strong> Newly-mined VELD (including co-mining and validator-pool payouts) is spendable only after 100 confirmations. Stops reorg-and-spend attacks.</li>
-    <li><strong>Post-quantum signatures.</strong> Every transaction is signed with ML-DSA-65 (NIST FIPS 204), so a future quantum computer doesn&#39;t invalidate a single UTXO.</li>
+    <li><strong>Cryptographic boundary.</strong> Native VELD transaction and finality signatures use ML-DSA-65. Native ordinary outputs currently use 160-bit HASH160 key commitments, so this is not an end-to-end post-quantum claim. btcVELD custody inherits Bitcoin Taproot&#39;s current secp256k1/Schnorr assumptions.</li>
   </ul>
 </div>
 
@@ -4457,7 +4438,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
   if(sheet)sheet.addEventListener('click',function(event){if(event.target===sheet)closeSheet();});
   document.addEventListener('keydown',function(event){if(event.key==='Escape')closeSheet();});
   if(isIOS&&!standalone)setTimeout(show,1200);
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js?ui=20260903-navigation-fallback',{scope:'/',updateViaCache:'none'}).catch(function(){});}
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js?ui=20260904-network-only',{scope:'/',updateViaCache:'none'}).catch(function(){});}
 
   var txPath=/^\/tx\/[0-9a-f]{64}$/i;
   function markMempoolContext(){
@@ -6125,12 +6106,17 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         constexpr double BLOCKS_PER_DAY      = 480.0;
         constexpr double VAULT_BLOCK_FRACTION = 1.0 / 100.0;
         const double reward_veld = (double)BLOCK_REWARD_UNITS / VELD_UNITS;
-        double daily_inflow = BLOCKS_PER_DAY * reward_veld * 0.20;
-        daily_inflow += BLOCKS_PER_DAY * VAULT_BLOCK_FRACTION * reward_veld * 0.80;
+        const bool staking_active =
+            chain_.TotalSupplyUnits() >= chain_.GetStakingActivationUnits();
+        const double ordinary_vault_share = staking_active ? 0.20 : 0.50;
+        double daily_inflow =
+            BLOCKS_PER_DAY * reward_veld * ordinary_vault_share;
+        daily_inflow += BLOCKS_PER_DAY * VAULT_BLOCK_FRACTION * reward_veld
+                      * (1.0 - ordinary_vault_share);
         double payout_rate = (best_h >= VAULT_INFLOW_CAP_ACTIVATION_HEIGHT)
                            ? (double)VAULT_INFLOW_PAYOUT_PPM / 1'000'000.0
                            : 0.90;
-        double daily_payout    = daily_inflow * payout_rate;
+        double daily_payout    = staking_active ? daily_inflow * payout_rate : 0.0;
         double daily_retention = daily_inflow - daily_payout;
 
         std::ostringstream page;
@@ -6140,8 +6126,17 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << "<div class=\"stat\"><div class=\"stat-label\">Next Distribution</div><div class=\"stat-value em\">" << next_dist << "</div><div class=\"stat-sub\">blocks (~" << (next_dist*3) << " min)</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Next Vault Block</div><div class=\"stat-value\">" << next_vault_blk << "</div><div class=\"stat-sub\">blocks</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Daily Inflow</div><div class=\"stat-value\">~" << std::setprecision(1) << daily_inflow << "</div><div class=\"stat-sub\">VELD/day into vault</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Payout</div><div class=\"stat-value em\">~" << std::setprecision(1) << daily_payout << "</div><div class=\"stat-sub\">VELD/day to stakers (90% inflow cap)</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Retention</div><div class=\"stat-value gold\">~" << std::setprecision(1) << daily_retention << "</div><div class=\"stat-sub\">VELD/day vault growth (10%)</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Payout</div><div class=\"stat-value em\">";
+        if (staking_active) page << "~" << std::setprecision(1) << daily_payout;
+        else page << "0.0";
+        page << "</div><div class=\"stat-sub\">"
+             << (staking_active ? "VELD/day to stakers (90% inflow cap)"
+                                : "staking inactive; no distribution")
+             << "</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Retention</div><div class=\"stat-value gold\">~" << std::setprecision(1) << daily_retention << "</div><div class=\"stat-sub\">"
+             << (staking_active ? "VELD/day vault growth (10%)"
+                                : "all inflow retained before activation")
+             << "</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Dist. Interval</div><div class=\"stat-value\">480</div><div class=\"stat-sub\">blocks (~24h)</div></div>";
         page << "</div>";
 
@@ -6157,7 +6152,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
   <div class="tbl-scroll"><table class="tbl">
     <thead><tr><th>Source</th><th>Amount</th><th>Frequency</th></tr></thead>
     <tbody>
-      <tr><td>Block reward cut (20%)</td><td style="color:var(--em)">~0.62785 VELD</td><td style="color:var(--muted)">Every block</td></tr>
+      <tr><td>Ordinary block reward share</td><td style="color:var(--em)">50% before staking activation; 20% after</td><td style="color:var(--muted)">Every non-vault block</td></tr>
       <tr><td>Vault block (100% reward)</td><td style="color:var(--em)">3.1393 VELD</td><td style="color:var(--muted)">Every 100th block</td></tr>
       <tr><td>Transaction fees</td><td style="color:var(--em)">Variable (0.001 VELD/tx)</td><td style="color:var(--muted)">Per transaction</td></tr>
     </tbody>
@@ -6329,7 +6324,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             page << "</div>";
             page << "</div>";
             page << "<div class=\"rl-val\">";
-            page << "<div class=\"rl-v\" style=\"color:var(--em);font-size:16px\">" << std::fixed << std::setprecision(8) << bal << "</div>";
+            page << "<div class=\"rl-v\" style=\"color:var(--em);font-size:16px\">" << std::fixed << std::setprecision(2) << bal << "</div>";
             page << "<div class=\"rl-vs\">VELD</div>";
             page << "</div>";
             page << "</a>";
@@ -6640,7 +6635,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << "<div class=\"card\" style=\"margin-bottom:16px\">";
         page << "<div class=\"card-title\">Validator Rewards</div>";
         page << "<p style=\"color:var(--text);font-size:13px;line-height:1.6\">"
-             << "Active validators earn from a shared validator pool funded by <span style=\"color:var(--gold);font-weight:600\">10% of every block&#39;s coinbase</span>. "
+             << "After staking activation, active validators earn from a shared validator pool funded by <span style=\"color:var(--gold);font-weight:600\">10% of each ordinary block&#39;s coinbase</span>. Before activation that share is zero. "
              << "The pool is flushed every 480 blocks and split proportionally by each validator&#39;s endorsement count over the last 480 blocks.</p>";
         page << "</div>";
 

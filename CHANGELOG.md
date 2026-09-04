@@ -3,6 +3,27 @@
 All notable public-source changes are recorded here. Signed binary identity is
 recorded separately from source-publication commits.
 
+## Unreleased
+
+### Fixed
+
+- Matched homepage, explorer, and wallet reward descriptions to the consensus
+  transition: ordinary blocks pay 50% miner / 50% vault before staking
+  activation, then 50% / 20% / 20% / 10% after activation.
+- Locked wallet stake submission until the node reports that the consensus
+  activation threshold has been reached.
+- Removed cached-document fallback from the explorer service worker so an old
+  refresh response cannot replace a live page.
+- Rendered rich-list balances with two decimal places and corrected the
+  mainnet minimum-stake fallback to 1,000 VELD.
+- Replaced overbroad cryptographic wording with the exact native-signature,
+  HASH160-commitment, and Bitcoin Taproot dependency boundaries.
+
+### Compatibility
+
+- No consensus rule, protocol version, deployment identity, genesis,
+  state-digest format, block, transaction, address, wallet, or datadir changed.
+
 ## 3.0.4 - 2026-09-03
 
 ### Fixed

@@ -3468,7 +3468,7 @@ __VELD_DEPLOYMENT_BANNER_HTML__
       </div>
 
       <div style="display:flex;gap:10px">
-        <button class="btn btn-em" data-act-click="h2e4ed19f">Review &amp; lock &rarr;</button>
+        <button class="btn btn-em" id="sk-stake-btn" data-act-click="h2e4ed19f" disabled>Checking staking activation&hellip;</button>
         <button class="btn btn-ghost" data-act-click="haa7ba916">Unstake</button>
       </div>
     </div>
@@ -4497,7 +4497,7 @@ function veldApplyExternalValueUiPolicy(){
 setTimeout(veldApplyExternalValueUiPolicy,0);
 // `VELD_NETWORK_BYTE` is the transaction-sighash domain byte (M/T). It is
 // NOT an address prefix. P2PKH addresses use 0x46 on mainnet and 0x6f on
-// testnet, matching wallet.h::PubKeyToAddress and script.h.
+// alternate network profile, matching wallet.h::PubKeyToAddress and script.h.
 var VELD_NETWORK_BYTE = __VELD_NETWORK_BYTE__;
 var VELD_ADDRESS_VERSION = __VELD_ADDRESS_VERSION__;
 var VELD_MIN_TX_FEE_UNITS = __VELD_MIN_TX_FEE_UNITS__;
@@ -4890,7 +4890,7 @@ function _veldBase58Decode(s) {
 function _veldAddrToHash160Hex(addr) {
   // Returns the 20-byte hash160 of a P2PKH address for THIS build only.
   // Checksum-only decoding is insufficient: accepting an arbitrary version
-  // byte lets a mainnet wallet treat a foreign/testnet payload as one of its
+  // byte lets a mainnet wallet treat a foreign-network payload as one of its
   // own addresses and construct the wrong output/change script.
   if (typeof addr !== 'string' || addr.length < 25 || addr.length > 35) return null;
   var raw = _veldBase58Decode(addr);
@@ -5633,7 +5633,7 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
 
 // btcVELD — on-chain AMM swap + liquidity (VELD ⇄ btcVELD). Backend:
 // getammpool / getammlp / prepareammswap / prepareammadd / prepareammremove
-// (rpc.h), all consensus-verified by the full-node regtest harness. The
+// (rpc.h), all consensus-verified by the isolated full-node harness. The
 // browser only signs its OWN inputs (injectSignatures leaves the sigless
 // pool covenant input untouched) and submits via sendrawtransaction.
 // ═══════════════════════════════════════════════════════════════════
@@ -8874,7 +8874,8 @@ function loadDashboard() {
     var _sb = document.getElementById('d-supply-bar'); if (_sb) _sb.style.width = (sup/21000000*100).toFixed(4)+'%';
     // v2.7.0 — staking_active badge has three states:
     //   ACTIVE          — supply ≥ activation; rewards flowing normally
-    //   INACTIVE        — supply <  activation; 100% block reward to miner
+    //   INACTIVE        — supply < activation; ordinary blocks split 50/50
+    //                     between the miner and vault
     //   POST-EMISSION   — supply == max (21M); fees-only, vault/endorsement
     //                     still distribute existing balances + new fee shares
     var stakingActive = !!d.staking_active;
@@ -8896,13 +8897,13 @@ function loadDashboard() {
     var mDaily2 = document.getElementById('m-daily-est');
     if (mDaily2) {
       // v2.7.0 — adapt the estimate to chain phase:
-      //   INACTIVE: 100% of subsidy per block to miner (no 50% split)
+      //   INACTIVE: 50% of ordinary-block subsidy to the miner
       //   ACTIVE:   50% of subsidy per block (the canonical post-activation share)
       //   POST-EMISSION: fees only — show "fees only" instead of a fabricated VELD/day estimate
       if (emissionDone) {
         mDaily2.textContent = 'fees only';
       } else {
-        var share = stakingActive ? 0.50 : 1.00;  // 100% pre-activation, 50% post
+        var share = 0.50;
         mDaily2.textContent = '~' + fmt(480 * 3.13926940 * share, 0);
       }
     }
@@ -9229,7 +9230,7 @@ function loadWalletAddr(addr) {
     //   (absent)                  show if balance > threshold
     // Threshold 100 VELD = roughly the value where losing the key
     // becomes "actually losing real money" rather than "lost a small
-    // testnet stake". Re-evaluated on every balance refresh, so the
+    // stake from a different network profile". Re-evaluated on every balance refresh, so the
     // banner appears the FIRST time the user crosses the threshold
     // (no need for the wallet to be open at the exact moment).
     try {
@@ -13684,6 +13685,16 @@ function loadStakeHistory() {
 function loadStakingPage() {
   rpc('getstakinginfo').then(function(d) {
     var active = d.staking_active === true || d.staking_active === 'true';
+    window._veldStakingActive = active;
+    var stakeBtn = document.getElementById('sk-stake-btn');
+    var activationSupply = parseFloat(d.activation_supply_veld || 10000);
+    if (stakeBtn) {
+      stakeBtn.disabled = !active;
+      stakeBtn.textContent = active
+        ? 'Review & lock \u2192'
+        : 'Staking unlocks at ' + fmt(activationSupply, 0) + ' VELD';
+      stakeBtn.title = active ? '' : 'Consensus does not permit stake creation before activation.';
+    }
     if (d.min_stake_veld) { stakingMinVeld = parseFloat(d.min_stake_veld); }
     if (d.max_stake_veld) { stakingMaxVeld = parseFloat(d.max_stake_veld); }
     var lbl = document.getElementById('sk-amount-label');
@@ -13874,6 +13885,11 @@ function onStakeAddrChange() {
 }
 
 function doStake() {
+  var msgEl = document.getElementById('stake-msg');
+  if (window._veldStakingActive !== true) {
+    if (msgEl) msgEl.innerHTML = '<div class="alert alert-err">Staking is locked until the consensus activation threshold is reached.</div>';
+    return;
+  }
   // Disable button IMMEDIATELY to prevent double-click: the getstake RPC
   // below is async (~100ms), and without this guard a rapid second click
   // starts a second preparestake before the first has claimed its UTXOs,
@@ -13901,10 +13917,12 @@ function doStake() {
   var amountText = document.getElementById('sk-amount').value || '';
   var amountUnits = null;
   var amount = 0;
-  var msgEl = document.getElementById('stake-msg');
   var reenable = function(){
     __opUnlock('stake', stakeBtn ? [stakeBtn] : []);
-    if (stakeBtn) { stakeBtn.disabled = false; stakeBtn.title = ''; }
+    if (stakeBtn) {
+      stakeBtn.disabled = window._veldStakingActive !== true;
+      stakeBtn.title = window._veldStakingActive === true ? '' : 'Consensus does not permit stake creation before activation.';
+    }
   };
   if (!addr) { msgEl.innerHTML = '<div class="alert alert-err">No address. Unlock your keystore above.</div>'; reenable(); return; }
   if (!keyHex || keyHex.length !== 64) { msgEl.innerHTML = '<div class="alert alert-err">Unlock your keystore above to sign transactions.</div>'; reenable(); return; }
@@ -14886,7 +14904,7 @@ function loadCominingEligibility() {
   // Always refresh the min-stake copy from getstakinginfo so bringup→mainnet
   // raises don't go stale in the UI.
   rpc('getstakinginfo').then(function(si) {
-    var minv = (si && typeof si === 'object') ? (si.min_stake_veld || 10) : 10;
+    var minv = (si && typeof si === 'object') ? (si.min_stake_veld || 1000) : 1000;
     if (minEl) minEl.textContent = fmt(minv, 0) + ' VELD';
     if (!addr) {
       card.style.borderLeftColor = 'var(--muted)';
@@ -17188,7 +17206,7 @@ input[type=text]:focus{outline:none;border-color:var(--em)}
   <div class="step active" id="step1">
     <div class="card">
       <h2><span class="step-num">1</span>Welcome to Veld</h2>
-      <p class="desc">Veld is a post-quantum, memory-hard proof-of-work cryptocurrency with a 21,000,000 VELD hard cap. The same client mines, stakes, validates, and runs a full node &mdash; this setup wizard will create your wallet, start your node, and begin mining.<br><br>The whole process takes about 2 minutes.</p>
+      <p class="desc">Veld uses ML-DSA-65 for native transaction and finality signatures and VeldHash for memory-hard proof of work, with a 21,000,000 VELD hard cap. Native addresses currently use 160-bit HASH160 commitments, and btcVELD custody inherits Bitcoin Taproot assumptions. The same client mines, stakes, validates, and runs a full node &mdash; this setup wizard will create your wallet, start your node, and begin mining.<br><br>The whole process takes about 2 minutes.</p>
       <div class="warn">
         <strong>⚠ Before you continue:</strong><br>
         You will be shown a private key. This is the only way to access your VELD. If you lose it, your funds are gone forever. Make sure you have pen and paper ready, or a secure place to save it.
