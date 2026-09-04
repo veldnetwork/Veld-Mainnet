@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPLORER = (ROOT / "include" / "network" / "explorer.h").read_text(encoding="utf-8")
+LIQUIDITY = (ROOT / "resources" / "explorer-liquidity.html").read_text(encoding="utf-8")
 
 
 def require(fragment: str, label: str) -> None:
@@ -52,4 +53,15 @@ require("event.respondWith(fetch(event.request, {cache:'no-store'}));",
 if "cache.addAll" in EXPLORER or "cache.put" in EXPLORER:
     raise AssertionError("service worker must not persist Explorer document shells")
 
-print("PASS explorer_mobile_nav_tests checks=12")
+if "flex:1 1 20%;width:20%;min-width:0;max-width:20%" not in LIQUIDITY:
+    raise AssertionError("Liquidity gives the More button the same width as the four link tabs")
+if "-webkit-appearance:none;appearance:none" not in LIQUIDITY:
+    raise AssertionError("Liquidity removes platform-specific button geometry")
+if "setMoreOpen(pane,more,pane.getAttribute('data-open')!=='1')" not in LIQUIDITY:
+    raise AssertionError("Liquidity uses one explicit More-menu state transition")
+if "e.preventDefault();\n    e.stopPropagation();" not in LIQUIDITY:
+    raise AssertionError("Liquidity owns the More-button tap before other document handlers")
+if "},true);" not in LIQUIDITY:
+    raise AssertionError("Liquidity delegates the More-button tap in capture phase")
+
+print("PASS explorer_mobile_nav_tests checks=17")
