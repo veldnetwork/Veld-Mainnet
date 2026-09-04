@@ -438,8 +438,9 @@ inline void RunWalletCLI(const std::string& wallet_path) {
             }
 
             else if (cmd == "h" || cmd == "H") {
-                std::cout << "  Transaction history is unavailable in the "
-                             "Veld 3.0.0 public release.\n\n";
+                std::cout << "  Transaction history is not available in this "
+                             "command-line wallet. Use the public explorer at "
+                             "https://explorer.veld.network.\n\n";
             }
 
             else if (cmd == "e" || cmd == "E") {

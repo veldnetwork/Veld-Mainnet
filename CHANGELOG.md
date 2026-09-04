@@ -20,6 +20,8 @@ recorded separately from source-publication commits.
   mainnet minimum-stake fallback to 1,000 VELD.
 - Replaced overbroad cryptographic wording with the exact native-signature,
   HASH160-commitment, and Bitcoin Taproot dependency boundaries.
+- Removed stale 3.0.0 wording from current client messages and directed
+  command-line wallet users to the bounded public history in the explorer.
 
 ### Compatibility
 

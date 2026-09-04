@@ -10,6 +10,8 @@ WALLET = (ROOT / "include/network/ui_desktop.h").read_text(encoding="utf-8")
 HOME = (ROOT / "website/index.html").read_text(encoding="utf-8")
 SW = (ROOT / "resources/explorer-sw-v2.js").read_text(encoding="utf-8")
 ROUTE = (ROOT / "resources/explorer-route-context-v1.js").read_text(encoding="utf-8")
+NODE = (ROOT / "src/veld-node.cpp").read_text(encoding="utf-8")
+CLI = (ROOT / "include/wallet/cli.h").read_text(encoding="utf-8")
 
 
 def require(condition: bool, message: str) -> None:
@@ -73,5 +75,10 @@ require("refreshObservedHashrate" in ROUTE and
         "explorer hashrate is not derived from canonical work and recent blocks")
 require("testnet" not in ROUTE.lower() and "test net" not in ROUTE.lower(),
         "explorer public runtime asset exposes a test-network reference")
+require("Veld 3.0.0 public release" not in NODE and
+        "Veld 3.0.0 public release" not in CLI,
+        "stale launch-version wording returned to current user-facing output")
+require("https://explorer.veld.network" in CLI,
+        "command-line wallet history guidance lacks the public explorer link")
 
-print("public mainnet surface checks: PASS (27 assertions)")
+print("public mainnet surface checks: PASS (29 assertions)")
