@@ -1,6 +1,6 @@
 sha256	role	origin	upstream_revision	upstream_path	upstream_sha256	patch	path
 59538d1aed02ee4fcd5e858d3633ebc848d3ee5a5dd9723f1247c26d952a54e7	distributed-source	Veld	-	-	-	-	.gitattributes
-f3991b57179891246efe8e7ba1137aadada136e32193e5ebd80d851324f93869	distributed-source	Veld	-	-	-	-	.gitignore
+2482ecd50507e51c236b85f44345886595500d927e55ce51b8dde01694e7a4a9	distributed-source	Veld	-	-	-	-	.gitignore
 2712c6e470f165ec2a628eec255abaae5b1653ea5d6ff19b2f4ba905462feec6	license-notice	Veld	-	-	-	-	THIRD_PARTY_NOTICES.md
 de1e67cd30a218df4390023ed25f492af157581a37764308c25b5fc1fc660ad9	build-controller	Veld	-	-	-	-	build/mainnet-v2-linux.sh
 bf451aab86a584723437fc55a9afd27194a923d5c8a4768d7e869ab40ee7d627	build-controller	Veld	-	-	-	-	build/mainnet-v2-windows.sh
@@ -11,11 +11,13 @@ c07b991092fda995630bb0b1a3fe71cf03ad81803e0fe6d471c71e9a2eee3f5d	pinned-crypto-h
 dcac6e31e580896634ce481db20218c6187ba2508b95d2f18cc1cfc099ccf9d0	pinned-crypto-header	Veld	-	-	-	-	include/crypto/vendored_pin_history.h
 70bc510ace3fcd18014004d8099c1c9798664f0c43f389e4f70776be4872bf95	generated-cpp-header	Emscripten-generated	-	-	-	-	include/network/dilithium_wasm_js.h
 bf995271d47654a972df770ad351f063771c9f678ae8c193b198061ed1cf30ff	kat-generator	Veld	-	-	-	-	scripts/generate-mldsa65-nist-kat.py
+7f883a99da9865292f51c0d897fb7f2ac8e254accef264f37268b9c01eabcb8e	distributed-source	Veld	-	-	-	-	scripts/check-public-source-hygiene.py
 2b1ed987e49d28bc9ca55eaf992e10926f11ad83174d95cd523b75b7cf1ba4d9	rebuild-tool	Veld	-	-	-	-	scripts/rebuild-pqc-wasm.py
 ba6e9bad42c60047a900e3ab2cd79d75a1e7ad0934c679f7bfcb50a6f8db24e6	rebuild-tool	Veld	-	-	-	-	scripts/rebuild-pqc-wasm.sh
-e57e218f639fa78026183d080c91b4c4d375ce6b97d1ade390174816e93dca64	verification-tool	Veld	-	-	-	-	scripts/verify-pqc-provenance.py
-01c5fc231955906cb45395fbe7cb43bede88f36f88d1a6b71a4187d4ccee71ad	regression-test	Veld	-	-	-	-	tests/daybreak_pqc_provenance_tests.py
+00e848d6b1517e9026a7858e98ec35df09a1370df87e0d87c61098cc6c8d966e	verification-tool	Veld	-	-	-	-	scripts/verify-pqc-provenance.py
+334348c2a8a374ce74189d380fb5e6a4ed95eda37e97d4acb15000f9b5e4f2fd	regression-test	Veld	-	-	-	-	tests/pqc_provenance_tests.py
 7b82219bdad5e2a9558f7d22877a35c37eecc5e6b40424ff4fe697c486c2d1df	regression-test	Veld	-	-	-	-	tests/pqc_wasm_smoke.js
+67f3df7bcf3b2f7de24cbf5ea48ca9da06c472d1a4327e8d0eab05a920fe2c45	regression-test	Veld	-	-	-	-	tests/public_source_hygiene_tests.py
 620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86	license-notice	Veld	-	-	-	-	third_party_licenses/Emscripten-LICENSE.txt
 90d11b55fda3b600b4c79974bcbfada09f0ded97f4a84481d96b9d7571fd9f51	provenance-record	Veld	-	-	-	-	vendor/pqc/PQCLEAN_VERSION
 1487789537d80a584b2745132c86bdc8b8f40800359e1500757aa81ec17031df	generated-js-wasm	Emscripten-generated	-	-	-	-	vendor/pqc/dilithium_wasm.js

@@ -80,11 +80,13 @@ FIXED_COVERAGE = {
     "include/crypto/vendored_pin_history.h",
     "include/network/dilithium_wasm_js.h",
     "scripts/generate-mldsa65-nist-kat.py",
+    "scripts/check-public-source-hygiene.py",
     "scripts/rebuild-pqc-wasm.py",
     "scripts/rebuild-pqc-wasm.sh",
     "scripts/verify-pqc-provenance.py",
-    "tests/daybreak_pqc_provenance_tests.py",
+    "tests/pqc_provenance_tests.py",
     "tests/pqc_wasm_smoke.js",
+    "tests/public_source_hygiene_tests.py",
     "third_party_licenses/Emscripten-LICENSE.txt",
 }
 

@@ -71,6 +71,8 @@ Thumbs.db
 !/scripts/rebuild-pqc-wasm.sh
 !/scripts/rebuild-pqc-wasm.py
 !/scripts/generate-mldsa65-nist-kat.py
+!/scripts/check-public-source-hygiene.py
+!/scripts/format-maintained-source.py
 /swap/
 /*.bat
 /*.csv

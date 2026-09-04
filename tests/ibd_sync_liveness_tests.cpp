@@ -11,10 +11,11 @@ size_t checks = 0;
 
 void Check(bool condition, const char* label) {
     ++checks;
-    if (!condition) throw std::runtime_error(std::string("FAIL: ") + label);
+    if (!condition)
+        throw std::runtime_error(std::string("FAIL: ") + label);
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     using namespace std::chrono_literals;
@@ -25,8 +26,7 @@ int main() {
 
     Check(IBD_GETBLOCKS_BATCH_BLOCKS == 32,
           "wire batch stays inside the per-source orphan frontier");
-    Check(IBD_GETBLOCKS_RETRY_IDLE == 10s,
-          "IBD retry idle interval is exact");
+    Check(IBD_GETBLOCKS_RETRY_IDLE == 10s, "IBD retry idle interval is exact");
 
     PeerState peer;
     const auto start = PeerState::tp_t{} + 1h;
@@ -42,13 +42,11 @@ int main() {
     peer.last_getblocks = start + 10s;
     Check(!IbdGetBlocksRetryDue(peer, 49, start + 11s),
           "canonical progress suppresses duplicate suffix requests");
-    Check(peer.ibd_observed_height == 49 &&
-              peer.last_ibd_progress == start + 11s,
+    Check(peer.ibd_observed_height == 49 && peer.last_ibd_progress == start + 11s,
           "canonical progress timestamp is recorded exactly");
 
     for (uint64_t height = 50; height <= 88; ++height) {
-        const auto now = start + 11s +
-            std::chrono::seconds((height - 49) * 2);
+        const auto now = start + 11s + std::chrono::seconds((height - 49) * 2);
         Check(!IbdGetBlocksRetryDue(peer, height, now),
               "continuous expensive validation never floods GETBLOCKS");
     }
