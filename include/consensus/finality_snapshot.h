@@ -36,17 +36,23 @@ namespace qc {
 //   not slashed   — as of the snapshot height, using the record's own history.
 //   not exited    — deregistration before the snapshot removes membership.
 inline bool QualifiedAt(const ValidatorRecord& r, uint64_t snapshot_height) {
-    if (!r.bond_custodial)                       return false;
-    if (r.bond_units < BOND_PER_KEY_UNITS)       return false;
-    if (r.registered_height == 0)                return false;
+    if (!r.bond_custodial)
+        return false;
+    if (r.bond_units < BOND_PER_KEY_UNITS)
+        return false;
+    if (r.registered_height == 0)
+        return false;
     if (r.registered_height > snapshot_height ||
-        snapshot_height - r.registered_height < REGISTRATION_MATURITY) return false;
-    if (r.slashed && r.slashed_at_height != 0 &&
-        r.slashed_at_height <= snapshot_height)  return false;
-    if (r.slashed && r.slashed_at_height == 0)   return false;   // slashed, height unknown: exclude
-    if (r.deregistered_at_height != 0 &&
-        r.deregistered_at_height <= snapshot_height) return false;
-    if (!r.active)                               return false;
+        snapshot_height - r.registered_height < REGISTRATION_MATURITY)
+        return false;
+    if (r.slashed && r.slashed_at_height != 0 && r.slashed_at_height <= snapshot_height)
+        return false;
+    if (r.slashed && r.slashed_at_height == 0)
+        return false; // slashed, height unknown: exclude
+    if (r.deregistered_at_height != 0 && r.deregistered_at_height <= snapshot_height)
+        return false;
+    if (!r.active)
+        return false;
     return true;
 }
 
@@ -58,11 +64,10 @@ inline bool QualifiedAt(const ValidatorRecord& r, uint64_t snapshot_height) {
 // no influence. This makes quorum a simple count and removes any incentive to
 // concentrate. Deliberate: with 7 equal keys, strictly-greater-than-two-thirds
 // is 5, and fault tolerance is exactly 2.
-inline EpochSnapshot BuildEpochSnapshot(const ValidatorRegistry& reg,
-                                        uint64_t epoch_id,
+inline EpochSnapshot BuildEpochSnapshot(const ValidatorRegistry& reg, uint64_t epoch_id,
                                         uint64_t snapshot_height) {
     EpochSnapshot s;
-    s.epoch_id        = epoch_id;
+    s.epoch_id = epoch_id;
     s.snapshot_height = snapshot_height;
 
     // GetAllValidatorRecords, not GetValidators: the latter pre-filters on
@@ -70,13 +75,14 @@ inline EpochSnapshot BuildEpochSnapshot(const ValidatorRegistry& reg,
     // as-of-height rule rather than inheriting someone else's notion of
     // membership.
     for (const auto& r : reg.GetAllValidatorRecords()) {
-        if (!QualifiedAt(r, snapshot_height)) continue;
+        if (!QualifiedAt(r, snapshot_height))
+            continue;
         SnapshotEntry e;
-        e.pubkey_commit     = PubkeyCommit(r.pubkey_hex);
-        e.address           = r.address;
+        e.pubkey_commit = PubkeyCommit(r.pubkey_hex);
+        e.address = r.address;
         e.registered_height = r.registered_height;
-        e.weight            = BOND_PER_KEY_UNITS;   // min == cap
-        e.pubkey_hex        = r.pubkey_hex;         // resolvable, not re-transmitted
+        e.weight = BOND_PER_KEY_UNITS; // min == cap
+        e.pubkey_hex = r.pubkey_hex;   // resolvable, not re-transmitted
         s.entries.push_back(e);
     }
 
@@ -99,7 +105,8 @@ inline EpochSnapshot BuildEpochSnapshot(const ValidatorRegistry& reg,
                     s.entries.end());
 
     s.total_weight = 0;
-    for (const auto& e : s.entries) s.total_weight += e.weight;
+    for (const auto& e : s.entries)
+        s.total_weight += e.weight;
     s.root = SnapshotRoot(s.entries, s.epoch_id, s.snapshot_height, s.total_weight);
     return s;
 }
@@ -115,6 +122,6 @@ inline bool SnapshotQualifies(const EpochSnapshot& s) {
     return SnapshotWellFormed(s) && s.Qualified();
 }
 
-}  // namespace qc
-}  // namespace finality
-}  // namespace veld
+} // namespace qc
+} // namespace finality
+} // namespace veld

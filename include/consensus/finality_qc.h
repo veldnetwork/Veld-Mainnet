@@ -40,35 +40,34 @@ namespace qc {
 // commitment and a finalized record must never collide even if their bodies
 // serialise identically.
 constexpr const char* DOMAIN_SNAPSHOT = "VELD_FINALITY_SNAPSHOT_v1|";
-constexpr const char* DOMAIN_VOTE     = "VELD_FINALITY_VOTE_v1|";
-constexpr const char* DOMAIN_QC       = "VELD_FINALITY_QC_v1|";
-constexpr const char* DOMAIN_RECORD   = "VELD_FINALITY_RECORD_v1|";
+constexpr const char* DOMAIN_VOTE = "VELD_FINALITY_VOTE_v1|";
+constexpr const char* DOMAIN_QC = "VELD_FINALITY_QC_v1|";
+constexpr const char* DOMAIN_RECORD = "VELD_FINALITY_RECORD_v1|";
 // Commitment to an ML-DSA-65 public key inside a snapshot entry. Distinct
 // domain so a pubkey commitment can never be confused with a set root, a vote,
 // a QC, or a finalized record even if their bodies serialise identically.
-constexpr const char* DOMAIN_PUBKEY   = "VELD_FINALITY_PUBKEY_v1|";
+constexpr const char* DOMAIN_PUBKEY = "VELD_FINALITY_PUBKEY_v1|";
 
 // ---------------------------------------------------------------- profile
-constexpr uint64_t EPOCH_BLOCKS          = BLOCKS_PER_DAY;          // 480 / 24h
-constexpr uint64_t CHECKPOINT_INTERVAL   = BLOCKS_PER_DAY / 24;     // 20 / 1h
-constexpr uint64_t VOTE_WINDOW_BLOCKS    = CHECKPOINT_INTERVAL;     // +1 .. +20
-constexpr uint64_t REGISTRATION_MATURITY = EPOCH_BLOCKS;            // one epoch
-constexpr uint64_t MIN_VALIDATOR_COUNT   = 7;
+constexpr uint64_t EPOCH_BLOCKS = BLOCKS_PER_DAY;             // 480 / 24h
+constexpr uint64_t CHECKPOINT_INTERVAL = BLOCKS_PER_DAY / 24; // 20 / 1h
+constexpr uint64_t VOTE_WINDOW_BLOCKS = CHECKPOINT_INTERVAL;  // +1 .. +20
+constexpr uint64_t REGISTRATION_MATURITY = EPOCH_BLOCKS;      // one epoch
+constexpr uint64_t MIN_VALIDATOR_COUNT = 7;
 // Maximum equal-weight snapshot whose strict >2/3 ML-DSA QC fits the QB2
 // 7.5MB block-carrier budget. This is a representability ceiling, not a
 // selection rule: an epoch with more qualifying keys fails closed instead of
 // claiming to be finalizable when no valid certificate can be carried.
 constexpr uint64_t MAX_FINALITY_VALIDATOR_COUNT = 3398;
-constexpr uint64_t BOND_PER_KEY_UNITS    = 10000ULL * VELD_UNITS;   // min AND cap
-constexpr uint64_t TOTAL_BOND_FLOOR      = MIN_VALIDATOR_COUNT * BOND_PER_KEY_UNITS;
+constexpr uint64_t BOND_PER_KEY_UNITS = 10000ULL * VELD_UNITS; // min AND cap
+constexpr uint64_t TOTAL_BOND_FLOOR = MIN_VALIDATOR_COUNT * BOND_PER_KEY_UNITS;
 
 // New btcVELD exposure pauses after three missed checkpoints. AMM swaps continue
 // during a later finality stall; irreversible redemption payout waits for
 // finality.
 constexpr uint64_t FINALITY_LIVENESS_WINDOW = 60;
 constexpr uint64_t FINALITY_EQUIV_EVIDENCE_WINDOW = 90 * EPOCH_BLOCKS;
-constexpr uint64_t FINALITY_CLEAN_EXIT_WINDOW =
-    FINALITY_EQUIV_EVIDENCE_WINDOW;
+constexpr uint64_t FINALITY_CLEAN_EXIT_WINDOW = FINALITY_EQUIV_EVIDENCE_WINDOW;
 constexpr uint64_t FINALITY_MEMBERSHIP_RETENTION_EPOCHS = 92;
 
 // Quorum is STRICTLY greater than two thirds. With 7 equal keys this is 5.
@@ -93,9 +92,9 @@ enum class Phase : uint8_t { PREVOTE = 1, PRECOMMIT = 2 };
 // evidence. Disjoint network bytes AND disjoint genesis hashes make that
 // impossible in two independent ways.
 #ifdef VELD_MAINNET_POW
-constexpr uint32_t NETWORK_ID = 0x4D;   // 'M'
+constexpr uint32_t NETWORK_ID = 0x4D; // 'M'
 #else
-constexpr uint32_t NETWORK_ID = 0x54;   // 'T'
+constexpr uint32_t NETWORK_ID = 0x54; // 'T'
 #endif
 
 // ---------------------------------------------------------------- types
@@ -104,24 +103,29 @@ constexpr uint32_t NETWORK_ID = 0x54;   // 'T'
 // substitute a different block at the finalized height.
 struct CheckpointRef {
     uint64_t height = 0;
-    Hash256  hash{};
+    Hash256 hash{};
 
     bool operator==(const CheckpointRef& o) const {
         return height == o.height && hash == o.hash;
     }
-    bool operator!=(const CheckpointRef& o) const { return !(*this == o); }
+    bool operator!=(const CheckpointRef& o) const {
+        return !(*this == o);
+    }
     bool IsNull() const {
-        if (height != 0) return false;
-        for (uint8_t b : hash) if (b) return false;
+        if (height != 0)
+            return false;
+        for (uint8_t b : hash)
+            if (b)
+                return false;
         return true;
     }
 };
 
 struct SnapshotEntry {
-    Hash256     pubkey_commit{};      // domain-separated hash of pubkey_hex
-    std::string address;              // validator address (V-prefixed P2PKH)
-    uint64_t    registered_height = 0;
-    uint64_t    weight = 0;           // CAPPED slashable bond, not stake
+    Hash256 pubkey_commit{}; // domain-separated hash of pubkey_hex
+    std::string address;     // validator address (V-prefixed P2PKH)
+    uint64_t registered_height = 0;
+    uint64_t weight = 0; // CAPPED slashable bond, not stake
 
     // The full ML-DSA-65 key. Carried so the snapshot is self-sufficient for
     // verification: a vote must NOT repeat 3,904 hex bytes of public key —
@@ -141,32 +145,33 @@ struct SnapshotEntry {
 // or removing stake, and over-bonding during an epoch do not alter the active
 // epoch's denominator.
 struct EpochSnapshot {
-    uint64_t                   epoch_id = 0;
-    uint64_t                   snapshot_height = 0;
-    std::vector<SnapshotEntry> entries;        // canonical order: by pubkey_commit
-    uint64_t                   total_weight = 0;
-    Hash256                    root{};
+    uint64_t epoch_id = 0;
+    uint64_t snapshot_height = 0;
+    std::vector<SnapshotEntry> entries; // canonical order: by pubkey_commit
+    uint64_t total_weight = 0;
+    Hash256 root{};
 
     bool Qualified() const {
         return entries.size() >= MIN_VALIDATOR_COUNT &&
-               entries.size() <= MAX_FINALITY_VALIDATOR_COUNT &&
-               total_weight   >= TOTAL_BOND_FLOOR;
+               entries.size() <= MAX_FINALITY_VALIDATOR_COUNT && total_weight >= TOTAL_BOND_FLOOR;
     }
 };
 
 // A quorum certificate: the artifact. Once built and carried canonically, this
 // is what consensus retains — not the votes it was built from.
 struct QuorumCert {
-    uint64_t             epoch_id = 0;
-    Hash256              set_root{};
-    Phase                phase = Phase::PREVOTE;
-    uint32_t             round = 0;
-    CheckpointRef        source;          // justified source (null at genesis of finality)
-    CheckpointRef        target;          // scheduled checkpoint
-    std::vector<uint8_t> bitmap;          // signer bitmap over snapshot entry order
-    uint64_t             weight = 0;      // summed snapshotted capped bond of signers
+    uint64_t epoch_id = 0;
+    Hash256 set_root{};
+    Phase phase = Phase::PREVOTE;
+    uint32_t round = 0;
+    CheckpointRef source;        // justified source (null at genesis of finality)
+    CheckpointRef target;        // scheduled checkpoint
+    std::vector<uint8_t> bitmap; // signer bitmap over snapshot entry order
+    uint64_t weight = 0;         // summed snapshotted capped bond of signers
 
-    bool IsNull() const { return weight == 0 && target.IsNull(); }
+    bool IsNull() const {
+        return weight == 0 && target.IsNull();
+    }
 };
 
 // What consensus stores and digests. Every field is load-bearing:
@@ -174,25 +179,27 @@ struct QuorumCert {
 //   carrier — the canonical block that carried the certificate, and its hash.
 //             This field prevents certificate erasure during reorganization.
 struct FinalizedRecord {
-    uint64_t      epoch_id = 0;
+    uint64_t epoch_id = 0;
     CheckpointRef target;
-    Hash256       set_root{};
-    uint32_t      round = 0;
-    Phase         phase = Phase::PRECOMMIT;
-    Hash256       cert_commit{};      // commitment to the QuorumCert
-    CheckpointRef carrier;            // C and its exact block hash
-    uint64_t      retention_floor = 0;
+    Hash256 set_root{};
+    uint32_t round = 0;
+    Phase phase = Phase::PRECOMMIT;
+    Hash256 cert_commit{}; // commitment to the QuorumCert
+    CheckpointRef carrier; // C and its exact block hash
+    uint64_t retention_floor = 0;
 
-    bool IsNull() const { return target.IsNull(); }
+    bool IsNull() const {
+        return target.IsNull();
+    }
 };
 
 // A validator's persisted lock. The heart of the two-phase safety argument:
 // having precommitted a target, a validator will not prevote a conflicting one
 // unless it can prove the network moved on without it.
 struct Lock {
-    bool          held = false;
-    uint64_t      epoch_id = 0;
-    uint32_t      round = 0;
+    bool held = false;
+    uint64_t epoch_id = 0;
+    uint32_t round = 0;
     CheckpointRef target;
 };
 
@@ -201,9 +208,10 @@ struct Lock {
 // Strictly greater than 2/3 of total weight. Overflow-safe via 128-bit; never
 // divides. Zero total weight => nothing is ever final (fail-closed).
 inline bool IsSupermajority(uint64_t weight, uint64_t total_weight) {
-    if (total_weight == 0) return false;
-    return (unsigned __int128)weight * THRESHOLD_DEN
-         > (unsigned __int128)total_weight * THRESHOLD_NUM;
+    if (total_weight == 0)
+        return false;
+    return (unsigned __int128)weight * THRESHOLD_DEN >
+           (unsigned __int128)total_weight * THRESHOLD_NUM;
 }
 
 // Only exact multiples of the checkpoint interval are valid targets. Height 0
@@ -217,19 +225,16 @@ inline bool IsScheduledCheckpoint(uint64_t height) {
 // resets naturally at the epoch boundary, and prevents a stalled daemon from
 // signing two different checkpoint hashes in the same slashable round.
 inline uint32_t CheckpointRound(uint64_t height) {
-    return static_cast<uint32_t>((height % EPOCH_BLOCKS) /
-                                 CHECKPOINT_INTERVAL);
+    return static_cast<uint32_t>((height % EPOCH_BLOCKS) / CHECKPOINT_INTERVAL);
 }
 
 // Epoch is the high-order part of a consensus round.  CheckpointRound resets
 // to zero at every epoch boundary, so comparing the uint32 round alone can
 // mistake a newer epoch for an older round and let a stale QC overwrite a
 // newer lock.
-inline bool ConsensusRoundNewer(uint64_t epoch, uint32_t round,
-                                uint64_t prior_epoch,
+inline bool ConsensusRoundNewer(uint64_t epoch, uint32_t round, uint64_t prior_epoch,
                                 uint32_t prior_round) {
-    return epoch > prior_epoch ||
-           (epoch == prior_epoch && round > prior_round);
+    return epoch > prior_epoch || (epoch == prior_epoch && round > prior_round);
 }
 
 // A justified source is either the unique null reference or an earlier,
@@ -237,11 +242,10 @@ inline bool ConsensusRoundNewer(uint64_t epoch, uint32_t round,
 // an unscheduled/non-earlier source are not finality votes.  Keep this as one
 // predicate so certificate intake and equivocation evidence cannot disagree
 // over whether the signed bytes describe a valid claim.
-inline bool SourceRefWellFormed(const CheckpointRef& source,
-                                const CheckpointRef& target) {
-    if (source.IsNull()) return true;
-    return source.height != 0 &&
-           IsScheduledCheckpoint(source.height) &&
+inline bool SourceRefWellFormed(const CheckpointRef& source, const CheckpointRef& target) {
+    if (source.IsNull())
+        return true;
+    return source.height != 0 && IsScheduledCheckpoint(source.height) &&
            source.height < target.height;
 }
 
@@ -254,8 +258,12 @@ inline bool InVoteWindow(uint64_t target_height, uint64_t inclusion_height) {
 }
 
 // Which epoch owns a height, and where that epoch's snapshot is taken.
-inline uint64_t EpochOf(uint64_t height)          { return height / EPOCH_BLOCKS; }
-inline uint64_t EpochStart(uint64_t epoch_id)     { return epoch_id * EPOCH_BLOCKS; }
+inline uint64_t EpochOf(uint64_t height) {
+    return height / EPOCH_BLOCKS;
+}
+inline uint64_t EpochStart(uint64_t epoch_id) {
+    return epoch_id * EPOCH_BLOCKS;
+}
 inline uint64_t SnapshotHeightFor(uint64_t epoch_id) {
     // "canonical state at epoch_start - 1" — avoids same-block
     // registration/vote ordering ambiguity. Epoch 0 has no prior state and
@@ -275,10 +283,8 @@ inline Hash256 PubkeyCommit(const std::string& pubkey_hex) {
 // MUST already be sorted by pubkey_commit; unordered iteration must never
 // reach the hash. Commits count and total weight so a set cannot be silently
 // truncated or reweighted.
-inline Hash256 SnapshotRoot(const std::vector<SnapshotEntry>& sorted_entries,
-                            uint64_t epoch_id,
-                            uint64_t snapshot_height,
-                            uint64_t total_weight) {
+inline Hash256 SnapshotRoot(const std::vector<SnapshotEntry>& sorted_entries, uint64_t epoch_id,
+                            uint64_t snapshot_height, uint64_t total_weight) {
     std::vector<uint8_t> buf;
     state_digest::put_u64_le(buf, epoch_id);
     state_digest::put_u64_le(buf, snapshot_height);
@@ -300,16 +306,19 @@ inline bool SnapshotWellFormed(const EpochSnapshot& s) {
     uint64_t sum = 0;
     for (size_t i = 0; i < s.entries.size(); ++i) {
         const auto& e = s.entries[i];
-        if (e.weight != BOND_PER_KEY_UNITS) return false;   // min AND cap
-        if (e.address.empty()) return false;
-        if (e.pubkey_hex.size() != 3904 ||
-            PubkeyCommit(e.pubkey_hex) != e.pubkey_commit) return false;
+        if (e.weight != BOND_PER_KEY_UNITS)
+            return false; // min AND cap
+        if (e.address.empty())
+            return false;
+        if (e.pubkey_hex.size() != 3904 || PubkeyCommit(e.pubkey_hex) != e.pubkey_commit)
+            return false;
         if (i > 0 && !(s.entries[i - 1].pubkey_commit < e.pubkey_commit)) {
-            return false;   // unsorted or duplicate
+            return false; // unsorted or duplicate
         }
         sum += e.weight;
     }
-    if (sum != s.total_weight) return false;
+    if (sum != s.total_weight)
+        return false;
     return SnapshotRoot(s.entries, s.epoch_id, s.snapshot_height, s.total_weight) == s.root;
 }
 
@@ -324,11 +333,10 @@ inline bool SnapshotWellFormed(const EpochSnapshot& s) {
 // preserves linear lookup semantics on every admissible snapshot while
 // removing a 3,398-entry scan from guarded finality intake.
 inline size_t SignerIndex(const EpochSnapshot& s, const Hash256& pubkey_commit) {
-    const auto it = std::lower_bound(
-        s.entries.begin(), s.entries.end(), pubkey_commit,
-        [](const SnapshotEntry& entry, const Hash256& wanted) {
-            return entry.pubkey_commit < wanted;
-        });
+    const auto it = std::lower_bound(s.entries.begin(), s.entries.end(), pubkey_commit,
+                                     [](const SnapshotEntry& entry, const Hash256& wanted) {
+                                         return entry.pubkey_commit < wanted;
+                                     });
     if (it == s.entries.end() || it->pubkey_commit != pubkey_commit)
         return (size_t)-1;
     return (size_t)std::distance(s.entries.begin(), it);
@@ -338,17 +346,13 @@ inline size_t SignerIndex(const EpochSnapshot& s, const Hash256& pubkey_commit) 
 
 // The signed preimage is length-delimited and includes the network identifier
 // and genesis hash to prevent cross-network vote replay.
-inline std::vector<uint8_t> VotePreimage(uint32_t network_id,
-                                         const Hash256& genesis_hash,
-                                         uint64_t epoch_id,
-                                         const Hash256& set_root,
-                                         Phase phase,
-                                         uint32_t round,
-                                         const CheckpointRef& source,
+inline std::vector<uint8_t> VotePreimage(uint32_t network_id, const Hash256& genesis_hash,
+                                         uint64_t epoch_id, const Hash256& set_root, Phase phase,
+                                         uint32_t round, const CheckpointRef& source,
                                          const CheckpointRef& target) {
     std::vector<uint8_t> buf;
-    state_digest::put_bytes(buf,
-        reinterpret_cast<const uint8_t*>(DOMAIN_VOTE), strlen(DOMAIN_VOTE));
+    state_digest::put_bytes(buf, reinterpret_cast<const uint8_t*>(DOMAIN_VOTE),
+                            strlen(DOMAIN_VOTE));
     state_digest::put_u32_le(buf, network_id);
     state_digest::put_bytes(buf, genesis_hash.data(), genesis_hash.size());
     state_digest::put_u64_le(buf, epoch_id);
@@ -364,13 +368,14 @@ inline std::vector<uint8_t> VotePreimage(uint32_t network_id,
 
 // ---------------------------------------------------------------- QC
 
-inline uint64_t BitmapWeight(const EpochSnapshot& s,
-                             const std::vector<uint8_t>& bitmap) {
+inline uint64_t BitmapWeight(const EpochSnapshot& s, const std::vector<uint8_t>& bitmap) {
     uint64_t w = 0;
     for (size_t i = 0; i < s.entries.size(); ++i) {
         const size_t byte = i >> 3;
-        if (byte >= bitmap.size()) break;
-        if (bitmap[byte] & (uint8_t)(1u << (i & 7))) w += s.entries[i].weight;
+        if (byte >= bitmap.size())
+            break;
+        if (bitmap[byte] & (uint8_t)(1u << (i & 7)))
+            w += s.entries[i].weight;
     }
     return w;
 }
@@ -394,19 +399,30 @@ inline Hash256 QcCommitment(const QuorumCert& qc) {
 // the caller's job (it needs the PQC context); this checks everything else,
 // and it recomputes the weight rather than trusting the claimed field.
 inline bool QcWellFormed(const QuorumCert& qc, const EpochSnapshot& s) {
-    if (!SnapshotWellFormed(s))            return false;
-    if (qc.epoch_id != s.epoch_id)         return false;
-    if (qc.set_root != s.root)             return false;
-    if (qc.phase != Phase::PREVOTE && qc.phase != Phase::PRECOMMIT) return false;
-    if (!IsScheduledCheckpoint(qc.target.height)) return false;
-    if (EpochOf(qc.target.height) != qc.epoch_id) return false;
-    if (qc.round != CheckpointRound(qc.target.height)) return false;
-    if (!SourceRefWellFormed(qc.source, qc.target)) return false;
-    if (qc.bitmap.size() != (s.entries.size() + 7) / 8) return false;
+    if (!SnapshotWellFormed(s))
+        return false;
+    if (qc.epoch_id != s.epoch_id)
+        return false;
+    if (qc.set_root != s.root)
+        return false;
+    if (qc.phase != Phase::PREVOTE && qc.phase != Phase::PRECOMMIT)
+        return false;
+    if (!IsScheduledCheckpoint(qc.target.height))
+        return false;
+    if (EpochOf(qc.target.height) != qc.epoch_id)
+        return false;
+    if (qc.round != CheckpointRound(qc.target.height))
+        return false;
+    if (!SourceRefWellFormed(qc.source, qc.target))
+        return false;
+    if (qc.bitmap.size() != (s.entries.size() + 7) / 8)
+        return false;
     for (size_t i = s.entries.size(); i < qc.bitmap.size() * 8; ++i)
-        if (qc.bitmap[i >> 3] & (uint8_t)(1u << (i & 7))) return false;
+        if (qc.bitmap[i >> 3] & (uint8_t)(1u << (i & 7)))
+            return false;
     const uint64_t recomputed = BitmapWeight(s, qc.bitmap);
-    if (recomputed != qc.weight)           return false;
+    if (recomputed != qc.weight)
+        return false;
     return IsSupermajority(qc.weight, s.total_weight);
 }
 
@@ -425,27 +441,32 @@ inline bool QcWellFormed(const QuorumCert& qc, const EpochSnapshot& s) {
 // This is the proactive half of the safety argument. Slashing prices a
 // violation after the fact; the lock prevents the honest majority from ever
 // producing the conflict in the first place.
-inline bool LockedPrevoteAllowed(const Lock& lock,
-                                 uint64_t new_epoch,
-                                 uint32_t new_round,
+inline bool LockedPrevoteAllowed(const Lock& lock, uint64_t new_epoch, uint32_t new_round,
                                  const CheckpointRef& new_target,
                                  const std::optional<QuorumCert>& unlock_proof,
                                  bool extends_lock = false) {
-    if (!lock.held)                  return true;
-    if (lock.target == new_target)   return true;
-    if (!ConsensusRoundNewer(new_epoch, new_round,
-                             lock.epoch_id, lock.round)) return false;
+    if (!lock.held)
+        return true;
+    if (lock.target == new_target)
+        return true;
+    if (!ConsensusRoundNewer(new_epoch, new_round, lock.epoch_id, lock.round))
+        return false;
     // Moving to a checkpoint that the local canonical chain PROVES descends
     // from the lock is not a conflicting vote.  The caller must establish
     // ancestry by resolving lock.height on the branch containing new_target;
     // height ordering alone is deliberately insufficient.
-    if (extends_lock && new_target.height > lock.target.height) return true;
-    if (!unlock_proof.has_value())   return false;
+    if (extends_lock && new_target.height > lock.target.height)
+        return true;
+    if (!unlock_proof.has_value())
+        return false;
 
     const QuorumCert& p = *unlock_proof;
-    if (p.phase  != Phase::PREVOTE)  return false;
-    if (p.epoch_id != new_epoch)     return false;
-    if (p.target != new_target)      return false;
+    if (p.phase != Phase::PREVOTE)
+        return false;
+    if (p.epoch_id != new_epoch)
+        return false;
+    if (p.target != new_target)
+        return false;
     // A target has one deterministic consensus round.  Requiring p.round to
     // be *below* new_round made this path mathematically unreachable because
     // both values are CheckpointRound(new_target.height).  A valid QC for the
@@ -458,9 +479,9 @@ inline bool LockedPrevoteAllowed(const Lock& lock,
 inline Lock LockFromPrecommit(const QuorumCert& qc) {
     Lock l;
     if (qc.phase == Phase::PRECOMMIT) {
-        l.held   = true;
+        l.held = true;
         l.epoch_id = qc.epoch_id;
-        l.round  = qc.round;
+        l.round = qc.round;
         l.target = qc.target;
     }
     return l;
@@ -471,22 +492,25 @@ inline Lock LockFromPrecommit(const QuorumCert& qc) {
 // Build the retained record from a precommit QC carried at `carrier`.
 // `retention_floor` is the height below which the carrier need no longer be
 // preserved because a later certificate supersedes it.
-inline std::optional<FinalizedRecord> Finalize(const QuorumCert& qc,
-                                               const EpochSnapshot& s,
+inline std::optional<FinalizedRecord> Finalize(const QuorumCert& qc, const EpochSnapshot& s,
                                                const CheckpointRef& carrier) {
-    if (qc.phase != Phase::PRECOMMIT) return std::nullopt;
-    if (!QcWellFormed(qc, s))         return std::nullopt;
-    if (!s.Qualified())               return std::nullopt;
-    if (!InVoteWindow(qc.target.height, carrier.height)) return std::nullopt;
+    if (qc.phase != Phase::PRECOMMIT)
+        return std::nullopt;
+    if (!QcWellFormed(qc, s))
+        return std::nullopt;
+    if (!s.Qualified())
+        return std::nullopt;
+    if (!InVoteWindow(qc.target.height, carrier.height))
+        return std::nullopt;
 
     FinalizedRecord r;
-    r.epoch_id       = qc.epoch_id;
-    r.target          = qc.target;
-    r.set_root        = qc.set_root;
-    r.round           = qc.round;
-    r.phase           = qc.phase;
-    r.cert_commit     = QcCommitment(qc);
-    r.carrier         = carrier;
+    r.epoch_id = qc.epoch_id;
+    r.target = qc.target;
+    r.set_root = qc.set_root;
+    r.round = qc.round;
+    r.phase = qc.phase;
+    r.cert_commit = QcCommitment(qc);
+    r.carrier = carrier;
     r.retention_floor = qc.target.height;
     return r;
 }
@@ -509,10 +533,11 @@ inline Hash256 RecordDigest(const FinalizedRecord& r) {
 // Monotonic: a record may only be replaced by one with a strictly higher
 // target. A checkpoint has one consensus-derived round, so same-target
 // "re-certification" is neither meaningful nor replay-safe.
-inline bool RecordSupersedes(const FinalizedRecord& incoming,
-                             const FinalizedRecord& current) {
-    if (current.IsNull())                              return true;
-    if (incoming.target.height >  current.target.height) return true;
+inline bool RecordSupersedes(const FinalizedRecord& incoming, const FinalizedRecord& current) {
+    if (current.IsNull())
+        return true;
+    if (incoming.target.height > current.target.height)
+        return true;
     return false;
 }
 
@@ -530,16 +555,18 @@ inline bool RecordSupersedes(const FinalizedRecord& incoming,
 //      and hash. Height alone would let a fork substitute a different
 //      block at the finalized height.
 //   3. The certificate carrier itself survives.
-inline bool ReorgAllowed(const FinalizedRecord& rec,
-                         uint64_t common_ancestor_height,
+inline bool ReorgAllowed(const FinalizedRecord& rec, uint64_t common_ancestor_height,
                          const std::function<bool(uint64_t, const Hash256&)>& branch_has) {
-    if (rec.IsNull()) return true;                       // nothing finalized yet
+    if (rec.IsNull())
+        return true; // nothing finalized yet
 
     // 1. necessary target-prefix condition
-    if (common_ancestor_height < rec.target.height) return false;
+    if (common_ancestor_height < rec.target.height)
+        return false;
 
     // 2. the finalized block itself must survive, by hash
-    if (!branch_has(rec.target.height, rec.target.hash)) return false;
+    if (!branch_has(rec.target.height, rec.target.hash))
+        return false;
 
     // A naked QC supplied out of band cannot prove that its bytes are carried
     // by the candidate branch, and accepting one makes clean replay erase the
@@ -555,8 +582,10 @@ inline bool ReorgAllowed(const FinalizedRecord& rec,
 // close completion, redeem, or the configured AMM path. Irreversible BTC
 // payout still waits for an actually finalized redeem.
 inline bool FinalityLive(uint64_t current_height, uint64_t last_finalized_height) {
-    if (last_finalized_height == 0) return false;
-    if (current_height <= last_finalized_height) return true;
+    if (last_finalized_height == 0)
+        return false;
+    if (current_height <= last_finalized_height)
+        return true;
     return (current_height - last_finalized_height) <= FINALITY_LIVENESS_WINDOW;
 }
 
@@ -564,11 +593,10 @@ inline bool FinalityLive(uint64_t current_height, uint64_t last_finalized_height
 // notarize. This remains stronger than "peg unlocked": BtcVeldPegGateState
 // unlocks after the seven-validator finality activation, while this milestone
 // additionally requires a promoted Bitcoin anchor.
-inline bool SecurityMilestoneComplete(bool finality_ever_active,
-                                      bool ever_promoted_anchor) {
+inline bool SecurityMilestoneComplete(bool finality_ever_active, bool ever_promoted_anchor) {
     return finality_ever_active && ever_promoted_anchor;
 }
 
-}  // namespace qc
-}  // namespace finality
-}  // namespace veld
+} // namespace qc
+} // namespace finality
+} // namespace veld

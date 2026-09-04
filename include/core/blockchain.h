@@ -53,7 +53,7 @@ inline const std::vector<uint8_t>& FinalityEquivocationBurnScript() {
 }
 
 struct UTXO {
-    Hash256  tx_hash;
+    Hash256 tx_hash;
     uint32_t output_index;
     uint64_t value;
     std::vector<uint8_t> script_pubkey;
@@ -70,25 +70,25 @@ inline std::string UTXOKey(const Hash256& hash, uint32_t index) {
 }
 
 struct ChainIndexEntry {
-    Hash256  hash;
-    Hash256  prev_hash;
+    Hash256 hash;
+    Hash256 prev_hash;
     uint64_t height;
     ChainWork cumulative_work;
-    bool     on_main_chain;
+    bool on_main_chain;
 
     ChainIndexEntry() : height(0), cumulative_work(0), on_main_chain(false) {
-        hash = ZeroHash(); prev_hash = ZeroHash();
+        hash = ZeroHash();
+        prev_hash = ZeroHash();
     }
 };
 
-inline bool BetterChainScore(const ChainWork& candidate_work,
-                             uint64_t candidate_height,
-                             const std::string& candidate_hash,
-                             const ChainWork& current_work,
-                             uint64_t current_height,
-                             const std::string& current_hash) {
-    if (candidate_work != current_work) return candidate_work > current_work;
-    if (candidate_height != current_height) return candidate_height > current_height;
+inline bool BetterChainScore(const ChainWork& candidate_work, uint64_t candidate_height,
+                             const std::string& candidate_hash, const ChainWork& current_work,
+                             uint64_t current_height, const std::string& current_hash) {
+    if (candidate_work != current_work)
+        return candidate_work > current_work;
+    if (candidate_height != current_height)
+        return candidate_height > current_height;
     return candidate_hash < current_hash;
 }
 
@@ -102,9 +102,11 @@ class OnChainTokenLedger;
 class AmmLedger;
 
 class Blockchain {
-public:
+  public:
     inline static thread_local std::string last_reject_tag_;
-    static const std::string& GetLastRejectTag() { return last_reject_tag_; }
+    static const std::string& GetLastRejectTag() {
+        return last_reject_tag_;
+    }
 
     enum class ReplayValidationDisposition : uint8_t {
         Valid,
@@ -128,50 +130,48 @@ public:
     // exposing the distinction required at relay/credit boundaries: a block
     // retained only in volatile side quarantine is not yet accepted.
     class BlockAdmissionResult {
-    public:
+      public:
         constexpr BlockAdmissionResult(bool accepted) noexcept
-            : disposition_(accepted
-                  ? BlockAdmissionDisposition::Accepted
-                  : BlockAdmissionDisposition::ConsensusInvalid) {}
-        constexpr explicit BlockAdmissionResult(
-                BlockAdmissionDisposition disposition) noexcept
+            : disposition_(accepted ? BlockAdmissionDisposition::Accepted
+                                    : BlockAdmissionDisposition::ConsensusInvalid) {}
+        constexpr explicit BlockAdmissionResult(BlockAdmissionDisposition disposition) noexcept
             : disposition_(disposition) {}
         static constexpr BlockAdmissionResult Accepted() noexcept {
             return BlockAdmissionResult(BlockAdmissionDisposition::Accepted);
         }
         static constexpr BlockAdmissionResult ConsensusInvalid() noexcept {
-            return BlockAdmissionResult(
-                BlockAdmissionDisposition::ConsensusInvalid);
+            return BlockAdmissionResult(BlockAdmissionDisposition::ConsensusInvalid);
         }
         static constexpr BlockAdmissionResult DeferredLocalWork() noexcept {
-            return BlockAdmissionResult(
-                BlockAdmissionDisposition::DeferredLocalWork);
+            return BlockAdmissionResult(BlockAdmissionDisposition::DeferredLocalWork);
         }
         constexpr bool IsAccepted() const noexcept {
             return disposition_ == BlockAdmissionDisposition::Accepted;
         }
         constexpr bool IsDeferred() const noexcept {
-            return disposition_ ==
-                BlockAdmissionDisposition::DeferredLocalWork;
+            return disposition_ == BlockAdmissionDisposition::DeferredLocalWork;
         }
         constexpr BlockAdmissionDisposition Disposition() const noexcept {
             return disposition_;
         }
-        constexpr operator bool() const noexcept { return IsAccepted(); }
-    private:
+        constexpr operator bool() const noexcept {
+            return IsAccepted();
+        }
+
+      private:
         BlockAdmissionDisposition disposition_;
     };
 
     struct SpenderLocator {
         uint64_t block_height{0};
         uint32_t tx_index{0};
-        Hash256  txid{};
+        Hash256 txid{};
     };
 
     struct CanonicalSpender {
         Transaction tx;
-        uint64_t    block_height{0};
-        Hash256     block_hash{};
+        uint64_t block_height{0};
+        Hash256 block_hash{};
     };
 
     struct UTXOMapBundle {
@@ -197,34 +197,29 @@ public:
     // different outpoints or carry different value/script/maturity metadata,
     // and would validate the next spend differently. Include both rebuildable
     // indexes and the accounting scalars for the same reason.
-    static bool SameUTXOMapBundle(const UTXOMapBundle& a,
-                                  const UTXOMapBundle& b) {
-        if (a.supply_units != b.supply_units ||
-            a.fees_collected_units != b.fees_collected_units ||
-            a.set.size() != b.set.size() ||
-            a.index != b.index ||
+    static bool SameUTXOMapBundle(const UTXOMapBundle& a, const UTXOMapBundle& b) {
+        if (a.supply_units != b.supply_units || a.fees_collected_units != b.fees_collected_units ||
+            a.set.size() != b.set.size() || a.index != b.index ||
             a.spenders.size() != b.spenders.size()) {
             return false;
         }
         for (const auto& [key, left] : a.set) {
             auto it = b.set.find(key);
-            if (it == b.set.end()) return false;
+            if (it == b.set.end())
+                return false;
             const UTXO& right = it->second;
-            if (left.tx_hash != right.tx_hash ||
-                left.output_index != right.output_index ||
-                left.value != right.value ||
-                left.script_pubkey != right.script_pubkey ||
-                left.block_height != right.block_height ||
-                left.is_coinbase != right.is_coinbase) {
+            if (left.tx_hash != right.tx_hash || left.output_index != right.output_index ||
+                left.value != right.value || left.script_pubkey != right.script_pubkey ||
+                left.block_height != right.block_height || left.is_coinbase != right.is_coinbase) {
                 return false;
             }
         }
         for (const auto& [key, left] : a.spenders) {
             auto it = b.spenders.find(key);
-            if (it == b.spenders.end()) return false;
+            if (it == b.spenders.end())
+                return false;
             const SpenderLocator& right = it->second;
-            if (left.block_height != right.block_height ||
-                left.tx_index != right.tx_index ||
+            if (left.block_height != right.block_height || left.tx_index != right.tx_index ||
                 left.txid != right.txid) {
                 return false;
             }
@@ -260,51 +255,59 @@ public:
 
     struct AltEngineOverlay {
         const ValidatorRegistry* validators = nullptr;
-        const StakingLedger*     staking    = nullptr;
-        const GovernanceEngine*  governance = nullptr;
+        const StakingLedger* staking = nullptr;
+        const GovernanceEngine* governance = nullptr;
         // btcVELD: non-const (the AMM guard dry-runs ValidateBlock, which moves
         // btcVELD through the token ledger). Fork-aware pool state during reorg
         // eval, so a pool-spend on an alt chain is judged against the ALT chain's
         // committed pool outpoint + reserves, not the main chain's.
-        OnChainTokenLedger*      tokens     = nullptr;
-        AmmLedger*               amm        = nullptr;
+        OnChainTokenLedger* tokens = nullptr;
+        AmmLedger* amm = nullptr;
     };
 
     inline static thread_local const AltEngineOverlay* alt_engine_overlay_ = nullptr;
 
     class AltEngineOverlayGuard {
-    public:
-        explicit AltEngineOverlayGuard(const AltEngineOverlay* o)
-            : prev_(alt_engine_overlay_) { alt_engine_overlay_ = o; }
-        ~AltEngineOverlayGuard() { alt_engine_overlay_ = prev_; }
+      public:
+        explicit AltEngineOverlayGuard(const AltEngineOverlay* o) : prev_(alt_engine_overlay_) {
+            alt_engine_overlay_ = o;
+        }
+        ~AltEngineOverlayGuard() {
+            alt_engine_overlay_ = prev_;
+        }
         AltEngineOverlayGuard(const AltEngineOverlayGuard&) = delete;
         AltEngineOverlayGuard& operator=(const AltEngineOverlayGuard&) = delete;
-    private:
+
+      private:
         const AltEngineOverlay* prev_;
     };
 
     inline static thread_local const UTXOMapBundle* validation_overlay_ = nullptr;
     class ValidationOverlayGuard {
-    public:
-        explicit ValidationOverlayGuard(const UTXOMapBundle* ovr)
-            : prev_(validation_overlay_) { validation_overlay_ = ovr; }
-        ~ValidationOverlayGuard() { validation_overlay_ = prev_; }
+      public:
+        explicit ValidationOverlayGuard(const UTXOMapBundle* ovr) : prev_(validation_overlay_) {
+            validation_overlay_ = ovr;
+        }
+        ~ValidationOverlayGuard() {
+            validation_overlay_ = prev_;
+        }
         ValidationOverlayGuard(const ValidationOverlayGuard&) = delete;
         ValidationOverlayGuard& operator=(const ValidationOverlayGuard&) = delete;
-    private:
+
+      private:
         const UTXOMapBundle* prev_;
     };
 
     struct ReorgProposal {
-        std::string         old_tip_hash;
-        std::string         new_tip_hash;
-        std::string         ancestor;
-        uint64_t            anc_height = 0;
-        ChainWork           anc_cumulative_work = 0;
-        std::vector<Block>  new_path_blocks;
-        std::vector<Block>  orphaned_tail;
-        UTXOMapBundle       side_utxo_set;
-        uint64_t            prepare_started_at_height = 0;
+        std::string old_tip_hash;
+        std::string new_tip_hash;
+        std::string ancestor;
+        uint64_t anc_height = 0;
+        ChainWork anc_cumulative_work = 0;
+        std::vector<Block> new_path_blocks;
+        std::vector<Block> orphaned_tail;
+        UTXOMapBundle side_utxo_set;
+        uint64_t prepare_started_at_height = 0;
     };
 
     size_t ClearBadAltTips() {
@@ -328,8 +331,7 @@ public:
     // the node-installed loader below and validate the complete durable frame
     // before it is returned.  Headers/height/hash metadata remain resident for
     // fork choice, difficulty and locator construction.
-    static constexpr uint64_t CANONICAL_BODY_RETENTION_BLOCKS =
-        MAX_REORG_DEPTH;
+    static constexpr uint64_t CANONICAL_BODY_RETENTION_BLOCKS = MAX_REORG_DEPTH;
     static_assert(CANONICAL_BODY_RETENTION_BLOCKS >= MAX_REORG_DEPTH,
                   "canonical body cache must cover every permitted reorg");
 
@@ -337,20 +339,17 @@ public:
     // canonical suffix (depth) must coexist while a reorg is being made
     // durable.  This is also the hostile-network cardinality bound for all
     // non-canonical headers/bodies retained by one process.
-    static constexpr size_t SIDE_BRANCH_HEADER_LIMIT =
-        3 * MAX_REORG_DEPTH;
+    static constexpr size_t SIDE_BRANCH_HEADER_LIMIT = 3 * MAX_REORG_DEPTH;
     static constexpr uint64_t SIDE_BRANCH_DURABLE_BYTE_LIMIT =
         SIDE_BRANCH_HEADER_LIMIT * static_cast<uint64_t>(MAX_BLOCK_SIZE);
 
-    using HistoricalBlockLoader = std::function<
-        std::optional<std::vector<uint8_t>>(const Hash256&)>;
-    using DurableBlockBodyWriter = std::function<
-        bool(const Hash256&, const std::vector<uint8_t>&)>;
+    using HistoricalBlockLoader =
+        std::function<std::optional<std::vector<uint8_t>>(const Hash256&)>;
+    using DurableBlockBodyWriter = std::function<bool(const Hash256&, const std::vector<uint8_t>&)>;
     using DurableBlockBodyEraser = std::function<bool(const Hash256&)>;
     struct LocalWorkAdmissionTicket {
         std::shared_ptr<void> owner;
-        std::function<bool(
-            uint64_t, uint64_t, uint32_t, const Hash256&, const Hash256&)>
+        std::function<bool(uint64_t, uint64_t, uint32_t, const Hash256&, const Hash256&)>
             claim_for_canonical_commit;
         std::function<bool()> live;
 
@@ -369,26 +368,20 @@ public:
         std::chrono::steady_clock::time_point deadline{};
 
         explicit operator bool() const noexcept {
-            return static_cast<bool>(owner) &&
-                   static_cast<bool>(claim_for_canonical_commit) &&
-                   static_cast<bool>(live) &&
-                   source != mining::LocalWorkKind::None &&
+            return static_cast<bool>(owner) && static_cast<bool>(claim_for_canonical_commit) &&
+                   static_cast<bool>(live) && source != mining::LocalWorkKind::None &&
                    candidate_height > 0 && !HashIsZero(candidate_hash) &&
-                   !HashIsZero(parent_hash) && !work_binding.empty() &&
-                   validation_generation > 0 && coordinator_generation > 0 &&
-                   network_magic != 0 && !HashIsZero(genesis_hash) &&
+                   !HashIsZero(parent_hash) && !work_binding.empty() && validation_generation > 0 &&
+                   coordinator_generation > 0 && network_magic != 0 && !HashIsZero(genesis_hash) &&
                    !HashIsZero(profile_digest) &&
                    (source == mining::LocalWorkKind::SubmitBlock
-                        ? (!work_authorization.empty() &&
-                           !HashIsZero(work_identity))
-                        : (work_authorization.empty() &&
-                           HashIsZero(work_identity)));
+                        ? (!work_authorization.empty() && !HashIsZero(work_identity))
+                        : (work_authorization.empty() && HashIsZero(work_identity)));
         }
     };
     using CanonicalWorkTransitionFn = std::function<bool(const Block&)>;
-    using LocalWorkAdmissionPrepareFn = std::function<
-        std::optional<LocalWorkAdmissionTicket>(
-            const Block&, const mining::PowAdmissionContext&)>;
+    using LocalWorkAdmissionPrepareFn = std::function<std::optional<LocalWorkAdmissionTicket>(
+        const Block&, const mining::PowAdmissionContext&)>;
 
     void SetHistoricalBlockLoader(HistoricalBlockLoader loader) {
         std::unique_lock<std::shared_mutex> lock(chain_mutex_);
@@ -432,11 +425,9 @@ public:
         if (height >= chain_.size() || chain_[height].GetHash() != hash)
             return false;
         if ((!durable_canonical_height_ && height != 0) ||
-            (durable_canonical_height_ &&
-             height > *durable_canonical_height_ + 1))
+            (durable_canonical_height_ && height > *durable_canonical_height_ + 1))
             return false;
-        if (!durable_canonical_height_ ||
-            height > *durable_canonical_height_)
+        if (!durable_canonical_height_ || height > *durable_canonical_height_)
             durable_canonical_height_ = height;
         PruneDurableCanonicalBodiesNoLock_();
         return true;
@@ -446,7 +437,8 @@ public:
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         size_t count = 0;
         for (const auto& block : chain_)
-            if (!block.transactions.empty()) ++count;
+            if (!block.transactions.empty())
+                ++count;
         return count;
     }
 
@@ -454,9 +446,11 @@ public:
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         uint64_t total = 0;
         for (const auto& block : chain_) {
-            if (block.transactions.empty()) continue;
+            if (block.transactions.empty())
+                continue;
             const size_t n = block.SerializedSize();
-            if (n > UINT64_MAX - total) return UINT64_MAX;
+            if (n > UINT64_MAX - total)
+                return UINT64_MAX;
             total += static_cast<uint64_t>(n);
         }
         return total;
@@ -487,8 +481,8 @@ public:
         size_t count = 0;
         for (const auto& [hash, block] : block_store_) {
             auto it = block_tree_.find(hash);
-            if (it != block_tree_.end() && !it->second.on_main_chain &&
-                !block.transactions.empty()) ++count;
+            if (it != block_tree_.end() && !it->second.on_main_chain && !block.transactions.empty())
+                ++count;
         }
         return count;
     }
@@ -497,10 +491,11 @@ public:
         uint64_t total = 0;
         for (const auto& [hash, block] : block_store_) {
             auto it = block_tree_.find(hash);
-            if (it == block_tree_.end() || it->second.on_main_chain ||
-                block.transactions.empty()) continue;
+            if (it == block_tree_.end() || it->second.on_main_chain || block.transactions.empty())
+                continue;
             const size_t n = block.SerializedSize();
-            if (n > UINT64_MAX - total) return UINT64_MAX;
+            if (n > UINT64_MAX - total)
+                return UINT64_MAX;
             total += static_cast<uint64_t>(n);
         }
         return total;
@@ -531,7 +526,8 @@ public:
         runtime_admission_fn_ = std::move(fn);
     }
     bool RuntimeAdmissionPermits(uint64_t candidate_height) const noexcept {
-        if (!runtime_admission_fn_) return true;
+        if (!runtime_admission_fn_)
+            return true;
         try {
             return runtime_admission_fn_(candidate_height);
         } catch (...) {
@@ -540,12 +536,13 @@ public:
     }
 
     class SnapshotSharedGuard {
-    public:
+      public:
         explicit SnapshotSharedGuard(std::shared_mutex& m) : lock_(m) {}
         SnapshotSharedGuard(SnapshotSharedGuard&&) = default;
         SnapshotSharedGuard(const SnapshotSharedGuard&) = delete;
         SnapshotSharedGuard& operator=(const SnapshotSharedGuard&) = delete;
-    private:
+
+      private:
         std::shared_lock<std::shared_mutex> lock_;
     };
     SnapshotSharedGuard AcquireSnapshotShared() const {
@@ -553,13 +550,14 @@ public:
     }
 
     class ConsistentDumpGuard {
-    public:
+      public:
         ConsistentDumpGuard(std::mutex& connect, std::shared_mutex& chain)
             : connect_lock_(connect), chain_lock_(chain) {}
         ConsistentDumpGuard(ConsistentDumpGuard&&) = default;
         ConsistentDumpGuard(const ConsistentDumpGuard&) = delete;
         ConsistentDumpGuard& operator=(const ConsistentDumpGuard&) = delete;
-    private:
+
+      private:
         // Same order as AddBlockDirect: transition sequencer, then chain view.
         std::unique_lock<std::mutex> connect_lock_;
         std::shared_lock<std::shared_mutex> chain_lock_;
@@ -574,14 +572,13 @@ public:
     // holding this outer sequencer, obtaining one coherent pre- or post-block
     // view without recursively acquiring the chain shared mutex.
     class ConsensusTransitionGuard {
-    public:
-        explicit ConsensusTransitionGuard(std::mutex& connect)
-            : connect_lock_(connect) {}
+      public:
+        explicit ConsensusTransitionGuard(std::mutex& connect) : connect_lock_(connect) {}
         ConsensusTransitionGuard(ConsensusTransitionGuard&&) = default;
         ConsensusTransitionGuard(const ConsensusTransitionGuard&) = delete;
-        ConsensusTransitionGuard& operator=(
-            const ConsensusTransitionGuard&) = delete;
-    private:
+        ConsensusTransitionGuard& operator=(const ConsensusTransitionGuard&) = delete;
+
+      private:
         std::unique_lock<std::mutex> connect_lock_;
     };
     ConsensusTransitionGuard AcquireConsensusTransitionGuard() const {
@@ -595,15 +592,19 @@ public:
 
     Block Tip() const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        if (chain_.empty()) throw std::runtime_error("Chain is empty");
+        if (chain_.empty())
+            throw std::runtime_error("Chain is empty");
         return chain_.back();
     }
 
-    Block TipCopy() const { return Tip(); }
+    Block TipCopy() const {
+        return Tip();
+    }
 
     bool TryTip(Block& out) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        if (chain_.empty()) return false;
+        if (chain_.empty())
+            return false;
         out = chain_.back();
         return true;
     }
@@ -617,9 +618,11 @@ public:
         // Volatile side candidates have authenticated headers but have not yet
         // crossed the complete branch-state/VBFR boundary.  They are private
         // retry state, not publicly known blocks.
-        if (volatile_side_quarantine_.count(hash_hex)) return false;
+        if (volatile_side_quarantine_.count(hash_hex))
+            return false;
         auto it = block_tree_.find(hash_hex);
-        if (it == block_tree_.end()) return false;
+        if (it == block_tree_.end())
+            return false;
         return it->second.height == height;
     }
 
@@ -650,10 +653,12 @@ public:
         // Keep deferred/quarantined bodies strictly inside the contextual
         // validation machinery.  P2P GETDATA, RPC and explorer callers all use
         // this public view and must not relay or expose an unvalidated body.
-        if (volatile_side_quarantine_.count(hash_hex)) return std::nullopt;
+        if (volatile_side_quarantine_.count(hash_hex))
+            return std::nullopt;
         auto it = block_index_.find(hash_hex);
         if (it != block_index_.end()) {
-            if (it->second >= chain_.size()) return std::nullopt;
+            if (it->second >= chain_.size())
+                return std::nullopt;
             return LoadCanonicalBlockNoLock_(it->second);
         }
         auto tree_it = block_tree_.find(hash_hex);
@@ -670,24 +675,25 @@ public:
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         const std::string hash_hex = HashToHex(hash);
         auto it = block_tree_.find(hash_hex);
-        return !volatile_side_quarantine_.count(hash_hex) &&
-               it != block_tree_.end() && it->second.on_main_chain;
+        return !volatile_side_quarantine_.count(hash_hex) && it != block_tree_.end() &&
+               it->second.on_main_chain;
     }
 
     // Header/index-only membership for P2P inventory/locator handling.  These
     // callers need only existence/height; loading an entire disk-backed block
     // body for each of up to 1,000 advertised hashes is a remote I/O and memory
     // amplification vector.
-    std::optional<uint64_t> GetKnownBlockHeightByHash(
-            const Hash256& hash) const {
+    std::optional<uint64_t> GetKnownBlockHeightByHash(const Hash256& hash) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         const std::string hash_hex = HashToHex(hash);
-        if (volatile_side_quarantine_.count(hash_hex)) return std::nullopt;
+        if (volatile_side_quarantine_.count(hash_hex))
+            return std::nullopt;
         auto main_it = block_index_.find(hash_hex);
         if (main_it != block_index_.end())
             return static_cast<uint64_t>(main_it->second);
         auto tree_it = block_tree_.find(hash_hex);
-        if (tree_it == block_tree_.end()) return std::nullopt;
+        if (tree_it == block_tree_.end())
+            return std::nullopt;
         return tree_it->second.height;
     }
 
@@ -704,7 +710,9 @@ public:
     }
 #endif
 
-    uint64_t TotalSupplyUnits() const { return total_supply_units_; }
+    uint64_t TotalSupplyUnits() const {
+        return total_supply_units_;
+    }
 
     // Mining tiers only inspect the last 1,095 BLOCKS_PER_DAY windows. Keep
     // older per-block observations and fully inactive identities out of the
@@ -713,34 +721,35 @@ public:
     // from one rebuildable disk-backed archive. A focused test build may
     // shorten the horizon; public binaries always use the protocol horizon.
 #ifdef VELD_TEST_MINER_HISTORY_BLOCKS
-    static constexpr uint64_t MAX_MINER_TIER_HISTORY_BLOCKS =
-        VELD_TEST_MINER_HISTORY_BLOCKS;
+    static constexpr uint64_t MAX_MINER_TIER_HISTORY_BLOCKS = VELD_TEST_MINER_HISTORY_BLOCKS;
 #else
-    static constexpr uint64_t MAX_MINER_TIER_HISTORY_BLOCKS =
-        1'095ull * BLOCKS_PER_DAY;
+    static constexpr uint64_t MAX_MINER_TIER_HISTORY_BLOCKS = 1'095ull * BLOCKS_PER_DAY;
 #endif
-    static_assert(MAX_MINER_TIER_HISTORY_BLOCKS > 0,
-                  "miner tier history horizon must be non-zero");
+    static_assert(MAX_MINER_TIER_HISTORY_BLOCKS > 0, "miner tier history horizon must be non-zero");
 
-    uint64_t GetActiveWindowCount(const std::string& script_hex,
-                                   uint64_t total_windows,
-                                   uint64_t current_height) const {
-        static constexpr uint64_t WINDOW_BLOCKS = BLOCKS_PER_DAY;   // 1 "active" day (must match tiers.h)
+    uint64_t GetActiveWindowCount(const std::string& script_hex, uint64_t total_windows,
+                                  uint64_t current_height) const {
+        static constexpr uint64_t WINDOW_BLOCKS =
+            BLOCKS_PER_DAY; // 1 "active" day (must match tiers.h)
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         auto it = miner_heights_.find(script_hex);
-        if (it == miner_heights_.end()) return 0;
+        if (it == miner_heights_.end())
+            return 0;
         const auto& heights = it->second;
-        if (heights.empty()) return 0;
+        if (heights.empty())
+            return 0;
 
         uint64_t active = 0;
         for (uint64_t w = 0; w < total_windows; ++w) {
-            if ((w + 1) * WINDOW_BLOCKS > current_height) break;
-            uint64_t window_end   = (w == 0) ? current_height
-                                              : current_height - w * WINDOW_BLOCKS;
+            if ((w + 1) * WINDOW_BLOCKS > current_height)
+                break;
+            uint64_t window_end = (w == 0) ? current_height : current_height - w * WINDOW_BLOCKS;
             uint64_t window_start = current_height - (w + 1) * WINDOW_BLOCKS + 1;
-            if (window_end < window_start) break;
+            if (window_end < window_start)
+                break;
             auto lo = std::lower_bound(heights.begin(), heights.end(), window_start);
-            if (lo != heights.end() && *lo <= window_end) active++;
+            if (lo != heights.end() && *lo <= window_end)
+                active++;
         }
         return active;
     }
@@ -749,16 +758,15 @@ public:
         uint64_t blocks_mined{0};
         uint64_t last_block_mined{0};
     };
-    using MinerArchiveLookup = std::function<std::optional<MinerArchiveRecord>(
-        const std::string& script_hex)>;
+    using MinerArchiveLookup =
+        std::function<std::optional<MinerArchiveRecord>(const std::string& script_hex)>;
 
     void SetMinerArchiveLookup(MinerArchiveLookup lookup) {
         std::unique_lock<std::shared_mutex> lock(chain_mutex_);
         miner_archive_lookup_ = std::move(lookup);
     }
 
-    std::optional<MinerArchiveRecord> GetMinerArchiveRecord(
-            const std::string& script_hex) const {
+    std::optional<MinerArchiveRecord> GetMinerArchiveRecord(const std::string& script_hex) const {
         // Copy under the chain lock, then invoke after releasing it. The node's
         // archive lookup may touch LevelDB and must never be called while a
         // consensus lock is held. Archive failure remains distinguishable from
@@ -769,9 +777,13 @@ public:
             std::shared_lock<std::shared_mutex> lock(chain_mutex_);
             lookup = miner_archive_lookup_;
         }
-        if (!lookup) return std::nullopt;
-        try { return lookup(script_hex); }
-        catch (...) { return std::nullopt; }
+        if (!lookup)
+            return std::nullopt;
+        try {
+            return lookup(script_hex);
+        } catch (...) {
+            return std::nullopt;
+        }
     }
 
     uint64_t GetBlocksMined(const std::string& script_hex) const {
@@ -787,8 +799,7 @@ public:
     // Shared extractor for the rebuildable archival index. Keeping this as a
     // thin public mirror of the canonical hot-index extractor prevents the
     // node from crediting protocol custody outputs as miners.
-    static std::vector<std::string>
-    MinerScriptsForArchive(const Block& block) {
+    static std::vector<std::string> MinerScriptsForArchive(const Block& block) {
         return MinerScriptsForBlock_(block);
     }
 
@@ -810,20 +821,24 @@ public:
 
     uint32_t ComputeNextBits() const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        if (chain_.empty()) return GENESIS_BITS;
+        if (chain_.empty())
+            return GENESIS_BITS;
         return ComputeNextBitsAtLocked(chain_.size() - 1);
     }
 
     uint32_t ComputeNextBitsAt(uint64_t after_height) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        if (chain_.empty()) return GENESIS_BITS;
-        if (after_height >= chain_.size()) return GENESIS_BITS;
+        if (chain_.empty())
+            return GENESIS_BITS;
+        if (after_height >= chain_.size())
+            return GENESIS_BITS;
         return ComputeNextBitsAtLocked(after_height);
     }
 
     uint32_t ComputeNextBitsAtTip() const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        if (chain_.empty()) return GENESIS_BITS;
+        if (chain_.empty())
+            return GENESIS_BITS;
         return ComputeNextBitsAtLocked(chain_.size() - 1);
     }
 
@@ -834,13 +849,16 @@ public:
 
     std::optional<uint64_t> GetHeightByHashLocked(const Hash256& h) const {
         auto it = block_index_.find(HashToHex(h));
-        if (it == block_index_.end()) return std::nullopt;
-        if (it->second >= chain_.size()) return std::nullopt;
+        if (it == block_index_.end())
+            return std::nullopt;
+        if (it->second >= chain_.size())
+            return std::nullopt;
         return it->second;
     }
 
     uint64_t GetBlockTimestampAtLocked(uint64_t height) const {
-        if (height >= chain_.size()) return 0;
+        if (height >= chain_.size())
+            return 0;
         return chain_[height].header.timestamp;
     }
     uint64_t HeightLocked() const {
@@ -851,11 +869,9 @@ public:
     // deterministic difficulty-liveness sentinel.  Keeping wall-clock and
     // block-construction concerns outside this helper lets tests cover severe
     // solve-time distributions without weakening timestamp validation.
-    static uint32_t ComputeRetargetBitsForSolveTimes(
-            uint32_t current_bits,
-            const std::vector<int64_t>& solve_times,
-            bool is_early_ramp,
-            bool batch2_hardened) {
+    static uint32_t ComputeRetargetBitsForSolveTimes(uint32_t current_bits,
+                                                     const std::vector<int64_t>& solve_times,
+                                                     bool is_early_ramp, bool batch2_hardened) {
 #ifdef VELD_MAINNET_POW
         constexpr size_t MAX_N = DIFFICULTY_ADJUSTMENT_INTERVAL;
 #else
@@ -886,59 +902,69 @@ public:
                 st_hi = (int64_t)T * (int64_t)EARLY_CLAMP_DIVISOR;
             } else
 #endif
-            if (batch2_hardened) {
+                if (batch2_hardened) {
                 st_lo = (int64_t)T / 2;
                 st_hi = 2 * (int64_t)T;
             } else {
                 st_lo = (int64_t)T / 4;
                 st_hi = 6 * (int64_t)T;
             }
-            if (st < st_lo) st = st_lo;
-            if (st > st_hi) st = st_hi;
+            if (st < st_lo)
+                st = st_lo;
+            if (st > st_hi)
+                st = st_hi;
             weighted_st += st * (int64_t)weight;
         }
 #ifdef VELD_MAINNET_POW
         if (is_early_ramp) {
             const int64_t lo = (int64_t)(K / EARLY_CLAMP_DIVISOR);
             const int64_t hi = (int64_t)(K * EARLY_CLAMP_DIVISOR);
-            if (weighted_st < lo) weighted_st = lo;
-            if (weighted_st > hi) weighted_st = hi;
+            if (weighted_st < lo)
+                weighted_st = lo;
+            if (weighted_st > hi)
+                weighted_st = hi;
         } else
 #else
         (void)is_early_ramp;
 #endif
         {
-            if (weighted_st < (int64_t)(K / 2)) weighted_st = (int64_t)(K / 2);
-            if (weighted_st > (int64_t)(K * 3 / 2)) weighted_st = (int64_t)(K * 3 / 2);
+            if (weighted_st < (int64_t)(K / 2))
+                weighted_st = (int64_t)(K / 2);
+            if (weighted_st > (int64_t)(K * 3 / 2))
+                weighted_st = (int64_t)(K * 3 / 2);
         }
 
         uint32_t exponent = (current_bits >> 24) & 0xFF;
         uint32_t mantissa = current_bits & 0x007FFFFF;
-        if (exponent < 3 || exponent > 32 || mantissa == 0) return current_bits;
+        if (exponent < 3 || exponent > 32 || mantissa == 0)
+            return current_bits;
 
         uint64_t new_mantissa = ((uint64_t)mantissa * (uint64_t)weighted_st) / K;
 
         while (new_mantissa > 0x7FFFFF) {
             new_mantissa >>= 8;
             exponent++;
-            if (exponent > 32) { new_mantissa = 0x7FFFFF; exponent = 32; break; }
+            if (exponent > 32) {
+                new_mantissa = 0x7FFFFF;
+                exponent = 32;
+                break;
+            }
         }
         while (new_mantissa < 0x008000 && exponent > 3) {
             new_mantissa <<= 8;
             exponent--;
         }
 
-        if (new_mantissa == 0) new_mantissa = 1;
+        if (new_mantissa == 0)
+            new_mantissa = 1;
         new_mantissa &= 0x7FFFFF;
         return (exponent << 24) | (uint32_t)new_mantissa;
     }
 
-    static uint64_t DifficultyRetargetIntervalForNextHeight(
-            uint64_t next_height) {
+    static uint64_t DifficultyRetargetIntervalForNextHeight(uint64_t next_height) {
 #ifdef VELD_MAINNET_POW
-        return next_height <= EARLY_RAMP_END_HEIGHT
-             ? EARLY_RETARGET_INTERVAL
-             : DIFFICULTY_ADJUSTMENT_INTERVAL;
+        return next_height <= EARLY_RAMP_END_HEIGHT ? EARLY_RETARGET_INTERVAL
+                                                    : DIFFICULTY_ADJUSTMENT_INTERVAL;
 #else
         (void)next_height;
         return 20;
@@ -946,29 +972,25 @@ public:
     }
 
     static bool IsDifficultyRetargetBoundary(uint64_t next_height) {
-        const uint64_t interval =
-            DifficultyRetargetIntervalForNextHeight(next_height);
-        return next_height != 0 && interval != 0 &&
-               next_height % interval == 0;
+        const uint64_t interval = DifficultyRetargetIntervalForNextHeight(next_height);
+        return next_height != 0 && interval != 0 && next_height % interval == 0;
     }
 
     template <typename HeaderAt>
-    static bool TryComputeNextBitsForParent_(
-            uint64_t parent_height, HeaderAt&& header_at,
-            uint32_t& out_bits) {
+    static bool TryComputeNextBitsForParent_(uint64_t parent_height, HeaderAt&& header_at,
+                                             uint32_t& out_bits) {
 #ifdef VELD_REGTEST_FIXED_DIFF
         CanonicalPowTarget fixed;
-        if (!DecodeCanonicalVeldTarget(VELD_POW_LIMIT_BITS, fixed)) return false;
+        if (!DecodeCanonicalVeldTarget(VELD_POW_LIMIT_BITS, fixed))
+            return false;
         out_bits = fixed.bits;
         return true;
 #else
 #ifdef VELD_MAINNET_POW
-        const bool is_early_ramp =
-            (parent_height + 1) <= EARLY_RAMP_END_HEIGHT;
+        const bool is_early_ramp = (parent_height + 1) <= EARLY_RAMP_END_HEIGHT;
         const uint64_t retarget_interval =
             DifficultyRetargetIntervalForNextHeight(parent_height + 1);
-        const uint64_t n_max = is_early_ramp
-            ? EARLY_LWMA_WINDOW : DIFFICULTY_ADJUSTMENT_INTERVAL;
+        const uint64_t n_max = is_early_ramp ? EARLY_LWMA_WINDOW : DIFFICULTY_ADJUSTMENT_INTERVAL;
 #else
         constexpr bool is_early_ramp = false;
         constexpr uint64_t retarget_interval = 20;
@@ -976,7 +998,8 @@ public:
 #endif
         const BlockHeader* genesis = header_at(0);
         const BlockHeader* parent = header_at(parent_height);
-        if (!genesis || !parent) return false;
+        if (!genesis || !parent)
+            return false;
         uint32_t raw_bits = genesis->bits;
         if (parent_height == 0) {
             raw_bits = genesis->bits;
@@ -987,8 +1010,7 @@ public:
             } else {
                 const uint64_t window_start_boundary =
                     (next_height / retarget_interval) * retarget_interval;
-                if (window_start_boundary == 0 ||
-                    window_start_boundary < BOOTSTRAP_BLOCKS) {
+                if (window_start_boundary == 0 || window_start_boundary < BOOTSTRAP_BLOCKS) {
                     raw_bits = genesis->bits;
                 } else {
                     const uint64_t window_end = window_start_boundary - 1;
@@ -1011,10 +1033,10 @@ public:
                         for (uint64_t h = solve_start; h <= window_end; ++h) {
                             const BlockHeader* current = header_at(h);
                             const BlockHeader* previous = header_at(h - 1);
-                            if (!current || !previous) return false;
-                            solve_times.push_back(
-                                static_cast<int64_t>(current->timestamp) -
-                                static_cast<int64_t>(previous->timestamp));
+                            if (!current || !previous)
+                                return false;
+                            solve_times.push_back(static_cast<int64_t>(current->timestamp) -
+                                                  static_cast<int64_t>(previous->timestamp));
                         }
                         raw_bits = ComputeRetargetBitsForSolveTimes(
                             end_header->bits, solve_times, is_early_ramp,
@@ -1024,13 +1046,13 @@ public:
             }
         }
         bool negative = false, overflow = false;
-        const auto target = btcspv::CompactToTarget(
-            raw_bits, &negative, &overflow);
-        if (negative || overflow || target.IsZero() ||
-            target > VeldPowLimit()) return false;
+        const auto target = btcspv::CompactToTarget(raw_bits, &negative, &overflow);
+        if (negative || overflow || target.IsZero() || target > VeldPowLimit())
+            return false;
         const uint32_t canonical = btcspv::TargetToCompact(target);
         CanonicalPowTarget decoded;
-        if (!DecodeCanonicalVeldTarget(canonical, decoded)) return false;
+        if (!DecodeCanonicalVeldTarget(canonical, decoded))
+            return false;
         out_bits = canonical;
         return true;
 #endif
@@ -1040,9 +1062,11 @@ public:
         uint64_t first_height{0};
         std::vector<BlockHeader> headers;
         const BlockHeader* At(uint64_t height) const noexcept {
-            if (height < first_height) return nullptr;
+            if (height < first_height)
+                return nullptr;
             const uint64_t offset = height - first_height;
-            if (offset >= headers.size()) return nullptr;
+            if (offset >= headers.size())
+                return nullptr;
             return &headers[static_cast<size_t>(offset)];
         }
     };
@@ -1055,12 +1079,12 @@ public:
         CanonicalPowTarget expected_target{};
     };
 
-    bool BuildBranchHeaderWindowNoLock_(
-            const Hash256& parent_hash, BranchHeaderWindow& out) const {
+    bool BuildBranchHeaderWindowNoLock_(const Hash256& parent_hash, BranchHeaderWindow& out) const {
         out = BranchHeaderWindow{};
         const std::string parent_hex = HashToHex(parent_hash);
         auto parent_it = block_tree_.find(parent_hex);
-        if (parent_it == block_tree_.end()) return false;
+        if (parent_it == block_tree_.end())
+            return false;
         const uint64_t parent_height = parent_it->second.height;
         const uint64_t first = parent_height > 144 ? parent_height - 144 : 0;
         std::vector<BlockHeader> reverse;
@@ -1068,23 +1092,24 @@ public:
         std::string cursor = parent_hex;
         for (uint64_t expected_height = parent_height;; --expected_height) {
             auto tree = block_tree_.find(cursor);
-            if (tree == block_tree_.end() ||
-                tree->second.height != expected_height) return false;
+            if (tree == block_tree_.end() || tree->second.height != expected_height)
+                return false;
             BlockHeader header;
             if (expected_height < chain_.size() &&
                 HashToHex(chain_[expected_height].GetHash()) == cursor) {
                 header = chain_[expected_height].header;
             } else {
                 auto stored = block_store_.find(cursor);
-                if (stored == block_store_.end() ||
-                    HashToHex(stored->second.GetHash()) != cursor ||
-                    stored->second.height != expected_height) return false;
+                if (stored == block_store_.end() || HashToHex(stored->second.GetHash()) != cursor ||
+                    stored->second.height != expected_height)
+                    return false;
                 header = stored->second.header;
             }
             if (header.prev_block_hash != tree->second.prev_hash)
                 return false;
             reverse.push_back(header);
-            if (expected_height == first) break;
+            if (expected_height == first)
+                break;
             const std::string next = HashToHex(tree->second.prev_hash);
             auto predecessor = block_tree_.find(next);
             if (predecessor == block_tree_.end() ||
@@ -1098,31 +1123,33 @@ public:
         return true;
     }
 
-    bool BuildPowParentContextNoLock_(
-            const Hash256& parent_hash, PowParentContext& out) const {
+    bool BuildPowParentContextNoLock_(const Hash256& parent_hash, PowParentContext& out) const {
         BranchHeaderWindow window;
-        if (!BuildBranchHeaderWindowNoLock_(parent_hash, window) ||
-            window.headers.empty()) return false;
+        if (!BuildBranchHeaderWindowNoLock_(parent_hash, window) || window.headers.empty())
+            return false;
         out = PowParentContext{};
-        out.parent_height =
-            window.first_height + window.headers.size() - 1;
-        if (out.parent_height == UINT64_MAX) return false;
+        out.parent_height = window.first_height + window.headers.size() - 1;
+        if (out.parent_height == UINT64_MAX)
+            return false;
         out.candidate_height = out.parent_height + 1;
         auto at = [&](uint64_t height) -> const BlockHeader* {
-            if (const auto* local = window.At(height)) return local;
-            if (height < chain_.size()) return &chain_[height].header;
+            if (const auto* local = window.At(height))
+                return local;
+            if (height < chain_.size())
+                return &chain_[height].header;
             return nullptr;
         };
-        if (!TryComputeNextBitsForParent_(
-                out.parent_height, at, out.expected_bits) ||
-            !DecodeCanonicalVeldTarget(
-                out.expected_bits, out.expected_target)) return false;
+        if (!TryComputeNextBitsForParent_(out.parent_height, at, out.expected_bits) ||
+            !DecodeCanonicalVeldTarget(out.expected_bits, out.expected_target))
+            return false;
         std::vector<uint64_t> times;
         for (uint64_t h = out.parent_height + 1; h-- > 0 && times.size() < 11;) {
             const BlockHeader* header = at(h);
-            if (!header) return false;
+            if (!header)
+                return false;
             times.push_back(header->timestamp);
-            if (h == 0) break;
+            if (h == 0)
+                break;
         }
         std::sort(times.begin(), times.end());
         out.median_time_past = times[times.size() / 2];
@@ -1212,7 +1239,7 @@ public:
 #endif
     }
 
-public:
+  public:
     struct NmsTally {
         std::map<std::string, uint64_t> nms_credits;
 
@@ -1271,17 +1298,17 @@ public:
         std::vector<Row> rows;
         rows.reserve(utxo_set_.size());
         for (const auto& [_k, u] : utxo_set_) {
-            rows.push_back({u.tx_hash, u.output_index, u.value,
-                            &u.script_pubkey, u.block_height, u.is_coinbase});
+            rows.push_back({u.tx_hash, u.output_index, u.value, &u.script_pubkey, u.block_height,
+                            u.is_coinbase});
         }
-        std::sort(rows.begin(), rows.end(),
-                  [](const Row& a, const Row& b){
-                      int c = std::memcmp(a.tx_hash.data(), b.tx_hash.data(), 32);
-                      if (c != 0) return c < 0;
-                      return a.output_index < b.output_index;
-                  });
+        std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) {
+            int c = std::memcmp(a.tx_hash.data(), b.tx_hash.data(), 32);
+            if (c != 0)
+                return c < 0;
+            return a.output_index < b.output_index;
+        });
         std::vector<uint8_t> body;
-        sd::put_u32_le(body, 2);  // encoding version
+        sd::put_u32_le(body, 2); // encoding version
         sd::put_u32_le(body, (uint32_t)rows.size());
         for (const auto& r : rows) {
             sd::put_bytes(body, r.tx_hash.data(), 32);
@@ -1316,14 +1343,10 @@ public:
         // activation, tier-window indexes, or fee accounting. V4 deliberately
         // removes rebuildable lifetime miner statistics from consensus state.
         sd::put_u32_le(body, 4);
-        sd::put_u64_le(body,
-            total_supply_units_.load(std::memory_order_relaxed));
-        sd::put_u64_le(body,
-            total_fees_collected_units_.load(std::memory_order_relaxed));
-        sd::put_u64_le(body,
-            staking_activation_units_.load(std::memory_order_relaxed));
-        sd::put_u64_le(body,
-            coinbase_cap_grandfather_height_.load(std::memory_order_relaxed));
+        sd::put_u64_le(body, total_supply_units_.load(std::memory_order_relaxed));
+        sd::put_u64_le(body, total_fees_collected_units_.load(std::memory_order_relaxed));
+        sd::put_u64_le(body, staking_activation_units_.load(std::memory_order_relaxed));
+        sd::put_u64_le(body, coinbase_cap_grandfather_height_.load(std::memory_order_relaxed));
 
         std::vector<std::string> height_keys;
         height_keys.reserve(miner_heights_.size());
@@ -1374,24 +1397,29 @@ public:
     }
 
     void NmsCreditScript(const std::string& script_hex) {
-        if (script_hex.empty()) return;
+        if (script_hex.empty())
+            return;
         std::unique_lock<std::shared_mutex> lock(nms_tally_mutex_);
         nms_tally_.nms_credits[script_hex] += 1ull;
     }
 
     void NmsDebitScript(const std::string& script_hex) {
-        if (script_hex.empty()) return;
+        if (script_hex.empty())
+            return;
         std::unique_lock<std::shared_mutex> lock(nms_tally_mutex_);
         auto it = nms_tally_.nms_credits.find(script_hex);
-        if (it == nms_tally_.nms_credits.end()) return;
-        if (it->second <= 1ull) nms_tally_.nms_credits.erase(it);
-        else                    it->second -= 1ull;
+        if (it == nms_tally_.nms_credits.end())
+            return;
+        if (it->second <= 1ull)
+            nms_tally_.nms_credits.erase(it);
+        else
+            it->second -= 1ull;
     }
 
     void NmsClearOnFlush(uint64_t new_flush_height) {
         std::unique_lock<std::shared_mutex> lock(nms_tally_mutex_);
-        nms_tally_.pre_flush_snapshot         = nms_tally_.nms_credits;
-        nms_tally_.pre_flush_snapshot_height  = new_flush_height;
+        nms_tally_.pre_flush_snapshot = nms_tally_.nms_credits;
+        nms_tally_.pre_flush_snapshot_height = new_flush_height;
         nms_tally_.nms_credits.clear();
     }
 
@@ -1409,29 +1437,35 @@ public:
         nms_tally_.Clear();
     }
 
-    NmsValidationDisposition ValidateNmsLocking(
-                            const veld::NmsRecord& rec,
-                            uint64_t enclosing_block_height,
-                            mining::ExpensivePowBudget* source_pow_budget =
-                                nullptr) const {
+    NmsValidationDisposition
+    ValidateNmsLocking(const veld::NmsRecord& rec, uint64_t enclosing_block_height,
+                       mining::ExpensivePowBudget* source_pow_budget = nullptr) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        return veld::ValidateNmsWithDisposition<Blockchain>(
-            rec, *this, enclosing_block_height, source_pow_budget);
+        return veld::ValidateNmsWithDisposition<Blockchain>(rec, *this, enclosing_block_height,
+                                                            source_pow_budget);
     }
 
     using NmsStakeQueryFn = std::function<uint64_t(const std::string& address)>;
-    void SetNmsStakeQuery(NmsStakeQueryFn fn) { nms_stake_query_ = std::move(fn); }
+    void SetNmsStakeQuery(NmsStakeQueryFn fn) {
+        nms_stake_query_ = std::move(fn);
+    }
 
     uint64_t NmsQueryStakeUnits(const std::string& address) const {
-        if (!nms_stake_query_) return 0;
-        try { return nms_stake_query_(address); }
-        catch (...) { return 0; }
+        if (!nms_stake_query_)
+            return 0;
+        try {
+            return nms_stake_query_(address);
+        } catch (...) {
+            return 0;
+        }
     }
 
     bool NmsBondSatisfied(const std::vector<uint8_t>& miner_script) const {
-        if (!nms_stake_query_) return true;
+        if (!nms_stake_query_)
+            return true;
         std::string addr = ScriptToAddress(miner_script);
-        if (addr.empty()) return false;
+        if (addr.empty())
+            return false;
         return nms_stake_query_(addr) >= NMS_MIN_BOND_UNITS;
     }
 
@@ -1457,7 +1491,9 @@ public:
     //  on every node, so this filter is consensus-deterministic.
     // ───────────────────────────────────────────────────────────────
     using ValidatorFilterFn = std::function<bool(const std::string& address)>;
-    void SetValidatorFilter(ValidatorFilterFn fn) { validator_filter_ = std::move(fn); }
+    void SetValidatorFilter(ValidatorFilterFn fn) {
+        validator_filter_ = std::move(fn);
+    }
 
     // A raw marker is payout-ineligible unless ValidatorRegistry accepted a
     // valid endorsement signature for this exact (address,height,hash) while
@@ -1465,48 +1501,68 @@ public:
     // main connect, cold replay, and candidate-branch validation all query the
     // matching registry frame.  A missing callback fails closed (no marker can
     // earn a validator payout).
-    using AcceptedEndorsementFn = std::function<bool(
-        const std::string& address, uint64_t height,
-        const std::string& block_hash_hex, const std::string& sig_hex)>;
+    using AcceptedEndorsementFn =
+        std::function<bool(const std::string& address, uint64_t height,
+                           const std::string& block_hash_hex, const std::string& sig_hex)>;
     void SetAcceptedEndorsementQuery(AcceptedEndorsementFn fn) {
         accepted_endorsement_fn_ = std::move(fn);
     }
 
     using StakeSnapshotFn = std::function<std::map<std::string, uint64_t>(uint64_t query_height)>;
-    void SetStakeSnapshot(StakeSnapshotFn fn) { stake_snapshot_at_height_ = std::move(fn); }
+    void SetStakeSnapshot(StakeSnapshotFn fn) {
+        stake_snapshot_at_height_ = std::move(fn);
+    }
 
-    using BondSettlementsFn = std::function<
-        std::vector<std::tuple<std::string,int,uint64_t,std::string>>(uint64_t boundary_height)>;
-    void SetBondSettlementsFn(BondSettlementsFn fn) { bond_settlements_fn_ = std::move(fn); }
+    using BondSettlementsFn =
+        std::function<std::vector<std::tuple<std::string, int, uint64_t, std::string>>(
+            uint64_t boundary_height)>;
+    void SetBondSettlementsFn(BondSettlementsFn fn) {
+        bond_settlements_fn_ = std::move(fn);
+    }
 
     using BondYieldWeightFn = std::function<uint64_t(uint64_t boundary_height)>;
-    void SetBondYieldWeightFn(BondYieldWeightFn fn) { bond_yield_weight_fn_ = std::move(fn); }
-    using BondYieldSettlementsFn = std::function<
-        std::vector<std::tuple<std::string,int,uint64_t,std::string>>(uint64_t boundary_height)>;
-    void SetBondYieldSettlementsFn(BondYieldSettlementsFn fn) { bond_yield_settlements_fn_ = std::move(fn); }
+    void SetBondYieldWeightFn(BondYieldWeightFn fn) {
+        bond_yield_weight_fn_ = std::move(fn);
+    }
+    using BondYieldSettlementsFn =
+        std::function<std::vector<std::tuple<std::string, int, uint64_t, std::string>>(
+            uint64_t boundary_height)>;
+    void SetBondYieldSettlementsFn(BondYieldSettlementsFn fn) {
+        bond_yield_settlements_fn_ = std::move(fn);
+    }
 
-    using AltOverlayBuildFn    = std::function<void(uint64_t ancestor_height)>;
-    using AltOverlayAdvanceFn  = std::function<void(const Block& block)>;
+    using AltOverlayBuildFn = std::function<void(uint64_t ancestor_height)>;
+    using AltOverlayAdvanceFn = std::function<void(const Block& block)>;
     using AltOverlayTeardownFn = std::function<void()>;
-    void SetAltOverlayBuildFn(AltOverlayBuildFn fn)       { alt_overlay_build_fn_ = std::move(fn); }
-    void SetAltOverlayAdvanceFn(AltOverlayAdvanceFn fn)   { alt_overlay_advance_fn_ = std::move(fn); }
-    void SetAltOverlayTeardownFn(AltOverlayTeardownFn fn) { alt_overlay_teardown_fn_ = std::move(fn); }
+    void SetAltOverlayBuildFn(AltOverlayBuildFn fn) {
+        alt_overlay_build_fn_ = std::move(fn);
+    }
+    void SetAltOverlayAdvanceFn(AltOverlayAdvanceFn fn) {
+        alt_overlay_advance_fn_ = std::move(fn);
+    }
+    void SetAltOverlayTeardownFn(AltOverlayTeardownFn fn) {
+        alt_overlay_teardown_fn_ = std::move(fn);
+    }
 
-    using CheckpointAtOrBelowFn = std::function<bool(
-        uint64_t max_height, uint64_t& out_height, Hash256& out_hash)>;
+    using CheckpointAtOrBelowFn =
+        std::function<bool(uint64_t max_height, uint64_t& out_height, Hash256& out_hash)>;
     void SetCheckpointAtOrBelow(CheckpointAtOrBelowFn fn) {
         checkpoint_at_or_below_ = std::move(fn);
     }
 
     void UpdateNmsTallyAfterCommit_(const Block& block) {
-        if constexpr (!OPTION_B_CONSENSUS_GATE_ENABLED) return;
+        if constexpr (!OPTION_B_CONSENSUS_GATE_ENABLED)
+            return;
 
         for (const auto& tx : block.transactions) {
-            if (tx.IsCoinbase()) continue;
+            if (tx.IsCoinbase())
+                continue;
             auto nms_rec = ExtractNmsFromTx(tx);
-            if (!nms_rec) continue;
+            if (!nms_rec)
+                continue;
             auto miner_script = ExtractNmsMinerScript(tx);
-            if (miner_script.empty()) continue;
+            if (miner_script.empty())
+                continue;
             Hash256 h = Hash256d(nms_rec->raw);
             std::string payload_hex = HashToHex(h);
             {
@@ -1518,18 +1574,19 @@ public:
         if (block.height > 0 && (block.height % COMINE_WINDOW_BLOCKS) == 0) {
             NmsClearOnFlush(block.height);
             std::unique_lock<std::shared_mutex> lock(nms_tally_mutex_);
-            uint64_t cutoff = block.height > NMS_WINDOW_DEDUP_BLOCKS
-                ? block.height - NMS_WINDOW_DEDUP_BLOCKS : 0;
+            uint64_t cutoff =
+                block.height > NMS_WINDOW_DEDUP_BLOCKS ? block.height - NMS_WINDOW_DEDUP_BLOCKS : 0;
             for (auto it = nms_tally_.seen_payloads.begin();
-                 it != nms_tally_.seen_payloads.end(); ) {
-                if (it->second <= cutoff) it = nms_tally_.seen_payloads.erase(it);
-                else ++it;
+                 it != nms_tally_.seen_payloads.end();) {
+                if (it->second <= cutoff)
+                    it = nms_tally_.seen_payloads.erase(it);
+                else
+                    ++it;
             }
         }
         if ((block.height % COMINE_WINDOW_BLOCKS) == 0) {
             std::shared_lock<std::shared_mutex> lock(nms_tally_mutex_);
-            nms_checkpoints_.push_back(
-                NmsCheckpoint{block.height, block.GetHash(), nms_tally_});
+            nms_checkpoints_.push_back(NmsCheckpoint{block.height, block.GetHash(), nms_tally_});
             while (nms_checkpoints_.size() > 4)
                 nms_checkpoints_.pop_front();
         }
@@ -1546,14 +1603,15 @@ public:
     // Reorganize, this lets ComputeExpectedPoolOutputs draw the CORRECT alt-frame
     // winners on the reorg path, so the real recipient check can run there too.
     void RebuildNmsTallyToHeight_(uint64_t anc_height) {
-        if (chain_.empty()) return;
+        if (chain_.empty())
+            return;
         uint64_t start = 0;
         bool restored = false;
-        for (auto it = nms_checkpoints_.rbegin();
-             it != nms_checkpoints_.rend(); ++it) {
+        for (auto it = nms_checkpoints_.rbegin(); it != nms_checkpoints_.rend(); ++it) {
             if (it->height > anc_height || it->height >= chain_.size())
                 continue;
-            if (chain_[it->height].GetHash() != it->hash) continue;
+            if (chain_[it->height].GetHash() != it->hash)
+                continue;
             {
                 std::unique_lock<std::shared_mutex> lock(nms_tally_mutex_);
                 nms_tally_ = it->state;
@@ -1580,8 +1638,12 @@ public:
 
 #ifndef VELD_MAINNET_POW
     uint64_t legacy_replay_below_ = 0;
-    void SetLegacyReplayBelow(uint64_t h) { legacy_replay_below_ = h; }
-    uint64_t LegacyReplayBelow() const { return legacy_replay_below_; }
+    void SetLegacyReplayBelow(uint64_t h) {
+        legacy_replay_below_ = h;
+    }
+    uint64_t LegacyReplayBelow() const {
+        return legacy_replay_below_;
+    }
 #endif
 
     // Canonical transaction/input binding shared by every all-input sigless
@@ -1592,21 +1654,22 @@ public:
     // scriptSig, sequence, version, or locktime fields for us.  Pin the exact
     // envelope emitted by every in-tree builder so txid/replay/reorg identity is
     // unique, not merely output-equivalent.
-    static bool HasCanonicalProtocolInputs(
-        const Transaction& tx, std::vector<UTXO> expected_utxos) {
-        if (tx.version != 1 || tx.locktime != 0) return false;
-        std::sort(expected_utxos.begin(), expected_utxos.end(),
-                  [](const UTXO& a, const UTXO& b) {
-                      if (a.tx_hash != b.tx_hash) return a.tx_hash < b.tx_hash;
-                      return a.output_index < b.output_index;
-                  });
-        if (tx.inputs.size() != expected_utxos.size()) return false;
+    static bool HasCanonicalProtocolInputs(const Transaction& tx,
+                                           std::vector<UTXO> expected_utxos) {
+        if (tx.version != 1 || tx.locktime != 0)
+            return false;
+        std::sort(expected_utxos.begin(), expected_utxos.end(), [](const UTXO& a, const UTXO& b) {
+            if (a.tx_hash != b.tx_hash)
+                return a.tx_hash < b.tx_hash;
+            return a.output_index < b.output_index;
+        });
+        if (tx.inputs.size() != expected_utxos.size())
+            return false;
         for (size_t i = 0; i < expected_utxos.size(); ++i) {
             if (tx.inputs[i].prev_tx_hash != expected_utxos[i].tx_hash ||
-                tx.inputs[i].prev_out_index !=
-                    expected_utxos[i].output_index ||
-                !tx.inputs[i].script_sig.empty() ||
-                tx.inputs[i].sequence != 0xFFFFFFFFU) return false;
+                tx.inputs[i].prev_out_index != expected_utxos[i].output_index ||
+                !tx.inputs[i].script_sig.empty() || tx.inputs[i].sequence != 0xFFFFFFFFU)
+                return false;
         }
         return true;
     }
@@ -1617,15 +1680,15 @@ public:
             return true;
         }
 #endif
-        if (block.height == 0) return true;
+        if (block.height == 0)
+            return true;
 
         std::vector<uint8_t> pool_script = AddressToScript(POOL_ADDRESS);
         if (pool_script.empty()) {
 #ifdef VELD_MAINNET_POW
-            throw std::runtime_error(
-                "FATAL: AddressToScript(POOL_ADDRESS) returned empty in "
-                "ValidateExpectedPoolPayout. Refusing to silently drop "
-                "the pool-drain validation gate.");
+            throw std::runtime_error("FATAL: AddressToScript(POOL_ADDRESS) returned empty in "
+                                     "ValidateExpectedPoolPayout. Refusing to silently drop "
+                                     "the pool-drain validation gate.");
 #else
             return true;
 #endif
@@ -1633,10 +1696,12 @@ public:
 
         if ((block.height % COMINE_WINDOW_BLOCKS) != 0) {
             for (const auto& tx : block.transactions) {
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 for (const auto& inp : tx.inputs) {
                     auto u = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (u && u->script_pubkey == pool_script) return false;
+                    if (u && u->script_pubkey == pool_script)
+                        return false;
                 }
             }
             return true;
@@ -1644,30 +1709,33 @@ public:
 
         auto pool_utxos = GetUTXOsForScriptLocked_(pool_script);
         uint64_t total_pool = 0;
-        for (auto& u : pool_utxos) total_pool += u.value;
+        for (auto& u : pool_utxos)
+            total_pool += u.value;
 
-        auto expected = ComputeExpectedPoolOutputs_LockHeld(
-            block.header.prev_block_hash, total_pool, block.height);
+        auto expected = ComputeExpectedPoolOutputs_LockHeld(block.header.prev_block_hash,
+                                                            total_pool, block.height);
 
         const Transaction* payout_tx = nullptr;
         for (size_t i = 1; i < block.transactions.size(); ++i) {
             const auto& tx = block.transactions[i];
-            if (tx.inputs.empty()) continue;
+            if (tx.inputs.empty())
+                continue;
             const auto& in0 = tx.inputs[0];
             bool spends_pool = false;
             for (const auto& pu : pool_utxos) {
-                if (pu.tx_hash == in0.prev_tx_hash
-                    && pu.output_index == in0.prev_out_index) {
+                if (pu.tx_hash == in0.prev_tx_hash && pu.output_index == in0.prev_out_index) {
                     spends_pool = true;
                     break;
                 }
             }
             if (spends_pool) {
 #ifdef VELD_MAINNET_POW
-                if (payout_tx != nullptr) return false;
+                if (payout_tx != nullptr)
+                    return false;
                 payout_tx = &tx;
 #else
-                payout_tx = &tx; break;
+                payout_tx = &tx;
+                break;
 #endif
             }
         }
@@ -1683,11 +1751,14 @@ public:
         // Nonempty pool state has one canonical all-input payout/roll-forward
         // at each boundary.  It cannot be optional: repeated omissions would
         // eventually make the next settlement exceed the input limit.
-        if (payout_tx == nullptr) return false;
+        if (payout_tx == nullptr)
+            return false;
 
-        if (payout_tx->outputs.size() != expected.size()) return false;
+        if (payout_tx->outputs.size() != expected.size())
+            return false;
         for (size_t i = 0; i < expected.size(); ++i) {
-            if (payout_tx->outputs[i].value != expected[i].second) return false;
+            if (payout_tx->outputs[i].value != expected[i].second)
+                return false;
             if (payout_tx->outputs[i].script_pubkey != expected[i].first)
                 return false;
         }
@@ -1697,32 +1768,37 @@ public:
         // path on reorg (Gate 5's blanket ban deliberately excludes it), so this
         // binding is the only thing that stops a partial-input pool drain there.
         if (block.height >= BATCH3_HARDENING_HEIGHT &&
-            !HasCanonicalProtocolInputs(*payout_tx, pool_utxos)) return false;
+            !HasCanonicalProtocolInputs(*payout_tx, pool_utxos))
+            return false;
         return true;
     }
 
-public:
+  public:
     std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
-    ComputeExpectedEndorsementFlushOutputs(
-        uint64_t boundary_height,
-        uint64_t endorsement_pool_balance_units,
-        uint64_t tx_fee_reserve) const {
+    ComputeExpectedEndorsementFlushOutputs(uint64_t boundary_height,
+                                           uint64_t endorsement_pool_balance_units,
+                                           uint64_t tx_fee_reserve) const {
         std::vector<std::pair<std::vector<uint8_t>, uint64_t>> out;
-        if (boundary_height == 0) return out;
-        if (!IsStakingActive()) return out;
-        if (endorsement_pool_balance_units <= tx_fee_reserve) return out;
+        if (boundary_height == 0)
+            return out;
+        if (!IsStakingActive())
+            return out;
+        if (endorsement_pool_balance_units <= tx_fee_reserve)
+            return out;
 
-        uint64_t window_size  = VAULT_DISTRIBUTION_INTERVAL;
-        uint64_t window_start = boundary_height > window_size
-                              ? boundary_height - window_size + 1 : 1;
+        uint64_t window_size = VAULT_DISTRIBUTION_INTERVAL;
+        uint64_t window_start =
+            boundary_height > window_size ? boundary_height - window_size + 1 : 1;
         std::map<std::string, uint64_t> validator_counts;
         std::set<std::pair<std::string, uint64_t>> seen_endorsements;
         uint64_t total_endorsements = 0;
         for (uint64_t h = window_start; h <= boundary_height; ++h) {
-            if (h >= chain_.size()) break;
+            if (h >= chain_.size())
+                break;
             const Block blk = LoadCanonicalBlockNoLock_(h);
             for (const auto& btx : blk.transactions) {
-                if (btx.IsCoinbase()) continue;
+                if (btx.IsCoinbase())
+                    continue;
                 bool is_endorse = false;
                 bool canonical_endorsed_height = false;
                 uint64_t endorsed_height = 0;
@@ -1730,13 +1806,22 @@ public:
                 std::string endorsed_sig;
                 for (const auto& op : btx.outputs) {
                     const auto& sp = op.script_pubkey;
-                    if (sp.size() < 2 || sp[0] != 0x6A) continue;
+                    if (sp.size() < 2 || sp[0] != 0x6A)
+                        continue;
                     size_t di = 1, dlen = 0;
-                    if (sp[di] <= 75) { dlen = sp[di++]; }
-                    else if (sp[di] == 0x4C && di + 1 < sp.size()) { di++; dlen = sp[di++]; }
-                    else if (sp[di] == 0x4D && di + 2 < sp.size()) { di++; dlen = sp[di] | (sp[di+1]<<8); di+=2; }
-                    if (dlen == 0 || di + dlen > sp.size()) continue;
-                    std::string opd(sp.begin()+di, sp.begin()+di+dlen);
+                    if (sp[di] <= 75) {
+                        dlen = sp[di++];
+                    } else if (sp[di] == 0x4C && di + 1 < sp.size()) {
+                        di++;
+                        dlen = sp[di++];
+                    } else if (sp[di] == 0x4D && di + 2 < sp.size()) {
+                        di++;
+                        dlen = sp[di] | (sp[di + 1] << 8);
+                        di += 2;
+                    }
+                    if (dlen == 0 || di + dlen > sp.size())
+                        continue;
+                    std::string opd(sp.begin() + di, sp.begin() + di + dlen);
                     // Recognize the endorsement marker only at the payload prefix,
                     // never as an embedded substring. Anchoring
                     // to position 0 (matching BuildEndorseOp, which always emits the
@@ -1752,46 +1837,47 @@ public:
                             auto hstart = ppos + 23;
                             auto hend = opd.find('|', hstart);
                             if (hend != std::string::npos && hend > hstart) {
-                                canonical_endorsed_height =
-                                    ParseCanonicalUint64Text(
-                                    std::string_view(opd).substr(
-                                        hstart, hend - hstart),
-                                        endorsed_height);
+                                canonical_endorsed_height = ParseCanonicalUint64Text(
+                                    std::string_view(opd).substr(hstart, hend - hstart),
+                                    endorsed_height);
                                 // the field after the height is the
                                 // endorsed block hash (HashToHex form), used for
                                 // the canonical-binding check below.
                                 auto hash_start = hend + 1;
                                 auto hash_end = opd.find('|', hash_start);
                                 endorsed_hash = (hash_end != std::string::npos)
-                                    ? opd.substr(hash_start, hash_end - hash_start)
-                                    : opd.substr(hash_start);
+                                                    ? opd.substr(hash_start, hash_end - hash_start)
+                                                    : opd.substr(hash_start);
                                 if (hash_end != std::string::npos) {
                                     const auto sig_start = hash_end + 1;
                                     const auto sig_end = opd.find('|', sig_start);
                                     endorsed_sig = (sig_end != std::string::npos)
-                                        ? opd.substr(sig_start, sig_end - sig_start)
-                                        : opd.substr(sig_start);
+                                                       ? opd.substr(sig_start, sig_end - sig_start)
+                                                       : opd.substr(sig_start);
                                 }
                             }
                         }
                         break;
                     }
                 }
-                if (!is_endorse || !canonical_endorsed_height ||
-                    btx.inputs.empty()) continue;
+                if (!is_endorse || !canonical_endorsed_height || btx.inputs.empty())
+                    continue;
                 std::vector<uint8_t> sig_unused;
                 std::array<uint8_t, 1952> pk;
                 if (!veld::pqc::ParseScriptSig(btx.inputs[0].script_sig, sig_unused, pk))
                     continue;
                 Hash160 pkh = Hash160Compute(pk);
-                std::vector<uint8_t> sender_script = {0x76,0xA9,0x14};
+                std::vector<uint8_t> sender_script = {0x76, 0xA9, 0x14};
                 sender_script.insert(sender_script.end(), pkh.begin(), pkh.end());
-                sender_script.push_back(0x88); sender_script.push_back(0xAC);
+                sender_script.push_back(0x88);
+                sender_script.push_back(0xAC);
                 std::string addr = ScriptToAddress(sender_script);
-                if (addr.empty()) continue;
+                if (addr.empty())
+                    continue;
                 // Credit only addresses in the active validator set at this
                 // height. The registry is deterministically rebuilt on replay.
-                if (validator_filter_ && !validator_filter_(addr)) continue;
+                if (validator_filter_ && !validator_filter_(addr))
+                    continue;
                 // Count only endorsements naming a canonical block inside the
                 // flush window: endorsed height in
                 // [window_start, boundary] AND hash == the canonical block hash at
@@ -1803,9 +1889,12 @@ public:
                 // marker hash is HashToHex(GetHash()) form (the emitter sources it
                 // from getblockhash), identical to chain_[h].GetHash() hashed.
                 if (boundary_height >= ENDORSE_CANONICAL_HEIGHT) {
-                    if (endorsed_height < window_start || endorsed_height > boundary_height) continue;
-                    if (endorsed_height >= chain_.size()) continue;
-                    if (endorsed_hash != HashToHex(chain_[endorsed_height].GetHash())) continue;
+                    if (endorsed_height < window_start || endorsed_height > boundary_height)
+                        continue;
+                    if (endorsed_height >= chain_.size())
+                        continue;
+                    if (endorsed_hash != HashToHex(chain_[endorsed_height].GetHash()))
+                        continue;
                 }
                 // Active membership at the payout boundary is not evidence that
                 // this marker was valid when included.  Require the registry's
@@ -1813,11 +1902,11 @@ public:
                 // canonical tuple.  This closes both invalid-signature capture
                 // and pre-seed-before-REGISTER / register-before-flush capture.
                 if (!accepted_endorsement_fn_ ||
-                    !accepted_endorsement_fn_(addr, endorsed_height,
-                                              endorsed_hash,
-                                              endorsed_sig)) continue;
+                    !accepted_endorsement_fn_(addr, endorsed_height, endorsed_hash, endorsed_sig))
+                    continue;
                 if (boundary_height >= ENDORSEMENT_DEDUP_HEIGHT) {
-                    if (!seen_endorsements.insert({addr, endorsed_height}).second) continue;
+                    if (!seen_endorsements.insert({addr, endorsed_height}).second)
+                        continue;
                 }
                 validator_counts[addr]++;
                 total_endorsements++;
@@ -1829,7 +1918,8 @@ public:
             auto vault_script = AddressToScript(VaultAddressAtHeight(boundary_height));
             if (vault_script.empty()) {
                 throw std::runtime_error(
-                    "FATAL: AddressToScript(VaultAddressAtHeight) returned empty in empty-validator "
+                    "FATAL: AddressToScript(VaultAddressAtHeight) returned empty in "
+                    "empty-validator "
                     "endorsement sweep. VAULT_ADDRESS constant is corrupt or base58 decode broken. "
                     "Refusing to silently skip the sweep.");
             }
@@ -1851,14 +1941,16 @@ public:
         // Iteration in ASC address order — std::map guarantees this.
         for (const auto& [addr, count] : validator_counts) {
             auto vs = AddressToScript(addr);
-            if (vs.empty()) continue;
+            if (vs.empty())
+                continue;
             uint64_t share = (distributable * count) / total_endorsements;
             if (share > 0) {
                 out.push_back({vs, share});
                 distributed += share;
             }
         }
-        if (out.empty()) return out;
+        if (out.empty())
+            return out;
         if (distributed < distributable)
             out[0].second += (distributable - distributed);
         return out;
@@ -1883,14 +1975,14 @@ public:
     //  Caller contract: must hold chain_mutex_ (shared or unique).
     // ───────────────────────────────────────────────────────────────
     bool ValidateExpectedEndorsementFlush(const Block& block) const {
-        if (block.height == 0) return true;
+        if (block.height == 0)
+            return true;
         std::vector<uint8_t> ep_script = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
         if (ep_script.empty()) {
 #ifdef VELD_MAINNET_POW
-            throw std::runtime_error(
-                "FATAL: AddressToScript(ENDORSEMENT_POOL_ADDRESS) returned "
-                "empty in ValidateExpectedEndorsementFlush. Refusing to "
-                "silently drop the endorsement-pool-drain validation gate.");
+            throw std::runtime_error("FATAL: AddressToScript(ENDORSEMENT_POOL_ADDRESS) returned "
+                                     "empty in ValidateExpectedEndorsementFlush. Refusing to "
+                                     "silently drop the endorsement-pool-drain validation gate.");
 #else
             return true;
 #endif
@@ -1898,10 +1990,12 @@ public:
 
         if ((block.height % VAULT_DISTRIBUTION_INTERVAL) != 0) {
             for (const auto& tx : block.transactions) {
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 for (const auto& inp : tx.inputs) {
                     auto u = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (u && u->script_pubkey == ep_script) return false;
+                    if (u && u->script_pubkey == ep_script)
+                        return false;
                 }
             }
             return true;
@@ -1909,36 +2003,39 @@ public:
 
         auto ep_utxos = GetUTXOsForScriptLocked_(ep_script);
         uint64_t total_pool = 0;
-        for (const auto& u : ep_utxos) total_pool += u.value;
+        for (const auto& u : ep_utxos)
+            total_pool += u.value;
 
         // Mandatory protocol settlements are consensus-zero-fee.  Charging a
         // synthetic fee out of custody is not principal-preserving after the
         // subsidy cap, where fee-only coinbase routing intentionally pays
         // miner/endorsement legs.  Zero keeps inputs == outputs at every era.
-        auto expected = ComputeExpectedEndorsementFlushOutputs(
-            block.height, total_pool, 0);
+        auto expected = ComputeExpectedEndorsementFlushOutputs(block.height, total_pool, 0);
 
         const Transaction* flush_tx = nullptr;
         for (size_t i = 1; i < block.transactions.size(); ++i) {
             const auto& tx = block.transactions[i];
-            if (tx.inputs.empty()) continue;
+            if (tx.inputs.empty())
+                continue;
             bool spends_ep = false;
             for (const auto& input : tx.inputs) {
                 for (const auto& u : ep_utxos) {
-                    if (u.tx_hash == input.prev_tx_hash
-                        && u.output_index == input.prev_out_index) {
+                    if (u.tx_hash == input.prev_tx_hash && u.output_index == input.prev_out_index) {
                         spends_ep = true;
                         break;
                     }
                 }
-                if (spends_ep) break;
+                if (spends_ep)
+                    break;
             }
             if (spends_ep) {
 #ifdef VELD_MAINNET_POW
-                if (flush_tx != nullptr) return false;
+                if (flush_tx != nullptr)
+                    return false;
                 flush_tx = &tx;
 #else
-                flush_tx = &tx; break;
+                flush_tx = &tx;
+                break;
 #endif
             }
         }
@@ -1949,10 +2046,13 @@ public:
         // As with the co-mine pool, a derivable endorsement settlement is
         // mandatory.  Omission is not a harmless roll-forward when settlement
         // construction consumes the complete UTXO set.
-        if (flush_tx == nullptr) return false;
-        if (flush_tx->outputs.size() != expected.size()) return false;
+        if (flush_tx == nullptr)
+            return false;
+        if (flush_tx->outputs.size() != expected.size())
+            return false;
         for (size_t i = 0; i < expected.size(); ++i) {
-            if (flush_tx->outputs[i].value != expected[i].second) return false;
+            if (flush_tx->outputs[i].value != expected[i].second)
+                return false;
             if (flush_tx->outputs[i].script_pubkey != expected[i].first)
                 return false;
         }
@@ -1963,7 +2063,8 @@ public:
         // with the transaction consensus accepted. Exact outpoint equality
         // gives forward connect, replay, and reorg one unambiguous flush event.
         if (block.height >= BATCH3_HARDENING_HEIGHT &&
-            !HasCanonicalProtocolInputs(*flush_tx, ep_utxos)) return false;
+            !HasCanonicalProtocolInputs(*flush_tx, ep_utxos))
+            return false;
         return true;
     }
 
@@ -2051,25 +2152,27 @@ public:
     //  the flush, and stakers got nothing. Live evidence: h=12528 was
     //  the first K-cap-active boundary and produced no payouts.
     // ───────────────────────────────────────────────────────────────
-    uint64_t ComputeVaultInflowSinceLastDistribution_Locked(
-        uint64_t boundary_height) const {
-        if (boundary_height == 0) return 0;
-        if (boundary_height > chain_.size()) return 0;
+    uint64_t ComputeVaultInflowSinceLastDistribution_Locked(uint64_t boundary_height) const {
+        if (boundary_height == 0)
+            return 0;
+        if (boundary_height > chain_.size())
+            return 0;
 
-        auto vault_script =
-            AddressToScript(VaultAddressAtHeight(boundary_height));
-        if (vault_script.empty()) return 0;
+        auto vault_script = AddressToScript(VaultAddressAtHeight(boundary_height));
+        if (vault_script.empty())
+            return 0;
 
         const uint64_t window = VAULT_DISTRIBUTION_INTERVAL;
-        const uint64_t start =
-            (boundary_height >= window) ? (boundary_height - window + 1) : 1;
+        const uint64_t start = (boundary_height >= window) ? (boundary_height - window + 1) : 1;
 
         uint64_t total = 0;
         for (uint64_t h = start; h <= boundary_height; ++h) {
-            if (h >= chain_.size()) break;
+            if (h >= chain_.size())
+                break;
             const Block blk = LoadCanonicalBlockNoLock_(h);
             const auto& coinbase = blk.transactions[0];
-            if (!coinbase.IsCoinbase()) continue;
+            if (!coinbase.IsCoinbase())
+                continue;
             for (const auto& out : coinbase.outputs) {
                 if (out.script_pubkey == vault_script) {
                     total += out.value;
@@ -2079,23 +2182,22 @@ public:
         return total;
     }
 
-    uint64_t ComputeVaultInflowSinceLastDistribution(
-        uint64_t boundary_height) const {
+    uint64_t ComputeVaultInflowSinceLastDistribution(uint64_t boundary_height) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         return ComputeVaultInflowSinceLastDistribution_Locked(boundary_height);
     }
 
     std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
-    ComputeExpectedVaultDistribution(
-        uint64_t boundary_height,
-        uint64_t vault_balance_units,
-        uint64_t fee_reserve,
-        uint64_t prev_cycle_inflow_units,
-        const std::map<std::string, uint64_t>& weighted_stake) const {
+    ComputeExpectedVaultDistribution(uint64_t boundary_height, uint64_t vault_balance_units,
+                                     uint64_t fee_reserve, uint64_t prev_cycle_inflow_units,
+                                     const std::map<std::string, uint64_t>& weighted_stake) const {
         std::vector<std::pair<std::vector<uint8_t>, uint64_t>> out;
-        if (boundary_height == 0) return out;
-        if ((boundary_height % VAULT_DISTRIBUTION_INTERVAL) != 0) return out;
-        if (vault_balance_units <= fee_reserve) return out;
+        if (boundary_height == 0)
+            return out;
+        if ((boundary_height % VAULT_DISTRIBUTION_INTERVAL) != 0)
+            return out;
+        if (vault_balance_units <= fee_reserve)
+            return out;
 
         uint64_t spendable = vault_balance_units - fee_reserve;
         // A boundary with no eligible payout must still consume the complete
@@ -2108,18 +2210,18 @@ public:
         // most consolidation/change plus the current coinbase output.
         auto consolidation_only = [&]() {
             std::vector<std::pair<std::vector<uint8_t>, uint64_t>> c;
-            auto script =
-                AddressToScript(VaultAddressAtHeight(boundary_height));
+            auto script = AddressToScript(VaultAddressAtHeight(boundary_height));
             if (!script.empty() && spendable > 0)
                 c.emplace_back(std::move(script), spendable);
             return c;
         };
 
-        if (!IsStakingActive()) return consolidation_only();
+        if (!IsStakingActive())
+            return consolidation_only();
 
-        uint64_t distributable = (uint64_t)
-            ((__uint128_t)spendable * (__uint128_t)VAULT_DISTRIBUTION_PPM
-             / (__uint128_t)1'000'000ULL);
+        uint64_t distributable =
+            (uint64_t)((__uint128_t)spendable * (__uint128_t)VAULT_DISTRIBUTION_PPM /
+                       (__uint128_t)1'000'000ULL);
 
         //  Inflow cap (VAULT-NEVER-DRAINS rule). Activation-gated so
         // pre-activation chain history remains valid byte-for-byte. Once
@@ -2130,11 +2232,11 @@ public:
         // attractor (≈12.5× cycle inflow) that the pure 8%-of-balance rule
         // produces.
         if (boundary_height >= VAULT_INFLOW_CAP_ACTIVATION_HEIGHT) {
-            uint64_t inflow_cap = (uint64_t)
-                ((__uint128_t)prev_cycle_inflow_units
-                 * (__uint128_t)VAULT_INFLOW_PAYOUT_PPM
-                 / (__uint128_t)1'000'000ULL);
-            if (distributable > inflow_cap) distributable = inflow_cap;
+            uint64_t inflow_cap =
+                (uint64_t)((__uint128_t)prev_cycle_inflow_units *
+                           (__uint128_t)VAULT_INFLOW_PAYOUT_PPM / (__uint128_t)1'000'000ULL);
+            if (distributable > inflow_cap)
+                distributable = inflow_cap;
         }
 
         if (distributable < VAULT_MIN_DISTRIBUTABLE_UNITS)
@@ -2144,14 +2246,15 @@ public:
         std::map<std::string, uint64_t> ws_local;
         // Activation height zero means active from genesis. Accrual and escrow
         // accounting must remain enabled together.
-        if (boundary_height >= BOND_YIELD_ACTIVATION_HEIGHT
-            && bond_yield_weight_fn_) {
+        if (boundary_height >= BOND_YIELD_ACTIVATION_HEIGHT && bond_yield_weight_fn_) {
             uint64_t byw = bond_yield_weight_fn_(boundary_height);
             if (byw > 0) {
                 ws_local = weighted_stake;
                 uint64_t& slot = ws_local[BOND_YIELD_ESCROW];
-                if (UINT64_MAX - slot >= byw) slot += byw;
-                else slot = UINT64_MAX;
+                if (UINT64_MAX - slot >= byw)
+                    slot += byw;
+                else
+                    slot = UINT64_MAX;
                 wsp = &ws_local;
             }
         }
@@ -2159,37 +2262,43 @@ public:
 
         uint64_t total_weight = 0;
         for (const auto& [_, w] : effective_stake) {
-            if (UINT64_MAX - total_weight < w) return out;
+            if (UINT64_MAX - total_weight < w)
+                return out;
             total_weight += w;
         }
-        if (total_weight == 0) return consolidation_only();
+        if (total_weight == 0)
+            return consolidation_only();
 
-        uint64_t per_staker_cap = (uint64_t)
-            ((__uint128_t)distributable * (__uint128_t)VAULT_CONCENTRATION_CAP_PPM
-             / (__uint128_t)1'000'000ULL);
+        uint64_t per_staker_cap =
+            (uint64_t)((__uint128_t)distributable * (__uint128_t)VAULT_CONCENTRATION_CAP_PPM /
+                       (__uint128_t)1'000'000ULL);
 
         std::vector<std::pair<std::string, uint64_t>> staker_payouts;
         staker_payouts.reserve(effective_stake.size());
         uint64_t total_paid = 0;
         for (const auto& [addr, weight] : effective_stake) {
             __uint128_t share128 =
-                (__uint128_t)distributable * (__uint128_t)weight
-                / (__uint128_t)total_weight;
+                (__uint128_t)distributable * (__uint128_t)weight / (__uint128_t)total_weight;
             uint64_t share = (uint64_t)share128;
-            if (share > per_staker_cap) share = per_staker_cap;
-            if (share == 0) continue;
+            if (share > per_staker_cap)
+                share = per_staker_cap;
+            if (share == 0)
+                continue;
             staker_payouts.emplace_back(addr, share);
             total_paid += share;
         }
-        if (staker_payouts.empty()) return consolidation_only();
+        if (staker_payouts.empty())
+            return consolidation_only();
 
         out.reserve(staker_payouts.size() + 1);
         for (const auto& [addr, share] : staker_payouts) {
             auto script = AddressToScript(addr);
-            if (script.empty()) continue;
+            if (script.empty())
+                continue;
             out.emplace_back(std::move(script), share);
         }
-        if (out.empty()) return consolidation_only();
+        if (out.empty())
+            return consolidation_only();
 
         if (vault_balance_units < total_paid + fee_reserve) {
             return {};
@@ -2206,21 +2315,21 @@ public:
     }
 
     bool ValidateExpectedVaultDistribution(const Block& block) const {
-        if (block.height == 0) return true;
+        if (block.height == 0)
+            return true;
         // Activation height zero means active from genesis; the comparison also
         // handles a future nonzero activation height.
-        if (block.height < VAULT_SIGLESS_ACTIVATION_HEIGHT) return true;
+        if (block.height < VAULT_SIGLESS_ACTIVATION_HEIGHT)
+            return true;
 
-        std::vector<uint8_t> vault_script =
-            AddressToScript(VaultAddressAtHeight(block.height));
+        std::vector<uint8_t> vault_script = AddressToScript(VaultAddressAtHeight(block.height));
         if (vault_script.empty()) {
 #ifdef VELD_MAINNET_POW
-            throw std::runtime_error(
-                "FATAL: AddressToScript(VaultAddressAtHeight) returned empty "
-                "in ValidateExpectedVaultDistribution. VAULT_ADDRESS is "
-                "corrupt or base58 decode "
-                "is broken — refusing to silently drop the vault-drain "
-                "validation gate.");
+            throw std::runtime_error("FATAL: AddressToScript(VaultAddressAtHeight) returned empty "
+                                     "in ValidateExpectedVaultDistribution. VAULT_ADDRESS is "
+                                     "corrupt or base58 decode "
+                                     "is broken — refusing to silently drop the vault-drain "
+                                     "validation gate.");
 #else
             return true;
 #endif
@@ -2228,10 +2337,12 @@ public:
 
         if ((block.height % VAULT_DISTRIBUTION_INTERVAL) != 0) {
             for (const auto& tx : block.transactions) {
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 for (const auto& inp : tx.inputs) {
                     auto u = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (u && u->script_pubkey == vault_script) return false;
+                    if (u && u->script_pubkey == vault_script)
+                        return false;
                 }
             }
             return true;
@@ -2239,7 +2350,8 @@ public:
 
         auto vault_utxos = GetUTXOsForScriptLocked_(vault_script);
         uint64_t total_vault = 0;
-        for (const auto& u : vault_utxos) total_vault += u.value;
+        for (const auto& u : vault_utxos)
+            total_vault += u.value;
         // Consensus-zero-fee roll-forward/distribution: vault principal is
         // neither burned nor temporarily redirected through coinbase fees.
         uint64_t fee_reserve = 0;
@@ -2253,33 +2365,35 @@ public:
             stake_snapshot = stake_snapshot_at_height_(block.height - 1);
         }
 
-        uint64_t prev_cycle_inflow =
-            ComputeVaultInflowSinceLastDistribution_Locked(block.height);
+        uint64_t prev_cycle_inflow = ComputeVaultInflowSinceLastDistribution_Locked(block.height);
 
-        auto expected = ComputeExpectedVaultDistribution(
-            block.height, total_vault, fee_reserve,
-            prev_cycle_inflow, stake_snapshot);
+        auto expected = ComputeExpectedVaultDistribution(block.height, total_vault, fee_reserve,
+                                                         prev_cycle_inflow, stake_snapshot);
 
         const Transaction* flush_tx = nullptr;
         for (size_t i = 1; i < block.transactions.size(); ++i) {
             const auto& tx = block.transactions[i];
-            if (tx.inputs.empty()) continue;
+            if (tx.inputs.empty())
+                continue;
             bool spends_vault = false;
             for (const auto& inp : tx.inputs) {
                 for (const auto& u : vault_utxos) {
-                    if (u.tx_hash == inp.prev_tx_hash
-                        && u.output_index == inp.prev_out_index) {
-                        spends_vault = true; break;
+                    if (u.tx_hash == inp.prev_tx_hash && u.output_index == inp.prev_out_index) {
+                        spends_vault = true;
+                        break;
                     }
                 }
-                if (spends_vault) break;
+                if (spends_vault)
+                    break;
             }
             if (spends_vault) {
 #ifdef VELD_MAINNET_POW
-                if (flush_tx != nullptr) return false;
+                if (flush_tx != nullptr)
+                    return false;
                 flush_tx = &tx;
 #else
-                flush_tx = &tx; break;
+                flush_tx = &tx;
+                break;
 #endif
             }
         }
@@ -2289,10 +2403,13 @@ public:
         }
         // A nonempty canonical output set is mandatory so consolidation cannot
         // be deferred until the all-input transaction exceeds structural limits.
-        if (flush_tx == nullptr) return false;
-        if (flush_tx->outputs.size() != expected.size()) return false;
+        if (flush_tx == nullptr)
+            return false;
+        if (flush_tx->outputs.size() != expected.size())
+            return false;
         for (size_t i = 0; i < expected.size(); ++i) {
-            if (flush_tx->outputs[i].value != expected[i].second) return false;
+            if (flush_tx->outputs[i].value != expected[i].second)
+                return false;
             if (flush_tx->outputs[i].script_pubkey != expected[i].first)
                 return false;
         }
@@ -2303,94 +2420,109 @@ public:
         // letting fee_reserve fall through as miner fee) → chain halt. Closes the
         // partial-input mint on BOTH the main-chain and reorg (Step 6) paths.
         if (block.height >= BATCH3_HARDENING_HEIGHT &&
-            !HasCanonicalProtocolInputs(*flush_tx, vault_utxos)) return false;
+            !HasCanonicalProtocolInputs(*flush_tx, vault_utxos))
+            return false;
         return true;
     }
 
     std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
     ExpectedVaultDistributionOutputs(uint64_t height) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        std::vector<uint8_t> vault_script =
-            AddressToScript(VaultAddressAtHeight(height));
-        if (vault_script.empty()) return {};
+        std::vector<uint8_t> vault_script = AddressToScript(VaultAddressAtHeight(height));
+        if (vault_script.empty())
+            return {};
         auto vault_utxos = GetUTXOsForScriptLocked_(vault_script);
         uint64_t total_vault = 0;
-        for (const auto& u : vault_utxos) total_vault += u.value;
+        for (const auto& u : vault_utxos)
+            total_vault += u.value;
         uint64_t fee_reserve = 0;
         std::map<std::string, uint64_t> stake_snapshot;
         if (stake_snapshot_at_height_)
             stake_snapshot = stake_snapshot_at_height_(height - 1);
-        uint64_t prev_cycle_inflow =
-            ComputeVaultInflowSinceLastDistribution_Locked(height);
-        return ComputeExpectedVaultDistribution(height, total_vault, fee_reserve,
-                                                prev_cycle_inflow, stake_snapshot);
+        uint64_t prev_cycle_inflow = ComputeVaultInflowSinceLastDistribution_Locked(height);
+        return ComputeExpectedVaultDistribution(height, total_vault, fee_reserve, prev_cycle_inflow,
+                                                stake_snapshot);
     }
 
     Transaction BuildVaultDistributionFlushTx(uint64_t height) const {
-        Transaction tx; tx.version = 1;
-        std::vector<uint8_t> vault_script =
-            AddressToScript(VaultAddressAtHeight(height));
-        if (vault_script.empty()) return tx;
+        Transaction tx;
+        tx.version = 1;
+        std::vector<uint8_t> vault_script = AddressToScript(VaultAddressAtHeight(height));
+        if (vault_script.empty())
+            return tx;
         auto vault_utxos = GetUTXOsForScript(vault_script);
-        if (vault_utxos.empty()) return tx;
+        if (vault_utxos.empty())
+            return tx;
         auto payouts = ExpectedVaultDistributionOutputs(height);
-        if (payouts.empty()) return tx;
-        std::sort(vault_utxos.begin(), vault_utxos.end(),
-                  [](const UTXO& a, const UTXO& b) {
-                      if (a.tx_hash != b.tx_hash) return a.tx_hash < b.tx_hash;
-                      return a.output_index < b.output_index;
-                  });
+        if (payouts.empty())
+            return tx;
+        std::sort(vault_utxos.begin(), vault_utxos.end(), [](const UTXO& a, const UTXO& b) {
+            if (a.tx_hash != b.tx_hash)
+                return a.tx_hash < b.tx_hash;
+            return a.output_index < b.output_index;
+        });
         for (const auto& u : vault_utxos) {
             TxInput inp;
-            inp.prev_tx_hash   = u.tx_hash;
+            inp.prev_tx_hash = u.tx_hash;
             inp.prev_out_index = u.output_index;
             tx.inputs.push_back(inp);
         }
         for (const auto& pr : payouts) {
-            TxOutput o; o.value = pr.second; o.script_pubkey = pr.first;
+            TxOutput o;
+            o.value = pr.second;
+            o.script_pubkey = pr.first;
             tx.outputs.push_back(o);
         }
         return tx;
     }
 
     std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
-    ComputeExpectedBondMovements(uint64_t boundary_height,
-                                 uint64_t stake_vault_balance_units,
+    ComputeExpectedBondMovements(uint64_t boundary_height, uint64_t stake_vault_balance_units,
                                  uint64_t fee_reserve) const {
         std::vector<std::pair<std::vector<uint8_t>, uint64_t>> out;
         // Activation height zero means active from genesis; the comparison also
         // handles a future nonzero activation height.
-        if (boundary_height < STAKE_VAULT_ACTIVATION_HEIGHT) return out;
-        if (boundary_height == 0) return out;
-        if ((boundary_height % BOND_SETTLEMENT_INTERVAL) != 0) return out;
-        if (!bond_settlements_fn_) return out;
+        if (boundary_height < STAKE_VAULT_ACTIVATION_HEIGHT)
+            return out;
+        if (boundary_height == 0)
+            return out;
+        if ((boundary_height % BOND_SETTLEMENT_INTERVAL) != 0)
+            return out;
+        if (!bond_settlements_fn_)
+            return out;
 
         auto raw = bond_settlements_fn_(boundary_height);
-        if (raw.empty()) return out;
+        if (raw.empty())
+            return out;
 
-        std::sort(raw.begin(), raw.end(),
-                  [](const auto& a, const auto& b){
-                      if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) < std::get<0>(b);
-                      if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) < std::get<1>(b);
-                      if (std::get<2>(a) != std::get<2>(b)) return std::get<2>(a) < std::get<2>(b);
-                      return std::get<3>(a) < std::get<3>(b);
-                  });
+        std::sort(raw.begin(), raw.end(), [](const auto& a, const auto& b) {
+            if (std::get<0>(a) != std::get<0>(b))
+                return std::get<0>(a) < std::get<0>(b);
+            if (std::get<1>(a) != std::get<1>(b))
+                return std::get<1>(a) < std::get<1>(b);
+            if (std::get<2>(a) != std::get<2>(b))
+                return std::get<2>(a) < std::get<2>(b);
+            return std::get<3>(a) < std::get<3>(b);
+        });
 
         auto vault_now = AddressToScript(VaultAddressAtHeight(boundary_height));
 
         uint64_t total_paid = 0;
         for (const auto& s : raw) {
-            const std::string& vaddr   = std::get<0>(s);
-            int                kind    = std::get<1>(s);
-            uint64_t           bond    = std::get<2>(s);
+            const std::string& vaddr = std::get<0>(s);
+            int kind = std::get<1>(s);
+            uint64_t bond = std::get<2>(s);
             const std::string& slasher = std::get<3>(s);
-            if (bond == 0) continue;
+            if (bond == 0)
+                continue;
             auto vscript = AddressToScript(vaddr);
-            if (vscript.empty()) continue;
+            if (vscript.empty())
+                continue;
 
             if (kind == 0) {
                 out.emplace_back(vscript, bond);
-                if (UINT64_MAX - total_paid < bond) return {};
+                if (UINT64_MAX - total_paid < bond)
+                    return {};
                 total_paid += bond;
             } else {
                 // kind: 1 = ordinary slash (50% principal returned)
@@ -2409,31 +2541,29 @@ public:
                     // slash: below SLASH_BOUNTY_HEIGHT no slasher is derivable,
                     // so the burn absorbs the whole bond. What never varies is
                     // that the offender receives nothing.
-                    eff_slasher_ppm = (boundary_height >= SLASH_BOUNTY_HEIGHT)
-                        ? SLASH_EQUIV_SLASHER_PPM : 0;
-                    eff_confiscation_ppm =
-                        (boundary_height >= SLASH_BOUNTY_HEIGHT)
-                            ? SLASH_EQUIV_BURN_PPM
-                            : (SLASH_EQUIV_SLASHER_PPM +
-                               SLASH_EQUIV_BURN_PPM);
-                } else {
-                    eff_slasher_ppm = (boundary_height >= SLASH_BOUNTY_HEIGHT)
-                        ? SLASH_SLASHER_PPM : 0;
+                    eff_slasher_ppm =
+                        (boundary_height >= SLASH_BOUNTY_HEIGHT) ? SLASH_EQUIV_SLASHER_PPM : 0;
                     eff_confiscation_ppm = (boundary_height >= SLASH_BOUNTY_HEIGHT)
-                        ? SLASH_VAULT_PPM : (SLASH_SLASHER_PPM + SLASH_VAULT_PPM);
+                                               ? SLASH_EQUIV_BURN_PPM
+                                               : (SLASH_EQUIV_SLASHER_PPM + SLASH_EQUIV_BURN_PPM);
+                } else {
+                    eff_slasher_ppm =
+                        (boundary_height >= SLASH_BOUNTY_HEIGHT) ? SLASH_SLASHER_PPM : 0;
+                    eff_confiscation_ppm = (boundary_height >= SLASH_BOUNTY_HEIGHT)
+                                               ? SLASH_VAULT_PPM
+                                               : (SLASH_SLASHER_PPM + SLASH_VAULT_PPM);
                 }
-                uint64_t slasher_share = (uint64_t)
-                    ((__uint128_t)bond * (__uint128_t)eff_slasher_ppm
-                     / (__uint128_t)1'000'000ULL);
-                uint64_t confiscation_share = (uint64_t)
-                    ((__uint128_t)bond * (__uint128_t)eff_confiscation_ppm
-                     / (__uint128_t)1'000'000ULL);
+                uint64_t slasher_share =
+                    (uint64_t)((__uint128_t)bond * (__uint128_t)eff_slasher_ppm /
+                               (__uint128_t)1'000'000ULL);
+                uint64_t confiscation_share =
+                    (uint64_t)((__uint128_t)bond * (__uint128_t)eff_confiscation_ppm /
+                               (__uint128_t)1'000'000ULL);
                 if (slasher.empty() && slasher_share > 0) {
                     confiscation_share += slasher_share;
                     slasher_share = 0;
                 }
-                uint64_t return_share =
-                    bond - slasher_share - confiscation_share;
+                uint64_t return_share = bond - slasher_share - confiscation_share;
                 // The whole point of the equivocation class, asserted rather
                 // than assumed: integer ppm division rounds DOWN, so shares
                 // summing to 1'000'000 ppm can still leave a remainder of a few
@@ -2447,46 +2577,53 @@ public:
                     auto sscript = AddressToScript(slasher);
                     if (!sscript.empty())
                         out.emplace_back(std::move(sscript), slasher_share);
-                    else { confiscation_share += slasher_share; }
+                    else {
+                        confiscation_share += slasher_share;
+                    }
                 }
                 if (confiscation_share > 0) {
                     if (equivocation) {
-                        out.emplace_back(FinalityEquivocationBurnScript(),
-                                         confiscation_share);
+                        out.emplace_back(FinalityEquivocationBurnScript(), confiscation_share);
                     } else if (!vault_now.empty()) {
                         out.emplace_back(vault_now, confiscation_share);
                     }
                 }
                 if (return_share > 0)
                     out.emplace_back(vscript, return_share);
-                if (UINT64_MAX - total_paid < bond) return {};
+                if (UINT64_MAX - total_paid < bond)
+                    return {};
                 total_paid += bond;
             }
         }
-        if (out.empty()) return out;
+        if (out.empty())
+            return out;
 
-        if (fee_reserve > UINT64_MAX - total_paid) return {};
-        if (stake_vault_balance_units < total_paid + fee_reserve) return {};
+        if (fee_reserve > UINT64_MAX - total_paid)
+            return {};
+        if (stake_vault_balance_units < total_paid + fee_reserve)
+            return {};
         uint64_t change = stake_vault_balance_units - total_paid - fee_reserve;
         if (change > 0) {
             auto sv = AddressToScript(STAKE_VAULT_ADDRESS);
-            if (!sv.empty()) out.emplace_back(std::move(sv), change);
+            if (!sv.empty())
+                out.emplace_back(std::move(sv), change);
         }
         return out;
     }
 
     bool ValidateExpectedBondMovements(const Block& block) const {
-        if (block.height == 0) return true;
+        if (block.height == 0)
+            return true;
         // Activation height zero means active from genesis.
-        if (block.height < STAKE_VAULT_ACTIVATION_HEIGHT) return true;
+        if (block.height < STAKE_VAULT_ACTIVATION_HEIGHT)
+            return true;
 
         std::vector<uint8_t> sv_script = AddressToScript(STAKE_VAULT_ADDRESS);
         if (sv_script.empty()) {
 #ifdef VELD_MAINNET_POW
-            throw std::runtime_error(
-                "FATAL: AddressToScript(STAKE_VAULT_ADDRESS) returned empty "
-                "in ValidateExpectedBondMovements. Refusing to silently "
-                "drop the STAKE_VAULT-drain validation gate.");
+            throw std::runtime_error("FATAL: AddressToScript(STAKE_VAULT_ADDRESS) returned empty "
+                                     "in ValidateExpectedBondMovements. Refusing to silently "
+                                     "drop the STAKE_VAULT-drain validation gate.");
 #else
             return true;
 #endif
@@ -2494,10 +2631,12 @@ public:
 
         if ((block.height % BOND_SETTLEMENT_INTERVAL) != 0) {
             for (const auto& tx : block.transactions) {
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 for (const auto& inp : tx.inputs) {
                     auto u = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (u && u->script_pubkey == sv_script) return false;
+                    if (u && u->script_pubkey == sv_script)
+                        return false;
                 }
             }
             return true;
@@ -2505,7 +2644,8 @@ public:
 
         auto sv_utxos = GetUTXOsForScriptLocked_(sv_script);
         uint64_t total_sv = 0;
-        for (const auto& u : sv_utxos) total_sv += u.value;
+        for (const auto& u : sv_utxos)
+            total_sv += u.value;
         // Canonical stake-vault settlements are miner-built protocol
         // transactions, not mempool transactions.  Charging their fee out of
         // the custody vault made recorded liabilities exceed remaining assets:
@@ -2516,8 +2656,7 @@ public:
 
         bool principal_due = false;
         if (bond_settlements_fn_) {
-            for (const auto& settlement :
-                 bond_settlements_fn_(block.height)) {
+            for (const auto& settlement : bond_settlements_fn_(block.height)) {
                 if (std::get<2>(settlement) > 0) {
                     principal_due = true;
                     break;
@@ -2525,29 +2664,32 @@ public:
             }
         }
 
-        auto expected =
-            ComputeExpectedBondMovements(block.height, total_sv, fee_reserve);
+        auto expected = ComputeExpectedBondMovements(block.height, total_sv, fee_reserve);
 
         const Transaction* settle_tx = nullptr;
         for (size_t i = 1; i < block.transactions.size(); ++i) {
             const auto& tx = block.transactions[i];
-            if (tx.inputs.empty()) continue;
+            if (tx.inputs.empty())
+                continue;
             bool spends_sv = false;
             for (const auto& inp : tx.inputs) {
                 for (const auto& u : sv_utxos) {
-                    if (u.tx_hash == inp.prev_tx_hash
-                        && u.output_index == inp.prev_out_index) {
-                        spends_sv = true; break;
+                    if (u.tx_hash == inp.prev_tx_hash && u.output_index == inp.prev_out_index) {
+                        spends_sv = true;
+                        break;
                     }
                 }
-                if (spends_sv) break;
+                if (spends_sv)
+                    break;
             }
             if (spends_sv) {
 #ifdef VELD_MAINNET_POW
-                if (settle_tx != nullptr) return false;
+                if (settle_tx != nullptr)
+                    return false;
                 settle_tx = &tx;
 #else
-                settle_tx = &tx; break;
+                settle_tx = &tx;
+                break;
 #endif
             }
         }
@@ -2562,10 +2704,13 @@ public:
         // Entitlements are keyed to one exact boundary and carry no mutable
         // "paid" bit.  Optional omission therefore does not roll forward; it
         // strands the bond forever.  A due canonical settlement is mandatory.
-        if (settle_tx == nullptr) return false;
-        if (settle_tx->outputs.size() != expected.size()) return false;
+        if (settle_tx == nullptr)
+            return false;
+        if (settle_tx->outputs.size() != expected.size())
+            return false;
         for (size_t i = 0; i < expected.size(); ++i) {
-            if (settle_tx->outputs[i].value != expected[i].second) return false;
+            if (settle_tx->outputs[i].value != expected[i].second)
+                return false;
             if (settle_tx->outputs[i].script_pubkey != expected[i].first)
                 return false;
         }
@@ -2575,47 +2720,57 @@ public:
         // documented as consensus-zero-fee into a fee-bearing transaction.
         // Exact outpoint equality also rejects duplicates and missing inputs.
         if (block.height >= BATCH3_HARDENING_HEIGHT &&
-            !HasCanonicalProtocolInputs(*settle_tx, sv_utxos)) return false;
+            !HasCanonicalProtocolInputs(*settle_tx, sv_utxos))
+            return false;
         return true;
     }
 
     std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
-    ComputeExpectedBondYieldSettlement(uint64_t boundary_height,
-                                       uint64_t escrow_balance_units,
+    ComputeExpectedBondYieldSettlement(uint64_t boundary_height, uint64_t escrow_balance_units,
                                        uint64_t fee_reserve) const {
         std::vector<std::pair<std::vector<uint8_t>, uint64_t>> out;
         // Activation height zero means active from genesis.
-        if (boundary_height < BOND_YIELD_ACTIVATION_HEIGHT) return out;
-        if (boundary_height == 0) return out;
-        if ((boundary_height % BOND_SETTLEMENT_INTERVAL) != 0) return out;
-        if (!bond_yield_settlements_fn_) return out;
+        if (boundary_height < BOND_YIELD_ACTIVATION_HEIGHT)
+            return out;
+        if (boundary_height == 0)
+            return out;
+        if ((boundary_height % BOND_SETTLEMENT_INTERVAL) != 0)
+            return out;
+        if (!bond_yield_settlements_fn_)
+            return out;
 
         auto raw = bond_yield_settlements_fn_(boundary_height);
-        if (raw.empty()) return out;
+        if (raw.empty())
+            return out;
 
-        std::sort(raw.begin(), raw.end(),
-                  [](const auto& a, const auto& b){
-                      if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) < std::get<0>(b);
-                      if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) < std::get<1>(b);
-                      if (std::get<2>(a) != std::get<2>(b)) return std::get<2>(a) < std::get<2>(b);
-                      return std::get<3>(a) < std::get<3>(b);
-                  });
+        std::sort(raw.begin(), raw.end(), [](const auto& a, const auto& b) {
+            if (std::get<0>(a) != std::get<0>(b))
+                return std::get<0>(a) < std::get<0>(b);
+            if (std::get<1>(a) != std::get<1>(b))
+                return std::get<1>(a) < std::get<1>(b);
+            if (std::get<2>(a) != std::get<2>(b))
+                return std::get<2>(a) < std::get<2>(b);
+            return std::get<3>(a) < std::get<3>(b);
+        });
 
         auto vault_now = AddressToScript(VaultAddressAtHeight(boundary_height));
 
         uint64_t total_paid = 0;
         for (const auto& s : raw) {
-            const std::string& vaddr   = std::get<0>(s);
-            int                kind    = std::get<1>(s);
-            uint64_t           units   = std::get<2>(s);
+            const std::string& vaddr = std::get<0>(s);
+            int kind = std::get<1>(s);
+            uint64_t units = std::get<2>(s);
             const std::string& slasher = std::get<3>(s);
-            if (units == 0) continue;
+            if (units == 0)
+                continue;
             auto vscript = AddressToScript(vaddr);
-            if (vscript.empty()) continue;
+            if (vscript.empty())
+                continue;
 
             if (kind == 0) {
                 out.emplace_back(vscript, units);
-                if (UINT64_MAX - total_paid < units) return {};
+                if (UINT64_MAX - total_paid < units)
+                    return {};
                 total_paid += units;
             } else {
                 // Both slash classes confiscate unvested yield in full.
@@ -2624,56 +2779,63 @@ public:
                 const bool equivocation = (kind == 2);
                 uint64_t eff_slasher_ppm =
                     (boundary_height >= SLASH_BOUNTY_HEIGHT)
-                        ? (equivocation ? SLASH_EQUIV_SLASHER_PPM
-                                        : SLASH_SLASHER_PPM)
+                        ? (equivocation ? SLASH_EQUIV_SLASHER_PPM : SLASH_SLASHER_PPM)
                         : 0;
-                uint64_t slasher_share = (uint64_t)
-                    ((__uint128_t)units * (__uint128_t)eff_slasher_ppm
-                     / (__uint128_t)1'000'000ULL);
-                if (slasher.empty() && slasher_share > 0) slasher_share = 0;
+                uint64_t slasher_share =
+                    (uint64_t)((__uint128_t)units * (__uint128_t)eff_slasher_ppm /
+                               (__uint128_t)1'000'000ULL);
+                if (slasher.empty() && slasher_share > 0)
+                    slasher_share = 0;
                 uint64_t confiscation_share = units - slasher_share;
                 if (slasher_share > 0) {
                     auto sscript = AddressToScript(slasher);
                     if (!sscript.empty())
                         out.emplace_back(std::move(sscript), slasher_share);
-                    else { confiscation_share += slasher_share; }
+                    else {
+                        confiscation_share += slasher_share;
+                    }
                 }
                 if (confiscation_share > 0) {
                     if (equivocation) {
-                        out.emplace_back(FinalityEquivocationBurnScript(),
-                                         confiscation_share);
+                        out.emplace_back(FinalityEquivocationBurnScript(), confiscation_share);
                     } else if (!vault_now.empty()) {
                         out.emplace_back(vault_now, confiscation_share);
                     }
                 }
-                if (UINT64_MAX - total_paid < units) return {};
+                if (UINT64_MAX - total_paid < units)
+                    return {};
                 total_paid += units;
             }
         }
-        if (out.empty()) return out;
+        if (out.empty())
+            return out;
 
-        if (fee_reserve > UINT64_MAX - total_paid) return {};
-        if (escrow_balance_units < total_paid + fee_reserve) return {};
+        if (fee_reserve > UINT64_MAX - total_paid)
+            return {};
+        if (escrow_balance_units < total_paid + fee_reserve)
+            return {};
         uint64_t change = escrow_balance_units - total_paid - fee_reserve;
         if (change > 0) {
             auto esc = AddressToScript(BOND_YIELD_ESCROW);
-            if (!esc.empty()) out.emplace_back(std::move(esc), change);
+            if (!esc.empty())
+                out.emplace_back(std::move(esc), change);
         }
         return out;
     }
 
     bool ValidateExpectedBondYieldSettlement(const Block& block) const {
-        if (block.height == 0) return true;
+        if (block.height == 0)
+            return true;
         // Activation height zero means active from genesis.
-        if (block.height < BOND_YIELD_ACTIVATION_HEIGHT) return true;
+        if (block.height < BOND_YIELD_ACTIVATION_HEIGHT)
+            return true;
 
         std::vector<uint8_t> esc_script = AddressToScript(BOND_YIELD_ESCROW);
         if (esc_script.empty()) {
 #ifdef VELD_MAINNET_POW
-            throw std::runtime_error(
-                "FATAL: AddressToScript(BOND_YIELD_ESCROW) returned empty "
-                "in ValidateExpectedBondYieldSettlement. Refusing to "
-                "silently drop the bond-yield-escrow-drain validation gate.");
+            throw std::runtime_error("FATAL: AddressToScript(BOND_YIELD_ESCROW) returned empty "
+                                     "in ValidateExpectedBondYieldSettlement. Refusing to "
+                                     "silently drop the bond-yield-escrow-drain validation gate.");
 #else
             return true;
 #endif
@@ -2681,10 +2843,12 @@ public:
 
         if ((block.height % BOND_SETTLEMENT_INTERVAL) != 0) {
             for (const auto& tx : block.transactions) {
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 for (const auto& inp : tx.inputs) {
                     auto u = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (u && u->script_pubkey == esc_script) return false;
+                    if (u && u->script_pubkey == esc_script)
+                        return false;
                 }
             }
             return true;
@@ -2692,7 +2856,8 @@ public:
 
         auto esc_utxos = GetUTXOsForScriptLocked_(esc_script);
         uint64_t total_esc = 0;
-        for (const auto& u : esc_utxos) total_esc += u.value;
+        for (const auto& u : esc_utxos)
+            total_esc += u.value;
         // As with principal, D' tranches are exact protocol liabilities.  A
         // fee charged from escrow makes the terminal tranche unpayable.  The
         // canonical sigless settlement is consensus-zero-fee.
@@ -2700,8 +2865,7 @@ public:
 
         bool yield_due = false;
         if (bond_yield_settlements_fn_) {
-            for (const auto& settlement :
-                 bond_yield_settlements_fn_(block.height)) {
+            for (const auto& settlement : bond_yield_settlements_fn_(block.height)) {
                 if (std::get<2>(settlement) > 0) {
                     yield_due = true;
                     break;
@@ -2709,29 +2873,32 @@ public:
             }
         }
 
-        auto expected = ComputeExpectedBondYieldSettlement(
-            block.height, total_esc, fee_reserve);
+        auto expected = ComputeExpectedBondYieldSettlement(block.height, total_esc, fee_reserve);
 
         const Transaction* settle_tx = nullptr;
         for (size_t i = 1; i < block.transactions.size(); ++i) {
             const auto& tx = block.transactions[i];
-            if (tx.inputs.empty()) continue;
+            if (tx.inputs.empty())
+                continue;
             bool spends_esc = false;
             for (const auto& inp : tx.inputs) {
                 for (const auto& u : esc_utxos) {
-                    if (u.tx_hash == inp.prev_tx_hash
-                        && u.output_index == inp.prev_out_index) {
-                        spends_esc = true; break;
+                    if (u.tx_hash == inp.prev_tx_hash && u.output_index == inp.prev_out_index) {
+                        spends_esc = true;
+                        break;
                     }
                 }
-                if (spends_esc) break;
+                if (spends_esc)
+                    break;
             }
             if (spends_esc) {
 #ifdef VELD_MAINNET_POW
-                if (settle_tx != nullptr) return false;
+                if (settle_tx != nullptr)
+                    return false;
                 settle_tx = &tx;
 #else
-                settle_tx = &tx; break;
+                settle_tx = &tx;
+                break;
 #endif
             }
         }
@@ -2741,10 +2908,13 @@ public:
         // Each tranche emits at one exact release/confiscation boundary; without
         // a paid cursor, omission cannot be retried safely.  Require the unique
         // canonical transaction whenever a tranche is due.
-        if (settle_tx == nullptr) return false;
-        if (settle_tx->outputs.size() != expected.size()) return false;
+        if (settle_tx == nullptr)
+            return false;
+        if (settle_tx->outputs.size() != expected.size())
+            return false;
         for (size_t i = 0; i < expected.size(); ++i) {
-            if (settle_tx->outputs[i].value != expected[i].second) return false;
+            if (settle_tx->outputs[i].value != expected[i].second)
+                return false;
             if (settle_tx->outputs[i].script_pubkey != expected[i].first)
                 return false;
         }
@@ -2752,7 +2922,8 @@ public:
         // This makes the zero-fee D' settlement claim an enforced rule rather
         // than an output-only convention, and rejects extras/duplicates/missing.
         if (block.height >= BATCH3_HARDENING_HEIGHT &&
-            !HasCanonicalProtocolInputs(*settle_tx, esc_utxos)) return false;
+            !HasCanonicalProtocolInputs(*settle_tx, esc_utxos))
+            return false;
         return true;
     }
 
@@ -2801,22 +2972,22 @@ public:
     // directly. The two-overload pattern mirrors the *NoLock
     // accessors in this header (e.g. GetUTXONoLock).
     std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
-    ComputeExpectedPoolOutputs(const Hash256& prev_block_hash,
-                                uint64_t pool_balance_units,
-                                uint64_t block_height) const {
+    ComputeExpectedPoolOutputs(const Hash256& prev_block_hash, uint64_t pool_balance_units,
+                               uint64_t block_height) const {
         std::shared_lock<std::shared_mutex> chain_lock(chain_mutex_);
-        return ComputeExpectedPoolOutputs_LockHeld(
-            prev_block_hash, pool_balance_units, block_height);
+        return ComputeExpectedPoolOutputs_LockHeld(prev_block_hash, pool_balance_units,
+                                                   block_height);
     }
 
     std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
-    ComputeExpectedPoolOutputs_LockHeld(const Hash256& prev_block_hash,
-                                         uint64_t pool_balance_units,
-                                         uint64_t block_height) const {
+    ComputeExpectedPoolOutputs_LockHeld(const Hash256& prev_block_hash, uint64_t pool_balance_units,
+                                        uint64_t block_height) const {
         std::vector<std::pair<std::vector<uint8_t>, uint64_t>> out;
-        if (pool_balance_units == 0) return out;
+        if (pool_balance_units == 0)
+            return out;
 
-        if (!IsStakingActive()) return out;
+        if (!IsStakingActive())
+            return out;
 
         std::vector<std::pair<std::string, uint64_t>> snapshot;
         {
@@ -2827,25 +2998,31 @@ public:
             }
         }
 
-        std::vector<uint8_t> vault_excl   = AddressToScript(VaultAddressAtHeight(block_height));
-        std::vector<uint8_t> pool_excl    = AddressToScript(POOL_ADDRESS);
+        std::vector<uint8_t> vault_excl = AddressToScript(VaultAddressAtHeight(block_height));
+        std::vector<uint8_t> pool_excl = AddressToScript(POOL_ADDRESS);
         std::vector<uint8_t> endorse_excl = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
 
         struct UniformEntry {
-            std::string          script_hex;
+            std::string script_hex;
             std::vector<uint8_t> script;
         };
         std::vector<UniformEntry> uniform_eligible;
         uniform_eligible.reserve(snapshot.size());
         for (const auto& [script_hex, credit] : snapshot) {
-            if (credit == 0) continue;
+            if (credit == 0)
+                continue;
             std::vector<uint8_t> script = HexToBytes(script_hex);
-            if (script.empty()) continue;
-            if (script == vault_excl)   continue;
-            if (script == pool_excl)    continue;
-            if (script == endorse_excl) continue;
+            if (script.empty())
+                continue;
+            if (script == vault_excl)
+                continue;
+            if (script == pool_excl)
+                continue;
+            if (script == endorse_excl)
+                continue;
             if (block_height >= BATCH2_HARDENING_HEIGHT) {
-                if (!NmsBondSatisfied(script)) continue;
+                if (!NmsBondSatisfied(script))
+                    continue;
             }
             uniform_eligible.push_back({script_hex, std::move(script)});
         }
@@ -2856,22 +3033,23 @@ public:
             return out;
         }
 
-        const size_t K_eff =
-            (uniform_eligible.size() >= LOTTERY_FLEET_SIZE_THRESHOLD)
-            ? LOTTERY_K_LARGE_FLEET
-            : LOTTERY_K_SMALL_FLEET;
+        const size_t K_eff = (uniform_eligible.size() >= LOTTERY_FLEET_SIZE_THRESHOLD)
+                                 ? LOTTERY_K_LARGE_FLEET
+                                 : LOTTERY_K_SMALL_FLEET;
 
         Hash256 seed;
-        if (LOTTERY_AGG_SEED_ACTIVATION_HEIGHT != 0
-            && block_height >= LOTTERY_AGG_SEED_ACTIVATION_HEIGHT) {
+        if (LOTTERY_AGG_SEED_ACTIVATION_HEIGHT != 0 &&
+            block_height >= LOTTERY_AGG_SEED_ACTIVATION_HEIGHT) {
             std::vector<uint8_t> agg;
             agg.reserve((size_t)LOTTERY_AGG_SEED_K * 88);
-            uint64_t start = (block_height >= LOTTERY_AGG_SEED_K)
-                ? block_height - LOTTERY_AGG_SEED_K
-                : 0;
+            uint64_t start =
+                (block_height >= LOTTERY_AGG_SEED_K) ? block_height - LOTTERY_AGG_SEED_K : 0;
             bool fell_short = false;
             for (uint64_t h = start; h < block_height; ++h) {
-                if (h >= chain_.size()) { fell_short = true; break; }
+                if (h >= chain_.size()) {
+                    fell_short = true;
+                    break;
+                }
                 auto hb = chain_[h].header.Serialize();
                 agg.insert(agg.end(), hb.begin(), hb.end());
             }
@@ -2897,14 +3075,19 @@ public:
         size_t remaining_n = uniform_eligible.size();
         for (size_t slot = 0; slot < K_eff && remaining_n > 0; ++slot) {
             uint64_t r = hash_to_u64(seed) % remaining_n;
-            size_t pick   = SIZE_MAX;
+            size_t pick = SIZE_MAX;
             size_t scan_i = 0;
             for (size_t i = 0; i < uniform_eligible.size(); ++i) {
-                if (already_won[i]) continue;
-                if (scan_i == r) { pick = i; break; }
+                if (already_won[i])
+                    continue;
+                if (scan_i == r) {
+                    pick = i;
+                    break;
+                }
                 ++scan_i;
             }
-            if (pick == SIZE_MAX) break;
+            if (pick == SIZE_MAX)
+                break;
             winner_indices.push_back(pick);
             already_won[pick] = true;
             --remaining_n;
@@ -2924,13 +3107,12 @@ public:
         // count -> winners split the whole pool) is preserved so nodes agree
         // on history. The divisor path never ran before the first staked
         // miner's payout, so this gate changes no past block.
-        const uint64_t lottery_divisor =
-            (block_height >= LOTTERY_KSLOT_DIVISOR_HEIGHT)
-                ? (uint64_t)K_eff
-                : (uint64_t)winner_indices.size();
-        uint64_t per_slot      = pool_balance_units / lottery_divisor;
+        const uint64_t lottery_divisor = (block_height >= LOTTERY_KSLOT_DIVISOR_HEIGHT)
+                                             ? (uint64_t)K_eff
+                                             : (uint64_t)winner_indices.size();
+        uint64_t per_slot = pool_balance_units / lottery_divisor;
         uint64_t remainder_amt = pool_balance_units - per_slot * lottery_divisor;
-        size_t   slot0_idx     = winner_indices[0];
+        size_t slot0_idx = winner_indices[0];
 
         std::sort(winner_indices.begin(), winner_indices.end());
         uint64_t total_winner_payout = 0;
@@ -2947,7 +3129,7 @@ public:
         return out;
     }
 
-private:
+  private:
     mutable std::shared_mutex nms_tally_mutex_;
     NmsTally nms_tally_;
     struct NmsCheckpoint {
@@ -2964,17 +3146,16 @@ private:
     BondSettlementsFn bond_settlements_fn_;
     BondYieldWeightFn bond_yield_weight_fn_;
     BondYieldSettlementsFn bond_yield_settlements_fn_;
-    AltOverlayBuildFn    alt_overlay_build_fn_;
-    AltOverlayAdvanceFn  alt_overlay_advance_fn_;
+    AltOverlayBuildFn alt_overlay_build_fn_;
+    AltOverlayAdvanceFn alt_overlay_advance_fn_;
     AltOverlayTeardownFn alt_overlay_teardown_fn_;
     RuntimeAdmissionFn runtime_admission_fn_;
-public:
 
+  public:
 #ifdef VELD_TEST_HOOKS
     inline static std::atomic<uint64_t> test_add_block_direct_calls_{0};
     inline static std::atomic<uint64_t> test_verify_block_pow_calls_{0};
-    inline static thread_local int64_t
-        test_pow_dataset_failure_countdown_{-1};
+    inline static thread_local int64_t test_pow_dataset_failure_countdown_{-1};
     static void TestResetAddBlockDirectCalls() {
         test_add_block_direct_calls_.store(0, std::memory_order_release);
     }
@@ -2987,25 +3168,21 @@ public:
     static uint64_t TestVerifyBlockPowCalls() {
         return test_verify_block_pow_calls_.load(std::memory_order_acquire);
     }
-    static void TestForcePowDatasetUnavailableAfter(
-            uint64_t successful_calls) {
-        test_pow_dataset_failure_countdown_ =
-            successful_calls > static_cast<uint64_t>(INT64_MAX)
-                ? INT64_MAX : static_cast<int64_t>(successful_calls);
+    static void TestForcePowDatasetUnavailableAfter(uint64_t successful_calls) {
+        test_pow_dataset_failure_countdown_ = successful_calls > static_cast<uint64_t>(INT64_MAX)
+                                                  ? INT64_MAX
+                                                  : static_cast<int64_t>(successful_calls);
     }
 #endif
 
     bool AddBlock(const Block& block) {
-        return AddBlockDirect(
-            block, false, false, false,
-            mining::PowAdmissionContext::Internal());
+        return AddBlockDirect(block, false, false, false, mining::PowAdmissionContext::Internal());
     }
 
     // `dataset_unavailable` (optional) distinguishes a TRANSIENT local VeldHash
     // dataset failure from a real proof-of-work reject. Callers that treat a
     // false return as peer misbehaviour MUST pass it and branch on it; see F-4.
-    static bool VerifyBlockPoW(const Block& block,
-                               bool* dataset_unavailable = nullptr,
+    static bool VerifyBlockPoW(const Block& block, bool* dataset_unavailable = nullptr,
                                const CanonicalPowTarget* contextual_target = nullptr) {
 #ifdef VELD_TEST_HOOKS
         test_verify_block_pow_calls_.fetch_add(1, std::memory_order_acq_rel);
@@ -3013,7 +3190,8 @@ public:
             if (test_pow_dataset_failure_countdown_ == 0) {
                 test_pow_dataset_failure_countdown_ = -1;
                 mining::g_veldhash_last_dataset_ok() = false;
-                if (dataset_unavailable) *dataset_unavailable = true;
+                if (dataset_unavailable)
+                    *dataset_unavailable = true;
                 return false;
             }
             --test_pow_dataset_failure_countdown_;
@@ -3034,17 +3212,17 @@ public:
         return true;
 #else
         CanonicalPowTarget decoded;
-        if (!DecodeCanonicalVeldTarget(block.header.bits, decoded)) return false;
+        if (!DecodeCanonicalVeldTarget(block.header.bits, decoded))
+            return false;
         if (contextual_target &&
-            (contextual_target->bits != decoded.bits ||
-             contextual_target->value != decoded.value)) return false;
+            (contextual_target->bits != decoded.bits || contextual_target->value != decoded.value))
+            return false;
 
         // Compact-target syntax is a constant-time structural gate.  Decode it
         // before invoking the memory-hard hash so an invalid `bits` field cannot
         // force a full VeldHash verification merely to be rejected afterwards.
         std::vector<uint8_t> header = block.header.Serialize();
-        const CanonicalPowTarget& target =
-            contextual_target ? *contextual_target : decoded;
+        const CanonicalPowTarget& target = contextual_target ? *contextual_target : decoded;
         Hash256 pow_hash = mining::VeldHash(header, block.height, target);
 
         // VerifyBlockPoW runs on every ingested block, including peer traffic.
@@ -3065,7 +3243,8 @@ public:
         // side-channel BEFORE comparing, so a sentinel can never be reported as
         // a proof-of-work decision.
         if (!mining::g_veldhash_last_dataset_ok()) {
-            if (dataset_unavailable) *dataset_unavailable = true;
+            if (dataset_unavailable)
+                *dataset_unavailable = true;
             return false;
         }
         return pow_hash < target.bytes;
@@ -3085,53 +3264,51 @@ public:
     // covenant execution remain contextual and must be evaluated at every new
     // parent frame. This helper deliberately accepts no "allow coinbase" mode.
     bool ValidateCachedMempoolLockingContext(const Transaction& tx) const {
-        if (tx.IsCoinbase() || tx.inputs.empty()) return false;
+        if (tx.IsCoinbase() || tx.inputs.empty())
+            return false;
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
 
         const uint64_t cov_height = Height() + 1;
-        const bool covenants_active =
-            cov_height >= COVENANTS_ACTIVATION_HEIGHT;
+        const bool covenants_active = cov_height >= COVENANTS_ACTIVATION_HEIGHT;
         const uint64_t cov_mtp = covenants_active ? MedianTimePast() : 0;
         if (covenants_active) {
-            auto utxo_conf = [&](size_t idx, uint64_t& out_h,
-                                 uint64_t& out_mtp) -> bool {
-                if (idx >= tx.inputs.size()) return false;
-                auto u = GetUTXONoLock(tx.inputs[idx].prev_tx_hash,
-                                       tx.inputs[idx].prev_out_index);
-                if (!u) return false;
+            auto utxo_conf = [&](size_t idx, uint64_t& out_h, uint64_t& out_mtp) -> bool {
+                if (idx >= tx.inputs.size())
+                    return false;
+                auto u = GetUTXONoLock(tx.inputs[idx].prev_tx_hash, tx.inputs[idx].prev_out_index);
+                if (!u)
+                    return false;
                 out_h = u->block_height;
                 out_mtp = MedianTimePastAt(u->block_height);
                 return true;
             };
-            if (!::veld::CheckTxLockTimes(tx, cov_height, cov_mtp,
-                                          utxo_conf))
+            if (!::veld::CheckTxLockTimes(tx, cov_height, cov_mtp, utxo_conf))
                 return false;
         }
 
         for (uint32_t i = 0; i < tx.inputs.size(); ++i) {
             const auto& inp = tx.inputs[i];
             auto u = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-            if (!u) return false;
-            if (u->is_coinbase &&
-                u->block_height >= COINBASE_MATURITY_ACTIVATES_AT_HEIGHT &&
+            if (!u)
+                return false;
+            if (u->is_coinbase && u->block_height >= COINBASE_MATURITY_ACTIVATES_AT_HEIGHT &&
                 Height() >= COINBASE_MATURITY_ACTIVATES_AT_HEIGHT &&
-                (Height() < u->block_height ||
-                 Height() - u->block_height < COINBASE_MATURITY))
+                (Height() < u->block_height || Height() - u->block_height < COINBASE_MATURITY))
                 return false;
             const auto& script = u->script_pubkey;
 
             if (amm_pool_input_check_) {
-                const int r = amm_pool_input_check_(
-                    script, inp.prev_tx_hash, inp.prev_out_index);
+                const int r = amm_pool_input_check_(script, inp.prev_tx_hash, inp.prev_out_index);
                 if (r > 0) {
-                    if (!inp.script_sig.empty()) return false;
+                    if (!inp.script_sig.empty())
+                        return false;
                     continue;
                 }
-                if (r < 0) return false;
+                if (r < 0)
+                    return false;
             }
 
-            if (covenants_active && script.size() == 23 &&
-                script[0] == 0xA9 && script[1] == 0x14 &&
+            if (covenants_active && script.size() == 23 && script[0] == 0xA9 && script[1] == 0x14 &&
                 script[22] == 0x87) {
                 ScriptContext sctx;
                 sctx.block_height = cov_height;
@@ -3147,9 +3324,8 @@ public:
             // Only canonical P2PKH reaches the immutable-signature cache. Any
             // unfamiliar script shape fails closed and is eligible for a fresh
             // full admission attempt after it leaves the stale mempool.
-            if (script.size() != 25 || script[0] != 0x76 ||
-                script[1] != 0xA9 || script[2] != 0x14 ||
-                script[23] != 0x88 || script[24] != 0xAC)
+            if (script.size() != 25 || script[0] != 0x76 || script[1] != 0xA9 ||
+                script[2] != 0x14 || script[23] != 0x88 || script[24] != 0xAC)
                 return false;
         }
         return true;
@@ -3170,16 +3346,11 @@ public:
     // AMM pool input retains its deliberate sigless exemption, whose stateful
     // half is enforced by Mempool::ValidateAmmMempoolCandidate immediately
     // before this helper is used.
-    enum class MempoolCanonicalInputResult {
-        VALID,
-        INVALID,
-        MISSING_OR_CHANGED
-    };
+    enum class MempoolCanonicalInputResult { VALID, INVALID, MISSING_OR_CHANGED };
 
-    MempoolCanonicalInputResult ValidateMempoolCanonicalInput(
-                                       const Transaction& tx,
-                                       uint32_t input_index,
-                                       const UTXO& observed_utxo) const {
+    MempoolCanonicalInputResult ValidateMempoolCanonicalInput(const Transaction& tx,
+                                                              uint32_t input_index,
+                                                              const UTXO& observed_utxo) const {
         if (input_index >= tx.inputs.size() || tx.IsCoinbase())
             return MempoolCanonicalInputResult::INVALID;
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
@@ -3203,16 +3374,14 @@ public:
         const UTXO& utxo = *current;
 
         const uint64_t cov_height = Height() + 1;
-        const bool covenants_active =
-            (cov_height >= COVENANTS_ACTIVATION_HEIGHT);
+        const bool covenants_active = (cov_height >= COVENANTS_ACTIVATION_HEIGHT);
         const uint64_t cov_mtp = covenants_active ? MedianTimePast() : 0;
         if (covenants_active) {
-            auto utxo_conf = [&](size_t idx, uint64_t& out_h,
-                                 uint64_t& out_mtp) -> bool {
-                auto u = GetUTXONoLock(tx.inputs[idx].prev_tx_hash,
-                                       tx.inputs[idx].prev_out_index);
-                if (!u) return false;  // unconfirmed parent: checked on its own
-                out_h   = u->block_height;
+            auto utxo_conf = [&](size_t idx, uint64_t& out_h, uint64_t& out_mtp) -> bool {
+                auto u = GetUTXONoLock(tx.inputs[idx].prev_tx_hash, tx.inputs[idx].prev_out_index);
+                if (!u)
+                    return false; // unconfirmed parent: checked on its own
+                out_h = u->block_height;
                 out_mtp = MedianTimePastAt(u->block_height);
                 return true;
             };
@@ -3222,30 +3391,30 @@ public:
 
         const auto& script_pubkey = utxo.script_pubkey;
         if (amm_pool_input_check_) {
-            int r = amm_pool_input_check_(script_pubkey, utxo.tx_hash,
-                                          utxo.output_index);
-            if (r > 0) return MempoolCanonicalInputResult::VALID;
-            if (r < 0) return MempoolCanonicalInputResult::INVALID;
+            int r = amm_pool_input_check_(script_pubkey, utxo.tx_hash, utxo.output_index);
+            if (r > 0)
+                return MempoolCanonicalInputResult::VALID;
+            if (r < 0)
+                return MempoolCanonicalInputResult::INVALID;
         }
 
-        if (covenants_active && script_pubkey.size() == 23 &&
-            script_pubkey[0] == 0xA9 && script_pubkey[1] == 0x14 &&
-            script_pubkey[22] == 0x87) {
+        if (covenants_active && script_pubkey.size() == 23 && script_pubkey[0] == 0xA9 &&
+            script_pubkey[1] == 0x14 && script_pubkey[22] == 0x87) {
             ScriptContext sctx;
-            sctx.block_height     = cov_height;
-            sctx.mtp              = cov_mtp;
-            sctx.utxo_height      = utxo.block_height;
+            sctx.block_height = cov_height;
+            sctx.mtp = cov_mtp;
+            sctx.utxo_height = utxo.block_height;
             sctx.covenants_active = true;
             ScriptInterpreter interp;
-            return interp.Execute(tx.inputs[input_index].script_sig,
-                                  script_pubkey, tx, input_index, sctx)
-                ? MempoolCanonicalInputResult::VALID
-                : MempoolCanonicalInputResult::INVALID;
+            return interp.Execute(tx.inputs[input_index].script_sig, script_pubkey, tx, input_index,
+                                  sctx)
+                       ? MempoolCanonicalInputResult::VALID
+                       : MempoolCanonicalInputResult::INVALID;
         }
 
         return VerifyInputAgainstScript(tx, input_index, script_pubkey)
-            ? MempoolCanonicalInputResult::VALID
-            : MempoolCanonicalInputResult::INVALID;
+                   ? MempoolCanonicalInputResult::VALID
+                   : MempoolCanonicalInputResult::INVALID;
     }
 
     bool ValidateTransaction(const Transaction& tx, bool allow_coinbase = false) const {
@@ -3254,8 +3423,10 @@ public:
         // zero-value OP_RETURN transaction (and malformed input/output/script
         // cardinalities) reached the 0-in == 0-out value check and was accepted
         // in a block despite being impossible to relay through the mempool.
-        if (!tx.IsValid()) return false;
-        if (tx.IsCoinbase()) return allow_coinbase;
+        if (!tx.IsValid())
+            return false;
+        if (tx.IsCoinbase())
+            return allow_coinbase;
 
         // Reject cross-protocol marker composition. A single
         // non-coinbase tx may carry OP_RETURN markers from at most one stateful
@@ -3265,15 +3436,18 @@ public:
         // input + authorization set. Evaluated BEFORE the sigless-flush fast-paths
         // below: the canonical vault / endorsement-pool / co-mine flushes carry
         // only VELD_DIST| labels (not a stateful family), so they are unaffected.
-        if (::veld::TxComposesMultipleProtocols(tx)) return false;
-        if (::veld::TxHasInvalidTokenMarkerSet(tx)) return false;
+        if (::veld::TxComposesMultipleProtocols(tx))
+            return false;
+        if (::veld::TxHasInvalidTokenMarkerSet(tx))
+            return false;
 #ifdef VELD_PUBLIC_TESTNET
         // The public testnet is valueless by consensus, not merely by UI or
         // daemon convention. Reject every external-asset protocol marker on
         // replay, direct block submission, and reorg validation. Operators
         // must restart the disposable testnet from its compiled genesis when
         // adopting this profile rule.
-        if (::veld::TxUsesExternalValueProtocol(tx)) return false;
+        if (::veld::TxUsesExternalValueProtocol(tx))
+            return false;
 #endif
 
         // Ordinary transactions use the tight relay/consensus fanout bound.
@@ -3282,18 +3456,22 @@ public:
         // only for all-input system spends, and block validation separately
         // requires their exact, deterministic output set.  A mixed-input or
         // user-authored transaction reaches the final rejection below.
-        const bool oversized_standard_fanout =
-            tx.outputs.size() > MAX_STANDARD_TRANSACTION_OUTPUTS;
+        const bool oversized_standard_fanout = tx.outputs.size() > MAX_STANDARD_TRANSACTION_OUTPUTS;
 
         std::vector<uint8_t> pool_script = AddressToScript(POOL_ADDRESS);
         if (!pool_script.empty()) {
             bool all_inputs_from_pool = !tx.inputs.empty();
-            bool any_input_from_pool  = false;
+            bool any_input_from_pool = false;
             for (const auto& inp : tx.inputs) {
                 auto utxo_opt = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                if (!utxo_opt) { all_inputs_from_pool = false; continue; }
-                if (utxo_opt->script_pubkey == pool_script) any_input_from_pool = true;
-                else                                        all_inputs_from_pool = false;
+                if (!utxo_opt) {
+                    all_inputs_from_pool = false;
+                    continue;
+                }
+                if (utxo_opt->script_pubkey == pool_script)
+                    any_input_from_pool = true;
+                else
+                    all_inputs_from_pool = false;
             }
             if (any_input_from_pool && !all_inputs_from_pool) {
                 return false;
@@ -3306,12 +3484,17 @@ public:
         std::vector<uint8_t> ep_script = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
         if (!ep_script.empty()) {
             bool all_inputs_from_ep = !tx.inputs.empty();
-            bool any_input_from_ep  = false;
+            bool any_input_from_ep = false;
             for (const auto& inp : tx.inputs) {
                 auto utxo_opt = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                if (!utxo_opt) { all_inputs_from_ep = false; continue; }
-                if (utxo_opt->script_pubkey == ep_script) any_input_from_ep = true;
-                else                                      all_inputs_from_ep = false;
+                if (!utxo_opt) {
+                    all_inputs_from_ep = false;
+                    continue;
+                }
+                if (utxo_opt->script_pubkey == ep_script)
+                    any_input_from_ep = true;
+                else
+                    all_inputs_from_ep = false;
             }
             if (any_input_from_ep && !all_inputs_from_ep) {
                 return false;
@@ -3346,16 +3529,20 @@ public:
         // Activation height zero means active from genesis. Canonical distribution
         // validation prevents unauthorized keyless-vault spends.
         if ((Height() + 1) >= VAULT_SIGLESS_ACTIVATION_HEIGHT) {
-            std::vector<uint8_t> vault_script =
-                AddressToScript(VaultAddressAtHeight(Height() + 1));
+            std::vector<uint8_t> vault_script = AddressToScript(VaultAddressAtHeight(Height() + 1));
             if (!vault_script.empty()) {
                 bool all_inputs_from_vault = !tx.inputs.empty();
-                bool any_input_from_vault  = false;
+                bool any_input_from_vault = false;
                 for (const auto& inp : tx.inputs) {
                     auto utxo_opt = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (!utxo_opt) { all_inputs_from_vault = false; continue; }
-                    if (utxo_opt->script_pubkey == vault_script) any_input_from_vault = true;
-                    else                                          all_inputs_from_vault = false;
+                    if (!utxo_opt) {
+                        all_inputs_from_vault = false;
+                        continue;
+                    }
+                    if (utxo_opt->script_pubkey == vault_script)
+                        any_input_from_vault = true;
+                    else
+                        all_inputs_from_vault = false;
                 }
                 if (any_input_from_vault && !all_inputs_from_vault) {
                     return false;
@@ -3372,12 +3559,17 @@ public:
             std::vector<uint8_t> sv_script = AddressToScript(STAKE_VAULT_ADDRESS);
             if (!sv_script.empty()) {
                 bool all_inputs_from_sv = !tx.inputs.empty();
-                bool any_input_from_sv  = false;
+                bool any_input_from_sv = false;
                 for (const auto& inp : tx.inputs) {
                     auto utxo_opt = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (!utxo_opt) { all_inputs_from_sv = false; continue; }
-                    if (utxo_opt->script_pubkey == sv_script) any_input_from_sv = true;
-                    else                                       all_inputs_from_sv = false;
+                    if (!utxo_opt) {
+                        all_inputs_from_sv = false;
+                        continue;
+                    }
+                    if (utxo_opt->script_pubkey == sv_script)
+                        any_input_from_sv = true;
+                    else
+                        all_inputs_from_sv = false;
                 }
                 if (any_input_from_sv && !all_inputs_from_sv) {
                     return false;
@@ -3394,12 +3586,17 @@ public:
             std::vector<uint8_t> bye_script = AddressToScript(BOND_YIELD_ESCROW);
             if (!bye_script.empty()) {
                 bool all_inputs_from_bye = !tx.inputs.empty();
-                bool any_input_from_bye  = false;
+                bool any_input_from_bye = false;
                 for (const auto& inp : tx.inputs) {
                     auto utxo_opt = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (!utxo_opt) { all_inputs_from_bye = false; continue; }
-                    if (utxo_opt->script_pubkey == bye_script) any_input_from_bye = true;
-                    else                                        all_inputs_from_bye = false;
+                    if (!utxo_opt) {
+                        all_inputs_from_bye = false;
+                        continue;
+                    }
+                    if (utxo_opt->script_pubkey == bye_script)
+                        any_input_from_bye = true;
+                    else
+                        all_inputs_from_bye = false;
                 }
                 if (any_input_from_bye && !all_inputs_from_bye) {
                     return false;
@@ -3410,7 +3607,8 @@ public:
             }
         }
 
-        if (oversized_standard_fanout) return false;
+        if (oversized_standard_fanout)
+            return false;
 
         // Covenant activation: enforce absolute (nLockTime) + relative
         // (nSequence) lock-times, and route P2SH redeem scripts through the
@@ -3421,10 +3619,10 @@ public:
         const uint64_t cov_mtp = covenants_active ? MedianTimePast() : 0;
         if (covenants_active) {
             auto utxo_conf = [&](size_t idx, uint64_t& out_h, uint64_t& out_mtp) -> bool {
-                auto u = GetUTXONoLock(tx.inputs[idx].prev_tx_hash,
-                                       tx.inputs[idx].prev_out_index);
-                if (!u) return false;
-                out_h   = u->block_height;
+                auto u = GetUTXONoLock(tx.inputs[idx].prev_tx_hash, tx.inputs[idx].prev_out_index);
+                if (!u)
+                    return false;
+                out_h = u->block_height;
                 out_mtp = MedianTimePastAt(u->block_height);
                 return true;
             };
@@ -3436,7 +3634,8 @@ public:
             const auto& inp = tx.inputs[i];
 
             auto utxo_opt = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-            if (!utxo_opt) return false;
+            if (!utxo_opt)
+                return false;
 
             const auto& script_pubkey = utxo_opt->script_pubkey;
 
@@ -3455,21 +3654,22 @@ public:
                 // are blanked in the preimage), but the txid and successor pool
                 // outpoint change under them.
                 if (r > 0) {
-                    if (!inp.script_sig.empty()) return false;
+                    if (!inp.script_sig.empty())
+                        return false;
                     continue;
                 }
-                if (r < 0) return false;
+                if (r < 0)
+                    return false;
             }
 
             // Covenant P2SH input — validate the redeem script via the
             // interpreter (handles multisig, HTLC, timelock, template spends).
-            if (covenants_active && script_pubkey.size() == 23 &&
-                script_pubkey[0] == 0xA9 && script_pubkey[1] == 0x14 &&
-                script_pubkey[22] == 0x87) {
+            if (covenants_active && script_pubkey.size() == 23 && script_pubkey[0] == 0xA9 &&
+                script_pubkey[1] == 0x14 && script_pubkey[22] == 0x87) {
                 ScriptContext sctx;
-                sctx.block_height     = cov_height;
-                sctx.mtp              = cov_mtp;
-                sctx.utxo_height      = utxo_opt->block_height;
+                sctx.block_height = cov_height;
+                sctx.mtp = cov_mtp;
+                sctx.utxo_height = utxo_opt->block_height;
                 sctx.covenants_active = true;
                 ScriptInterpreter interp;
                 if (!interp.Execute(inp.script_sig, script_pubkey, tx, (uint32_t)i, sctx))
@@ -3477,25 +3677,25 @@ public:
                 continue;
             }
 
-            if (script_pubkey.size() != 25 ||
-                script_pubkey[0]  != 0x76 ||
-                script_pubkey[1]  != 0xA9 ||
-                script_pubkey[2]  != 0x14 ||
-                script_pubkey[23] != 0x88 ||
+            if (script_pubkey.size() != 25 || script_pubkey[0] != 0x76 ||
+                script_pubkey[1] != 0xA9 || script_pubkey[2] != 0x14 || script_pubkey[23] != 0x88 ||
                 script_pubkey[24] != 0xAC) {
                 return false;
             }
 
-            std::array<uint8_t,20> expected_hash;
-            std::copy(script_pubkey.begin()+3, script_pubkey.begin()+23, expected_hash.begin());
+            std::array<uint8_t, 20> expected_hash;
+            std::copy(script_pubkey.begin() + 3, script_pubkey.begin() + 23, expected_hash.begin());
 
             auto read_pushdata2 = [](const std::vector<uint8_t>& ss, size_t& pos,
                                      std::vector<uint8_t>& out) -> bool {
-                if (pos + 3 > ss.size()) return false;
-                if (ss[pos++] != 0x4D) return false;
-                size_t len = (size_t)ss[pos] | ((size_t)ss[pos+1] << 8);
+                if (pos + 3 > ss.size())
+                    return false;
+                if (ss[pos++] != 0x4D)
+                    return false;
+                size_t len = (size_t)ss[pos] | ((size_t)ss[pos + 1] << 8);
                 pos += 2;
-                if (pos + len > ss.size()) return false;
+                if (pos + len > ss.size())
+                    return false;
                 out.assign(ss.begin() + pos, ss.begin() + pos + len);
                 pos += len;
                 return true;
@@ -3505,27 +3705,36 @@ public:
             size_t pos = 0;
             std::vector<uint8_t> sig_bytes_with_hashtype;
             std::vector<uint8_t> pubkey_bytes;
-            if (!read_pushdata2(ss, pos, sig_bytes_with_hashtype)) return false;
-            if (!read_pushdata2(ss, pos, pubkey_bytes)) return false;
-            if (pubkey_bytes.size() != 1952) return false;
-            if (sig_bytes_with_hashtype.empty()) return false;
-            if (pos != ss.size()) return false;
+            if (!read_pushdata2(ss, pos, sig_bytes_with_hashtype))
+                return false;
+            if (!read_pushdata2(ss, pos, pubkey_bytes))
+                return false;
+            if (pubkey_bytes.size() != 1952)
+                return false;
+            if (sig_bytes_with_hashtype.empty())
+                return false;
+            if (pos != ss.size())
+                return false;
 
             // On-wire signature layout:
             //   [scheme_id (1B)] [raw 3309-byte ML-DSA-65 sig] [SIGHASH_ALL (1B)]
             // Validate length, isolate the raw signature, and dispatch using the
             // explicit scheme identifier. Unknown schemes fail closed.
-            if (sig_bytes_with_hashtype.size() != 3311) return false;
+            if (sig_bytes_with_hashtype.size() != 3311)
+                return false;
             uint8_t scheme_id = sig_bytes_with_hashtype.front();
-            if (scheme_id != ::veld::SCHEME_ID_MLDSA65) return false;
-            if (sig_bytes_with_hashtype.back() != 0x01) return false;
+            if (scheme_id != ::veld::SCHEME_ID_MLDSA65)
+                return false;
+            if (sig_bytes_with_hashtype.back() != 0x01)
+                return false;
 
             Secp256k1PubKey pubkey;
             std::copy(pubkey_bytes.begin(), pubkey_bytes.end(), pubkey.begin());
 
             Hash160 actual_hash = Hash160Compute(pubkey);
             for (int j = 0; j < 20; ++j)
-                if (actual_hash[j] != expected_hash[j]) return false;
+                if (actual_hash[j] != expected_hash[j])
+                    return false;
 
             Secp256k1SigDER sig_bytes(sig_bytes_with_hashtype.begin() + 1,
                                       sig_bytes_with_hashtype.end() - 1);
@@ -3533,43 +3742,49 @@ public:
             // Compute sighash with the same scheme_id binding the
             // signer used (matches BuildScriptSig at signing time).
             Hash256 sighash = ComputeSighash(tx, (uint32_t)i, script_pubkey, scheme_id);
-            if (!Verify(pubkey, sighash, sig_bytes)) return false;
+            if (!Verify(pubkey, sighash, sig_bytes))
+                return false;
         }
 
         {
             uint64_t input_total = 0, output_total = tx.TotalOutput();
             for (const auto& inp : tx.inputs) {
                 auto utxo_opt = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                if (!utxo_opt) continue;
-                if (utxo_opt->value > MAX_SUPPLY_UNITS) return false;
-                if (input_total > UINT64_MAX - utxo_opt->value) return false;
+                if (!utxo_opt)
+                    continue;
+                if (utxo_opt->value > MAX_SUPPLY_UNITS)
+                    return false;
+                if (input_total > UINT64_MAX - utxo_opt->value)
+                    return false;
                 input_total += utxo_opt->value;
             }
-            if (output_total > input_total) return false;
+            if (output_total > input_total)
+                return false;
         }
         return true;
     }
 
     static const std::unordered_map<uint64_t, std::string>& GetCheckpoints() {
         auto rev_hex = [](const std::string& be) -> std::string {
-            if (be.size() != 64) return be;
+            if (be.size() != 64)
+                return be;
             std::string le(64, '0');
             for (size_t i = 0; i < 32; ++i) {
-                le[i * 2]     = be[62 - i * 2];
+                le[i * 2] = be[62 - i * 2];
                 le[i * 2 + 1] = be[63 - i * 2];
             }
             return le;
         };
 
-        static const std::unordered_map<uint64_t, std::string> checkpoints = {
-        };
+        static const std::unordered_map<uint64_t, std::string> checkpoints = {};
         (void)rev_hex;
         return checkpoints;
     }
 
     std::string GetBlockHashAtHeight(uint64_t height) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        if (height >= chain_.size()) return "";
+        if (height >= chain_.size())
+            return "";
         return HashToHex(chain_[height].GetHash());
     }
 
@@ -3583,7 +3798,9 @@ public:
     static void TestInjectCheckpoint(uint64_t height, const std::string& le_hex) {
         TestCheckpointOverlay()[height] = le_hex;
     }
-    static void TestClearCheckpoints() { TestCheckpointOverlay().clear(); }
+    static void TestClearCheckpoints() {
+        TestCheckpointOverlay().clear();
+    }
 
     // Focused protocol-settlement sentinel seam.  Lets an isolated gate test
     // install an exact stake-vault / bond-yield-escrow UTXO without constructing
@@ -3598,8 +3815,7 @@ public:
         return EraseUTXO(tx_hash, index);
     }
     void TestForceNextRebuildUTXOMiss() {
-        test_force_rebuild_utxo_miss_.store(true,
-                                            std::memory_order_release);
+        test_force_rebuild_utxo_miss_.store(true, std::memory_order_release);
     }
     bool TestRebuildUTXOSetFromTip(const Hash256& tip_hash) {
         std::unique_lock<std::shared_mutex> lock(chain_mutex_);
@@ -3611,9 +3827,11 @@ public:
     // under VELD_TEST_HOOKS only, the test overlay. LE/HashToHex hex form.
     static std::vector<std::pair<uint64_t, std::string>> AllCheckpointPins() {
         std::vector<std::pair<uint64_t, std::string>> pins;
-        for (const auto& kv : GetCheckpoints()) pins.push_back(kv);
+        for (const auto& kv : GetCheckpoints())
+            pins.push_back(kv);
 #ifdef VELD_TEST_HOOKS
-        for (const auto& kv : TestCheckpointOverlay()) pins.push_back(kv);
+        for (const auto& kv : TestCheckpointOverlay())
+            pins.push_back(kv);
 #endif
         return pins;
     }
@@ -3623,12 +3841,14 @@ public:
         {
             const auto& ov = TestCheckpointOverlay();
             auto ovit = ov.find(height);
-            if (ovit != ov.end()) return HashToHex(hash) == ovit->second;
+            if (ovit != ov.end())
+                return HashToHex(hash) == ovit->second;
         }
 #endif
         const auto& cp = GetCheckpoints();
         auto it = cp.find(height);
-        if (it == cp.end()) return true;
+        if (it == cp.end())
+            return true;
         return HashToHex(hash) == it->second;
     }
 
@@ -3640,82 +3860,96 @@ public:
     // bootstrap — see ReplayChain's pre-replay sweep in node.h) and for the
     // test overlay. Pins above the tip are not yet verifiable and pass
     // vacuously.
-    bool VerifyCheckpointAnchors(uint64_t* bad_height = nullptr,
-                                 std::string* stored_hex = nullptr,
+    bool VerifyCheckpointAnchors(uint64_t* bad_height = nullptr, std::string* stored_hex = nullptr,
                                  std::string* pinned_hex = nullptr) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         for (const auto& [cp_h, cp_hex] : AllCheckpointPins()) {
-            if (cp_h >= chain_.size()) continue;
+            if (cp_h >= chain_.size())
+                continue;
             std::string got = HashToHex(chain_[cp_h].GetHash());
-            if (got == cp_hex) continue;
-            if (bad_height) *bad_height = cp_h;
-            if (stored_hex) *stored_hex = got;
-            if (pinned_hex) *pinned_hex = cp_hex;
+            if (got == cp_hex)
+                continue;
+            if (bad_height)
+                *bad_height = cp_h;
+            if (stored_hex)
+                *stored_hex = got;
+            if (pinned_hex)
+                *pinned_hex = cp_hex;
             return false;
         }
         return true;
     }
 
     static bool IsFinalityCoinbaseMetadata(const TxOutput& out) {
-        if (out.value != 0) return false;
-        const std::string payload =
-            ::veld::MarkerOpReturnPayload(out.script_pubkey);
+        if (out.value != 0)
+            return false;
+        const std::string payload = ::veld::MarkerOpReturnPayload(out.script_pubkey);
         return payload.rfind("VELD_FINALITY|", 0) == 0 &&
                ::veld::IsCanonicalMarkerOpReturn(out.script_pubkey, payload);
     }
 
     static bool ValidateCoinbaseOutputs(const Block& block) {
-        if (block.transactions.empty()) return false;
+        if (block.transactions.empty())
+            return false;
         const auto& cb = block.transactions[0];
-        if (!cb.IsCoinbase()) return false;
-        if (cb.outputs.empty()) return false;
+        if (!cb.IsCoinbase())
+            return false;
+        if (cb.outputs.empty())
+            return false;
 
         size_t finality_metadata_count = 0;
         for (const auto& out : cb.outputs)
-            if (IsFinalityCoinbaseMetadata(out)) ++finality_metadata_count;
-        if (finality_metadata_count > MAX_FINALITY_MARKER_OUTPUTS) return false;
+            if (IsFinalityCoinbaseMetadata(out))
+                ++finality_metadata_count;
+        if (finality_metadata_count > MAX_FINALITY_MARKER_OUTPUTS)
+            return false;
 
-        uint64_t total_out   = cb.TotalOutput();
+        uint64_t total_out = cb.TotalOutput();
         if (total_out == 0) {
             if (cb.outputs.size() == 1 &&
-                cb.outputs[0].script_pubkey ==
-                    std::vector<uint8_t>({0x6A, 0x00})) return true;
-            return !cb.outputs.empty() &&
-                   finality_metadata_count == cb.outputs.size();
+                cb.outputs[0].script_pubkey == std::vector<uint8_t>({0x6A, 0x00}))
+                return true;
+            return !cb.outputs.empty() && finality_metadata_count == cb.outputs.size();
         }
         uint64_t vault_floor = (total_out * 10) / 100;
-        auto     vault_script = AddressToScript(VaultAddressAtHeight(block.height));
+        auto vault_script = AddressToScript(VaultAddressAtHeight(block.height));
 
         bool is_vault_block = (block.height > 0 && block.height % VAULT_BLOCK_INTERVAL == 0);
         if (is_vault_block) {
             uint64_t vault_received = 0;
             auto endorse_script = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
             for (const auto& out : cb.outputs) {
-                if (IsFinalityCoinbaseMetadata(out)) continue;
-                if (out.script_pubkey == vault_script) vault_received += out.value;
+                if (IsFinalityCoinbaseMetadata(out))
+                    continue;
+                if (out.script_pubkey == vault_script)
+                    vault_received += out.value;
                 else if (!endorse_script.empty() && out.script_pubkey == endorse_script) {
                 } else {
                     return false;
                 }
             }
-            if (vault_received < (total_out * 80) / 100) return false;
+            if (vault_received < (total_out * 80) / 100)
+                return false;
             return true;
         }
 
         uint64_t vault_received = 0;
         uint64_t max_single_out = 0;
         for (const auto& out : cb.outputs) {
-            if (IsFinalityCoinbaseMetadata(out)) continue;
+            if (IsFinalityCoinbaseMetadata(out))
+                continue;
             if (out.script_pubkey == vault_script)
                 vault_received += out.value;
             else
                 max_single_out = std::max(max_single_out, out.value);
         }
 
-        if (vault_received < vault_floor) return false;
+        if (vault_received < vault_floor)
+            return false;
 
         uint64_t winner_cap = total_out - vault_floor + 1;
-        if (max_single_out > winner_cap) return false;
+        if (max_single_out > winner_cap)
+            return false;
 
         return true;
     }
@@ -3729,80 +3963,78 @@ public:
     // one exact REGISTER marker, one bond-sized output, and leave the registry's
     // existing signature/state checks to decide whether the registration
     // itself applies.
-    static bool ValidateExternalProtocolCustodyOutputs(
-        const Transaction& tx, uint64_t height) {
-        const auto pool_script =
-            AddressToScript(PoolAddressAtHeight(height));
-        const auto endorse_script =
-            AddressToScript(EndorsementPoolAddressAtHeight(height));
-        const auto vault_script =
-            AddressToScript(VaultAddressAtHeight(height));
-        const auto stake_vault_script =
-            AddressToScript(StakeVaultAddressAtHeight(height));
-        const auto bond_yield_script =
-            AddressToScript(BondYieldEscrowAtHeight(height));
-        if (pool_script.empty() || endorse_script.empty() ||
-            vault_script.empty() || stake_vault_script.empty() ||
-            bond_yield_script.empty()) return false;
+    static bool ValidateExternalProtocolCustodyOutputs(const Transaction& tx, uint64_t height) {
+        const auto pool_script = AddressToScript(PoolAddressAtHeight(height));
+        const auto endorse_script = AddressToScript(EndorsementPoolAddressAtHeight(height));
+        const auto vault_script = AddressToScript(VaultAddressAtHeight(height));
+        const auto stake_vault_script = AddressToScript(StakeVaultAddressAtHeight(height));
+        const auto bond_yield_script = AddressToScript(BondYieldEscrowAtHeight(height));
+        if (pool_script.empty() || endorse_script.empty() || vault_script.empty() ||
+            stake_vault_script.empty() || bond_yield_script.empty())
+            return false;
 
         size_t stake_vault_outputs = 0;
         for (const auto& out : tx.outputs) {
-            if (out.script_pubkey == pool_script ||
-                out.script_pubkey == endorse_script ||
-                out.script_pubkey == vault_script ||
-                out.script_pubkey == bond_yield_script) {
+            if (out.script_pubkey == pool_script || out.script_pubkey == endorse_script ||
+                out.script_pubkey == vault_script || out.script_pubkey == bond_yield_script) {
                 return false;
             }
             if (out.script_pubkey == stake_vault_script) {
                 ++stake_vault_outputs;
-                if (stake_vault_outputs > 1 ||
-                    out.value < MIN_VALIDATOR_STAKE) return false;
+                if (stake_vault_outputs > 1 || out.value < MIN_VALIDATOR_STAKE)
+                    return false;
             }
         }
-        if (stake_vault_outputs == 0) return true;
+        if (stake_vault_outputs == 0)
+            return true;
 
-        auto decode_canonical_op_return =
-            [](const std::vector<uint8_t>& script,
-               std::string& payload) -> bool {
-                if (script.size() < 2 || script[0] != 0x6A) return false;
-                size_t off = 1, len = 0;
-                const uint8_t op = script[off++];
-                if (op <= 75) {
-                    len = op;
-                } else if (op == 0x4C) {
-                    if (off >= script.size()) return false;
-                    len = script[off++];
-                    if (len <= 75) return false; // non-minimal PUSHDATA1
-                } else if (op == 0x4D) {
-                    if (off + 2 > script.size()) return false;
-                    len = (size_t)script[off] |
-                          ((size_t)script[off + 1] << 8);
-                    off += 2;
-                    if (len <= 0xFF) return false; // non-minimal PUSHDATA2
-                } else {
+        auto decode_canonical_op_return = [](const std::vector<uint8_t>& script,
+                                             std::string& payload) -> bool {
+            if (script.size() < 2 || script[0] != 0x6A)
+                return false;
+            size_t off = 1, len = 0;
+            const uint8_t op = script[off++];
+            if (op <= 75) {
+                len = op;
+            } else if (op == 0x4C) {
+                if (off >= script.size())
                     return false;
-                }
-                if (off + len != script.size()) return false;
-                payload.assign(script.begin() + off, script.end());
-                return true;
-            };
+                len = script[off++];
+                if (len <= 75)
+                    return false; // non-minimal PUSHDATA1
+            } else if (op == 0x4D) {
+                if (off + 2 > script.size())
+                    return false;
+                len = (size_t)script[off] | ((size_t)script[off + 1] << 8);
+                off += 2;
+                if (len <= 0xFF)
+                    return false; // non-minimal PUSHDATA2
+            } else {
+                return false;
+            }
+            if (off + len != script.size())
+                return false;
+            payload.assign(script.begin() + off, script.end());
+            return true;
+        };
 
-        static const std::string REGISTER_PREFIX =
-            "VELD_VALIDATOR|REGISTER|";
+        static const std::string REGISTER_PREFIX = "VELD_VALIDATOR|REGISTER|";
         size_t canonical_registers = 0;
         for (const auto& out : tx.outputs) {
             std::string payload;
             if (!decode_canonical_op_return(out.script_pubkey, payload))
                 continue;
-            if (payload.rfind(REGISTER_PREFIX, 0) != 0) continue;
+            if (payload.rfind(REGISTER_PREFIX, 0) != 0)
+                continue;
             if (payload.size() != REGISTER_PREFIX.size() + 3904)
                 return false;
             for (size_t i = REGISTER_PREFIX.size(); i < payload.size(); ++i) {
                 const char c = payload[i];
-                if (!((c >= '0' && c <= '9') ||
-                      (c >= 'a' && c <= 'f'))) return false;
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+                    return false;
             }
-            if (++canonical_registers > 1) return false;
+            if (++canonical_registers > 1)
+                return false;
         }
         return canonical_registers == 1;
     }
@@ -3813,29 +4045,23 @@ public:
     // to the external-funding rule above.  Also keep the stake-vault's projected
     // UTXO set representable in one canonical settlement in every build tier.
     bool ValidateProtocolCustodyFunding(const Block& block) const {
-        if (block.height == 0) return true;
-        const auto pool_script =
-            AddressToScript(PoolAddressAtHeight(block.height));
-        const auto endorse_script =
-            AddressToScript(EndorsementPoolAddressAtHeight(block.height));
-        const auto vault_script =
-            AddressToScript(VaultAddressAtHeight(block.height));
-        const auto stake_vault_script =
-            AddressToScript(StakeVaultAddressAtHeight(block.height));
-        const auto bond_yield_script =
-            AddressToScript(BondYieldEscrowAtHeight(block.height));
-        if (pool_script.empty() || endorse_script.empty() ||
-            vault_script.empty() || stake_vault_script.empty() ||
-            bond_yield_script.empty()) return false;
+        if (block.height == 0)
+            return true;
+        const auto pool_script = AddressToScript(PoolAddressAtHeight(block.height));
+        const auto endorse_script = AddressToScript(EndorsementPoolAddressAtHeight(block.height));
+        const auto vault_script = AddressToScript(VaultAddressAtHeight(block.height));
+        const auto stake_vault_script = AddressToScript(StakeVaultAddressAtHeight(block.height));
+        const auto bond_yield_script = AddressToScript(BondYieldEscrowAtHeight(block.height));
+        if (pool_script.empty() || endorse_script.empty() || vault_script.empty() ||
+            stake_vault_script.empty() || bond_yield_script.empty())
+            return false;
 
         auto is_reserved = [&](const std::vector<uint8_t>& script) {
-            return script == pool_script || script == endorse_script ||
-                   script == vault_script || script == stake_vault_script ||
-                   script == bond_yield_script;
+            return script == pool_script || script == endorse_script || script == vault_script ||
+                   script == stake_vault_script || script == bond_yield_script;
         };
 
-        const auto stake_utxos =
-            GetUTXOsForScriptLocked_(stake_vault_script);
+        const auto stake_utxos = GetUTXOsForScriptLocked_(stake_vault_script);
         std::unordered_set<std::string> spent_stake_utxos;
         size_t created_stake_outputs = 0;
 
@@ -3843,29 +4069,27 @@ public:
             const auto& tx = block.transactions[ti];
             bool spends_reserved = false;
             for (const auto& input : tx.inputs) {
-                auto utxo = GetUTXONoLock(input.prev_tx_hash,
-                                          input.prev_out_index);
-                if (!utxo) continue;
+                auto utxo = GetUTXONoLock(input.prev_tx_hash, input.prev_out_index);
+                if (!utxo)
+                    continue;
                 if (is_reserved(utxo->script_pubkey))
                     spends_reserved = true;
                 if (utxo->script_pubkey == stake_vault_script) {
-                    spent_stake_utxos.insert(
-                        UTXOKey(input.prev_tx_hash, input.prev_out_index));
+                    spent_stake_utxos.insert(UTXOKey(input.prev_tx_hash, input.prev_out_index));
                 }
             }
             for (const auto& out : tx.outputs) {
                 if (out.script_pubkey == stake_vault_script)
                     ++created_stake_outputs;
             }
-            if (!spends_reserved &&
-                !ValidateExternalProtocolCustodyOutputs(tx, block.height))
+            if (!spends_reserved && !ValidateExternalProtocolCustodyOutputs(tx, block.height))
                 return false;
         }
 
-        if (spent_stake_utxos.size() > stake_utxos.size()) return false;
+        if (spent_stake_utxos.size() > stake_utxos.size())
+            return false;
         const size_t projected_stake_utxos =
-            stake_utxos.size() - spent_stake_utxos.size() +
-            created_stake_outputs;
+            stake_utxos.size() - spent_stake_utxos.size() + created_stake_outputs;
         return projected_stake_utxos <= MAX_TRANSACTION_INPUTS;
     }
 
@@ -3874,36 +4098,42 @@ public:
         (void)block;
         return true;
 #else
-        if (block.height == 0) return true;
-        if (block.transactions.empty()) return false;
+        if (block.height == 0)
+            return true;
+        if (block.transactions.empty())
+            return false;
         const auto& cb = block.transactions[0];
-        if (!cb.IsCoinbase()) return false;
+        if (!cb.IsCoinbase())
+            return false;
 
         const uint64_t base_reward = ExpectedBlockSubsidy(block.height);
         const uint64_t total_supply_at_parent = total_supply_units_.load();
-        const uint64_t remaining_to_cap =
-            (MAX_SUPPLY_UNITS > total_supply_at_parent)
-                ? (MAX_SUPPLY_UNITS - total_supply_at_parent) : 0;
+        const uint64_t remaining_to_cap = (MAX_SUPPLY_UNITS > total_supply_at_parent)
+                                              ? (MAX_SUPPLY_UNITS - total_supply_at_parent)
+                                              : 0;
         const uint64_t effective_reward = std::min(base_reward, remaining_to_cap);
 
         const uint64_t total_out = cb.TotalOutput();
-        if (total_out < effective_reward) return false;
+        if (total_out < effective_reward)
+            return false;
 
-        uint64_t actual_tx_fees   = 0;
-        bool     all_utxos_resolved = true;
+        uint64_t actual_tx_fees = 0;
+        bool all_utxos_resolved = true;
         for (size_t ti = 1; ti < block.transactions.size(); ++ti) {
             const auto& tx = block.transactions[ti];
-            if (tx.IsCoinbase()) continue;
+            if (tx.IsCoinbase())
+                continue;
             uint64_t tx_in = 0;
             const uint64_t tx_out = tx.TotalOutput();
             bool this_tx_resolved = true;
             for (const auto& inp : tx.inputs) {
-                if (inp.IsCoinbase()) continue;
+                if (inp.IsCoinbase())
+                    continue;
                 auto utxo = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
                 if (utxo) {
                     tx_in += utxo->value;
                 } else {
-                    this_tx_resolved   = false;
+                    this_tx_resolved = false;
                     all_utxos_resolved = false;
                     break;
                 }
@@ -3921,34 +4151,28 @@ public:
         // coinbase input to resolve against the UTXO set (it compares
         // utxo_opt->script_pubkey), so any input unresolvable here belongs to a
         // transaction the per-tx validator rejects regardless.
-        if (!all_utxos_resolved) return false;
+        if (!all_utxos_resolved)
+            return false;
         const uint64_t tx_fees = actual_tx_fees;
-        if (total_out != effective_reward + actual_tx_fees) return false;
+        if (total_out != effective_reward + actual_tx_fees)
+            return false;
 
-        const auto vault_script =
-            AddressToScript(VaultAddressAtHeight(block.height));
-        const auto pool_script =
-            AddressToScript(PoolAddressAtHeight(block.height));
-        const auto endorse_script =
-            AddressToScript(EndorsementPoolAddressAtHeight(block.height));
-        const auto stake_vault_script =
-            AddressToScript(StakeVaultAddressAtHeight(block.height));
-        const auto bond_yield_script =
-            AddressToScript(BondYieldEscrowAtHeight(block.height));
-        if (vault_script.empty() || pool_script.empty() ||
-            endorse_script.empty() || stake_vault_script.empty() ||
-            bond_yield_script.empty()) {
-            throw std::runtime_error(
-                "FATAL: AddressToScript() returned empty in "
-                "ValidateCanonicalCoinbaseSplit — a protocol custody "
-                "address constant is corrupt or base58 decode is broken.");
+        const auto vault_script = AddressToScript(VaultAddressAtHeight(block.height));
+        const auto pool_script = AddressToScript(PoolAddressAtHeight(block.height));
+        const auto endorse_script = AddressToScript(EndorsementPoolAddressAtHeight(block.height));
+        const auto stake_vault_script = AddressToScript(StakeVaultAddressAtHeight(block.height));
+        const auto bond_yield_script = AddressToScript(BondYieldEscrowAtHeight(block.height));
+        if (vault_script.empty() || pool_script.empty() || endorse_script.empty() ||
+            stake_vault_script.empty() || bond_yield_script.empty()) {
+            throw std::runtime_error("FATAL: AddressToScript() returned empty in "
+                                     "ValidateCanonicalCoinbaseSplit — a protocol custody "
+                                     "address constant is corrupt or base58 decode is broken.");
         }
-        if (vault_script == pool_script || vault_script == endorse_script
-                || pool_script == endorse_script) {
-            throw std::runtime_error(
-                "FATAL: protocol-address scripts collide in "
-                "ValidateCanonicalCoinbaseSplit — constants.h has two "
-                "distinct address constants decoding to the same script.");
+        if (vault_script == pool_script || vault_script == endorse_script ||
+            pool_script == endorse_script) {
+            throw std::runtime_error("FATAL: protocol-address scripts collide in "
+                                     "ValidateCanonicalCoinbaseSplit — constants.h has two "
+                                     "distinct address constants decoding to the same script.");
         }
 
         // The supply-cap era can legitimately have neither subsidy nor fees.
@@ -3956,103 +4180,115 @@ public:
         // required by ValidateCoinbaseOutputs; it is not a miner payout.
         if (total_out == 0) {
             if (cb.outputs.size() == 1 &&
-                cb.outputs[0].script_pubkey ==
-                    std::vector<uint8_t>({0x6A, 0x00})) return true;
+                cb.outputs[0].script_pubkey == std::vector<uint8_t>({0x6A, 0x00}))
+                return true;
             size_t metadata = 0;
             for (const auto& out : cb.outputs)
-                if (IsFinalityCoinbaseMetadata(out)) ++metadata;
-            return !cb.outputs.empty() &&
-                   metadata == cb.outputs.size() &&
+                if (IsFinalityCoinbaseMetadata(out))
+                    ++metadata;
+            return !cb.outputs.empty() && metadata == cb.outputs.size() &&
                    metadata <= MAX_FINALITY_MARKER_OUTPUTS;
         }
 
         size_t finality_metadata_count = 0;
         for (const auto& out : cb.outputs)
-            if (IsFinalityCoinbaseMetadata(out)) ++finality_metadata_count;
-        if (finality_metadata_count > MAX_FINALITY_MARKER_OUTPUTS) return false;
+            if (IsFinalityCoinbaseMetadata(out))
+                ++finality_metadata_count;
+        if (finality_metadata_count > MAX_FINALITY_MARKER_OUTPUTS)
+            return false;
 
         uint64_t sum_vault = 0, sum_pool = 0, sum_endorse = 0, sum_other = 0;
-        size_t count_vault = 0, count_pool = 0, count_endorse = 0,
-               count_other = 0;
+        size_t count_vault = 0, count_pool = 0, count_endorse = 0, count_other = 0;
         bool other_is_canonical_p2pkh = true;
         for (const auto& out : cb.outputs) {
-            if (IsFinalityCoinbaseMetadata(out)) continue;
-            if (out.script_pubkey == stake_vault_script ||
-                out.script_pubkey == bond_yield_script) return false;
+            if (IsFinalityCoinbaseMetadata(out))
+                continue;
+            if (out.script_pubkey == stake_vault_script || out.script_pubkey == bond_yield_script)
+                return false;
             if (out.script_pubkey == vault_script) {
-                ++count_vault; sum_vault += out.value;
+                ++count_vault;
+                sum_vault += out.value;
             } else if (out.script_pubkey == pool_script) {
-                ++count_pool; sum_pool += out.value;
+                ++count_pool;
+                sum_pool += out.value;
             } else if (out.script_pubkey == endorse_script) {
-                ++count_endorse; sum_endorse += out.value;
+                ++count_endorse;
+                sum_endorse += out.value;
             } else {
                 ++count_other;
                 sum_other += out.value;
                 const auto& s = out.script_pubkey;
-                other_is_canonical_p2pkh = other_is_canonical_p2pkh &&
-                    s.size() == 25 && s[0] == 0x76 && s[1] == 0xA9 &&
-                    s[2] == 0x14 && s[23] == 0x88 && s[24] == 0xAC;
+                other_is_canonical_p2pkh = other_is_canonical_p2pkh && s.size() == 25 &&
+                                           s[0] == 0x76 && s[1] == 0xA9 && s[2] == 0x14 &&
+                                           s[23] == 0x88 && s[24] == 0xAC;
             }
         }
 
         uint64_t exp_pool, exp_vault, exp_endorse, exp_miner;
-        const bool is_pre_activation =
-            (total_supply_at_parent < STAKING_UNLOCK_SUPPLY);
+        const bool is_pre_activation = (total_supply_at_parent < STAKING_UNLOCK_SUPPLY);
 
         if (effective_reward == 0) {
             const uint64_t v = (tx_fees * 40) / 100;
             const uint64_t e = (tx_fees * 10) / 100;
             const uint64_t m = tx_fees - v - e;
-            exp_pool    = 0;
-            exp_vault   = v;
+            exp_pool = 0;
+            exp_vault = v;
             exp_endorse = e;
-            exp_miner   = m;
-        } else if (block.height > 0 &&
-                   (block.height % VAULT_BLOCK_INTERVAL) == 0) {
+            exp_miner = m;
+        } else if (block.height > 0 && (block.height % VAULT_BLOCK_INTERVAL) == 0) {
             // every VAULT_BLOCK_INTERVAL-th block routes
             // the ENTIRE reward to the vault, ALWAYS — this MUST be checked BEFORE
             // is_pre_activation. The miner (node.h) and ValidateCoinbaseOutputs both
             // build and require the all-to-vault output before evaluating the
             // pre-activation branch.
-            exp_pool    = 0;
-            exp_vault   = effective_reward + tx_fees;
+            exp_pool = 0;
+            exp_vault = effective_reward + tx_fees;
             exp_endorse = 0;
-            exp_miner   = 0;
+            exp_miner = 0;
         } else if (is_pre_activation) {
             const uint64_t m = (effective_reward * 50) / 100;
             const uint64_t v = effective_reward - m;
-            exp_pool    = 0;
-            exp_vault   = v + tx_fees;
+            exp_pool = 0;
+            exp_vault = v + tx_fees;
             exp_endorse = 0;
-            exp_miner   = m;
+            exp_miner = m;
         } else {
             const uint64_t p = (effective_reward * 20) / 100;
             const uint64_t v = (effective_reward * 20) / 100;
             const uint64_t e = (effective_reward * 10) / 100;
             const uint64_t m = effective_reward - p - v - e;
-            exp_pool    = p;
-            exp_vault   = v + tx_fees;
+            exp_pool = p;
+            exp_vault = v + tx_fees;
             exp_endorse = e;
-            exp_miner   = m;
+            exp_miner = m;
         }
 
-        if (sum_pool    != exp_pool)    return false;
-        if (sum_vault   != exp_vault)   return false;
-        if (sum_endorse != exp_endorse) return false;
-        if (sum_other   != exp_miner)   return false;
+        if (sum_pool != exp_pool)
+            return false;
+        if (sum_vault != exp_vault)
+            return false;
+        if (sum_endorse != exp_endorse)
+            return false;
+        if (sum_other != exp_miner)
+            return false;
         // Category sums alone are insufficient: splitting a custody leg into
         // hundreds of outputs per block makes the next all-input settlement
         // structurally impossible even though every reward unit is conserved.
-        if (count_pool != (exp_pool > 0 ? 1u : 0u)) return false;
-        if (count_vault != (exp_vault > 0 ? 1u : 0u)) return false;
-        if (count_endorse != (exp_endorse > 0 ? 1u : 0u)) return false;
+        if (count_pool != (exp_pool > 0 ? 1u : 0u))
+            return false;
+        if (count_vault != (exp_vault > 0 ? 1u : 0u))
+            return false;
+        if (count_endorse != (exp_endorse > 0 ? 1u : 0u))
+            return false;
         // One block earns one miner identity credit.  Category-sum validation
         // alone allowed the winner share to be split over as many as 197 fresh
         // P2PKH scripts, multiplying tier credits and growing both miner maps
         // at attacker-selected cardinality.  Every canonical builder already
         // emits exactly one P2PKH winner leg (or none when exp_miner is zero).
-        if (count_other != (exp_miner > 0 ? 1u : 0u)) return false;
-        if (exp_miner > 0 && !other_is_canonical_p2pkh) return false;
+        if (count_other != (exp_miner > 0 ? 1u : 0u))
+            return false;
+        if (exp_miner > 0 && !other_is_canonical_p2pkh)
+            return false;
         return true;
 #endif
     }
@@ -4081,24 +4317,19 @@ public:
     // and contextual coinbase reward/split, NMS, pool-payout, and endorsement
     // gates. Context-free transaction structure and the exactly-one-coinbase
     // invariant are still enforced unconditionally below.
-    BlockAdmissionResult AddBlockDirect(
-                        const Block& block,
-                        bool skip_pow = false,
-                        bool skip_scripts = false,
-                        bool skip_pow_hash_only = false,
-                        mining::PowAdmissionContext pow_admission = {}) {
+    BlockAdmissionResult AddBlockDirect(const Block& block, bool skip_pow = false,
+                                        bool skip_scripts = false, bool skip_pow_hash_only = false,
+                                        mining::PowAdmissionContext pow_admission = {}) {
         // Phase 1 of local-work admission is intentionally before both the
         // connect sequencer and chain_mutex_.  The node may sample peer height,
         // IBD, startup, role, and coordinator state here.  Only the immutable
         // one-use result crosses into canonical precommit.
         std::optional<LocalWorkAdmissionTicket> local_work_ticket;
-        const bool local_work_required =
-            pow_admission.RequiresLocalWorkAdmission();
+        const bool local_work_required = pow_admission.RequiresLocalWorkAdmission();
         if (local_work_required && pow_admission.HasRequiredProvenance()) {
             LocalWorkAdmissionPrepareFn prepare;
             {
-                std::lock_guard<std::mutex> lock(
-                    local_work_admission_prepare_mutex_);
+                std::lock_guard<std::mutex> lock(local_work_admission_prepare_mutex_);
                 prepare = local_work_admission_prepare_fn_;
             }
             if (prepare) {
@@ -4129,7 +4360,8 @@ public:
             std::shared_ptr<mining::LocalWorkLeaseHandoff> handoff;
             bool retain{false};
             ~LocalHandoffReset() {
-                if (!retain && handoff) handoff->Reset();
+                if (!retain && handoff)
+                    handoff->Reset();
             }
         } local_handoff_reset{pow_admission.local_work_handoff};
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
@@ -4141,32 +4373,29 @@ public:
             static std::unordered_map<std::string, uint64_t> last_summary_baseline;
             const std::string tag_str(tag);
             const bool suppressed =
-                tag_str == "duplicate_block" ||
-                tag_str == "orphan_parent_unknown" ||
-                tag_str == "pow_orphan_parent_unknown" ||
-                tag_str == "orphan_lwma_window_pending" ||
-                tag_str == "local_validation_ceiling" ||
-                tag_str == "side_branch_capacity" ||
-                tag_str == "coinbase_exceeds_subsidy_cap" ||
-                tag_str == "nms_validation_failed" ||
+                tag_str == "duplicate_block" || tag_str == "orphan_parent_unknown" ||
+                tag_str == "pow_orphan_parent_unknown" || tag_str == "orphan_lwma_window_pending" ||
+                tag_str == "local_validation_ceiling" || tag_str == "side_branch_capacity" ||
+                tag_str == "coinbase_exceeds_subsidy_cap" || tag_str == "nms_validation_failed" ||
                 tag_str == "bits_mismatch_lwma" ||
                 // F-4: a dataset-regeneration storm can emit this for every
                 // in-flight block; roll it into the 5-minute summary rather
                 // than one stderr line per attempt.
-                tag_str == "pow_dataset_unavailable" ||
-                tag_str == "consensus_pool_payout_mismatch";
+                tag_str == "pow_dataset_unavailable" || tag_str == "consensus_pool_payout_mismatch";
             if (suppressed) {
                 if (veld::DiagVerbose().load()) {
                     std::lock_guard<std::mutex> g(reject_counter_mu);
                     reject_counters[tag_str] += 1;
                     int64_t now_unix = (int64_t)std::time(nullptr);
-                    if (last_summary_unix == 0) last_summary_unix = now_unix;
+                    if (last_summary_unix == 0)
+                        last_summary_unix = now_unix;
                     if (now_unix - last_summary_unix >= 300) {
                         std::cerr << "  [block-rejects 5m]";
                         for (auto& [t, n] : reject_counters) {
                             uint64_t baseline = last_summary_baseline[t];
                             uint64_t delta = n - baseline;
-                            if (delta > 0) std::cerr << " " << t << "=" << delta;
+                            if (delta > 0)
+                                std::cerr << " " << t << "=" << delta;
                             last_summary_baseline[t] = n;
                         }
                         std::cerr << "\n";
@@ -4177,7 +4406,8 @@ public:
             } else {
                 std::cerr << "  [AddBlock reject h=" << block.height
                           << " hash=" << HashToHex(block.GetHash()).substr(0, 16) << "..."
-                          << " prev=" << HashToHex(block.header.prev_block_hash).substr(0, 16) << "..."
+                          << " prev=" << HashToHex(block.header.prev_block_hash).substr(0, 16)
+                          << "..."
                           << "] " << tag << "\n";
                 std::cerr.flush();
             }
@@ -4193,8 +4423,7 @@ public:
         // unwired so a new caller cannot silently inherit RPC privileges.
         if (!pow_admission.HasRequiredProvenance())
             return reject("pow_admission_context_unavailable");
-        if (local_work_required &&
-            (!local_work_ticket || !*local_work_ticket))
+        if (local_work_required && (!local_work_ticket || !*local_work_ticket))
             return defer("local_work_ticket_prepare_refused");
 
         // A rollback/compensation failure means the in-memory canonical frame
@@ -4204,10 +4433,12 @@ public:
         // process-lifetime: a clean restart/replay is the only way to clear it.
         if (durability_compromised_.load(std::memory_order_acquire))
             return reject("durability_compromised_restart_required");
-        if (block.transactions.empty()) return reject("empty_transactions");
+        if (block.transactions.empty())
+            return reject("empty_transactions");
         if (block.transactions.size() > MAX_TRANSACTIONS_PER_BLOCK)
             return reject("too_many_txs");
-        if (!block.transactions[0].IsCoinbase()) return reject("tx0_not_coinbase");
+        if (!block.transactions[0].IsCoinbase())
+            return reject("tx0_not_coinbase");
 
         // Context-free transaction structure is consensus and is cheap enough
         // to enforce before every ingest fast path.  In particular this covers
@@ -4220,8 +4451,7 @@ public:
             if (i > 0 && block.transactions[i].IsCoinbase())
                 return reject("extra_coinbase");
             if (!block.transactions[i].IsValid()) {
-                return reject(i == 0 ? "coinbase_basic_invalid"
-                                     : "transaction_basic_invalid");
+                return reject(i == 0 ? "coinbase_basic_invalid" : "transaction_basic_invalid");
             }
         }
 
@@ -4263,8 +4493,7 @@ public:
             // refused — closing adoption whether chain_ is empty or not. Our own
             // genesis passes through (init installs it; a duplicate delivery is
             // caught by the block_store_ duplicate-hash check downstream).
-            static const std::string LOCAL_GENESIS_HEX =
-                HashToHex(CreateGenesisBlock().GetHash());
+            static const std::string LOCAL_GENESIS_HEX = HashToHex(CreateGenesisBlock().GetHash());
             if (HashToHex(block.GetHash()) != LOCAL_GENESIS_HEX)
                 return reject("foreign_genesis");
         }
@@ -4326,7 +4555,7 @@ public:
         // (which we leave in place but turned into an assertion — the
         // values cannot change between the two computations).
         uint64_t derived_height = 0;
-        bool     parent_known   = false;
+        bool parent_known = false;
         {
             std::string prev_hex = HashToHex(block.header.prev_block_hash);
             auto pit_h = block_tree_.find(prev_hex);
@@ -4335,7 +4564,7 @@ public:
                 parent_known = true;
             } else if (HashIsZero(block.header.prev_block_hash)) {
                 derived_height = 0;
-                parent_known   = true;
+                parent_known = true;
             }
         }
         if (!parent_known) {
@@ -4348,8 +4577,7 @@ public:
                 {
                     std::lock_guard<std::mutex> g(orphan_diag_mu);
                     auto it = last_log_for_prev.find(prev_hex_diag);
-                    if (it == last_log_for_prev.end() ||
-                        (now_unix - it->second) >= 60) {
+                    if (it == last_log_for_prev.end() || (now_unix - it->second) >= 60) {
                         last_log_for_prev[prev_hex_diag] = now_unix;
                         emit = true;
                         if (last_log_for_prev.size() > 1024) {
@@ -4366,9 +4594,8 @@ public:
                               << " block_tree_size=" << block_tree_.size()
                               << " block_index_size=" << block_index_.size()
                               << " chain_size=" << chain_.size()
-                              << (in_block_index
-                                    ? " index_mismatch=YES"
-                                    : " parent_pending_or_out_of_order=yes")
+                              << (in_block_index ? " index_mismatch=YES"
+                                                 : " parent_pending_or_out_of_order=yes")
                               << "\n";
                     std::cerr.flush();
                 }
@@ -4376,8 +4603,7 @@ public:
             return reject("orphan_parent_unknown");
         }
         const_cast<Block&>(block).height = derived_height;
-        const uint64_t local_ceiling =
-            local_validation_ceiling_.load(std::memory_order_acquire);
+        const uint64_t local_ceiling = local_validation_ceiling_.load(std::memory_order_acquire);
         if (local_ceiling != 0 && derived_height > local_ceiling)
             return reject("local_validation_ceiling");
         if (!RuntimeAdmissionPermits(derived_height)) {
@@ -4404,9 +4630,8 @@ public:
         // tip (so this would form an alt-chain branch). Genesis path
         // (chain_ empty) extends "tip" trivially, so `is_alt_chain` is
         // false there.
-        bool is_alt_chain = parent_known
-                          && !chain_.empty()
-                          && !(block.header.prev_block_hash == chain_.back().GetHash());
+        bool is_alt_chain = parent_known && !chain_.empty() &&
+                            !(block.header.prev_block_hash == chain_.back().GetHash());
         const std::string bhash = HashToHex(block.GetHash());
         bool known_side_retry = false;
 
@@ -4414,27 +4639,26 @@ public:
         CanonicalPowTarget submitted_target;
         if (!skip_pow) {
             CompactTargetError target_error = CompactTargetError::None;
-            if (!DecodeCanonicalVeldTarget(
-                    block.header.bits, submitted_target, &target_error)) {
+            if (!DecodeCanonicalVeldTarget(block.header.bits, submitted_target, &target_error)) {
                 switch (target_error) {
-                    case CompactTargetError::Negative:
-                        return reject("pow_target_negative");
-                    case CompactTargetError::Zero:
-                        return reject("pow_target_zero");
-                    case CompactTargetError::Overflow:
-                        return reject("pow_target_overflow");
-                    case CompactTargetError::AboveLimit:
-                        return reject("pow_target_above_limit");
-                    case CompactTargetError::NonCanonical:
-                        return reject("pow_target_noncanonical");
-                    case CompactTargetError::None: break;
+                case CompactTargetError::Negative:
+                    return reject("pow_target_negative");
+                case CompactTargetError::Zero:
+                    return reject("pow_target_zero");
+                case CompactTargetError::Overflow:
+                    return reject("pow_target_overflow");
+                case CompactTargetError::AboveLimit:
+                    return reject("pow_target_above_limit");
+                case CompactTargetError::NonCanonical:
+                    return reject("pow_target_noncanonical");
+                case CompactTargetError::None:
+                    break;
                 }
                 return reject("pow_target_noncanonical");
             }
             if (derived_height > 0) {
                 PowParentContext context;
-                if (!BuildPowParentContextNoLock_(
-                        block.header.prev_block_hash, context) ||
+                if (!BuildPowParentContextNoLock_(block.header.prev_block_hash, context) ||
                     context.candidate_height != derived_height)
                     return reject("pow_branch_context_unavailable");
                 if (block.header.bits != context.expected_bits)
@@ -4451,8 +4675,7 @@ public:
         // candidate parent's UTXO view, so side branches defer it to VBFR after
         // their parent frame is reconstructed.  Linear ingress and trusted
         // replay both enforce it here.
-        if (!is_alt_chain && derived_height > 0 &&
-            !ValidateProtocolCustodyFunding(block))
+        if (!is_alt_chain && derived_height > 0 && !ValidateProtocolCustodyFunding(block))
             return reject("protocol_custody_funding_invalid");
 
         // Enforce fixed subsidy plus transaction fees on first ingress.
@@ -4461,25 +4684,26 @@ public:
         // being committed.
         if (!is_alt_chain && !skip_pow) {
             uint64_t cb_total = block.transactions[0].TotalOutput();
-            uint64_t subsidy  = ExpectedBlockSubsidy(block.height);
+            uint64_t subsidy = ExpectedBlockSubsidy(block.height);
             uint64_t fees_headroom = 0;
             for (size_t ti = 1; ti < block.transactions.size(); ++ti) {
                 const auto& tx = block.transactions[ti];
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 uint64_t tx_in = 0, tx_out = tx.TotalOutput();
                 for (const auto& inp : tx.inputs) {
                     auto utxo = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (utxo) tx_in += utxo->value;
+                    if (utxo)
+                        tx_in += utxo->value;
                 }
-                if (tx_in > tx_out) fees_headroom += (tx_in - tx_out);
+                if (tx_in > tx_out)
+                    fees_headroom += (tx_in - tx_out);
             }
 
             uint64_t max_coinbase;
             const uint64_t grandfather_height =
-                coinbase_cap_grandfather_height_.load(
-                    std::memory_order_relaxed);
-            if (grandfather_height > 0 &&
-                block.height < grandfather_height) {
+                coinbase_cap_grandfather_height_.load(std::memory_order_relaxed);
+            if (grandfather_height > 0 && block.height < grandfather_height) {
                 max_coinbase = BLOCK_REWARD_UNITS * 3 + fees_headroom + 1;
             } else {
                 max_coinbase = subsidy + fees_headroom + 1;
@@ -4512,23 +4736,24 @@ public:
             // pre-activation blocks (where an honest miner's coinbase
             // may not follow this invariant exactly, e.g. legacy 10%
             // vault minima) don't force a chain split on replay.
-            if (block.height >= FEES_TO_VAULT_ACTIVATES_AT
-                && !(block.height > 0 && block.height % VAULT_BLOCK_INTERVAL == 0)) {
+            if (block.height >= FEES_TO_VAULT_ACTIVATES_AT &&
+                !(block.height > 0 && block.height % VAULT_BLOCK_INTERVAL == 0)) {
                 auto vault_script = AddressToScript(VaultAddressAtHeight(block.height));
                 uint64_t vault_in_coinbase = 0;
                 for (const auto& out : block.transactions[0].outputs) {
-                    if (out.script_pubkey == vault_script) vault_in_coinbase += out.value;
+                    if (out.script_pubkey == vault_script)
+                        vault_in_coinbase += out.value;
                 }
-                uint64_t remaining_to_cap =
-                    (MAX_SUPPLY_UNITS > total_supply_units_.load())
-                    ? (MAX_SUPPLY_UNITS - total_supply_units_.load()) : 0;
+                uint64_t remaining_to_cap = (MAX_SUPPLY_UNITS > total_supply_units_.load())
+                                                ? (MAX_SUPPLY_UNITS - total_supply_units_.load())
+                                                : 0;
                 uint64_t effective_subsidy_for_floor = std::min(subsidy, remaining_to_cap);
 
                 uint64_t expected_vault_floor;
                 if (effective_subsidy_for_floor > 0) {
                     expected_vault_floor =
-                        (effective_subsidy_for_floor * PROTOCOL_VAULT_SHARE_PCT) / 100
-                        + fees_headroom;
+                        (effective_subsidy_for_floor * PROTOCOL_VAULT_SHARE_PCT) / 100 +
+                        fees_headroom;
                 } else {
                     expected_vault_floor = (fees_headroom * 40) / 100;
                 }
@@ -4537,7 +4762,8 @@ public:
                 }
             }
         }
-        if (block.transactions[0].outputs.size() > 200) return reject("coinbase_too_many_outputs");
+        if (block.transactions[0].outputs.size() > 200)
+            return reject("coinbase_too_many_outputs");
         {
             std::unordered_set<std::string> seen_txids;
             seen_txids.reserve(block.transactions.size());
@@ -4557,13 +4783,16 @@ public:
             uint64_t fees_in_block = 0;
             for (size_t ti = 1; ti < block.transactions.size(); ++ti) {
                 const auto& tx = block.transactions[ti];
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 uint64_t tx_in = 0, tx_out = tx.TotalOutput();
                 for (const auto& inp : tx.inputs) {
                     auto utxo = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (utxo) tx_in += utxo->value;
+                    if (utxo)
+                        tx_in += utxo->value;
                 }
-                if (tx_in > tx_out) fees_in_block += (tx_in - tx_out);
+                if (tx_in > tx_out)
+                    fees_in_block += (tx_in - tx_out);
             }
             uint64_t new_emission = (cb_out > fees_in_block) ? (cb_out - fees_in_block) : 0;
             if (new_emission > MAX_SUPPLY_UNITS ||
@@ -4594,7 +4823,8 @@ public:
 #endif
             if (!chain_.empty() && !is_alt_chain) {
                 uint64_t mtp = MedianTimePast();
-                if (block.header.timestamp <= mtp) return reject("timestamp_before_mtp");
+                if (block.header.timestamp <= mtp)
+                    return reject("timestamp_before_mtp");
             }
         }
 
@@ -4605,16 +4835,15 @@ public:
         // to the common ancestor and appends each accepted alt predecessor
         // before validating its child.  Main-tip extensions continue to be
         // checked here before registration.
-        if (!skip_pow && !is_alt_chain &&
-            parent_known && derived_height > 0) {
+        if (!skip_pow && !is_alt_chain && parent_known && derived_height > 0) {
 #ifdef VELD_MAINNET_POW
-            constexpr uint64_t RETARGET_INTERVAL_LOCAL =
-                DIFFICULTY_ADJUSTMENT_INTERVAL;
+            constexpr uint64_t RETARGET_INTERVAL_LOCAL = DIFFICULTY_ADJUSTMENT_INTERVAL;
 #else
             constexpr uint64_t RETARGET_INTERVAL_LOCAL = 20;
 #endif
-            uint64_t next_h               = derived_height;
-            uint64_t window_start_local   = (next_h / RETARGET_INTERVAL_LOCAL) * RETARGET_INTERVAL_LOCAL;
+            uint64_t next_h = derived_height;
+            uint64_t window_start_local =
+                (next_h / RETARGET_INTERVAL_LOCAL) * RETARGET_INTERVAL_LOCAL;
             if (window_start_local > 0) {
                 uint64_t window_end_local = window_start_local - 1;
                 if (window_end_local >= chain_.size()) {
@@ -4637,10 +4866,9 @@ public:
 #endif
 
             if (!bits_ok) {
-                std::cerr << "  [AddBlock reject h=" << derived_height
-                          << "] bits_mismatch got=0x" << std::hex
-                          << block.header.bits << " expected=0x"
-                          << expected_bits << std::dec << "\n";
+                std::cerr << "  [AddBlock reject h=" << derived_height << "] bits_mismatch got=0x"
+                          << std::hex << block.header.bits << " expected=0x" << expected_bits
+                          << std::dec << "\n";
                 std::cerr.flush();
                 return reject("bits_mismatch_lwma");
             }
@@ -4652,8 +4880,7 @@ public:
         // dataset.
         if (!chain_.empty() && derived_height > 0) {
             const uint64_t tip_h = chain_.back().height;
-            if (tip_h >= MAX_REORG_DEPTH &&
-                derived_height + MAX_REORG_DEPTH <= tip_h + 1)
+            if (tip_h >= MAX_REORG_DEPTH && derived_height + MAX_REORG_DEPTH <= tip_h + 1)
                 return reject("reorg_beyond_max_depth");
         }
         if (!PassesCheckpoint(derived_height, block.GetHash()))
@@ -4662,10 +4889,8 @@ public:
             return reject("anchor_conflict");
 
         if (is_alt_chain) {
-            const std::string branch_parent =
-                HashToHex(block.header.prev_block_hash);
-            const std::string ancestor =
-                FindCanonicalAncestorBoundedNoLock_(branch_parent);
+            const std::string branch_parent = HashToHex(block.header.prev_block_hash);
+            const std::string ancestor = FindCanonicalAncestorBoundedNoLock_(branch_parent);
             if (ancestor.empty())
                 return reject("reorg_ancestor_unavailable");
             auto anc_it = block_tree_.find(ancestor);
@@ -4676,11 +4901,9 @@ public:
             if (old_tip_height < ancestor_height ||
                 old_tip_height - ancestor_height >= MAX_REORG_DEPTH)
                 return reject("reorg_beyond_max_depth");
-            if (anchor_reorg_gate_ &&
-                !anchor_reorg_gate_(ancestor_height, old_tip_height))
+            if (anchor_reorg_gate_ && !anchor_reorg_gate_(ancestor_height, old_tip_height))
                 return reject("reorg_below_anchor_carrier");
-            if (finality_reorg_gate_ &&
-                !finality_reorg_gate_(ancestor_height))
+            if (finality_reorg_gate_ && !finality_reorg_gate_(ancestor_height))
                 return reject("reorg_below_finality");
         }
 
@@ -4689,8 +4912,7 @@ public:
             Hash256 cp_hash{};
             bool found = false;
             try {
-                found = checkpoint_at_or_below_(
-                    derived_height, cp_height, cp_hash);
+                found = checkpoint_at_or_below_(derived_height, cp_height, cp_hash);
             } catch (...) {
                 found = false;
             }
@@ -4710,10 +4932,8 @@ public:
                         --walk_height;
                     }
                 }
-                if (!HashIsZero(walk_hash) && walk_height == cp_height &&
-                    walk_hash != cp_hash &&
-                    derived_height >=
-                        CHECKPOINT_ENFORCEMENT_ACTIVATES_AT_HEIGHT)
+                if (!HashIsZero(walk_hash) && walk_height == cp_height && walk_hash != cp_hash &&
+                    derived_height >= CHECKPOINT_ENFORCEMENT_ACTIVATES_AT_HEIGHT)
                     return reject("checkpoint_violation");
             }
         }
@@ -4729,8 +4949,7 @@ public:
                 if (known->second.on_main_chain)
                     return reject("duplicate_block");
                 try {
-                    if (LoadIndexedBlockNoLock_(bhash).Serialize() !=
-                        block.Serialize())
+                    if (LoadIndexedBlockNoLock_(bhash).Serialize() != block.Serialize())
                         return reject("block_known_body_mismatch");
                 } catch (...) {
                     return reject("side_branch_body_unavailable");
@@ -4744,14 +4963,13 @@ public:
         if (!skip_pow && !skip_pow_hash_only && !known_side_retry) {
             std::optional<mining::ExpensivePowLease> source_pow_lease;
             if (pow_admission.source_budget) {
-                source_pow_lease = pow_admission.source_budget->TryAcquire(
-                    pow_admission.InitialUse());
+                source_pow_lease =
+                    pow_admission.source_budget->TryAcquire(pow_admission.InitialUse());
                 if (!source_pow_lease)
                     return defer("pow_peer_budget_exhausted");
             }
             auto global_pow_lease =
-                mining::GlobalExpensivePowBudget().TryAcquire(
-                    pow_admission.InitialUse());
+                mining::GlobalExpensivePowBudget().TryAcquire(pow_admission.InitialUse());
             if (!global_pow_lease)
                 return defer("pow_global_budget_exhausted");
             Block tmp = block;
@@ -4761,11 +4979,8 @@ public:
             // credits no ban and does not cache the (valid) block as rejected.
             bool pow_dataset_unavailable = false;
             const CanonicalPowTarget* expected_target =
-                pow_parent_context
-                    ? &pow_parent_context->expected_target
-                    : &submitted_target;
-            if (!VerifyBlockPoW(
-                    tmp, &pow_dataset_unavailable, expected_target)) {
+                pow_parent_context ? &pow_parent_context->expected_target : &submitted_target;
+            if (!VerifyBlockPoW(tmp, &pow_dataset_unavailable, expected_target)) {
                 if (pow_dataset_unavailable)
                     return defer("pow_dataset_unavailable");
                 return reject("pow_verify_failed");
@@ -4791,9 +5006,10 @@ public:
             std::unordered_set<std::string> block_spent_all;
             for (size_t i = 1; i < block.transactions.size(); ++i) {
                 for (const auto& inp : block.transactions[i].inputs) {
-                    if (inp.IsCoinbase()) continue;
-                    std::string k = HashToHex(inp.prev_tx_hash) + ":"
-                                  + std::to_string(inp.prev_out_index);
+                    if (inp.IsCoinbase())
+                        continue;
+                    std::string k =
+                        HashToHex(inp.prev_tx_hash) + ":" + std::to_string(inp.prev_out_index);
                     if (!block_spent_all.insert(k).second)
                         return reject("intra_block_double_spend");
                 }
@@ -4810,10 +5026,8 @@ public:
                     tx.HasDustOutput(DUST_THRESHOLD_UNITS))
                     return reject("output_below_dust_threshold");
                 for (const auto& out : tx.outputs) {
-                    if (!out.script_pubkey.empty() &&
-                        out.script_pubkey[0] == 0x6A &&
-                        out.script_pubkey.size() >
-                            MAX_OP_RETURN_SCRIPT_PUBKEY_BYTES)
+                    if (!out.script_pubkey.empty() && out.script_pubkey[0] == 0x6A &&
+                        out.script_pubkey.size() > MAX_OP_RETURN_SCRIPT_PUBKEY_BYTES)
                         return reject("op_return_too_large");
                 }
             }
@@ -4829,22 +5043,25 @@ public:
                 // transactions[0] is coinbase (already validated above)
                 // transactions[1..N] must NOT be coinbase-looking
                 if (!ValidateTransaction(tx_i, false)) {
-                    std::cerr << "  [AddBlock reject h=" << block.height << "] tx_validate_failed idx=" << i << "\n";
+                    std::cerr << "  [AddBlock reject h=" << block.height
+                              << "] tx_validate_failed idx=" << i << "\n";
                     std::cerr.flush();
                     return false;
                 }
                 for (const auto& inp : tx_i.inputs) {
-                    if (inp.IsCoinbase()) continue;
-                    std::string key = HashToHex(inp.prev_tx_hash) + ":" + std::to_string(inp.prev_out_index);
+                    if (inp.IsCoinbase())
+                        continue;
+                    std::string key =
+                        HashToHex(inp.prev_tx_hash) + ":" + std::to_string(inp.prev_out_index);
                     if (!block_spent_outpoints.insert(key).second)
                         return reject("intra_block_double_spend");
                 }
             }
         }
 
-        if (!skip_pow && skip_scripts && !is_alt_chain
-            && derived_height >= TX_FULL_VALIDATION_ACTIVATION_HEIGHT
-            && derived_height <  TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT) {
+        if (!skip_pow && skip_scripts && !is_alt_chain &&
+            derived_height >= TX_FULL_VALIDATION_ACTIVATION_HEIGHT &&
+            derived_height < TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT) {
             for (size_t i = 1; i < block.transactions.size(); ++i) {
                 if (!ValidateTransaction(block.transactions[i], false))
                     return reject("consensus_tx_sig_or_value_invalid");
@@ -4856,52 +5073,56 @@ public:
         // unconditional double-spend dedup), not !skip_scripts, so peer-relayed
         // blocks are held to the same maturity rule. Honest blocks always pass —
         // the mempool already rejects immature-coinbase spends at admission.
-        if (!skip_pow && !is_alt_chain
-            && derived_height >= COINBASE_MATURITY_CONSENSUS_HEIGHT) {
+        if (!skip_pow && !is_alt_chain && derived_height >= COINBASE_MATURITY_CONSENSUS_HEIGHT) {
             const auto v_script = AddressToScript(VaultAddressAtHeight(derived_height));
             const auto p_script = AddressToScript(POOL_ADDRESS);
             const auto e_script = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
             for (size_t i = 1; i < block.transactions.size(); ++i) {
                 for (const auto& inp : block.transactions[i].inputs) {
-                    if (inp.IsCoinbase()) continue;
+                    if (inp.IsCoinbase())
+                        continue;
                     auto uit = utxo_set_.find(UTXOKey(inp.prev_tx_hash, inp.prev_out_index));
-                    if (uit == utxo_set_.end()) continue;
+                    if (uit == utxo_set_.end())
+                        continue;
                     const auto& utxo = uit->second;
-                    if (utxo.script_pubkey == v_script
-                     || utxo.script_pubkey == p_script
-                     || utxo.script_pubkey == e_script) continue;
-                    if (utxo.is_coinbase
-                        && utxo.block_height >= COINBASE_MATURITY_ACTIVATES_AT_HEIGHT
-                        && derived_height - utxo.block_height < COINBASE_MATURITY)
+                    if (utxo.script_pubkey == v_script || utxo.script_pubkey == p_script ||
+                        utxo.script_pubkey == e_script)
+                        continue;
+                    if (utxo.is_coinbase &&
+                        utxo.block_height >= COINBASE_MATURITY_ACTIVATES_AT_HEIGHT &&
+                        derived_height - utxo.block_height < COINBASE_MATURITY)
                         return reject("consensus_coinbase_immature");
                 }
             }
         }
 
-        if (!skip_pow
-            && derived_height >= GAMING_GUARD_CONSENSUS_HEIGHT) {
+        if (!skip_pow && derived_height >= GAMING_GUARD_CONSENSUS_HEIGHT) {
             constexpr uint64_t COOLDOWN = 12;
             uint64_t pos = derived_height % VAULT_DISTRIBUTION_INTERVAL;
             if (pos > VAULT_DISTRIBUTION_INTERVAL - COOLDOWN) {
-                static const std::string REG   = "VELD_VALIDATOR|REGISTER|";
+                static const std::string REG = "VELD_VALIDATOR|REGISTER|";
                 static const std::string DEREG = "VELD_VALIDATOR|DEREGISTER|";
                 for (size_t i = 1; i < block.transactions.size(); ++i) {
                     for (const auto& out : block.transactions[i].outputs) {
                         if (out.script_pubkey.size() < 2 || out.script_pubkey[0] != 0x6A)
                             continue;
                         size_t off = 1, plen = 0;
-                        if (out.script_pubkey[off] <= 75) { plen = out.script_pubkey[off++]; }
-                        else if (out.script_pubkey[off] == 0x4C && out.script_pubkey.size() > off+1) {
-                            off++; plen = out.script_pubkey[off++];
-                        }
-                        else if (out.script_pubkey[off] == 0x4D && out.script_pubkey.size() > off+2) {
+                        if (out.script_pubkey[off] <= 75) {
+                            plen = out.script_pubkey[off++];
+                        } else if (out.script_pubkey[off] == 0x4C &&
+                                   out.script_pubkey.size() > off + 1) {
                             off++;
-                            plen = out.script_pubkey[off] | (out.script_pubkey[off+1] << 8);
+                            plen = out.script_pubkey[off++];
+                        } else if (out.script_pubkey[off] == 0x4D &&
+                                   out.script_pubkey.size() > off + 2) {
+                            off++;
+                            plen = out.script_pubkey[off] | (out.script_pubkey[off + 1] << 8);
                             off += 2;
                         }
-                        if (off + plen > out.script_pubkey.size()) continue;
-                        std::string payload(out.script_pubkey.begin()+off,
-                                            out.script_pubkey.begin()+off+plen);
+                        if (off + plen > out.script_pubkey.size())
+                            continue;
+                        std::string payload(out.script_pubkey.begin() + off,
+                                            out.script_pubkey.begin() + off + plen);
                         if (payload.rfind(REG, 0) == 0 || payload.rfind(DEREG, 0) == 0)
                             return reject("consensus_gaming_guard_cooldown");
                     }
@@ -4917,10 +5138,11 @@ public:
         // Reorganize() reconstructs both the candidate UTXO set and staking
         // overlay through the candidate parent.
         if (!skip_pow && !is_alt_chain) {
-            if (const char* why = StakeBackingViolation(block)) return reject(why);
+            if (const char* why = StakeBackingViolation(block))
+                return reject(why);
         }
 
-        std::string prev  = HashToHex(block.header.prev_block_hash);
+        std::string prev = HashToHex(block.header.prev_block_hash);
 
         if (block_tree_.count(bhash) && !known_side_retry)
             return reject("duplicate_block");
@@ -4938,19 +5160,23 @@ public:
         Block blk = block;
         blk.height = expected_height;
 
-        if (blk.transactions.empty()) return reject("empty_after_copy");
+        if (blk.transactions.empty())
+            return reject("empty_after_copy");
         if (!is_alt_chain) {
             uint64_t cb_out = blk.transactions[0].TotalOutput();
             uint64_t fees_in_block_2 = 0;
             for (size_t ti = 1; ti < blk.transactions.size(); ++ti) {
                 const auto& tx = blk.transactions[ti];
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 uint64_t tx_in = 0, tx_out = tx.TotalOutput();
                 for (const auto& inp : tx.inputs) {
                     auto utxo = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (utxo) tx_in += utxo->value;
+                    if (utxo)
+                        tx_in += utxo->value;
                 }
-                if (tx_in > tx_out) fees_in_block_2 += (tx_in - tx_out);
+                if (tx_in > tx_out)
+                    fees_in_block_2 += (tx_in - tx_out);
             }
             uint64_t new_emission_2 = (cb_out > fees_in_block_2) ? (cb_out - fees_in_block_2) : 0;
             if (new_emission_2 > MAX_SUPPLY_UNITS ||
@@ -4958,11 +5184,9 @@ public:
                 return reject("supply_cap_overflow");
         }
 
-        if (!skip_pow && !is_alt_chain && blk.height > 0 &&
-            !ValidateCoinbaseOutputs(blk))
+        if (!skip_pow && !is_alt_chain && blk.height > 0 && !ValidateCoinbaseOutputs(blk))
             return reject("coinbase_outputs_invalid");
-        if (!skip_pow && !is_alt_chain && blk.height > 0 &&
-            !ValidateCanonicalCoinbaseSplit(blk))
+        if (!skip_pow && !is_alt_chain && blk.height > 0 && !ValidateCanonicalCoinbaseSplit(blk))
             return reject("coinbase_split_not_canonical");
 
         if constexpr (OPTION_B_CONSENSUS_GATE_ENABLED) {
@@ -4970,9 +5194,11 @@ public:
                 std::unordered_set<std::string> intra_block_nms_seen;
                 size_t nms_records = 0;
                 for (const auto& tx : blk.transactions) {
-                    if (tx.IsCoinbase()) continue;
+                    if (tx.IsCoinbase())
+                        continue;
                     auto nms_rec = ExtractNmsFromTx(tx);
-                    if (!nms_rec) continue;
+                    if (!nms_rec)
+                        continue;
                     if (++nms_records > MAX_NMS_RECORDS_PER_BLOCK)
                         return reject("too_many_nms_records");
                     auto miner_script = ExtractNmsMinerScript(tx);
@@ -4981,17 +5207,13 @@ public:
                     if (!ValidateNmsMinerIdentity(tx))
                         return reject("nms_miner_identity_mismatch");
                     if (!is_alt_chain) {
-                        const auto nms_validation =
-                            ValidateNmsWithDisposition(
-                                *nms_rec, *this, blk.height,
-                                pow_admission.source_budget.get(),
-                                pow_admission.NmsUse());
-                        if (nms_validation ==
-                                NmsValidationDisposition::DeferredLocalWork) {
+                        const auto nms_validation = ValidateNmsWithDisposition(
+                            *nms_rec, *this, blk.height, pow_admission.source_budget.get(),
+                            pow_admission.NmsUse());
+                        if (nms_validation == NmsValidationDisposition::DeferredLocalWork) {
                             return defer("nms_local_work_deferred");
                         }
-                        if (nms_validation !=
-                                NmsValidationDisposition::Valid) {
+                        if (nms_validation != NmsValidationDisposition::Valid) {
                             return reject("nms_validation_failed");
                         }
                     }
@@ -5029,9 +5251,11 @@ public:
                 intra_block_tx_ids.insert(HashToHex(tx.GetTxID()));
             for (size_t ti = 0; ti < blk.transactions.size(); ++ti) {
                 const auto& tx = blk.transactions[ti];
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 for (const auto& inp : tx.inputs) {
-                    if (intra_block_tx_ids.count(HashToHex(inp.prev_tx_hash))) continue;
+                    if (intra_block_tx_ids.count(HashToHex(inp.prev_tx_hash)))
+                        continue;
                     if (!GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index)) {
                         return reject("input_utxo_missing");
                     }
@@ -5060,13 +5284,11 @@ public:
                 ticket.parent_hash != candidate.header.prev_block_hash ||
                 ticket.source != pow_admission.local_work_kind ||
                 ticket.work_binding != pow_admission.work_binding ||
-                ticket.work_authorization !=
-                    pow_admission.work_authorization)
+                ticket.work_authorization != pow_admission.work_authorization)
                 return LocalTicketClaimResult::Mismatch;
             if (ticket.source == mining::LocalWorkKind::SubmitBlock) {
                 if (HashIsZero(ticket.work_identity) ||
-                    ticket.work_identity !=
-                        candidate.header.GetTemplateWorkIdentity())
+                    ticket.work_identity != candidate.header.GetTemplateWorkIdentity())
                     return LocalTicketClaimResult::Mismatch;
             } else if (!HashIsZero(ticket.work_identity)) {
                 return LocalTicketClaimResult::Mismatch;
@@ -5074,26 +5296,30 @@ public:
             if (std::chrono::steady_clock::now() >= ticket.deadline)
                 return LocalTicketClaimResult::Expired;
             bool live = false;
-            try { live = ticket.live(); }
-            catch (...) { live = false; }
-            if (!live) return LocalTicketClaimResult::Expired;
-            pow_admission.local_work_handoff->Install(
-                ticket.owner, ticket.live);
+            try {
+                live = ticket.live();
+            } catch (...) {
+                live = false;
+            }
+            if (!live)
+                return LocalTicketClaimResult::Expired;
+            pow_admission.local_work_handoff->Install(ticket.owner, ticket.live);
             bool claimed = false;
             try {
                 claimed = ticket.claim_for_canonical_commit(
-                    ticket.coordinator_generation,
-                    ticket.validation_generation,
-                    ticket.network_magic,
-                    ticket.genesis_hash,
-                    ticket.profile_digest);
+                    ticket.coordinator_generation, ticket.validation_generation,
+                    ticket.network_magic, ticket.genesis_hash, ticket.profile_digest);
+            } catch (...) {
+                claimed = false;
             }
-            catch (...) { claimed = false; }
-            if (!claimed) return LocalTicketClaimResult::StaleOrUsed;
-            try { live = ticket.live(); }
-            catch (...) { live = false; }
-            return live ? LocalTicketClaimResult::Accepted
-                        : LocalTicketClaimResult::Expired;
+            if (!claimed)
+                return LocalTicketClaimResult::StaleOrUsed;
+            try {
+                live = ticket.live();
+            } catch (...) {
+                live = false;
+            }
+            return live ? LocalTicketClaimResult::Accepted : LocalTicketClaimResult::Expired;
         };
         if (block_tree_.count(bhash) && !known_side_retry) {
             return reject("duplicate_block");
@@ -5107,25 +5333,28 @@ public:
         // before this block is registered as canonical or mutates the UTXO set.
         // This catches cross-module apply failures that isolated validation
         // cannot see (notably token mutation followed by AMM balance failure).
-        const bool extends_current_tip = chain_.empty()
-            ? HashIsZero(blk.header.prev_block_hash)
-            : (blk.header.prev_block_hash == chain_.back().GetHash());
+        const bool extends_current_tip =
+            chain_.empty() ? HashIsZero(blk.header.prev_block_hash)
+                           : (blk.header.prev_block_hash == chain_.back().GetHash());
         if (extends_current_tip && module_precommit_validator_) {
             uint64_t projected_supply = total_supply_units_.load();
             if (!AdvanceCanonicalSupply(blk, projected_supply))
                 return reject("module_supply_projection_failed");
             bool modules_ok = false;
-            try { modules_ok = module_precommit_validator_(blk, projected_supply); }
-            catch (...) { modules_ok = false; }
-            if (!modules_ok) return reject("module_apply_precommit_failed");
+            try {
+                modules_ok = module_precommit_validator_(blk, projected_supply);
+            } catch (...) {
+                modules_ok = false;
+            }
+            if (!modules_ok)
+                return reject("module_apply_precommit_failed");
         }
 
         // Local/RPC production is never allowed to register a stale template
         // as a side branch.  Its exact parent binding must be consumed only at
         // the canonical precommit sink; ordinary peer side branches continue
         // through the bounded F2 quarantine independently.
-        if (pow_admission.RequiresLocalWorkAdmission() &&
-            !extends_current_tip) {
+        if (pow_admission.RequiresLocalWorkAdmission() && !extends_current_tip) {
             return defer("local_work_parent_no_longer_canonical");
         }
 
@@ -5134,11 +5363,10 @@ public:
         // bounded private index for VBFR/retry, but that volatile index is
         // deliberately excluded from every public block/height/tip view.
         if (!known_side_retry && !extends_current_tip) {
-            const bool registered =
-                RegisterVolatileSideBlockNoLock_(blk, pow_admission);
+            const bool registered = RegisterVolatileSideBlockNoLock_(blk, pow_admission);
             if (!registered) {
-                const std::string tag = register_failure_tag_.empty()
-                    ? "block_body_persist_failed" : register_failure_tag_;
+                const std::string tag = register_failure_tag_.empty() ? "block_body_persist_failed"
+                                                                      : register_failure_tag_;
                 if (tag == "side_branch_capacity" ||
                     tag == "side_branch_cleanup_failed_restart_required")
                     return defer(tag.c_str());
@@ -5154,9 +5382,9 @@ public:
 
         if (!extends_current_tip) {
             std::vector<Block> validation_scratch;
-            const ReorgDisposition validation = ReorganizeBounded_(
-                bhash, validation_scratch, pow_admission,
-                /*validation_only=*/true);
+            const ReorgDisposition validation =
+                ReorganizeBounded_(bhash, validation_scratch, pow_admission,
+                                   /*validation_only=*/true);
             if (validation == ReorgDisposition::DeferredLocalWork) {
                 if (last_reject_tag_.empty())
                     last_reject_tag_ = "side_validation_deferred_local_work";
@@ -5175,8 +5403,11 @@ public:
         if (chain_.empty()) {
             if (!local_work_required && canonical_work_transition_fn_) {
                 bool transition_ready = false;
-                try { transition_ready = canonical_work_transition_fn_(blk); }
-                catch (...) { transition_ready = false; }
+                try {
+                    transition_ready = canonical_work_transition_fn_(blk);
+                } catch (...) {
+                    transition_ready = false;
+                }
                 if (!transition_ready)
                     return defer("work_admission_transition_pending");
             }
@@ -5195,20 +5426,21 @@ public:
             }
             bool success = CommitBlock(blk);
             if (success && on_commit_) {
-                if (wlock.owns_lock()) wlock.unlock();
-                std::vector<std::pair<Hash256,uint32_t>> spent;
+                if (wlock.owns_lock())
+                    wlock.unlock();
+                std::vector<std::pair<Hash256, uint32_t>> spent;
                 std::vector<UTXO> created;
                 for (const auto& tx : blk.transactions)
                     for (size_t i = 0; i < tx.outputs.size(); ++i) {
                         if (IsProvablyUnspendableOutput(tx.outputs[i]))
                             continue;
                         UTXO utxo;
-                        utxo.tx_hash       = tx.GetTxID();
-                        utxo.output_index  = (uint32_t)i;
-                        utxo.value         = tx.outputs[i].value;
+                        utxo.tx_hash = tx.GetTxID();
+                        utxo.output_index = (uint32_t)i;
+                        utxo.value = tx.outputs[i].value;
                         utxo.script_pubkey = tx.outputs[i].script_pubkey;
-                        utxo.block_height  = blk.height;
-                        utxo.is_coinbase   = tx.IsCoinbase();
+                        utxo.block_height = blk.height;
+                        utxo.is_coinbase = tx.IsCoinbase();
                         created.push_back(utxo);
                     }
                 bool callback_ok = false;
@@ -5225,22 +5457,24 @@ public:
                     success = false;
                 }
             }
-            if (success) UpdateNmsTallyAfterCommit_(blk);
+            if (success)
+                UpdateNmsTallyAfterCommit_(blk);
             if (success && pow_admission.RequiresLocalWorkAdmission())
                 local_handoff_reset.retain = true;
             return success;
         }
 
-        std::string tip_hash    = HashToHex(chain_.back().GetHash());
-        auto tip_it             = block_tree_.find(tip_hash);
-        auto new_it             = block_tree_.find(bhash);
-        if (!extends_current_tip && new_it == block_tree_.end()) return false;
+        std::string tip_hash = HashToHex(chain_.back().GetHash());
+        auto tip_it = block_tree_.find(tip_hash);
+        auto new_it = block_tree_.find(bhash);
+        if (!extends_current_tip && new_it == block_tree_.end())
+            return false;
 
-        ChainWork tip_work = tip_it != block_tree_.end()
-            ? tip_it->second.cumulative_work : ChainWork(0);
+        ChainWork tip_work =
+            tip_it != block_tree_.end() ? tip_it->second.cumulative_work : ChainWork(0);
         const ChainWork new_work = extends_current_tip
-            ? AddChainWork(tip_work, BlockWork(blk.header.bits))
-            : new_it->second.cumulative_work;
+                                       ? AddChainWork(tip_work, BlockWork(blk.header.bits))
+                                       : new_it->second.cumulative_work;
 
         bool success = false;
         std::vector<Block> blocks_to_persist;
@@ -5254,17 +5488,24 @@ public:
             // Re-run tip-dependent checks under the unique lock. Another thread
             // may have changed whether this block was classified as an extension
             // during the earlier lock-free validation pass.
-            if (!ValidateMinerCaps(blk)) return false;
+            if (!ValidateMinerCaps(blk))
+                return false;
             // These deterministic gates depend on parent state and are safe to
             // evaluate twice. Persisted replay uses skip_pow=true and remains
             // outside this path.
             if (!skip_pow) {
-                if (!ValidateExpectedPoolPayout(blk)) return false;
-                if (!ValidateExpectedEndorsementFlush(blk)) return false;
-                if (!ValidateExpectedVaultDistribution(blk)) return false;
-                if (amm_block_validator_ && !amm_block_validator_(blk)) return false;   // btcVELD AMM covenant
-                if (!ValidateExpectedBondMovements(blk)) return false;
-                if (!ValidateExpectedBondYieldSettlement(blk)) return false;
+                if (!ValidateExpectedPoolPayout(blk))
+                    return false;
+                if (!ValidateExpectedEndorsementFlush(blk))
+                    return false;
+                if (!ValidateExpectedVaultDistribution(blk))
+                    return false;
+                if (amm_block_validator_ && !amm_block_validator_(blk))
+                    return false; // btcVELD AMM covenant
+                if (!ValidateExpectedBondMovements(blk))
+                    return false;
+                if (!ValidateExpectedBondYieldSettlement(blk))
+                    return false;
 
                 // Recheck emission against the consistent parent UTXO and supply
                 // state before committing the block.
@@ -5277,28 +5518,28 @@ public:
                     uint64_t fees_in_block = 0;
                     for (size_t ti = 1; ti < blk.transactions.size(); ++ti) {
                         const auto& tx = blk.transactions[ti];
-                        if (tx.IsCoinbase()) continue;
+                        if (tx.IsCoinbase())
+                            continue;
                         uint64_t tx_in = 0, tx_out = tx.TotalOutput();
                         for (const auto& inp : tx.inputs) {
-                            auto utxo = GetUTXONoLock(inp.prev_tx_hash,
-                                                      inp.prev_out_index);
-                            if (utxo) tx_in += utxo->value;
+                            auto utxo = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
+                            if (utxo)
+                                tx_in += utxo->value;
                         }
-                        if (tx_in > tx_out) fees_in_block += (tx_in - tx_out);
+                        if (tx_in > tx_out)
+                            fees_in_block += (tx_in - tx_out);
                     }
-                    uint64_t new_emission =
-                        (cb_out > fees_in_block) ? (cb_out - fees_in_block) : 0;
+                    uint64_t new_emission = (cb_out > fees_in_block) ? (cb_out - fees_in_block) : 0;
                     if (new_emission > MAX_SUPPLY_UNITS ||
-                        total_supply_units_.load() >
-                            MAX_SUPPLY_UNITS - new_emission)
+                        total_supply_units_.load() > MAX_SUPPLY_UNITS - new_emission)
                         return false;
                 }
             }
             // Validate peer transaction signatures and values against the
             // consistent parent UTXO set. PoW was verified before acquiring
             // this lock; persisted replay intentionally skips this path.
-            if (!skip_pow && skip_scripts
-                && derived_height >= TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT) {
+            if (!skip_pow && skip_scripts &&
+                derived_height >= TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT) {
                 for (size_t i = 1; i < blk.transactions.size(); ++i) {
                     if (!ValidateTransaction(blk.transactions[i], false))
                         return reject("consensus_tx_sig_or_value_invalid_v2");
@@ -5306,8 +5547,11 @@ public:
             }
             if (!local_work_required && canonical_work_transition_fn_) {
                 bool transition_ready = false;
-                try { transition_ready = canonical_work_transition_fn_(blk); }
-                catch (...) { transition_ready = false; }
+                try {
+                    transition_ready = canonical_work_transition_fn_(blk);
+                } catch (...) {
+                    transition_ready = false;
+                }
                 if (!transition_ready)
                     return defer("work_admission_transition_pending");
             }
@@ -5328,8 +5572,8 @@ public:
             if (success) {
                 blocks_to_persist.push_back(blk);
             }
-        } else if (BetterChainScore(new_work, new_it->second.height, new_it->first,
-                                    tip_work, tip_it->second.height, tip_it->first)) {
+        } else if (BetterChainScore(new_work, new_it->second.height, new_it->first, tip_work,
+                                    tip_it->second.height, tip_it->first)) {
             bool ancestor_blacklisted = false;
             {
                 std::string cursor = bhash;
@@ -5339,10 +5583,13 @@ public:
                         break;
                     }
                     auto cit = block_tree_.find(cursor);
-                    if (cit == block_tree_.end()) break;
-                    if (cit->second.on_main_chain) break;
+                    if (cit == block_tree_.end())
+                        break;
+                    if (cit->second.on_main_chain)
+                        break;
                     cursor = HashToHex(cit->second.prev_hash);
-                    if (cursor.empty()) break;
+                    if (cursor.empty())
+                        break;
                 }
             }
             if (ancestor_blacklisted) {
@@ -5366,8 +5613,7 @@ public:
                     if (!transition_ready)
                         return defer("work_admission_transition_pending");
                 }
-                const ReorgDisposition reorg = Reorganize(
-                    bhash, blocks_to_persist, pow_admission);
+                const ReorgDisposition reorg = Reorganize(bhash, blocks_to_persist, pow_admission);
                 success = reorg == ReorgDisposition::Applied;
                 if (success) {
                     from_reorg_path = true;
@@ -5391,8 +5637,8 @@ public:
             // real reorg succeeds, so any later local-work deferral still has
             // zero persistence or relay effects.
             if (!PromoteValidatedSideSuffixNoLock_(bhash)) {
-                const std::string tag = register_failure_tag_.empty()
-                    ? "block_body_persist_failed" : register_failure_tag_;
+                const std::string tag = register_failure_tag_.empty() ? "block_body_persist_failed"
+                                                                      : register_failure_tag_;
                 NoteDeferredReorgNoLock_(bhash);
                 return defer(tag.c_str());
             }
@@ -5400,30 +5646,28 @@ public:
         }
 
         if (success && !blocks_to_persist.empty()) {
-            if (wlock.owns_lock()) wlock.unlock();
+            if (wlock.owns_lock())
+                wlock.unlock();
 
             auto rollback_post_reorg = [&]() -> bool {
                 if (!from_reorg_path || !pending_reorg_rollback_ ||
                     !pending_reorg_rollback_->valid) {
                     return false;
                 }
-                if (!wlock.owns_lock()) wlock.lock();
+                if (!wlock.owns_lock())
+                    wlock.lock();
                 const ReorgRollbackFrame frame = *pending_reorg_rollback_;
                 UTXODelta old_delta;
-                const bool memory_ok =
-                    RestoreReorgFrameNoLock_(frame, old_delta);
+                const bool memory_ok = RestoreReorgFrameNoLock_(frame, old_delta);
                 blocks_to_persist.clear();
 
                 bool durable_ok = memory_ok;
                 if (memory_ok && on_reorg_abort_ && !chain_.empty()) {
                     try {
-                        durable_ok = on_reorg_abort_(
-                            old_delta, chain_.back(),
-                            total_supply_units_.load(),
-                            frame.old_tail);
+                        durable_ok = on_reorg_abort_(old_delta, chain_.back(),
+                                                     total_supply_units_.load(), frame.old_tail);
                     } catch (const std::exception& e) {
-                        std::cerr << "  [reorg] abort-persistence exception: "
-                                  << e.what() << "\n";
+                        std::cerr << "  [reorg] abort-persistence exception: " << e.what() << "\n";
                         durable_ok = false;
                     } catch (...) {
                         std::cerr << "  [reorg] abort-persistence unknown exception\n";
@@ -5438,8 +5682,7 @@ public:
                     // Keep the rollback frame and displaced bodies intact. A
                     // failed/uncertain abort must be resolved by startup, not
                     // by destructive in-process pruning.
-                    durability_compromised_.store(true,
-                                                  std::memory_order_release);
+                    durability_compromised_.store(true, std::memory_order_release);
                     std::cerr << "  [reorg] CRITICAL: old in-memory canonical "
                                  "frame restored but durable rollback failed; "
                                  "restart required before accepting more blocks\n";
@@ -5452,16 +5695,17 @@ public:
             // transactions.  Callers revalidate those transactions against
             // chain and mempool state, so release chain_mutex_ first.
             auto finalize_successful_reorg = [&]() {
-                if (!from_reorg_path) return;
+                if (!from_reorg_path)
+                    return;
 
                 std::vector<Transaction> orphan_txs;
-                if (!wlock.owns_lock()) wlock.lock();
-                if (pending_reorg_rollback_ &&
-                    pending_reorg_rollback_->valid) {
-                    for (const auto& old_block :
-                         pending_reorg_rollback_->old_tail) {
+                if (!wlock.owns_lock())
+                    wlock.lock();
+                if (pending_reorg_rollback_ && pending_reorg_rollback_->valid) {
+                    for (const auto& old_block : pending_reorg_rollback_->old_tail) {
                         for (const auto& tx : old_block.transactions) {
-                            if (tx.IsCoinbase()) continue;
+                            if (tx.IsCoinbase())
+                                continue;
                             bool signed_input = false;
                             for (const auto& input : tx.inputs) {
                                 if (!input.script_sig.empty()) {
@@ -5469,7 +5713,8 @@ public:
                                     break;
                                 }
                             }
-                            if (signed_input) orphan_txs.push_back(tx);
+                            if (signed_input)
+                                orphan_txs.push_back(tx);
                         }
                     }
                 }
@@ -5484,8 +5729,7 @@ public:
                     try {
                         on_orphaned_txs_(orphan_txs);
                     } catch (const std::exception& e) {
-                        std::cerr << "  [reorg] post-commit orphan callback: "
-                                  << e.what() << "\n";
+                        std::cerr << "  [reorg] post-commit orphan callback: " << e.what() << "\n";
                     } catch (...) {
                         std::cerr << "  [reorg] post-commit orphan callback: "
                                      "unknown exception\n";
@@ -5494,8 +5738,7 @@ public:
             };
 
             const auto reorg_publication_uncertain = [&]() -> bool {
-                if (!from_reorg_path ||
-                    !reorg_publication_uncertain_fn_) {
+                if (!from_reorg_path || !reorg_publication_uncertain_fn_) {
                     return false;
                 }
                 bool uncertain = true;
@@ -5507,12 +5750,10 @@ public:
                     uncertain = true;
                 }
                 if (uncertain) {
-                    durability_compromised_.store(
-                        true, std::memory_order_release);
-                    std::cerr
-                        << "  [reorg] CRITICAL: canonical publication outcome "
-                           "is uncertain; retaining rollback frame and all "
-                           "displaced bodies until restart\n";
+                    durability_compromised_.store(true, std::memory_order_release);
+                    std::cerr << "  [reorg] CRITICAL: canonical publication outcome "
+                                 "is uncertain; retaining rollback frame and all "
+                                 "displaced bodies until restart\n";
                     std::cerr.flush();
                 }
                 return uncertain;
@@ -5529,19 +5770,19 @@ public:
             }
 
             for (const auto& cb_block : blocks_to_persist) {
-                std::vector<std::pair<Hash256,uint32_t>> spent;
+                std::vector<std::pair<Hash256, uint32_t>> spent;
                 std::vector<UTXO> created;
                 for (const auto& tx : cb_block.transactions) {
                     for (size_t i = 0; i < tx.outputs.size(); ++i) {
                         if (IsProvablyUnspendableOutput(tx.outputs[i]))
                             continue;
                         UTXO utxo;
-                        utxo.tx_hash       = tx.GetTxID();
-                        utxo.output_index  = (uint32_t)i;
-                        utxo.value         = tx.outputs[i].value;
+                        utxo.tx_hash = tx.GetTxID();
+                        utxo.output_index = (uint32_t)i;
+                        utxo.value = tx.outputs[i].value;
                         utxo.script_pubkey = tx.outputs[i].script_pubkey;
-                        utxo.block_height  = cb_block.height;
-                        utxo.is_coinbase   = tx.IsCoinbase();
+                        utxo.block_height = cb_block.height;
+                        utxo.is_coinbase = tx.IsCoinbase();
                         created.push_back(utxo);
                     }
                     if (!tx.IsCoinbase()) {
@@ -5551,14 +5792,13 @@ public:
                 }
                 bool callback_ok = false;
                 try {
-                    callback_ok = on_commit_(cb_block, spent, created,
-                                             from_reorg_path);
+                    callback_ok = on_commit_(cb_block, spent, created, from_reorg_path);
                 } catch (const std::exception& e) {
-                    std::cerr << "  [on_commit] exception at height " << cb_block.height
-                              << ": " << e.what() << "\n";
+                    std::cerr << "  [on_commit] exception at height " << cb_block.height << ": "
+                              << e.what() << "\n";
                 } catch (...) {
-                    std::cerr << "  [on_commit] unknown exception at height "
-                              << cb_block.height << "\n";
+                    std::cerr << "  [on_commit] unknown exception at height " << cb_block.height
+                              << "\n";
                 }
                 if (!callback_ok) {
                     last_reject_tag_ = "commit_callback_failed";
@@ -5567,9 +5807,8 @@ public:
                     } else {
                         const bool restored = rollback_post_reorg();
                         std::cerr << "  [reorg] post-reorg commit callback failed; "
-                                  << (restored
-                                          ? "restored the complete pre-reorg canonical frame\n"
-                                          : "FAILED to restore the pre-reorg frame\n");
+                                  << (restored ? "restored the complete pre-reorg canonical frame\n"
+                                               : "FAILED to restore the pre-reorg frame\n");
                         std::cerr.flush();
                     }
                     success = false;
@@ -5593,29 +5832,27 @@ public:
         return success;
     }
 
-    static bool VerifyInputAgainstScript(const Transaction& tx,
-                                          uint32_t input_index,
-                                          const std::vector<uint8_t>& script_pubkey) {
-        if (input_index >= tx.inputs.size()) return false;
+    static bool VerifyInputAgainstScript(const Transaction& tx, uint32_t input_index,
+                                         const std::vector<uint8_t>& script_pubkey) {
+        if (input_index >= tx.inputs.size())
+            return false;
         const auto& inp = tx.inputs[input_index];
-        if (script_pubkey.size() != 25 ||
-            script_pubkey[0]  != 0x76 ||
-            script_pubkey[1]  != 0xA9 ||
-            script_pubkey[2]  != 0x14 ||
-            script_pubkey[23] != 0x88 ||
-            script_pubkey[24] != 0xAC) {
+        if (script_pubkey.size() != 25 || script_pubkey[0] != 0x76 || script_pubkey[1] != 0xA9 ||
+            script_pubkey[2] != 0x14 || script_pubkey[23] != 0x88 || script_pubkey[24] != 0xAC) {
             return false;
         }
         std::array<uint8_t, 20> expected_hash;
-        std::copy(script_pubkey.begin() + 3, script_pubkey.begin() + 23,
-                  expected_hash.begin());
+        std::copy(script_pubkey.begin() + 3, script_pubkey.begin() + 23, expected_hash.begin());
         auto read_pushdata2 = [](const std::vector<uint8_t>& ss, size_t& pos,
-                                  std::vector<uint8_t>& out) -> bool {
-            if (pos + 3 > ss.size()) return false;
-            if (ss[pos++] != 0x4D) return false;
+                                 std::vector<uint8_t>& out) -> bool {
+            if (pos + 3 > ss.size())
+                return false;
+            if (ss[pos++] != 0x4D)
+                return false;
             size_t len = (size_t)ss[pos] | ((size_t)ss[pos + 1] << 8);
             pos += 2;
-            if (pos + len > ss.size()) return false;
+            if (pos + len > ss.size())
+                return false;
             out.assign(ss.begin() + pos, ss.begin() + pos + len);
             pos += len;
             return true;
@@ -5624,23 +5861,32 @@ public:
         size_t pos = 0;
         std::vector<uint8_t> sig_bytes_with_hashtype;
         std::vector<uint8_t> pubkey_bytes;
-        if (!read_pushdata2(ss, pos, sig_bytes_with_hashtype)) return false;
-        if (!read_pushdata2(ss, pos, pubkey_bytes)) return false;
-        if (pubkey_bytes.size() != 1952) return false;
-        if (sig_bytes_with_hashtype.empty()) return false;
-        if (pos != ss.size()) return false;
-        if (sig_bytes_with_hashtype.size() != 3311) return false;
+        if (!read_pushdata2(ss, pos, sig_bytes_with_hashtype))
+            return false;
+        if (!read_pushdata2(ss, pos, pubkey_bytes))
+            return false;
+        if (pubkey_bytes.size() != 1952)
+            return false;
+        if (sig_bytes_with_hashtype.empty())
+            return false;
+        if (pos != ss.size())
+            return false;
+        if (sig_bytes_with_hashtype.size() != 3311)
+            return false;
         uint8_t scheme_id = sig_bytes_with_hashtype.front();
-        if (scheme_id != ::veld::SCHEME_ID_MLDSA65) return false;
-        if (sig_bytes_with_hashtype.back() != 0x01) return false;
+        if (scheme_id != ::veld::SCHEME_ID_MLDSA65)
+            return false;
+        if (sig_bytes_with_hashtype.back() != 0x01)
+            return false;
         Secp256k1PubKey pubkey;
         std::copy(pubkey_bytes.begin(), pubkey_bytes.end(), pubkey.begin());
         Hash160 actual_hash = Hash160Compute(pubkey);
         for (int j = 0; j < 20; ++j) {
-            if (actual_hash[j] != expected_hash[j]) return false;
+            if (actual_hash[j] != expected_hash[j])
+                return false;
         }
         Secp256k1SigDER sig_bytes(sig_bytes_with_hashtype.begin() + 1,
-                                   sig_bytes_with_hashtype.end() - 1);
+                                  sig_bytes_with_hashtype.end() - 1);
         // Compute sighash with the same scheme_id binding the signer used.
         Hash256 sighash = ComputeSighash(tx, input_index, script_pubkey, scheme_id);
         return Verify(pubkey, sighash, sig_bytes);
@@ -5655,21 +5901,23 @@ public:
     // rebuildable derived index, never a source of consensus truth; validate
     // every locator against the current canonical chain and exact input before
     // returning transaction bytes to recovery/watchtower callers.
-    std::optional<CanonicalSpender> GetCanonicalSpender(
-        const Hash256& prev_tx_hash, uint32_t prev_out_index) const {
+    std::optional<CanonicalSpender> GetCanonicalSpender(const Hash256& prev_tx_hash,
+                                                        uint32_t prev_out_index) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         const std::string key = UTXOKey(prev_tx_hash, prev_out_index);
         auto it = canonical_spenders_.find(key);
-        if (it == canonical_spenders_.end()) return std::nullopt;
+        if (it == canonical_spenders_.end())
+            return std::nullopt;
         const SpenderLocator& loc = it->second;
-        if (loc.block_height >= chain_.size()) return std::nullopt;
+        if (loc.block_height >= chain_.size())
+            return std::nullopt;
         const Block block = LoadCanonicalBlockNoLock_(loc.block_height);
-        if (block.height != loc.block_height ||
-            loc.tx_index >= block.transactions.size()) {
+        if (block.height != loc.block_height || loc.tx_index >= block.transactions.size()) {
             return std::nullopt;
         }
         const Transaction& tx = block.transactions[loc.tx_index];
-        if (tx.GetTxID() != loc.txid) return std::nullopt;
+        if (tx.GetTxID() != loc.txid)
+            return std::nullopt;
         bool exact_input = false;
         for (const auto& input : tx.inputs) {
             if (!input.IsCoinbase() && input.prev_tx_hash == prev_tx_hash &&
@@ -5678,18 +5926,21 @@ public:
                 break;
             }
         }
-        if (!exact_input) return std::nullopt;
+        if (!exact_input)
+            return std::nullopt;
         return CanonicalSpender{tx, loc.block_height, block.GetHash()};
     }
 
     std::optional<UTXO> GetUTXONoLock(const Hash256& tx_hash, uint32_t index) const {
         if (validation_overlay_) {
             auto it = validation_overlay_->set.find(UTXOKey(tx_hash, index));
-            if (it == validation_overlay_->set.end()) return std::nullopt;
+            if (it == validation_overlay_->set.end())
+                return std::nullopt;
             return it->second;
         }
         auto it = utxo_set_.find(UTXOKey(tx_hash, index));
-        if (it == utxo_set_.end()) return std::nullopt;
+        if (it == utxo_set_.end())
+            return std::nullopt;
         return it->second;
     }
 
@@ -5697,11 +5948,13 @@ public:
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         std::string sh = ScriptHex(script_pubkey);
         auto it = script_index_.find(sh);
-        if (it == script_index_.end()) return 0;
+        if (it == script_index_.end())
+            return 0;
         uint64_t balance = 0;
         for (const auto& ukey : it->second) {
             auto uit = utxo_set_.find(ukey);
-            if (uit != utxo_set_.end()) balance += uit->second.value;
+            if (uit != utxo_set_.end())
+                balance += uit->second.value;
         }
         return balance;
     }
@@ -5718,11 +5971,12 @@ public:
         if (it != script_index_.end()) {
             for (const auto& ukey : it->second) {
                 auto uit = utxo_set_.find(ukey);
-                if (uit != utxo_set_.end()) result.push_back(uit->second);
+                if (uit != utxo_set_.end())
+                    result.push_back(uit->second);
             }
         }
         std::sort(result.begin(), result.end(),
-                  [](const UTXO& a, const UTXO& b){ return a.value > b.value; });
+                  [](const UTXO& a, const UTXO& b) { return a.value > b.value; });
         return result;
     }
 
@@ -5740,7 +5994,9 @@ public:
         auto balances = GetAllBalances();
         using Entry = std::pair<uint64_t, const std::string*>;
         struct MinFirst {
-            bool operator()(const Entry& a, const Entry& b) const { return a.first > b.first; }
+            bool operator()(const Entry& a, const Entry& b) const {
+                return a.first > b.first;
+            }
         };
         std::priority_queue<Entry, std::vector<Entry>, MinFirst> heap;
         for (const auto& kv : balances) {
@@ -5760,11 +6016,13 @@ public:
             script.reserve(script_hex.size() / 2);
             for (size_t i = 0; i + 1 < script_hex.size(); i += 2) {
                 auto hc = [](char c) -> uint8_t {
-                    if (c >= '0' && c <= '9') return (uint8_t)(c - '0');
-                    if (c >= 'a' && c <= 'f') return (uint8_t)(c - 'a' + 10);
+                    if (c >= '0' && c <= '9')
+                        return (uint8_t)(c - '0');
+                    if (c >= 'a' && c <= 'f')
+                        return (uint8_t)(c - 'a' + 10);
                     return (uint8_t)(c - 'A' + 10);
                 };
-                script.push_back((hc(script_hex[i]) << 4) | hc(script_hex[i+1]));
+                script.push_back((hc(script_hex[i]) << 4) | hc(script_hex[i + 1]));
             }
             std::string addr = ScriptToAddress(script);
             if (!addr.empty())
@@ -5786,30 +6044,34 @@ public:
         std::string info;
         info += "Height:        " + std::to_string(Height()) + "\n";
         info += "Supply (VELD): " + std::to_string(TotalSupplyVeld()) + "\n";
-        info += "Phase:         " + std::string(IsStakingActive()
-                                    ? "Standard (PoW + PoS)"
-                                    : "Bootstrap (PoW only)") + "\n";
-        info += "Staking:       " + std::string(IsStakingActive() ? "Active" : "Inactive (staking not yet active)") + "\n";
+        info += "Phase:         " +
+                std::string(IsStakingActive() ? "Standard (PoW + PoS)" : "Bootstrap (PoW only)") +
+                "\n";
+        info += "Staking:       " +
+                std::string(IsStakingActive() ? "Active" : "Inactive (staking not yet active)") +
+                "\n";
         return info;
     }
 
-    using OnCommitCallback = std::function<bool(const Block&,
-        const std::vector<std::pair<Hash256,uint32_t>>&,
-        const std::vector<UTXO>&,
-        bool from_reorg)>;
+    using OnCommitCallback =
+        std::function<bool(const Block&, const std::vector<std::pair<Hash256, uint32_t>>&,
+                           const std::vector<UTXO>&, bool from_reorg)>;
 
-    void SetOnCommit(OnCommitCallback cb) { on_commit_ = cb; }
+    void SetOnCommit(OnCommitCallback cb) {
+        on_commit_ = cb;
+    }
 
     bool RollbackTip(bool allow_genesis = false) {
         std::unique_lock<std::shared_mutex> lock(chain_mutex_);
-        if (chain_.empty() || (chain_.size() == 1 && !allow_genesis)) return false;
+        if (chain_.empty() || (chain_.size() == 1 && !allow_genesis))
+            return false;
 
-        if (canonical_undo_.empty()) return false;
+        if (canonical_undo_.empty())
+            return false;
         std::set<std::string> rollback_touched;
         CollectUndoTouchedKeys_(canonical_undo_.back(), rollback_touched);
         Block popped;
-        if (!DisconnectCanonicalTipNoLock_(
-                popped, /*retain_as_side_branch=*/true)) {
+        if (!DisconnectCanonicalTipNoLock_(popped, /*retain_as_side_branch=*/true)) {
             durability_compromised_.store(true, std::memory_order_release);
             std::cerr << "  [rollback] CRITICAL: bounded undo record is "
                          "missing/corrupt; refusing a partial disconnect.\n";
@@ -5821,7 +6083,7 @@ public:
             uint64_t new_tip_height = chain_.empty() ? 0 : chain_.size() - 1;
             std::unique_lock<std::shared_mutex> nms_lock(nms_tally_mutex_);
             for (auto it = nms_tally_.seen_payloads.begin();
-                 it != nms_tally_.seen_payloads.end(); ) {
+                 it != nms_tally_.seen_payloads.end();) {
                 if (it->second > new_tip_height) {
                     it = nms_tally_.seen_payloads.erase(it);
                 } else {
@@ -5868,7 +6130,8 @@ public:
     std::vector<std::string> ReorgRecoveryOldTailHashes() const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         std::vector<std::string> hashes;
-        if (!pending_reorg_rollback_) return hashes;
+        if (!pending_reorg_rollback_)
+            return hashes;
         hashes.reserve(pending_reorg_rollback_->old_tail.size());
         for (const auto& block : pending_reorg_rollback_->old_tail)
             hashes.push_back(HashToHex(block.GetHash()));
@@ -5891,21 +6154,21 @@ public:
     }
 #endif
 
-    using OnReorgCallback = std::function<void(
-        const UTXODelta&, uint64_t ancestor_height,
-        const Hash256& ancestor_hash, const Block& old_tip,
-        uint64_t old_supply, const Block& intended_new_tip,
-        uint64_t intended_new_supply)>;
-    void SetOnReorg(OnReorgCallback cb) { on_reorg_ = cb; }
+    using OnReorgCallback =
+        std::function<void(const UTXODelta&, uint64_t ancestor_height, const Hash256& ancestor_hash,
+                           const Block& old_tip, uint64_t old_supply, const Block& intended_new_tip,
+                           uint64_t intended_new_supply)>;
+    void SetOnReorg(OnReorgCallback cb) {
+        on_reorg_ = cb;
+    }
 
     // Compensation hook used only when a post-Reorganize commit callback
     // rejects after the in-memory reorg succeeded.  The canonical frame has
     // already been restored when this runs; implementations must restore the
     // durable UTXO/tip/per-height metadata to the supplied old canonical
     // suffix and return success.
-    using OnReorgAbortCallback = std::function<bool(
-        const UTXODelta&, const Block&, uint64_t,
-        const std::vector<Block>&)>;
+    using OnReorgAbortCallback =
+        std::function<bool(const UTXODelta&, const Block&, uint64_t, const std::vector<Block>&)>;
     void SetOnReorgAbort(OnReorgAbortCallback cb) {
         on_reorg_abort_ = std::move(cb);
     }
@@ -5915,22 +6178,21 @@ public:
     // means a durable write outcome is unknowable until restart; callers must
     // retain all recovery data and must not publish orphaned transactions.
     using ReorgPublicationUncertainFn = std::function<bool()>;
-    void SetReorgPublicationUncertainFn(
-            ReorgPublicationUncertainFn fn) {
+    void SetReorgPublicationUncertainFn(ReorgPublicationUncertainFn fn) {
         reorg_publication_uncertain_fn_ = std::move(fn);
     }
 
-    using OnRollbackCallback =
-        std::function<void(const UTXODelta&, const Block& popped)>;
-    void SetOnRollback(OnRollbackCallback cb) { on_rollback_ = cb; }
+    using OnRollbackCallback = std::function<void(const UTXODelta&, const Block& popped)>;
+    void SetOnRollback(OnRollbackCallback cb) {
+        on_rollback_ = cb;
+    }
 
     // Post-commit reorg notification. It runs only after every replacement
     // block's durable on_commit callback succeeds, without chain_mutex_ held.
     // The vector contains signed non-coinbase transactions in old canonical
     // height/transaction order and may be empty for a coinbase-only reorg;
     // consumers must still use that empty notification for stale-state cleanup.
-    using OnOrphanedTxsCallback = std::function<void(
-        const std::vector<Transaction>&)>;
+    using OnOrphanedTxsCallback = std::function<void(const std::vector<Transaction>&)>;
     void SetOnOrphanedTxs(OnOrphanedTxsCallback cb) {
         on_orphaned_txs_ = std::move(cb);
     }
@@ -5950,19 +6212,18 @@ public:
     //     poison every locally mined candidate even though block consensus later
     //     rejects it.
     std::function<int(const std::vector<uint8_t>&, const Hash256&, uint32_t)> amm_pool_input_check_;
-    std::function<bool(const Block&)>                                         amm_block_validator_;
-    using AmmMempoolValidator =
-        std::function<bool(const Transaction&, uint64_t)>;
+    std::function<bool(const Block&)> amm_block_validator_;
+    using AmmMempoolValidator = std::function<bool(const Transaction&, uint64_t)>;
     void SetAmmMempoolValidator(AmmMempoolValidator fn) {
         amm_mempool_validator_ = std::move(fn);
     }
-    bool ValidateAmmMempoolCandidate(const Transaction& tx,
-                                     uint64_t candidate_height) const {
+    bool ValidateAmmMempoolCandidate(const Transaction& tx, uint64_t candidate_height) const {
         // Fail closed for an AMM-shaped transaction if the node did not install
         // the stateful half of the sigless-covenant policy. Mempool calls this
         // only after cheaply proving that the tx carries an AMM marker or
         // touches an AMM pool-marker script, so ordinary payments remain inert.
-        if (!amm_mempool_validator_) return false;
+        if (!amm_mempool_validator_)
+            return false;
         try {
             return amm_mempool_validator_(tx, candidate_height);
         } catch (...) {
@@ -5975,40 +6236,36 @@ public:
     // no-op rule for a malformed/stale protocol request, but standard mempools
     // must not relay or mine one.  The node supplies an isolated token-ledger
     // dry run against the exact parent state and prospective difficulty.
-    using TokenMempoolValidator =
-        std::function<bool(const Transaction&, uint64_t, uint32_t)>;
+    using TokenMempoolValidator = std::function<bool(const Transaction&, uint64_t, uint32_t)>;
     void SetTokenMempoolValidator(TokenMempoolValidator fn) {
         token_mempool_validator_ = std::move(fn);
     }
-    bool ValidateTokenMempoolCandidate(const Transaction& tx,
-                                       uint64_t candidate_height,
+    bool ValidateTokenMempoolCandidate(const Transaction& tx, uint64_t candidate_height,
                                        uint32_t candidate_bits) const {
-        if (!token_mempool_validator_) return false;
+        if (!token_mempool_validator_)
+            return false;
         try {
-            return token_mempool_validator_(tx, candidate_height,
-                                            candidate_bits);
+            return token_mempool_validator_(tx, candidate_height, candidate_bits);
         } catch (...) {
             return false;
         }
     }
     TokenMempoolValidator token_mempool_validator_;
     using TokenMempoolBatchFilter = std::function<std::vector<bool>(
-        const std::vector<Transaction>&, const std::vector<bool>&,
-        uint64_t, uint32_t)>;
+        const std::vector<Transaction>&, const std::vector<bool>&, uint64_t, uint32_t)>;
     void SetTokenMempoolBatchFilter(TokenMempoolBatchFilter fn) {
         token_mempool_batch_filter_ = std::move(fn);
     }
-    std::vector<bool> FilterTokenMempoolCandidates(
-            const std::vector<Transaction>& candidates,
-            const std::vector<bool>& token_authorization_prevalidated,
-            uint64_t candidate_height, uint32_t candidate_bits) const {
+    std::vector<bool>
+    FilterTokenMempoolCandidates(const std::vector<Transaction>& candidates,
+                                 const std::vector<bool>& token_authorization_prevalidated,
+                                 uint64_t candidate_height, uint32_t candidate_bits) const {
         if (!token_mempool_batch_filter_ ||
             token_authorization_prevalidated.size() != candidates.size())
             return std::vector<bool>(candidates.size(), false);
         try {
             auto accepted = token_mempool_batch_filter_(
-                candidates, token_authorization_prevalidated,
-                candidate_height, candidate_bits);
+                candidates, token_authorization_prevalidated, candidate_height, candidate_bits);
             if (accepted.size() != candidates.size())
                 return std::vector<bool>(candidates.size(), false);
             return accepted;
@@ -6022,21 +6279,18 @@ public:
     // neither retain the pointers nor dispatch asynchronous work that outlives
     // the callback.
     using TokenAwareMempoolSelector = std::function<std::vector<bool>(
-        const std::vector<const Transaction*>&,
-        const std::vector<size_t>&, const std::vector<bool>&,
-        const std::vector<bool>&,
-        size_t, size_t, size_t, size_t, uint64_t, uint32_t)>;
+        const std::vector<const Transaction*>&, const std::vector<size_t>&,
+        const std::vector<bool>&, const std::vector<bool>&, size_t, size_t, size_t, size_t,
+        uint64_t, uint32_t)>;
     void SetTokenAwareMempoolSelector(TokenAwareMempoolSelector fn) {
         token_aware_mempool_selector_ = std::move(fn);
     }
     std::vector<bool> SelectTokenAwareMempoolCandidates(
-            const std::vector<const Transaction*>& candidates,
-            const std::vector<size_t>& serialized_sizes,
-            const std::vector<bool>& token_families,
-            const std::vector<bool>& token_authorization_prevalidated,
-            size_t initial_count, size_t initial_bytes,
-            size_t max_count, size_t max_bytes,
-            uint64_t candidate_height, uint32_t candidate_bits) const {
+        const std::vector<const Transaction*>& candidates,
+        const std::vector<size_t>& serialized_sizes, const std::vector<bool>& token_families,
+        const std::vector<bool>& token_authorization_prevalidated, size_t initial_count,
+        size_t initial_bytes, size_t max_count, size_t max_bytes, uint64_t candidate_height,
+        uint32_t candidate_bits) const {
         if (!token_aware_mempool_selector_) {
             // Standalone/test chains without a token ledger retain ordinary
             // payment selection, but fail closed for stateful TOKEN/MSPV ops.
@@ -6048,9 +6302,8 @@ public:
                 return selected;
             size_t count = initial_count, bytes = initial_bytes;
             for (size_t i = 0; i < candidates.size(); ++i) {
-                if (!candidates[i] || token_families[i] ||
-                    count >= max_count || bytes > max_bytes ||
-                    serialized_sizes[i] > max_bytes - bytes)
+                if (!candidates[i] || token_families[i] || count >= max_count ||
+                    bytes > max_bytes || serialized_sizes[i] > max_bytes - bytes)
                     continue;
                 selected[i] = true;
                 ++count;
@@ -6060,10 +6313,9 @@ public:
         }
         try {
             auto selected = token_aware_mempool_selector_(
-                candidates, serialized_sizes, token_families,
-                token_authorization_prevalidated,
-                initial_count, initial_bytes, max_count, max_bytes,
-                candidate_height, candidate_bits);
+                candidates, serialized_sizes, token_families, token_authorization_prevalidated,
+                initial_count, initial_bytes, max_count, max_bytes, candidate_height,
+                candidate_bits);
             if (selected.size() != candidates.size())
                 return std::vector<bool>(candidates.size(), false);
             return selected;
@@ -6081,7 +6333,7 @@ public:
     // wired by node.h to AnchorSet::Allows. false => this block is at a Bitcoin-anchored
     // height but its hash differs → reject regardless of PoW work. Inert (anchors_ empty)
     // until anchoring is armed, so consensus is byte-identical while dormant.
-    std::function<bool(uint64_t, const Hash256&)>                             anchor_gate_;
+    std::function<bool(uint64_t, const Hash256&)> anchor_gate_;
 
     // Permanent-anchor carrier-preservation gate. ReorganizeBounded_ supplies
     // the actual common ancestor before any disconnect; false means the branch
@@ -6091,14 +6343,14 @@ public:
     // lets a startup-imported future floor remain pending during IBD and begin
     // preserving its authorization carrier only after that carrier has
     // actually been reached on the canonical chain.
-    std::function<bool(uint64_t, uint64_t)>                                   anchor_reorg_gate_;
+    std::function<bool(uint64_t, uint64_t)> anchor_reorg_gate_;
 
     // btcVELD Layer-3 finalized-target gate.  ReorganizeBounded_ supplies the
     // ACTUAL canonical common ancestor after resolving the complete stored side
     // branch and before disconnecting a single block.  false means the branch
     // would rewrite the target. Necessary but insufficient for activation
     // until the engine also preserves its authenticated QC/carrier.
-    std::function<bool(uint64_t)>                                             finality_reorg_gate_;
+    std::function<bool(uint64_t)> finality_reorg_gate_;
 
     //  #1:
     // *** NO LOCK. THE CALLER MUST ALREADY HOLD chain_mutex_ (unique). ***
@@ -6114,7 +6366,8 @@ public:
         for (const auto& [key, utxo] : utxo_set_) {
             std::string lkey = "u:" + key;
             std::string lval(9 + utxo.script_pubkey.size(), '\0');
-            for (int i = 0; i < 8; ++i) lval[i] = (char)((utxo.value >> (i*8)) & 0xff);
+            for (int i = 0; i < 8; ++i)
+                lval[i] = (char)((utxo.value >> (i * 8)) & 0xff);
             lval[8] = (char)(utxo.script_pubkey.size() & 0xff);
             std::copy(utxo.script_pubkey.begin(), utxo.script_pubkey.end(), lval.begin() + 9);
             kvs.emplace_back(std::move(lkey), std::move(lval));
@@ -6132,7 +6385,7 @@ public:
 
     struct UtxoSetProbe {
         size_t set_size;
-        bool   has_target;
+        bool has_target;
     };
     UtxoSetProbe ProbeUtxoSet(const Hash256& tx_hash, uint32_t index) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
@@ -6142,7 +6395,7 @@ public:
         return p;
     }
 
-public:
+  public:
     static uint64_t ExpectedBlockSubsidy(uint64_t height) noexcept {
         uint64_t s = BLOCK_REWARD_UNITS;
         if (height > 0 && (height % BLOCKS_PER_YEAR) == 0)
@@ -6156,14 +6409,16 @@ public:
     // the emission basis increases supply.  The update is fail-closed and
     // leaves `supply_units` untouched on malformed output-sum overflow or a
     // corrupt starting value above the cap.
-    static bool AdvanceCanonicalSupply(const Block& block,
-                                       uint64_t& supply_units) noexcept {
-        if (supply_units > MAX_SUPPLY_UNITS) return false;
-        if (block.transactions.empty()) return true;
+    static bool AdvanceCanonicalSupply(const Block& block, uint64_t& supply_units) noexcept {
+        if (supply_units > MAX_SUPPLY_UNITS)
+            return false;
+        if (block.transactions.empty())
+            return true;
 
         uint64_t coinbase_total = 0;
         for (const auto& out : block.transactions[0].outputs) {
-            if (out.value > UINT64_MAX - coinbase_total) return false;
+            if (out.value > UINT64_MAX - coinbase_total)
+                return false;
             coinbase_total += out.value;
         }
         const uint64_t subsidy = ExpectedBlockSubsidy(block.height);
@@ -6173,30 +6428,38 @@ public:
         return true;
     }
 
-    uint64_t TotalFeesCollectedUnits() const { return total_fees_collected_units_.load(); }
-    double   TotalFeesCollectedVeld()  const { return (double)total_fees_collected_units_.load() / VELD_UNITS; }
-    void     AddFeesCollected(uint64_t units) { total_fees_collected_units_.fetch_add(units); }
-    void     SetFeesCollected(uint64_t units) { total_fees_collected_units_.store(units); }
+    uint64_t TotalFeesCollectedUnits() const {
+        return total_fees_collected_units_.load();
+    }
+    double TotalFeesCollectedVeld() const {
+        return (double)total_fees_collected_units_.load() / VELD_UNITS;
+    }
+    void AddFeesCollected(uint64_t units) {
+        total_fees_collected_units_.fetch_add(units);
+    }
+    void SetFeesCollected(uint64_t units) {
+        total_fees_collected_units_.store(units);
+    }
 
-private:
-    std::atomic<uint64_t>                   staking_activation_units_{STAKING_ACTIVATION_SUPPLY};
-    mutable std::shared_mutex               chain_mutex_;
-    mutable std::mutex                      block_connect_mutex_;
-    std::atomic<uint64_t>                   atomic_height_{0};
-    std::atomic<uint64_t>                   local_validation_ceiling_{0};
-    std::atomic<uint64_t>                   total_supply_units_{0};
-    std::atomic<uint64_t>                   total_fees_collected_units_{0};
-    std::atomic<bool>                       durability_compromised_{false};
-    std::vector<Block>                      chain_;
+  private:
+    std::atomic<uint64_t> staking_activation_units_{STAKING_ACTIVATION_SUPPLY};
+    mutable std::shared_mutex chain_mutex_;
+    mutable std::mutex block_connect_mutex_;
+    std::atomic<uint64_t> atomic_height_{0};
+    std::atomic<uint64_t> local_validation_ceiling_{0};
+    std::atomic<uint64_t> total_supply_units_{0};
+    std::atomic<uint64_t> total_fees_collected_units_{0};
+    std::atomic<bool> durability_compromised_{false};
+    std::vector<Block> chain_;
     std::unordered_map<std::string, size_t> block_index_;
-    HistoricalBlockLoader                   historical_block_loader_;
-    DurableBlockBodyWriter                  durable_block_body_writer_;
-    DurableBlockBodyEraser                  durable_block_body_eraser_;
-    std::optional<uint64_t>                 durable_canonical_height_;
-    uint64_t                                next_body_prune_height_{0};
+    HistoricalBlockLoader historical_block_loader_;
+    DurableBlockBodyWriter durable_block_body_writer_;
+    DurableBlockBodyEraser durable_block_body_eraser_;
+    std::optional<uint64_t> durable_canonical_height_;
+    uint64_t next_body_prune_height_{0};
 #ifdef VELD_TEST_HOOKS
-    mutable std::atomic<uint64_t>           test_block_body_lookup_count_{0};
-    mutable std::atomic<bool>               test_force_rebuild_utxo_miss_{false};
+    mutable std::atomic<uint64_t> test_block_body_lookup_count_{0};
+    mutable std::atomic<bool> test_force_rebuild_utxo_miss_{false};
 #endif
 
     Block LoadCanonicalBlockNoLock_(uint64_t height) const {
@@ -6206,20 +6469,19 @@ private:
         if (height >= chain_.size())
             throw std::out_of_range("Block height out of range");
         const Block& skeleton = chain_[height];
-        if (!skeleton.transactions.empty()) return skeleton;
+        if (!skeleton.transactions.empty())
+            return skeleton;
         if (!historical_block_loader_) {
-            throw std::runtime_error(
-                "historical canonical block body is not resident and no "
-                "durable loader is installed");
+            throw std::runtime_error("historical canonical block body is not resident and no "
+                                     "durable loader is installed");
         }
 
         const Hash256 expected_hash = skeleton.GetHash();
         const BlockHeader expected_header = skeleton.header;
         auto raw = historical_block_loader_(expected_hash);
         if (!raw) {
-            throw std::runtime_error(
-                "historical canonical block body is missing for height " +
-                std::to_string(height));
+            throw std::runtime_error("historical canonical block body is missing for height " +
+                                     std::to_string(height));
         }
         if (raw->size() > MAX_BLOCK_SIZE) {
             throw std::runtime_error(
@@ -6229,8 +6491,7 @@ private:
 
         Block loaded;
         const size_t consumed = Block::Deserialize(*raw, 0, loaded);
-        if (consumed == 0 || consumed != raw->size() ||
-            loaded.Serialize() != *raw) {
+        if (consumed == 0 || consumed != raw->size() || loaded.Serialize() != *raw) {
             throw std::runtime_error(
                 "historical canonical block has non-canonical/corrupt bytes at height " +
                 std::to_string(height));
@@ -6238,8 +6499,7 @@ private:
         loaded.height = height;
         if (loaded.GetHash() != expected_hash ||
             loaded.header.Serialize() != expected_header.Serialize() ||
-            loaded.transactions.empty() ||
-            !loaded.transactions.front().IsCoinbase() ||
+            loaded.transactions.empty() || !loaded.transactions.front().IsCoinbase() ||
             ComputeMerkleRoot(loaded.transactions) != loaded.header.merkle_root ||
             loaded.SerializedSize() != raw->size()) {
             throw std::runtime_error(
@@ -6258,7 +6518,8 @@ private:
         if (tree_it == block_tree_.end() || store_it == block_store_.end())
             throw std::runtime_error("indexed side block is missing");
         const Block& skeleton = store_it->second;
-        if (!skeleton.transactions.empty()) return skeleton;
+        if (!skeleton.transactions.empty())
+            return skeleton;
         if (!historical_block_loader_)
             throw std::runtime_error(
                 "side block body is evicted and no durable loader is installed");
@@ -6267,49 +6528,48 @@ private:
             throw std::runtime_error("durable side block body is missing/oversize");
         Block loaded;
         const size_t consumed = Block::Deserialize(*raw, 0, loaded);
-        if (consumed == 0 || consumed != raw->size() ||
-            loaded.Serialize() != *raw) {
-            throw std::runtime_error(
-                "durable side block has non-canonical/corrupt bytes");
+        if (consumed == 0 || consumed != raw->size() || loaded.Serialize() != *raw) {
+            throw std::runtime_error("durable side block has non-canonical/corrupt bytes");
         }
         loaded.height = tree_it->second.height;
         if (loaded.GetHash() != tree_it->second.hash ||
             loaded.header.Serialize() != skeleton.header.Serialize() ||
-            loaded.transactions.empty() ||
-            !loaded.transactions.front().IsCoinbase() ||
+            loaded.transactions.empty() || !loaded.transactions.front().IsCoinbase() ||
             ComputeMerkleRoot(loaded.transactions) != loaded.header.merkle_root ||
             loaded.SerializedSize() != raw->size()) {
-            throw std::runtime_error(
-                "durable side block fails header/hash/merkle binding");
+            throw std::runtime_error("durable side block fails header/hash/merkle binding");
         }
         return loaded;
     }
 
     void PruneDurableCanonicalBodiesNoLock_() {
-        if (!historical_block_loader_ || !durable_canonical_height_ ||
-            chain_.empty()) return;
+        if (!historical_block_loader_ || !durable_canonical_height_ || chain_.empty())
+            return;
         const uint64_t tip = static_cast<uint64_t>(chain_.size() - 1);
-        if (tip + 1 <= CANONICAL_BODY_RETENTION_BLOCKS) return;
-        const uint64_t keep_from =
-            tip + 1 - CANONICAL_BODY_RETENTION_BLOCKS;
-        const uint64_t prune_end =
-            std::min<uint64_t>(keep_from,
-                               *durable_canonical_height_ + 1);
+        if (tip + 1 <= CANONICAL_BODY_RETENTION_BLOCKS)
+            return;
+        const uint64_t keep_from = tip + 1 - CANONICAL_BODY_RETENTION_BLOCKS;
+        const uint64_t prune_end = std::min<uint64_t>(keep_from, *durable_canonical_height_ + 1);
         while (next_body_prune_height_ < prune_end) {
             Block& block = chain_[next_body_prune_height_++];
-            if (block.transactions.empty()) continue;
+            if (block.transactions.empty())
+                continue;
             block.transactions.clear();
             block.transactions.shrink_to_fit();
         }
     }
 
-    std::unordered_map<std::string, UTXO>   utxo_set_;
+    std::unordered_map<std::string, UTXO> utxo_set_;
     std::unordered_map<std::string, std::unordered_set<std::string>> script_index_;
     std::unordered_map<std::string, SpenderLocator> canonical_spenders_;
     static std::string ScriptHex(const std::vector<uint8_t>& spk) {
-        std::string h; h.reserve(spk.size()*2);
+        std::string h;
+        h.reserve(spk.size() * 2);
         static const char* hc = "0123456789abcdef";
-        for (uint8_t b : spk) { h.push_back(hc[b>>4]); h.push_back(hc[b&0xF]); }
+        for (uint8_t b : spk) {
+            h.push_back(hc[b >> 4]);
+            h.push_back(hc[b & 0xF]);
+        }
         return h;
     }
     void ScriptIndexAdd(const std::string& utxo_key, const std::vector<uint8_t>& spk) {
@@ -6319,13 +6579,15 @@ private:
         auto it = script_index_.find(ScriptHex(spk));
         if (it != script_index_.end()) {
             it->second.erase(utxo_key);
-            if (it->second.empty()) script_index_.erase(it);
+            if (it->second.empty())
+                script_index_.erase(it);
         }
     }
     bool EraseUTXO(const Hash256& tx_hash, uint32_t index) {
         std::string key = UTXOKey(tx_hash, index);
         auto it = utxo_set_.find(key);
-        if (it == utxo_set_.end()) return false;
+        if (it == utxo_set_.end())
+            return false;
         ScriptIndexRemove(key, it->second.script_pubkey);
         utxo_set_.erase(it);
         return true;
@@ -6349,17 +6611,15 @@ private:
     };
     std::deque<CanonicalBlockUndo> canonical_undo_;
 
-    static void CollectUndoTouchedKeys_(
-            const CanonicalBlockUndo& undo,
-            std::set<std::string>& keys) {
+    static void CollectUndoTouchedKeys_(const CanonicalBlockUndo& undo,
+                                        std::set<std::string>& keys) {
         for (const auto& u : undo.parent_spent)
             keys.insert(UTXOKey(u.tx_hash, u.output_index));
         for (const auto& [txid, vout] : undo.created_outpoints)
             keys.insert(UTXOKey(txid, vout));
     }
 
-    UTXODelta BuildUTXODeltaNoLock_(
-            const std::set<std::string>& touched) const {
+    UTXODelta BuildUTXODeltaNoLock_(const std::set<std::string>& touched) const {
         UTXODelta delta;
         delta.reserve(touched.size());
         for (const auto& key : touched) {
@@ -6372,17 +6632,18 @@ private:
         return delta;
     }
 
-    bool DisconnectCanonicalTipNoLock_(Block& popped,
-                                       bool retain_as_side_branch) {
-        if (chain_.empty()) return false;
+    bool DisconnectCanonicalTipNoLock_(Block& popped, bool retain_as_side_branch) {
+        if (chain_.empty())
+            return false;
         popped = LoadCanonicalBlockNoLock_(chain_.size() - 1);
-        if (canonical_undo_.empty()) return false;
+        if (canonical_undo_.empty())
+            return false;
         const CanonicalBlockUndo& undo = canonical_undo_.back();
         if (undo.height != popped.height || undo.hash != popped.GetHash())
             return false;
-        if (miner_undo_.empty() ||
-            miner_undo_.back().height != popped.height ||
-            miner_undo_.back().hash != popped.GetHash()) return false;
+        if (miner_undo_.empty() || miner_undo_.back().height != popped.height ||
+            miner_undo_.back().hash != popped.GetHash())
+            return false;
 
         // Parent-spent outputs must not already exist in the post-block frame.
         // Check before mutating so corruption cannot create a half-disconnect.
@@ -6395,24 +6656,28 @@ private:
         // ignoring EraseUTXO would otherwise publish a plausible but inexact
         // rollback.
         for (const auto& [txid, vout] : undo.created_unspent_outpoints) {
-            if (utxo_set_.count(UTXOKey(txid, vout)) == 0) return false;
+            if (utxo_set_.count(UTXOKey(txid, vout)) == 0)
+                return false;
         }
 
         UnindexCanonicalSpendersForBlockNoLock(popped);
         for (const auto& [txid, vout] : undo.created_outpoints)
             (void)EraseUTXO(txid, vout); // an in-block child may already spend it
-        for (const auto& u : undo.parent_spent) InsertUTXO(u);
+        for (const auto& u : undo.parent_spent)
+            InsertUTXO(u);
         total_supply_units_.store(undo.supply_before);
         total_fees_collected_units_.store(undo.fees_before);
 
-        if (!UndoMinerCoinbaseNoLock_(popped)) return false;
+        if (!UndoMinerCoinbaseNoLock_(popped))
+            return false;
 
         const std::string hash_hex = HashToHex(popped.GetHash());
         block_index_.erase(hash_hex);
         chain_.pop_back();
         atomic_height_.store(chain_.empty() ? 0 : chain_.size() - 1);
         auto tree_it = block_tree_.find(hash_hex);
-        if (tree_it != block_tree_.end()) tree_it->second.on_main_chain = false;
+        if (tree_it != block_tree_.end())
+            tree_it->second.on_main_chain = false;
         if (retain_as_side_branch) {
             block_store_[hash_hex] = popped;
             if (durable_block_body_writer_ && historical_block_loader_ &&
@@ -6426,41 +6691,36 @@ private:
         return true;
     }
 
-    using CanonicalSpenderAddition =
-        std::pair<std::string, SpenderLocator>;
+    using CanonicalSpenderAddition = std::pair<std::string, SpenderLocator>;
 
     // Caller holds chain_mutex_ in unique mode. Build the complete mutation
     // list without changing canonical state so this preflight can run before a
     // newly accepted body crosses the durable/publication boundary.
-    bool PrepareCanonicalSpendersForBlockNoLock(
-            const Block& block,
-            std::vector<CanonicalSpenderAddition>& additions) const {
+    bool
+    PrepareCanonicalSpendersForBlockNoLock(const Block& block,
+                                           std::vector<CanonicalSpenderAddition>& additions) const {
         additions.clear();
         std::unordered_set<std::string> seen;
         for (size_t ti = 0; ti < block.transactions.size(); ++ti) {
-            if (ti > UINT32_MAX) return false;
+            if (ti > UINT32_MAX)
+                return false;
             const Transaction& tx = block.transactions[ti];
-            if (tx.IsCoinbase()) continue;
+            if (tx.IsCoinbase())
+                continue;
             const Hash256 txid = tx.GetTxID();
             for (const auto& input : tx.inputs) {
-                const std::string key = UTXOKey(
-                    input.prev_tx_hash, input.prev_out_index);
-                if (!seen.insert(key).second ||
-                    canonical_spenders_.count(key)) {
+                const std::string key = UTXOKey(input.prev_tx_hash, input.prev_out_index);
+                if (!seen.insert(key).second || canonical_spenders_.count(key)) {
                     return false;
                 }
-                additions.push_back({
-                    key,
-                    SpenderLocator{block.height,
-                                   static_cast<uint32_t>(ti), txid}
-                });
+                additions.push_back(
+                    {key, SpenderLocator{block.height, static_cast<uint32_t>(ti), txid}});
             }
         }
         return true;
     }
 
-    void ApplyCanonicalSpendersForBlockNoLock(
-            std::vector<CanonicalSpenderAddition>& additions) {
+    void ApplyCanonicalSpendersForBlockNoLock(std::vector<CanonicalSpenderAddition>& additions) {
         for (auto& addition : additions)
             canonical_spenders_.emplace(std::move(addition));
     }
@@ -6468,14 +6728,13 @@ private:
     void UnindexCanonicalSpendersForBlockNoLock(const Block& block) {
         for (size_t ti = 0; ti < block.transactions.size(); ++ti) {
             const Transaction& tx = block.transactions[ti];
-            if (tx.IsCoinbase()) continue;
+            if (tx.IsCoinbase())
+                continue;
             const Hash256 txid = tx.GetTxID();
             for (const auto& input : tx.inputs) {
-                const std::string key = UTXOKey(
-                    input.prev_tx_hash, input.prev_out_index);
+                const std::string key = UTXOKey(input.prev_tx_hash, input.prev_out_index);
                 auto it = canonical_spenders_.find(key);
-                if (it != canonical_spenders_.end() &&
-                    it->second.block_height == block.height &&
+                if (it != canonical_spenders_.end() && it->second.block_height == block.height &&
                     it->second.txid == txid) {
                     canonical_spenders_.erase(it);
                 }
@@ -6487,28 +6746,25 @@ private:
     // not mining identities.
     static std::vector<std::string> MinerScriptsForBlock_(const Block& block) {
         std::vector<std::string> scripts;
-        if (block.transactions.empty()) return scripts;
-        const auto vault_script =
-            AddressToScript(VaultAddressAtHeight(block.height));
-        const auto pool_script =
-            AddressToScript(PoolAddressAtHeight(block.height));
-        const auto endorse_script =
-            AddressToScript(EndorsementPoolAddressAtHeight(block.height));
-        const auto stake_vault_script =
-            AddressToScript(StakeVaultAddressAtHeight(block.height));
-        const auto bond_yield_script =
-            AddressToScript(BondYieldEscrowAtHeight(block.height));
+        if (block.transactions.empty())
+            return scripts;
+        const auto vault_script = AddressToScript(VaultAddressAtHeight(block.height));
+        const auto pool_script = AddressToScript(PoolAddressAtHeight(block.height));
+        const auto endorse_script = AddressToScript(EndorsementPoolAddressAtHeight(block.height));
+        const auto stake_vault_script = AddressToScript(StakeVaultAddressAtHeight(block.height));
+        const auto bond_yield_script = AddressToScript(BondYieldEscrowAtHeight(block.height));
         std::unordered_set<std::string> counted;
         for (const auto& out : block.transactions[0].outputs) {
             const auto& s = out.script_pubkey;
-            if (s == vault_script || s == pool_script ||
-                s == endorse_script || s == stake_vault_script ||
-                s == bond_yield_script) continue;
-            if (s.size() != 25 || s[0] != 0x76 || s[1] != 0xA9 ||
-                s[2] != 0x14 || s[23] != 0x88 || s[24] != 0xAC)
+            if (s == vault_script || s == pool_script || s == endorse_script ||
+                s == stake_vault_script || s == bond_yield_script)
+                continue;
+            if (s.size() != 25 || s[0] != 0x76 || s[1] != 0xA9 || s[2] != 0x14 || s[23] != 0x88 ||
+                s[24] != 0xAC)
                 continue;
             const auto hex = BytesToHex(s);
-            if (counted.insert(hex).second) scripts.push_back(hex);
+            if (counted.insert(hex).second)
+                scripts.push_back(hex);
         }
         return scripts;
     }
@@ -6520,21 +6776,23 @@ private:
         std::map<std::string, std::vector<uint64_t>> pruned;
     };
 
-    void PruneMinerHistoryKeyNoLock_(const std::string& script_hex,
-                                     uint64_t cutoff_inclusive,
+    void PruneMinerHistoryKeyNoLock_(const std::string& script_hex, uint64_t cutoff_inclusive,
                                      std::vector<uint64_t>* removed = nullptr) {
         auto it = miner_heights_.find(script_hex);
-        if (it == miner_heights_.end()) return;
+        if (it == miner_heights_.end())
+            return;
         auto& heights = it->second;
         // No observation outside the longest tier window affects consensus.
         // Erase the key when its final hot observation retires; retaining one
         // stale height per lifetime identity would make consensus cardinality
         // linear under maximum payout-script rotation.
         while (!heights.empty() && heights.front() <= cutoff_inclusive) {
-            if (removed) removed->push_back(heights.front());
+            if (removed)
+                removed->push_back(heights.front());
             heights.pop_front();
         }
-        if (heights.empty()) miner_heights_.erase(it);
+        if (heights.empty())
+            miner_heights_.erase(it);
     }
 
     // Caller holds chain_mutex_ in unique mode. Forward commits, ancestor
@@ -6551,23 +6809,22 @@ private:
         }
 
         if (block.height >= MAX_MINER_TIER_HISTORY_BLOCKS) {
-            const uint64_t cutoff =
-                block.height - MAX_MINER_TIER_HISTORY_BLOCKS;
+            const uint64_t cutoff = block.height - MAX_MINER_TIER_HISTORY_BLOCKS;
             // Forward CommitBlock indexes before pushing `block`.  The exact
             // cutoff body may already be evicted; the strict durable loader is
             // safe under the caller's unique chain lock.
             if (cutoff < chain_.size()) {
-                for (const auto& hex : MinerScriptsForBlock_(
-                         LoadCanonicalBlockNoLock_(cutoff))) {
-                    PruneMinerHistoryKeyNoLock_(
-                        hex, cutoff, &undo.pruned[hex]);
+                for (const auto& hex : MinerScriptsForBlock_(LoadCanonicalBlockNoLock_(cutoff))) {
+                    PruneMinerHistoryKeyNoLock_(hex, cutoff, &undo.pruned[hex]);
                 }
             }
         }
 
-        for (auto it = undo.pruned.begin(); it != undo.pruned.end(); ) {
-            if (it->second.empty()) it = undo.pruned.erase(it);
-            else ++it;
+        for (auto it = undo.pruned.begin(); it != undo.pruned.end();) {
+            if (it->second.empty())
+                it = undo.pruned.erase(it);
+            else
+                ++it;
         }
         miner_undo_.push_back(std::move(undo));
         while (miner_undo_.size() > MAX_REORG_DEPTH + 1)
@@ -6575,8 +6832,7 @@ private:
     }
 
     bool UndoMinerCoinbaseNoLock_(const Block& block) {
-        if (miner_undo_.empty() ||
-            miner_undo_.back().height != block.height ||
+        if (miner_undo_.empty() || miner_undo_.back().height != block.height ||
             miner_undo_.back().hash != block.GetHash()) {
             return false;
         }
@@ -6584,14 +6840,15 @@ private:
         for (const auto& hex : undo.incremented) {
             auto hit = miner_heights_.find(hex);
             if (hit == miner_heights_.end() || hit->second.empty() ||
-                hit->second.back() != block.height) return false;
+                hit->second.back() != block.height)
+                return false;
         }
-        for (auto it = undo.incremented.rbegin();
-             it != undo.incremented.rend(); ++it) {
+        for (auto it = undo.incremented.rbegin(); it != undo.incremented.rend(); ++it) {
             const std::string& hex = *it;
             auto hit = miner_heights_.find(hex);
             hit->second.pop_back();
-            if (hit->second.empty()) miner_heights_.erase(hit);
+            if (hit->second.empty())
+                miner_heights_.erase(hit);
         }
         for (const auto& [hex, removed] : undo.pruned) {
             auto& heights = miner_heights_[hex];
@@ -6605,12 +6862,10 @@ private:
     std::deque<MinerBlockUndo> miner_undo_;
     MinerArchiveLookup miner_archive_lookup_;
 #ifdef VELD_TEST_HOOKS
-public:
-    void TestSetMinerHeights(const std::string& script_hex,
-                             std::vector<uint64_t> heights) {
+  public:
+    void TestSetMinerHeights(const std::string& script_hex, std::vector<uint64_t> heights) {
         std::unique_lock<std::shared_mutex> lock(chain_mutex_);
-        miner_heights_[script_hex] =
-            std::deque<uint64_t>(heights.begin(), heights.end());
+        miner_heights_[script_hex] = std::deque<uint64_t>(heights.begin(), heights.end());
     }
     size_t TestMinerHistorySize(const std::string& script_hex) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
@@ -6621,49 +6876,50 @@ public:
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         return miner_heights_.size();
     }
-private:
+
+  private:
 #endif
-    OnCommitCallback                        on_commit_;
-    OnReorgCallback                         on_reorg_;
-    OnReorgAbortCallback                    on_reorg_abort_;
-    ReorgPublicationUncertainFn             reorg_publication_uncertain_fn_;
-    OnRollbackCallback                      on_rollback_;
-    OnOrphanedTxsCallback                   on_orphaned_txs_;
-    ModulePrecommitValidator                module_precommit_validator_;
-    CanonicalWorkTransitionFn               canonical_work_transition_fn_;
-    mutable std::mutex                      local_work_admission_prepare_mutex_;
-    LocalWorkAdmissionPrepareFn             local_work_admission_prepare_fn_;
+    OnCommitCallback on_commit_;
+    OnReorgCallback on_reorg_;
+    OnReorgAbortCallback on_reorg_abort_;
+    ReorgPublicationUncertainFn reorg_publication_uncertain_fn_;
+    OnRollbackCallback on_rollback_;
+    OnOrphanedTxsCallback on_orphaned_txs_;
+    ModulePrecommitValidator module_precommit_validator_;
+    CanonicalWorkTransitionFn canonical_work_transition_fn_;
+    mutable std::mutex local_work_admission_prepare_mutex_;
+    LocalWorkAdmissionPrepareFn local_work_admission_prepare_fn_;
 #ifdef VELD_TEST_HOOKS
-    std::function<void()>                   test_local_work_pre_commit_barrier_;
+    std::function<void()> test_local_work_pre_commit_barrier_;
 #endif
 
     std::function<uint64_t(const std::string&)> staked_for_addr_;
-    std::function<uint64_t(const std::string&, uint64_t)>
-        mature_stake_for_addr_;
+    std::function<uint64_t(const std::string&, uint64_t)> mature_stake_for_addr_;
     std::function<uint64_t()> effective_min_stake_;
     std::function<std::unordered_map<std::string, uint64_t>()> all_active_stakes_;
     std::function<bool(const Block&)> stake_block_validator_;
-public:
+
+  public:
     void SetStakedForAddrFn(std::function<uint64_t(const std::string&)> fn) {
         staked_for_addr_ = std::move(fn);
     }
-    void SetMatureStakeForAddrFn(
-            std::function<uint64_t(const std::string&, uint64_t)> fn) {
+    void SetMatureStakeForAddrFn(std::function<uint64_t(const std::string&, uint64_t)> fn) {
         mature_stake_for_addr_ = std::move(fn);
     }
     void SetEffectiveMinStakeFn(std::function<uint64_t()> fn) {
         effective_min_stake_ = std::move(fn);
     }
-    void SetAllActiveStakesFn(
-            std::function<std::unordered_map<std::string, uint64_t>()> fn) {
+    void SetAllActiveStakesFn(std::function<std::unordered_map<std::string, uint64_t>()> fn) {
         all_active_stakes_ = std::move(fn);
     }
     void SetStakeBlockValidatorFn(std::function<bool(const Block&)> fn) {
         stake_block_validator_ = std::move(fn);
     }
     bool StakeTransactionValid(const Transaction& tx, uint64_t height) const {
-        if (!StakeOutpointBackingActive(height)) return true;
-        if (!stake_block_validator_) return false;
+        if (!StakeOutpointBackingActive(height))
+            return true;
+        if (!stake_block_validator_)
+            return false;
         Block candidate;
         candidate.height = height;
         candidate.transactions.push_back(tx);
@@ -6672,24 +6928,22 @@ public:
     uint64_t GetStakedForAddr(const std::string& addr) const {
         return staked_for_addr_ ? staked_for_addr_(addr) : 0;
     }
-    uint64_t GetMatureStakeForAddr(const std::string& addr,
-                                   uint64_t height) const {
-        return mature_stake_for_addr_
-            ? mature_stake_for_addr_(addr, height) : 0;
+    uint64_t GetMatureStakeForAddr(const std::string& addr, uint64_t height) const {
+        return mature_stake_for_addr_ ? mature_stake_for_addr_(addr, height) : 0;
     }
     uint64_t GetEffectiveMinStakeUnits() const {
-        return effective_min_stake_
-            ? effective_min_stake_() : MIN_STAKE_UNITS;
+        return effective_min_stake_ ? effective_min_stake_() : MIN_STAKE_UNITS;
     }
     size_t GetActiveStakeAddressCount() const {
-        if (!all_active_stakes_) return 0;
+        if (!all_active_stakes_)
+            return 0;
         return all_active_stakes_().size();
     }
 
     struct ChainTipInfo {
-        uint64_t   height;
-        Hash256    hash;
-        uint64_t   branchlen;
+        uint64_t height;
+        Hash256 hash;
+        uint64_t branchlen;
         std::string cumulative_work;
         std::string status;
     };
@@ -6701,7 +6955,8 @@ public:
         std::unordered_set<std::string> referenced_as_prev;
         referenced_as_prev.reserve(block_tree_.size());
         for (const auto& kv : block_tree_) {
-            if (volatile_side_quarantine_.count(kv.first)) continue;
+            if (volatile_side_quarantine_.count(kv.first))
+                continue;
             referenced_as_prev.insert(HashToHex(kv.second.prev_hash));
         }
         std::string main_tip_hex;
@@ -6711,33 +6966,41 @@ public:
         for (const auto& kv : block_tree_) {
             const auto& entry = kv.second;
             const std::string& hex = kv.first;
-            if (volatile_side_quarantine_.count(hex)) continue;
-            if (referenced_as_prev.count(hex)) continue;
+            if (volatile_side_quarantine_.count(hex))
+                continue;
+            if (referenced_as_prev.count(hex))
+                continue;
             ChainTipInfo info;
-            info.height          = entry.height;
-            info.hash            = entry.hash;
+            info.height = entry.height;
+            info.hash = entry.hash;
             info.cumulative_work = entry.cumulative_work.ToHex();
             uint64_t bl = 0;
             std::string cursor_hex = hex;
             const int MAX_BRANCH_WALK = 1024;
             for (int i = 0; i < MAX_BRANCH_WALK; ++i) {
                 auto cit = block_tree_.find(cursor_hex);
-                if (cit == block_tree_.end()) break;
-                if (cit->second.on_main_chain) break;
+                if (cit == block_tree_.end())
+                    break;
+                if (cit->second.on_main_chain)
+                    break;
                 cursor_hex = HashToHex(cit->second.prev_hash);
                 ++bl;
             }
             info.branchlen = bl;
-            if (hex == main_tip_hex)            info.status = "active";
-            else if (entry.on_main_chain)        info.status = "valid-fork";
-            else if (block_store_.count(hex))   info.status = "valid-fork";
-            else                                 info.status = "unknown";
+            if (hex == main_tip_hex)
+                info.status = "active";
+            else if (entry.on_main_chain)
+                info.status = "valid-fork";
+            else if (block_store_.count(hex))
+                info.status = "valid-fork";
+            else
+                info.status = "unknown";
             tips.push_back(std::move(info));
         }
         return tips;
     }
-private:
 
+  private:
     std::unordered_map<std::string, ChainIndexEntry> block_tree_;
 
     std::unordered_map<std::string, Block> block_store_;
@@ -6752,15 +7015,13 @@ private:
     // context with the body/header. `reorg_pow_verified_` records only a
     // successful expensive replay check, allowing a later bounded retry to
     // make progress after a transient budget/dataset refusal.
-    std::unordered_map<std::string, mining::PowAdmissionContext>
-        side_pow_admission_;
+    std::unordered_map<std::string, mining::PowAdmissionContext> side_pow_admission_;
     std::unordered_set<std::string> reorg_pow_verified_;
     struct DeferredReorgRetry {
         std::chrono::steady_clock::time_point retry_after{};
         uint8_t exponent{0};
     };
-    std::unordered_map<std::string, DeferredReorgRetry>
-        deferred_reorg_retry_;
+    std::unordered_map<std::string, DeferredReorgRetry> deferred_reorg_retry_;
     static constexpr uint64_t REORG_RETRY_BASE_MS = 1'000;
     static constexpr uint64_t REORG_RETRY_MAX_MS = 60'000;
     std::string register_failure_tag_;
@@ -6769,20 +7030,21 @@ private:
     // must never delete them during that transaction window.
     std::unordered_set<std::string> reorg_protected_side_hashes_;
 
-    static constexpr size_t MAX_SIDE_BRANCH_HEADERS =
-        SIDE_BRANCH_HEADER_LIMIT;
-    static constexpr uint64_t MAX_SIDE_BRANCH_RESIDENT_BYTES =
-        SIDE_BRANCH_DURABLE_BYTE_LIMIT;
+    static constexpr size_t MAX_SIDE_BRANCH_HEADERS = SIDE_BRANCH_HEADER_LIMIT;
+    static constexpr uint64_t MAX_SIDE_BRANCH_RESIDENT_BYTES = SIDE_BRANCH_DURABLE_BYTE_LIMIT;
 
     bool PruneSideBranchStateNoLock_(bool force = false) {
-        if (side_branch_hashes_.empty()) return true;
+        if (side_branch_hashes_.empty())
+            return true;
         bool cleanup_ok = true;
         bool changed = false;
         auto erase_durable_side_body = [&](const std::string& hash) -> bool {
             // Quarantined bytes have never crossed the durable-writer boundary.
             // Pruning them is an in-memory erase only.
-            if (volatile_side_quarantine_.count(hash)) return true;
-            if (!durable_block_body_eraser_) return true;
+            if (volatile_side_quarantine_.count(hash))
+                return true;
+            if (!durable_block_body_eraser_)
+                return true;
             try {
                 return durable_block_body_eraser_(HexToHash(hash));
             } catch (...) {
@@ -6793,10 +7055,11 @@ private:
             uint64_t total = 0;
             for (const auto& hash : side_branch_hashes_) {
                 auto body = block_store_.find(hash);
-                if (body == block_store_.end() ||
-                    body->second.transactions.empty()) continue;
+                if (body == block_store_.end() || body->second.transactions.empty())
+                    continue;
                 const size_t n = body->second.SerializedSize();
-                if (n > UINT64_MAX - total) return UINT64_MAX;
+                if (n > UINT64_MAX - total)
+                    return UINT64_MAX;
                 total += static_cast<uint64_t>(n);
             }
             return total;
@@ -6805,19 +7068,20 @@ private:
             std::unordered_set<std::string> seen;
             std::string cursor = start;
             for (size_t hops = 0; hops <= MAX_SIDE_BRANCH_HEADERS; ++hops) {
-                if (bad_alt_tips_.count(cursor)) return true;
-                if (!seen.insert(cursor).second) return true;
+                if (bad_alt_tips_.count(cursor))
+                    return true;
+                if (!seen.insert(cursor).second)
+                    return true;
                 auto tree = block_tree_.find(cursor);
-                if (tree == block_tree_.end() ||
-                    tree->second.on_main_chain) return false;
+                if (tree == block_tree_.end() || tree->second.on_main_chain)
+                    return false;
                 cursor = HashToHex(tree->second.prev_hash);
             }
             return true;
         };
 
         uint64_t resident_bytes = resident_body_bytes();
-        if (!force &&
-            side_branch_hashes_.size() <= MAX_SIDE_BRANCH_HEADERS &&
+        if (!force && side_branch_hashes_.size() <= MAX_SIDE_BRANCH_HEADERS &&
             resident_bytes <= MAX_SIDE_BRANCH_RESIDENT_BYTES)
             return true;
 
@@ -6825,31 +7089,26 @@ private:
         // candidates.  A failed durable deletion is a resource-safety failure:
         // retain the in-memory index for retry/evidence and latch admission.
         const uint64_t tip = chain_.empty() ? 0 : chain_.back().height;
-        for (auto it = side_branch_hashes_.begin();
-             it != side_branch_hashes_.end(); ) {
+        for (auto it = side_branch_hashes_.begin(); it != side_branch_hashes_.end();) {
             const std::string hash = *it;
             if (reorg_protected_side_hashes_.count(hash)) {
                 ++it;
                 continue;
             }
             auto tree = block_tree_.find(hash);
-            const bool inconsistent =
-                tree == block_tree_.end() || tree->second.on_main_chain;
-            const bool stale =
-                tree != block_tree_.end() && !tree->second.on_main_chain &&
-                !chain_.empty() && tip + 1 >= tree->second.height &&
-                tip + 1 - tree->second.height >= MAX_REORG_DEPTH;
+            const bool inconsistent = tree == block_tree_.end() || tree->second.on_main_chain;
+            const bool stale = tree != block_tree_.end() && !tree->second.on_main_chain &&
+                               !chain_.empty() && tip + 1 >= tree->second.height &&
+                               tip + 1 - tree->second.height >= MAX_REORG_DEPTH;
             const bool known_bad =
-                tree != block_tree_.end() && !tree->second.on_main_chain &&
-                has_bad_ancestor(hash);
+                tree != block_tree_.end() && !tree->second.on_main_chain && has_bad_ancestor(hash);
             if (!inconsistent && !stale && !known_bad) {
                 ++it;
                 continue;
             }
             // Never delete durable bytes for an entry unexpectedly marked
             // canonical; only repair the redundant side bookkeeping.
-            if (!inconsistent ||
-                (tree != block_tree_.end() && !tree->second.on_main_chain)) {
+            if (!inconsistent || (tree != block_tree_.end() && !tree->second.on_main_chain)) {
                 if (!erase_durable_side_body(hash)) {
                     cleanup_ok = false;
                     ++it;
@@ -6872,8 +7131,7 @@ private:
         if (side_branch_hashes_.size() <= MAX_SIDE_BRANCH_HEADERS &&
             resident_bytes <= MAX_SIDE_BRANCH_RESIDENT_BYTES) {
             if (!cleanup_ok)
-                durability_compromised_.store(true,
-                                              std::memory_order_release);
+                durability_compromised_.store(true, std::memory_order_release);
             return cleanup_ok;
         }
 
@@ -6889,36 +7147,32 @@ private:
             if (!referenced.count(hash) && block_tree_.count(hash))
                 tips.push_back(hash);
         }
-        std::sort(tips.begin(), tips.end(),
-            [&](const std::string& a, const std::string& b) {
-                const auto& ea = block_tree_.at(a);
-                const auto& eb = block_tree_.at(b);
-                if (ea.cumulative_work != eb.cumulative_work)
-                    return ea.cumulative_work > eb.cumulative_work;
-                if (ea.height != eb.height) return ea.height > eb.height;
-                return a < b;
-            });
+        std::sort(tips.begin(), tips.end(), [&](const std::string& a, const std::string& b) {
+            const auto& ea = block_tree_.at(a);
+            const auto& eb = block_tree_.at(b);
+            if (ea.cumulative_work != eb.cumulative_work)
+                return ea.cumulative_work > eb.cumulative_work;
+            if (ea.height != eb.height)
+                return ea.height > eb.height;
+            return a < b;
+        });
 
         std::unordered_set<std::string> keep;
-        keep.reserve(std::min(side_branch_hashes_.size(),
-                              MAX_SIDE_BRANCH_HEADERS));
+        keep.reserve(std::min(side_branch_hashes_.size(), MAX_SIDE_BRANCH_HEADERS));
         uint64_t kept_bytes = 0;
         for (const auto& hash : reorg_protected_side_hashes_) {
-            if (!side_branch_hashes_.count(hash)) continue;
+            if (!side_branch_hashes_.count(hash))
+                continue;
             keep.insert(hash);
             auto body = block_store_.find(hash);
-            if (body != block_store_.end() &&
-                !body->second.transactions.empty()) {
+            if (body != block_store_.end() && !body->second.transactions.empty()) {
                 const size_t n = body->second.SerializedSize();
-                kept_bytes = n > UINT64_MAX - kept_bytes
-                    ? UINT64_MAX
-                    : kept_bytes + static_cast<uint64_t>(n);
+                kept_bytes = n > UINT64_MAX - kept_bytes ? UINT64_MAX
+                                                         : kept_bytes + static_cast<uint64_t>(n);
             }
         }
-        if (keep.size() > MAX_SIDE_BRANCH_HEADERS ||
-            kept_bytes > MAX_SIDE_BRANCH_RESIDENT_BYTES) {
-            durability_compromised_.store(true,
-                                          std::memory_order_release);
+        if (keep.size() > MAX_SIDE_BRANCH_HEADERS || kept_bytes > MAX_SIDE_BRANCH_RESIDENT_BYTES) {
+            durability_compromised_.store(true, std::memory_order_release);
             return false;
         }
 
@@ -6933,32 +7187,31 @@ private:
                     break;
                 }
                 auto tree = block_tree_.find(cursor);
-                if (tree == block_tree_.end()) break;
+                if (tree == block_tree_.end())
+                    break;
                 if (tree->second.on_main_chain) {
                     reaches_main = true;
                     break;
                 }
                 branch.push_back(cursor);
-                const std::string parent =
-                    HashToHex(tree->second.prev_hash);
+                const std::string parent = HashToHex(tree->second.prev_hash);
                 auto parent_it = block_tree_.find(parent);
-                if (parent_it != block_tree_.end() &&
-                    parent_it->second.on_main_chain) {
+                if (parent_it != block_tree_.end() && parent_it->second.on_main_chain) {
                     reaches_main = true;
                     break;
                 }
                 cursor = parent;
             }
-            if (!reaches_main ||
-                branch.size() > MAX_SIDE_BRANCH_HEADERS - keep.size())
+            if (!reaches_main || branch.size() > MAX_SIDE_BRANCH_HEADERS - keep.size())
                 continue;
 
             uint64_t extra_bytes = 0;
             for (const auto& hash : branch) {
-                if (keep.count(hash)) continue;
+                if (keep.count(hash))
+                    continue;
                 auto body = block_store_.find(hash);
-                if (body == block_store_.end() ||
-                    body->second.transactions.empty()) continue;
+                if (body == block_store_.end() || body->second.transactions.empty())
+                    continue;
                 const size_t n = body->second.SerializedSize();
                 if (n > UINT64_MAX - extra_bytes) {
                     extra_bytes = UINT64_MAX;
@@ -6968,12 +7221,12 @@ private:
             }
             if (extra_bytes > MAX_SIDE_BRANCH_RESIDENT_BYTES - kept_bytes)
                 continue;
-            for (const auto& hash : branch) keep.insert(hash);
+            for (const auto& hash : branch)
+                keep.insert(hash);
             kept_bytes += extra_bytes;
         }
 
-        for (auto it = side_branch_hashes_.begin();
-             it != side_branch_hashes_.end(); ) {
+        for (auto it = side_branch_hashes_.begin(); it != side_branch_hashes_.end();) {
             if (keep.count(*it)) {
                 ++it;
                 continue;
@@ -6994,11 +7247,9 @@ private:
             it = side_branch_hashes_.erase(it);
             changed = true;
         }
-        if (!cleanup_ok ||
-            side_branch_hashes_.size() > MAX_SIDE_BRANCH_HEADERS ||
+        if (!cleanup_ok || side_branch_hashes_.size() > MAX_SIDE_BRANCH_HEADERS ||
             resident_body_bytes() > MAX_SIDE_BRANCH_RESIDENT_BYTES) {
-            durability_compromised_.store(true,
-                                          std::memory_order_release);
+            durability_compromised_.store(true, std::memory_order_release);
             cleanup_ok = false;
         }
         (void)changed;
@@ -7016,30 +7267,35 @@ private:
         bool reached_genesis = false;
         while (!cur.empty()) {
             if (!visited.insert(cur).second) {
-                std::cerr << "  [chain] GetAncestorChain hit cycle at " << cur.substr(0,16)
+                std::cerr << "  [chain] GetAncestorChain hit cycle at " << cur.substr(0, 16)
                           << "; aborting walk (block_tree_ corrupt)\n";
                 std::cerr.flush();
                 break;
             }
             path.push_back(cur);
             auto it = block_tree_.find(cur);
-            if (it == block_tree_.end()) break;
+            if (it == block_tree_.end())
+                break;
             std::string prev = HashToHex(it->second.prev_hash);
-            if (HashIsZero(it->second.prev_hash)) { reached_genesis = true; break; }
+            if (HashIsZero(it->second.prev_hash)) {
+                reached_genesis = true;
+                break;
+            }
             cur = prev;
         }
         (void)reached_genesis;
         return path;
     }
 
-    std::string FindCommonAncestor(const std::string& hash_a,
-                                    const std::string& hash_b) const {
+    std::string FindCommonAncestor(const std::string& hash_a, const std::string& hash_b) const {
         auto chain_a = GetAncestorChain(hash_a);
         auto chain_b = GetAncestorChain(hash_b);
         std::unordered_map<std::string, bool> set_a;
-        for (const auto& h : chain_a) set_a[h] = true;
+        for (const auto& h : chain_a)
+            set_a[h] = true;
         for (const auto& h : chain_b)
-            if (set_a.count(h)) return h;
+            if (set_a.count(h))
+                return h;
         return "";
     }
 
@@ -7048,33 +7304,32 @@ private:
     // its derived height, so compare each side ancestor directly with the
     // canonical hash at that height.  The side-tree cardinality cap is the hard
     // walk budget; cycles, gaps, and forged height links fail closed.
-    std::string FindCanonicalAncestorBoundedNoLock_(
-            const std::string& side_tip_hash) const {
+    std::string FindCanonicalAncestorBoundedNoLock_(const std::string& side_tip_hash) const {
         std::unordered_set<std::string> seen;
         std::string cursor = side_tip_hash;
         for (size_t hops = 0; hops <= MAX_SIDE_BRANCH_HEADERS; ++hops) {
-            if (!seen.insert(cursor).second) return "";
+            if (!seen.insert(cursor).second)
+                return "";
             auto it = block_tree_.find(cursor);
-            if (it == block_tree_.end()) return "";
+            if (it == block_tree_.end())
+                return "";
             const ChainIndexEntry& entry = it->second;
-            if (entry.height < chain_.size() &&
-                HashToHex(chain_[entry.height].GetHash()) == cursor)
+            if (entry.height < chain_.size() && HashToHex(chain_[entry.height].GetHash()) == cursor)
                 return cursor;
-            if (entry.height == 0 || HashIsZero(entry.prev_hash)) return "";
+            if (entry.height == 0 || HashIsZero(entry.prev_hash))
+                return "";
             const std::string parent = HashToHex(entry.prev_hash);
             auto parent_it = block_tree_.find(parent);
-            if (parent_it == block_tree_.end() ||
-                parent_it->second.height + 1 != entry.height)
+            if (parent_it == block_tree_.end() || parent_it->second.height + 1 != entry.height)
                 return "";
             cursor = parent;
         }
         return "";
     }
 
-    bool BuildSideSuffixBoundedNoLock_(
-            const std::string& side_tip_hash,
-            const std::string& ancestor_hash,
-            std::vector<std::string>& forward_suffix) const {
+    bool BuildSideSuffixBoundedNoLock_(const std::string& side_tip_hash,
+                                       const std::string& ancestor_hash,
+                                       std::vector<std::string>& forward_suffix) const {
         forward_suffix.clear();
         std::unordered_set<std::string> seen;
         std::string cursor = side_tip_hash;
@@ -7083,7 +7338,8 @@ private:
                 std::reverse(forward_suffix.begin(), forward_suffix.end());
                 return !forward_suffix.empty();
             }
-            if (!seen.insert(cursor).second) return false;
+            if (!seen.insert(cursor).second)
+                return false;
             auto it = block_tree_.find(cursor);
             if (it == block_tree_.end() || it->second.on_main_chain)
                 return false;
@@ -7111,56 +7367,54 @@ private:
         };
         auto erase = [&](const Hash256& h, uint32_t i) -> bool {
 #ifdef VELD_TEST_HOOKS
-            if (test_force_rebuild_utxo_miss_.exchange(
-                    false, std::memory_order_acq_rel))
+            if (test_force_rebuild_utxo_miss_.exchange(false, std::memory_order_acq_rel))
                 return false;
 #endif
             std::string key = UTXOKey(h, i);
             auto it = out.set.find(key);
-            if (it == out.set.end()) return false;
+            if (it == out.set.end())
+                return false;
             auto idx_it = out.index.find(ScriptHex(it->second.script_pubkey));
             if (idx_it != out.index.end()) {
                 idx_it->second.erase(key);
-                if (idx_it->second.empty()) out.index.erase(idx_it);
+                if (idx_it->second.empty())
+                    out.index.erase(idx_it);
             }
             out.set.erase(it);
             return true;
         };
         auto apply_block = [&](const Block& blk) -> bool {
-            for (size_t tx_index = 0;
-                 tx_index < blk.transactions.size(); ++tx_index) {
-                if (tx_index > UINT32_MAX) return false;
+            for (size_t tx_index = 0; tx_index < blk.transactions.size(); ++tx_index) {
+                if (tx_index > UINT32_MAX)
+                    return false;
                 const auto& tx = blk.transactions[tx_index];
                 for (size_t i = 0; i < tx.outputs.size(); ++i) {
                     if (IsProvablyUnspendableOutput(tx.outputs[i]))
                         continue;
                     UTXO utxo;
-                    utxo.tx_hash       = tx.GetTxID();
-                    utxo.output_index  = (uint32_t)i;
-                    utxo.value         = tx.outputs[i].value;
+                    utxo.tx_hash = tx.GetTxID();
+                    utxo.output_index = (uint32_t)i;
+                    utxo.value = tx.outputs[i].value;
                     utxo.script_pubkey = tx.outputs[i].script_pubkey;
-                    utxo.block_height  = blk.height;
-                    utxo.is_coinbase   = tx.IsCoinbase();
+                    utxo.block_height = blk.height;
+                    utxo.is_coinbase = tx.IsCoinbase();
                     insert(utxo);
                 }
                 if (!tx.IsCoinbase()) {
                     for (const auto& inp : tx.inputs) {
-                        const std::string spend_key =
-                            UTXOKey(inp.prev_tx_hash, inp.prev_out_index);
-                        if (!out.spenders.emplace(
-                                spend_key,
-                                SpenderLocator{
-                                    blk.height,
-                                    static_cast<uint32_t>(tx_index),
-                                    tx.GetTxID()}).second) {
+                        const std::string spend_key = UTXOKey(inp.prev_tx_hash, inp.prev_out_index);
+                        if (!out.spenders
+                                 .emplace(spend_key, SpenderLocator{blk.height,
+                                                                    static_cast<uint32_t>(tx_index),
+                                                                    tx.GetTxID()})
+                                 .second) {
                             return false;
                         }
                         if (!erase(inp.prev_tx_hash, inp.prev_out_index)) {
                             std::cerr << "  [rebuild-fatal] EraseUTXO miss "
                                       << "tx=" << HashToHex(tx.GetTxID()).substr(0, 16)
                                       << " prev=" << HashToHex(inp.prev_tx_hash).substr(0, 16)
-                                      << ":" << inp.prev_out_index
-                                      << " block_h=" << blk.height
+                                      << ":" << inp.prev_out_index << " block_h=" << blk.height
                                       << " — refusing partial UTXO reconstruction\n";
                             return false;
                         }
@@ -7192,31 +7446,32 @@ private:
             if (it == block_store_.end()) {
                 bool found = false;
                 auto tree_it = block_tree_.find(h);
-                if (tree_it != block_tree_.end() &&
-                    tree_it->second.on_main_chain &&
+                if (tree_it != block_tree_.end() && tree_it->second.on_main_chain &&
                     tree_it->second.height < chain_.size() &&
                     HashToHex(chain_[tree_it->second.height].GetHash()) == h) {
-                    const Block blk =
-                        LoadCanonicalBlockNoLock_(tree_it->second.height);
-                    if (!apply_block(blk)) return false;
+                    const Block blk = LoadCanonicalBlockNoLock_(tree_it->second.height);
+                    if (!apply_block(blk))
+                        return false;
                     found = true;
                 }
                 if (!found) {
-                    std::cerr << "  [ERROR] BuildUTXOSetInto: missing block "
-                              << h.substr(0, 16) << "\n";
+                    std::cerr << "  [ERROR] BuildUTXOSetInto: missing block " << h.substr(0, 16)
+                              << "\n";
                     return false;
                 }
                 continue;
             }
-            if (!apply_block(it->second)) return false;
+            if (!apply_block(it->second))
+                return false;
         }
         return true;
     }
 
     bool RebuildUTXOSet(const std::string& tip_hash) {
         UTXOMapBundle tmp;
-        if (!BuildUTXOSetInto(tip_hash, tmp)) return false;
-        utxo_set_     = std::move(tmp.set);
+        if (!BuildUTXOSetInto(tip_hash, tmp))
+            return false;
+        utxo_set_ = std::move(tmp.set);
         script_index_ = std::move(tmp.index);
         canonical_spenders_ = std::move(tmp.spenders);
         total_supply_units_.store(tmp.supply_units);
@@ -7248,23 +7503,22 @@ private:
                 size_t off = 1, plen = 0;
                 if (out.script_pubkey[off] <= 75) {
                     plen = out.script_pubkey[off++];
-                } else if (out.script_pubkey[off] == 0x4C &&
-                           out.script_pubkey.size() > off + 1) {
+                } else if (out.script_pubkey[off] == 0x4C && out.script_pubkey.size() > off + 1) {
                     ++off;
                     plen = out.script_pubkey[off++];
-                } else if (out.script_pubkey[off] == 0x4D &&
-                           out.script_pubkey.size() > off + 2) {
+                } else if (out.script_pubkey[off] == 0x4D && out.script_pubkey.size() > off + 2) {
                     ++off;
-                    plen = out.script_pubkey[off] |
-                           (out.script_pubkey[off + 1] << 8);
+                    plen = out.script_pubkey[off] | (out.script_pubkey[off + 1] << 8);
                     off += 2;
                 }
-                if (off + plen > out.script_pubkey.size()) continue;
+                if (off + plen > out.script_pubkey.size())
+                    continue;
                 std::string payload(out.script_pubkey.begin() + off,
                                     out.script_pubkey.begin() + off + plen);
                 CanonicalStakeOp op;
                 if (!ParseCanonicalStakeOp(payload, op) ||
-                    op.action != CanonicalStakeOp::Action::LOCK) continue;
+                    op.action != CanonicalStakeOp::Action::LOCK)
+                    continue;
                 const std::string& addr = op.address;
                 const uint64_t amount = op.amount_units;
                 if (amount == 0 || amount > MAX_SUPPLY_UNITS)
@@ -7277,23 +7531,25 @@ private:
         }
 
         std::unordered_map<std::string, uint64_t> active_stakes;
-        if (all_active_stakes_) active_stakes = all_active_stakes_();
+        if (all_active_stakes_)
+            active_stakes = all_active_stakes_();
         for (const auto& [addr, _claim] : lock_claims) {
             if (active_stakes.find(addr) == active_stakes.end()) {
-                active_stakes.emplace(
-                    addr, staked_for_addr_ ? staked_for_addr_(addr) : 0);
+                active_stakes.emplace(addr, staked_for_addr_ ? staked_for_addr_(addr) : 0);
             }
         }
 
         std::unordered_map<std::string, uint64_t> spent_by_addr;
         for (const auto& tx : block.transactions) {
-            if (tx.IsCoinbase()) continue;
+            if (tx.IsCoinbase())
+                continue;
             for (const auto& inp : tx.inputs) {
-                auto utxo = GetUTXONoLock(inp.prev_tx_hash,
-                                          inp.prev_out_index);
-                if (!utxo) continue;
+                auto utxo = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
+                if (!utxo)
+                    continue;
                 std::string addr = ScriptToAddress(utxo->script_pubkey);
-                if (addr.empty()) continue;
+                if (addr.empty())
+                    continue;
                 uint64_t& amount = spent_by_addr[addr];
                 if (amount > UINT64_MAX - utxo->value)
                     return "stake_phantom_spend_overflow";
@@ -7304,9 +7560,11 @@ private:
         std::unordered_map<std::string, uint64_t> received_by_addr;
         for (const auto& tx : block.transactions) {
             for (const auto& out : tx.outputs) {
-                if (out.value == 0) continue;
+                if (out.value == 0)
+                    continue;
                 std::string addr = ScriptToAddress(out.script_pubkey);
-                if (addr.empty()) continue;
+                if (addr.empty())
+                    continue;
                 uint64_t& amount = received_by_addr[addr];
                 if (amount > UINT64_MAX - out.value)
                     return "stake_phantom_receipt_overflow";
@@ -7316,21 +7574,23 @@ private:
 
         for (const auto& [addr, stake_before] : active_stakes) {
             auto claim_it = lock_claims.find(addr);
-            const uint64_t claim = claim_it == lock_claims.end()
-                ? 0 : claim_it->second;
-            if (stake_before == 0 && claim == 0) continue;
+            const uint64_t claim = claim_it == lock_claims.end() ? 0 : claim_it->second;
+            if (stake_before == 0 && claim == 0)
+                continue;
             if (stake_before > UINT64_MAX - claim)
                 return "stake_phantom_stake_overflow";
             const uint64_t stake_after = stake_before + claim;
 
             auto script = AddressToScript(addr);
-            if (script.empty()) return "stake_lock_bad_address";
+            if (script.empty())
+                return "stake_lock_bad_address";
             uint64_t balance_before = 0;
             auto idx_it = script_index_.find(ScriptHex(script));
             if (idx_it != script_index_.end()) {
                 for (const auto& key : idx_it->second) {
                     auto utxo_it = utxo_set_.find(key);
-                    if (utxo_it == utxo_set_.end()) continue;
+                    if (utxo_it == utxo_set_.end())
+                        continue;
                     if (balance_before > UINT64_MAX - utxo_it->second.value)
                         return "stake_balance_overflow";
                     balance_before += utxo_it->second.value;
@@ -7347,34 +7607,28 @@ private:
                 return "stake_exceeds_balance";
 
             const auto spend_it = spent_by_addr.find(addr);
-            const uint64_t spent = spend_it == spent_by_addr.end()
-                ? 0 : spend_it->second;
+            const uint64_t spent = spend_it == spent_by_addr.end() ? 0 : spend_it->second;
             const auto receipt_it = received_by_addr.find(addr);
-            const uint64_t received = receipt_it == received_by_addr.end()
-                ? 0 : receipt_it->second;
-            uint64_t balance_after = balance_before >= spent
-                ? balance_before - spent : 0;
+            const uint64_t received = receipt_it == received_by_addr.end() ? 0 : receipt_it->second;
+            uint64_t balance_after = balance_before >= spent ? balance_before - spent : 0;
             if (balance_after > UINT64_MAX - received)
                 return "stake_phantom_balance_overflow";
             balance_after += received;
 
             if (stake_after > balance_after) {
-                return claim > 0
-                    ? "stake_exceeds_balance"
-                    : "stake_ledger_phantom_after_drain";
+                return claim > 0 ? "stake_exceeds_balance" : "stake_ledger_phantom_after_drain";
             }
         }
         return nullptr;
     }
 
-    ReplayValidationDisposition ValidateBlockForReplay(
-            const Block& blk,
-            const mining::PowAdmissionContext& pow_admission,
-            const UTXOMapBundle* overlay = nullptr,
-            bool pow_already_verified = false,
-            bool* pow_verified = nullptr) const {
+    ReplayValidationDisposition
+    ValidateBlockForReplay(const Block& blk, const mining::PowAdmissionContext& pow_admission,
+                           const UTXOMapBundle* overlay = nullptr,
+                           bool pow_already_verified = false, bool* pow_verified = nullptr) const {
         ValidationOverlayGuard ovr_guard(overlay);
-        if (pow_verified) *pow_verified = pow_already_verified;
+        if (pow_verified)
+            *pow_verified = pow_already_verified;
         // Each gate below rejects via reject_log("<reason>") so the call site
         // names WHICH consensus rule failed. The reason is intentionally not
         // emitted on the consensus path: a reorg replay legitimately probes
@@ -7388,7 +7642,8 @@ private:
             last_reject_tag_ = why;
             return ReplayValidationDisposition::DeferredLocalWork;
         };
-        if (blk.transactions.empty()) return reject_log("empty_transactions");
+        if (blk.transactions.empty())
+            return reject_log("empty_transactions");
         if (blk.transactions.size() > MAX_TRANSACTIONS_PER_BLOCK)
             return reject_log("too_many_txs");
         if (!blk.transactions[0].IsCoinbase())
@@ -7408,11 +7663,9 @@ private:
         if (!DecodeCanonicalVeldTarget(blk.header.bits, replay_target))
             return reject_log("pow_target_noncanonical_vbfr");
         if (blk.height > 0) {
-            if (chain_.empty() ||
-                blk.header.prev_block_hash != chain_.back().GetHash())
+            if (chain_.empty() || blk.header.prev_block_hash != chain_.back().GetHash())
                 return reject_log("parent_linkage_vbfr");
-            const uint32_t expected_bits =
-                ComputeNextBitsAtLocked(blk.height - 1);
+            const uint32_t expected_bits = ComputeNextBitsAtLocked(blk.height - 1);
             if (blk.header.bits != expected_bits)
                 return reject_log("bits_mismatch_lwma_vbfr");
             if (blk.header.timestamp <= MedianTimePast())
@@ -7434,27 +7687,26 @@ private:
             std::optional<mining::ExpensivePowLease> source_pow_lease;
             if (pow_admission.source_budget) {
                 source_pow_lease =
-                    pow_admission.source_budget->TryAcquire(
-                        pow_admission.ReorgUse());
+                    pow_admission.source_budget->TryAcquire(pow_admission.ReorgUse());
                 if (!source_pow_lease)
                     return defer_log("pow_peer_reorg_budget_exhausted");
             }
             auto global_pow_lease =
-                mining::GlobalExpensivePowBudget().TryAcquire(
-                    pow_admission.ReorgUse());
+                mining::GlobalExpensivePowBudget().TryAcquire(pow_admission.ReorgUse());
             if (!global_pow_lease)
                 return defer_log("pow_global_reorg_budget_exhausted");
             bool pow_dataset_unavailable = false;
-            if (!VerifyBlockPoW(
-                    blk, &pow_dataset_unavailable, &replay_target)) {
+            if (!VerifyBlockPoW(blk, &pow_dataset_unavailable, &replay_target)) {
                 if (pow_dataset_unavailable)
                     return defer_log("pow_reorg_dataset_unavailable");
                 return reject_log("pow_reorg_invalid");
             }
-            if (pow_verified) *pow_verified = true;
+            if (pow_verified)
+                *pow_verified = true;
         }
 
-        if (blk.height > 0 && !ValidateCoinbaseOutputs(blk)) return reject_log("coinbase_outputs");
+        if (blk.height > 0 && !ValidateCoinbaseOutputs(blk))
+            return reject_log("coinbase_outputs");
         if (blk.height > 0 && !ValidateCanonicalCoinbaseSplit(blk))
             return reject_log("coinbase_split_not_canonical");
         if (blk.height > 0 && !ValidateProtocolCustodyFunding(blk))
@@ -7472,12 +7724,12 @@ private:
             // engine.
             if (i > 0 && tx.IsCoinbase())
                 return reject_log("extra_coinbase");
-            if (!tx.IsValid()) return reject_log(
-                i == 0 ? "coinbase_basic_invalid"
-                       : "transaction_basic_invalid");
+            if (!tx.IsValid())
+                return reject_log(i == 0 ? "coinbase_basic_invalid" : "transaction_basic_invalid");
 
             std::string txid_hex = HashToHex(tx.GetTxID());
-            if (!seen_txids.insert(txid_hex).second) return reject_log("dup_txid");
+            if (!seen_txids.insert(txid_hex).second)
+                return reject_log("dup_txid");
 
             if (i == 0) {
                 continue;
@@ -7485,42 +7737,47 @@ private:
 
             // ValidateTransaction is the authoritative per-transaction
             // consensus check for alternate-branch application.
-            if (!ValidateTransaction(tx, false)) return reject_log("validate_tx");
-            if (blk.height >= BATCH1_HARDENING_HEIGHT &&
-                tx.HasDustOutput(DUST_THRESHOLD_UNITS))
+            if (!ValidateTransaction(tx, false))
+                return reject_log("validate_tx");
+            if (blk.height >= BATCH1_HARDENING_HEIGHT && tx.HasDustOutput(DUST_THRESHOLD_UNITS))
                 return reject_log("output_below_dust_threshold");
 
             for (const auto& inp : tx.inputs) {
-                if (inp.IsCoinbase()) continue;
-                std::string k = HashToHex(inp.prev_tx_hash) + ":" + std::to_string(inp.prev_out_index);
-                if (!spent_outpoints.insert(k).second) return reject_log("intra_block_dspend");
+                if (inp.IsCoinbase())
+                    continue;
+                std::string k =
+                    HashToHex(inp.prev_tx_hash) + ":" + std::to_string(inp.prev_out_index);
+                if (!spent_outpoints.insert(k).second)
+                    return reject_log("intra_block_dspend");
             }
 
             for (const auto& out : tx.outputs) {
                 if (!out.script_pubkey.empty() && out.script_pubkey[0] == 0x6A) {
-                    if (out.script_pubkey.size() >
-                            MAX_OP_RETURN_SCRIPT_PUBKEY_BYTES)
+                    if (out.script_pubkey.size() > MAX_OP_RETURN_SCRIPT_PUBKEY_BYTES)
                         return reject_log("op_return_too_large");
                 }
             }
         }
 
         if (blk.height >= COINBASE_MATURITY_CONSENSUS_HEIGHT) {
-            std::vector<uint8_t> pool_excl    = AddressToScript(POOL_ADDRESS);
+            std::vector<uint8_t> pool_excl = AddressToScript(POOL_ADDRESS);
             std::vector<uint8_t> endorse_excl = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
             for (size_t i = 1; i < blk.transactions.size(); ++i) {
                 for (const auto& inp : blk.transactions[i].inputs) {
-                    if (inp.IsCoinbase()) continue;
-                    auto uit = utxo_set_.find(UTXOKey(inp.prev_tx_hash, inp.prev_out_index));
-                    if (uit == utxo_set_.end()) continue;
-                    const auto& utxo = uit->second;
-                    if (!utxo.is_coinbase) continue;
-                    if (utxo.script_pubkey == pool_excl
-                        || utxo.script_pubkey == endorse_excl
-                        || utxo.script_pubkey == AddressToScript(VaultAddressAtHeight(utxo.block_height)))
+                    if (inp.IsCoinbase())
                         continue;
-                    if (utxo.block_height >= COINBASE_MATURITY_ACTIVATES_AT_HEIGHT
-                        && blk.height - utxo.block_height < COINBASE_MATURITY)
+                    auto uit = utxo_set_.find(UTXOKey(inp.prev_tx_hash, inp.prev_out_index));
+                    if (uit == utxo_set_.end())
+                        continue;
+                    const auto& utxo = uit->second;
+                    if (!utxo.is_coinbase)
+                        continue;
+                    if (utxo.script_pubkey == pool_excl || utxo.script_pubkey == endorse_excl ||
+                        utxo.script_pubkey ==
+                            AddressToScript(VaultAddressAtHeight(utxo.block_height)))
+                        continue;
+                    if (utxo.block_height >= COINBASE_MATURITY_ACTIVATES_AT_HEIGHT &&
+                        blk.height - utxo.block_height < COINBASE_MATURITY)
                         return reject_log("coinbase_maturity");
                 }
             }
@@ -7530,24 +7787,29 @@ private:
             constexpr uint64_t COOLDOWN = 12;
             uint64_t pos = blk.height % VAULT_DISTRIBUTION_INTERVAL;
             if (pos > VAULT_DISTRIBUTION_INTERVAL - COOLDOWN) {
-                static const std::string REG   = "VELD_VALIDATOR|REGISTER|";
+                static const std::string REG = "VELD_VALIDATOR|REGISTER|";
                 static const std::string DEREG = "VELD_VALIDATOR|DEREGISTER|";
                 for (size_t i = 1; i < blk.transactions.size(); ++i) {
                     for (const auto& out : blk.transactions[i].outputs) {
-                        if (out.script_pubkey.size() < 2 || out.script_pubkey[0] != 0x6A) continue;
+                        if (out.script_pubkey.size() < 2 || out.script_pubkey[0] != 0x6A)
+                            continue;
                         size_t off = 1, plen = 0;
-                        if (out.script_pubkey[off] <= 75) { plen = out.script_pubkey[off++]; }
-                        else if (out.script_pubkey[off] == 0x4C && out.script_pubkey.size() > off+1) {
-                            off++; plen = out.script_pubkey[off++];
-                        }
-                        else if (out.script_pubkey[off] == 0x4D && out.script_pubkey.size() > off+2) {
+                        if (out.script_pubkey[off] <= 75) {
+                            plen = out.script_pubkey[off++];
+                        } else if (out.script_pubkey[off] == 0x4C &&
+                                   out.script_pubkey.size() > off + 1) {
                             off++;
-                            plen = out.script_pubkey[off] | (out.script_pubkey[off+1] << 8);
+                            plen = out.script_pubkey[off++];
+                        } else if (out.script_pubkey[off] == 0x4D &&
+                                   out.script_pubkey.size() > off + 2) {
+                            off++;
+                            plen = out.script_pubkey[off] | (out.script_pubkey[off + 1] << 8);
                             off += 2;
                         }
-                        if (off + plen > out.script_pubkey.size()) continue;
-                        std::string payload(out.script_pubkey.begin()+off,
-                                            out.script_pubkey.begin()+off+plen);
+                        if (off + plen > out.script_pubkey.size())
+                            continue;
+                        std::string payload(out.script_pubkey.begin() + off,
+                                            out.script_pubkey.begin() + off + plen);
                         if (payload.rfind(REG, 0) == 0 || payload.rfind(DEREG, 0) == 0)
                             return reject_log("gaming_guard");
                     }
@@ -7566,9 +7828,11 @@ private:
             std::unordered_set<std::string> intra_block_nms_seen;
             size_t nms_records = 0;
             for (const auto& tx : blk.transactions) {
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 auto nms_rec = ExtractNmsFromTx(tx);
-                if (!nms_rec) continue;
+                if (!nms_rec)
+                    continue;
                 if (++nms_records > MAX_NMS_RECORDS_PER_BLOCK)
                     return reject_log("too_many_nms_records_vbfr");
                 auto miner_script = ExtractNmsMinerScript(tx);
@@ -7577,11 +7841,8 @@ private:
                 if (!ValidateNmsMinerIdentity(tx))
                     return reject_log("nms_miner_identity_mismatch_vbfr");
                 bool nms_local_work_deferred = false;
-                if (!ValidateNms(
-                        *nms_rec, *this, blk.height,
-                        pow_admission.source_budget.get(),
-                        &nms_local_work_deferred,
-                        pow_admission.NmsUse())) {
+                if (!ValidateNms(*nms_rec, *this, blk.height, pow_admission.source_budget.get(),
+                                 &nms_local_work_deferred, pow_admission.NmsUse())) {
                     if (nms_local_work_deferred)
                         return defer_log("nms_local_work_deferred_vbfr");
                     return reject_log("nms_validation_failed_vbfr");
@@ -7673,19 +7934,21 @@ private:
             }
 
             uint64_t cb_out_vbfr = blk.transactions[0].TotalOutput();
-            uint64_t fees_vbfr   = 0;
+            uint64_t fees_vbfr = 0;
             for (size_t ti = 1; ti < blk.transactions.size(); ++ti) {
                 const auto& tx = blk.transactions[ti];
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 uint64_t tx_in = 0, tx_out = tx.TotalOutput();
                 for (const auto& inp : tx.inputs) {
                     auto utxo = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                    if (utxo) tx_in += utxo->value;
+                    if (utxo)
+                        tx_in += utxo->value;
                 }
-                if (tx_in > tx_out) fees_vbfr += (tx_in - tx_out);
+                if (tx_in > tx_out)
+                    fees_vbfr += (tx_in - tx_out);
             }
-            uint64_t new_emission_vbfr =
-                (cb_out_vbfr > fees_vbfr) ? (cb_out_vbfr - fees_vbfr) : 0;
+            uint64_t new_emission_vbfr = (cb_out_vbfr > fees_vbfr) ? (cb_out_vbfr - fees_vbfr) : 0;
             if (new_emission_vbfr > MAX_SUPPLY_UNITS ||
                 total_supply_units_.load() > MAX_SUPPLY_UNITS - new_emission_vbfr) {
                 return reject_log("supply_cap_overflow_vbfr");
@@ -7699,9 +7962,9 @@ private:
                         vault_in_cb_vbfr += out.value;
                 }
                 uint64_t subsidy_vbfr = ExpectedBlockSubsidy(blk.height);
-                uint64_t remaining_vbfr =
-                    (MAX_SUPPLY_UNITS > total_supply_units_.load())
-                        ? (MAX_SUPPLY_UNITS - total_supply_units_.load()) : 0;
+                uint64_t remaining_vbfr = (MAX_SUPPLY_UNITS > total_supply_units_.load())
+                                              ? (MAX_SUPPLY_UNITS - total_supply_units_.load())
+                                              : 0;
                 uint64_t eff_for_floor =
                     (subsidy_vbfr < remaining_vbfr) ? subsidy_vbfr : remaining_vbfr;
                 uint64_t expected_vault_floor_vbfr;
@@ -7735,17 +7998,20 @@ private:
             // ValidateExpectedPoolPayout above is already engine-independent and
             // binds its complete input/output set in either mode.
             if (alt_engine_overlay_ == nullptr) {
-                const auto ep_s    = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
+                const auto ep_s = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
                 const auto vault_s = AddressToScript(VaultAddressAtHeight(blk.height));
-                const auto sv_s    = AddressToScript(STAKE_VAULT_ADDRESS);
-                const auto bye_s   = AddressToScript(BOND_YIELD_ESCROW);
+                const auto sv_s = AddressToScript(STAKE_VAULT_ADDRESS);
+                const auto bye_s = AddressToScript(BOND_YIELD_ESCROW);
                 for (size_t ti = 1; ti < blk.transactions.size(); ++ti) {
                     const auto& tx = blk.transactions[ti];
-                    if (tx.IsCoinbase()) continue;
+                    if (tx.IsCoinbase())
+                        continue;
                     for (const auto& inp : tx.inputs) {
-                        if (inp.IsCoinbase()) continue;
+                        if (inp.IsCoinbase())
+                            continue;
                         auto u = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
-                        if (!u) continue;
+                        if (!u)
+                            continue;
                         const auto& spk = u->script_pubkey;
                         if (spk == ep_s || spk == sv_s || spk == bye_s ||
                             (!vault_s.empty() && spk == vault_s)) {
@@ -7799,8 +8065,7 @@ private:
         std::vector<Block> old_tail;
         std::set<std::string> touched_keys;
         NmsTally nms_before;
-        std::vector<std::pair<std::string, mining::PowAdmissionContext>>
-            candidate_pow_admissions;
+        std::vector<std::pair<std::string, mining::PowAdmissionContext>> candidate_pow_admissions;
         std::unordered_set<std::string> candidate_replay_pow_verified;
         std::unordered_set<std::string> candidate_volatile_side_hashes;
         bool valid{false};
@@ -7810,8 +8075,7 @@ private:
     bool test_fail_next_reorg_frame_restore_{false};
 #endif
 
-    bool RestoreReorgFrameNoLock_(const ReorgRollbackFrame& frame,
-                                   UTXODelta& durable_delta) {
+    bool RestoreReorgFrameNoLock_(const ReorgRollbackFrame& frame, UTXODelta& durable_delta) {
 #ifdef VELD_TEST_HOOKS
         if (test_fail_next_reorg_frame_restore_) {
             test_fail_next_reorg_frame_restore_ = false;
@@ -7823,25 +8087,23 @@ private:
         // so the body is retained in memory rather than assumed durable.
         for (const auto& hash : frame.candidate_volatile_side_hashes)
             volatile_side_quarantine_.insert(hash);
-        while (!chain_.empty() &&
-               chain_.back().height > frame.ancestor_height) {
+        while (!chain_.empty() && chain_.back().height > frame.ancestor_height) {
             Block dropped;
-            if (!DisconnectCanonicalTipNoLock_(
-                    dropped, /*retain_as_side_branch=*/true)) return false;
+            if (!DisconnectCanonicalTipNoLock_(dropped, /*retain_as_side_branch=*/true))
+                return false;
         }
-        if (chain_.empty() ||
-            chain_.back().height != frame.ancestor_height ||
+        if (chain_.empty() || chain_.back().height != frame.ancestor_height ||
             HashToHex(chain_.back().GetHash()) != frame.ancestor_hash)
             return false;
         for (const auto& old_block : frame.old_tail) {
-            if (!CommitBlock(old_block)) return false;
+            if (!CommitBlock(old_block))
+                return false;
         }
         {
             std::unique_lock<std::shared_mutex> nlock(nms_tally_mutex_);
             nms_tally_ = frame.nms_before;
         }
-        for (const auto& [hash, admission] :
-             frame.candidate_pow_admissions) {
+        for (const auto& [hash, admission] : frame.candidate_pow_admissions) {
             if (side_branch_hashes_.count(hash))
                 side_pow_admission_.emplace(hash, admission);
         }
@@ -7854,8 +8116,7 @@ private:
                 volatile_side_quarantine_.insert(hash);
         }
         durable_delta = BuildUTXODeltaNoLock_(frame.touched_keys);
-        return !chain_.empty() &&
-               HashToHex(chain_.back().GetHash()) == frame.old_tip_hash;
+        return !chain_.empty() && HashToHex(chain_.back().GetHash()) == frame.old_tip_hash;
     }
 
     bool ReorgRetryReadyNoLock_(const std::string& side_tip_hash) const {
@@ -7863,8 +8124,7 @@ private:
         std::string cursor = side_tip_hash;
         for (size_t hops = 0; hops <= MAX_SIDE_BRANCH_HEADERS; ++hops) {
             auto retry = deferred_reorg_retry_.find(cursor);
-            if (retry != deferred_reorg_retry_.end() &&
-                now < retry->second.retry_after)
+            if (retry != deferred_reorg_retry_.end() && now < retry->second.retry_after)
                 return false;
             auto tree = block_tree_.find(cursor);
             if (tree == block_tree_.end() || tree->second.on_main_chain)
@@ -7879,49 +8139,44 @@ private:
         const uint8_t exponent = std::min<uint8_t>(retry.exponent, 6);
         uint64_t delay = REORG_RETRY_BASE_MS << exponent;
         delay = std::min<uint64_t>(delay, REORG_RETRY_MAX_MS);
-        retry.retry_after = std::chrono::steady_clock::now() +
-            std::chrono::milliseconds(delay);
-        if (retry.exponent < 6) ++retry.exponent;
+        retry.retry_after = std::chrono::steady_clock::now() + std::chrono::milliseconds(delay);
+        if (retry.exponent < 6)
+            ++retry.exponent;
     }
 
-    ReorgDisposition ReorganizeBounded_(
-            const std::string& new_tip_hash,
-            std::vector<Block>& out_applied_blocks,
-            const mining::PowAdmissionContext& trigger_admission,
-            bool validation_only = false) {
+    ReorgDisposition ReorganizeBounded_(const std::string& new_tip_hash,
+                                        std::vector<Block>& out_applied_blocks,
+                                        const mining::PowAdmissionContext& trigger_admission,
+                                        bool validation_only = false) {
         if (!ReorgRetryReadyNoLock_(new_tip_hash)) {
             last_reject_tag_ = "reorg_retry_backoff";
             return ReorgDisposition::DeferredLocalWork;
         }
-        if (pending_reorg_rollback_ ||
-            !reorg_protected_side_hashes_.empty()) {
-            durability_compromised_.store(true,
-                                          std::memory_order_release);
-            last_reject_tag_ =
-                "prior_reorg_recovery_frame_still_pending";
+        if (pending_reorg_rollback_ || !reorg_protected_side_hashes_.empty()) {
+            durability_compromised_.store(true, std::memory_order_release);
+            last_reject_tag_ = "prior_reorg_recovery_frame_still_pending";
             return ReorgDisposition::ConsensusInvalid;
         }
         last_reorg_disconnect_count_.store(0, std::memory_order_release);
         last_reorg_apply_count_.store(0, std::memory_order_release);
         out_applied_blocks.clear();
-        if (chain_.empty()) return ReorgDisposition::ConsensusInvalid;
+        if (chain_.empty())
+            return ReorgDisposition::ConsensusInvalid;
 
         const std::string old_tip_hash = HashToHex(chain_.back().GetHash());
-        const std::string ancestor =
-            FindCanonicalAncestorBoundedNoLock_(new_tip_hash);
-        if (ancestor.empty()) return ReorgDisposition::ConsensusInvalid;
+        const std::string ancestor = FindCanonicalAncestorBoundedNoLock_(new_tip_hash);
+        if (ancestor.empty())
+            return ReorgDisposition::ConsensusInvalid;
         auto anc_it = block_tree_.find(ancestor);
         if (anc_it == block_tree_.end() || !anc_it->second.on_main_chain)
             return ReorgDisposition::ConsensusInvalid;
         const uint64_t anc_height = anc_it->second.height;
         const uint64_t old_tip_height = chain_.back().height;
-        if (old_tip_height < anc_height ||
-            old_tip_height - anc_height >= MAX_REORG_DEPTH) {
+        if (old_tip_height < anc_height || old_tip_height - anc_height >= MAX_REORG_DEPTH) {
             last_reject_tag_ = "reorg_beyond_max_depth";
             return ReorgDisposition::ConsensusInvalid;
         }
-        if (anchor_reorg_gate_ &&
-            !anchor_reorg_gate_(anc_height, old_tip_height)) {
+        if (anchor_reorg_gate_ && !anchor_reorg_gate_(anc_height, old_tip_height)) {
             last_reject_tag_ = "reorg_below_anchor_carrier";
             return ReorgDisposition::ConsensusInvalid;
         }
@@ -7948,8 +8203,7 @@ private:
         }
 
         const size_t disconnect_count = frame.old_tail.size();
-        if (canonical_undo_.size() < disconnect_count ||
-            miner_undo_.size() < disconnect_count) {
+        if (canonical_undo_.size() < disconnect_count || miner_undo_.size() < disconnect_count) {
             last_reject_tag_ = "reorg_undo_horizon_missing";
             return ReorgDisposition::ConsensusInvalid;
         }
@@ -7957,8 +8211,7 @@ private:
         for (size_t i = 0; i < disconnect_count; ++i) {
             const auto& undo = canonical_undo_[undo_start + i];
             const auto& old_block = frame.old_tail[i];
-            if (undo.height != old_block.height ||
-                undo.hash != old_block.GetHash()) {
+            if (undo.height != old_block.height || undo.hash != old_block.GetHash()) {
                 last_reject_tag_ = "reorg_undo_hash_mismatch";
                 return ReorgDisposition::ConsensusInvalid;
             }
@@ -7966,8 +8219,7 @@ private:
         }
 
         std::vector<std::string> path;
-        if (!BuildSideSuffixBoundedNoLock_(
-                new_tip_hash, ancestor, path)) {
+        if (!BuildSideSuffixBoundedNoLock_(new_tip_hash, ancestor, path)) {
             bad_alt_tips_.insert(new_tip_hash);
             (void)PruneSideBranchStateNoLock_(/*force=*/true);
             last_reject_tag_ = "reorg_alt_apply_budget";
@@ -7979,8 +8231,7 @@ private:
         for (const auto& hash_hex : path) {
             auto tree_it = block_tree_.find(hash_hex);
             auto store_it = block_store_.find(hash_hex);
-            if (tree_it == block_tree_.end() ||
-                store_it == block_store_.end() ||
+            if (tree_it == block_tree_.end() || store_it == block_store_.end() ||
                 tree_it->second.height != expected_height) {
                 bad_alt_tips_.insert(new_tip_hash);
                 (void)PruneSideBranchStateNoLock_(/*force=*/true);
@@ -8010,8 +8261,7 @@ private:
             ++expected_height;
             alt_blocks.push_back(std::move(block));
         }
-        if (alt_blocks.empty() ||
-            HashToHex(alt_blocks.back().GetHash()) != new_tip_hash) {
+        if (alt_blocks.empty() || HashToHex(alt_blocks.back().GetHash()) != new_tip_hash) {
             bad_alt_tips_.insert(new_tip_hash);
             (void)PruneSideBranchStateNoLock_(/*force=*/true);
             last_reject_tag_ = "reorg_alt_path_incomplete";
@@ -8039,8 +8289,7 @@ private:
             const std::string hash = HashToHex(block.GetHash());
             auto existing = side_pow_admission_.find(hash);
             mining::PowAdmissionContext resolved =
-                existing != side_pow_admission_.end()
-                    ? existing->second : trigger_admission;
+                existing != side_pow_admission_.end() ? existing->second : trigger_admission;
             if (!resolved.HasRequiredProvenance()) {
                 last_reject_tag_ = "pow_reorg_provenance_unavailable";
                 return ReorgDisposition::DeferredLocalWork;
@@ -8054,12 +8303,10 @@ private:
         }
         std::vector<bool> replay_pow_ok(alt_blocks.size(), false);
         for (size_t i = 0; i < alt_blocks.size(); ++i)
-            replay_pow_ok[i] = reorg_pow_verified_.count(
-                HashToHex(alt_blocks[i].GetHash())) != 0;
+            replay_pow_ok[i] = reorg_pow_verified_.count(HashToHex(alt_blocks[i].GetHash())) != 0;
 
         for (const auto& block : frame.old_tail)
-            reorg_protected_side_hashes_.insert(
-                HashToHex(block.GetHash()));
+            reorg_protected_side_hashes_.insert(HashToHex(block.GetHash()));
 
         auto restore_after_failure = [&]() -> bool {
             UTXODelta ignored;
@@ -8067,11 +8314,10 @@ private:
             out_applied_blocks.clear();
             if (ok) {
                 for (size_t i = 0; i < alt_blocks.size(); ++i) {
-                    const std::string hash =
-                        HashToHex(alt_blocks[i].GetHash());
-                    if (!side_branch_hashes_.count(hash)) continue;
-                    side_pow_admission_.emplace(
-                        hash, alt_pow_admissions[i]);
+                    const std::string hash = HashToHex(alt_blocks[i].GetHash());
+                    if (!side_branch_hashes_.count(hash))
+                        continue;
+                    side_pow_admission_.emplace(hash, alt_pow_admissions[i]);
                     if (replay_pow_ok[i])
                         reorg_pow_verified_.insert(hash);
                 }
@@ -8080,8 +8326,7 @@ private:
             } else {
                 // A partial in-memory restore makes the displaced bodies the
                 // only bounded recovery source. Never force-prune them.
-                durability_compromised_.store(
-                    true, std::memory_order_release);
+                durability_compromised_.store(true, std::memory_order_release);
                 last_reject_tag_ = "reorg_restore_failed_restart_required";
             }
             return ok;
@@ -8089,18 +8334,15 @@ private:
 
         for (size_t i = 0; i < disconnect_count; ++i) {
             Block disconnected;
-            if (!DisconnectCanonicalTipNoLock_(
-                    disconnected, /*retain_as_side_branch=*/true)) {
+            if (!DisconnectCanonicalTipNoLock_(disconnected, /*retain_as_side_branch=*/true)) {
                 restore_after_failure();
                 last_reject_tag_ = "reorg_disconnect_failed";
                 return ReorgDisposition::ConsensusInvalid;
             }
-            last_reorg_disconnect_count_.fetch_add(
-                1, std::memory_order_relaxed);
+            last_reorg_disconnect_count_.fetch_add(1, std::memory_order_relaxed);
             if (!PruneSideBranchStateNoLock_(/*force=*/true)) {
                 restore_after_failure();
-                last_reject_tag_ =
-                    "reorg_side_cleanup_failed_restart_required";
+                last_reject_tag_ = "reorg_side_cleanup_failed_restart_required";
                 return ReorgDisposition::ConsensusInvalid;
             }
         }
@@ -8110,7 +8352,10 @@ private:
             bool armed{false};
             ~AltOvGuard() {
                 if (armed && fn) {
-                    try { fn(); } catch (...) {}
+                    try {
+                        fn();
+                    } catch (...) {
+                    }
                 }
             }
         } alt_guard{alt_overlay_teardown_fn_, false};
@@ -8119,8 +8364,8 @@ private:
             try {
                 alt_overlay_build_fn_(anc_height);
             } catch (const std::exception& e) {
-                std::cerr << "  [reorg] bounded alt checkpoint restore failed: "
-                          << e.what() << "\n";
+                std::cerr << "  [reorg] bounded alt checkpoint restore failed: " << e.what()
+                          << "\n";
                 std::cerr.flush();
                 restore_after_failure();
                 return ReorgDisposition::ConsensusInvalid;
@@ -8134,9 +8379,8 @@ private:
         for (size_t i = 0; i < alt_blocks.size(); ++i) {
             Block block = alt_blocks[i];
             bool pow_verified = replay_pow_ok[i];
-            const auto replay = ValidateBlockForReplay(
-                block, alt_pow_admissions[i], nullptr,
-                replay_pow_ok[i], &pow_verified);
+            const auto replay = ValidateBlockForReplay(block, alt_pow_admissions[i], nullptr,
+                                                       replay_pow_ok[i], &pow_verified);
             replay_pow_ok[i] = pow_verified;
             if (pow_verified)
                 reorg_pow_verified_.insert(HashToHex(block.GetHash()));
@@ -8169,12 +8413,10 @@ private:
                 restore_after_failure();
                 return ReorgDisposition::ConsensusInvalid;
             }
-            CollectUndoTouchedKeys_(canonical_undo_.back(),
-                                    frame.touched_keys);
+            CollectUndoTouchedKeys_(canonical_undo_.back(), frame.touched_keys);
             UpdateNmsTallyAfterCommit_(block);
             out_applied_blocks.push_back(block);
-            last_reorg_apply_count_.fetch_add(
-                1, std::memory_order_relaxed);
+            last_reorg_apply_count_.fetch_add(1, std::memory_order_relaxed);
         }
 
         if (validation_only) {
@@ -8184,8 +8426,7 @@ private:
             // external acceptance can observe it.
             for (size_t i = 0; i < alt_blocks.size(); ++i) {
                 if (replay_pow_ok[i])
-                    frame.candidate_replay_pow_verified.insert(
-                        HashToHex(alt_blocks[i].GetHash()));
+                    frame.candidate_replay_pow_verified.insert(HashToHex(alt_blocks[i].GetHash()));
             }
             if (!restore_after_failure())
                 return ReorgDisposition::ConsensusInvalid;
@@ -8211,15 +8452,13 @@ private:
                 const std::vector<uint8_t> raw = block.Serialize();
                 bool written = raw.size() <= MAX_BLOCK_SIZE;
                 try {
-                    written = written && durable_block_body_writer_(
-                        block.GetHash(), raw);
+                    written = written && durable_block_body_writer_(block.GetHash(), raw);
                 } catch (...) {
                     written = false;
                 }
                 if (!written) {
                     restore_after_failure();
-                    last_reject_tag_ =
-                        "reorg_candidate_body_persist_failed";
+                    last_reject_tag_ = "reorg_candidate_body_persist_failed";
                     return ReorgDisposition::DeferredLocalWork;
                 }
             }
@@ -8227,22 +8466,20 @@ private:
 
         for (const auto& old_block : frame.old_tail) {
             auto it = block_tree_.find(HashToHex(old_block.GetHash()));
-            if (it != block_tree_.end()) it->second.on_main_chain = false;
+            if (it != block_tree_.end())
+                it->second.on_main_chain = false;
         }
         frame.valid = true;
-        const UTXODelta new_delta =
-            BuildUTXODeltaNoLock_(frame.touched_keys);
+        const UTXODelta new_delta = BuildUTXODeltaNoLock_(frame.touched_keys);
 
         bool durable_ok = true;
         if (on_reorg_) {
             try {
-                on_reorg_(new_delta, frame.ancestor_height,
-                          chain_[frame.ancestor_height].GetHash(),
-                          frame.old_tail.back(), frame.old_supply,
-                          chain_.back(), total_supply_units_.load());
+                on_reorg_(new_delta, frame.ancestor_height, chain_[frame.ancestor_height].GetHash(),
+                          frame.old_tail.back(), frame.old_supply, chain_.back(),
+                          total_supply_units_.load());
             } catch (const std::exception& e) {
-                std::cerr << "  [reorg] bounded durable delta failed: "
-                          << e.what() << "\n";
+                std::cerr << "  [reorg] bounded durable delta failed: " << e.what() << "\n";
                 std::cerr.flush();
                 durable_ok = false;
             } catch (...) {
@@ -8255,9 +8492,8 @@ private:
             bool durable_restored = restored;
             if (restored && on_reorg_abort_ && !chain_.empty()) {
                 try {
-                    durable_restored = on_reorg_abort_(
-                        old_delta, chain_.back(),
-                        total_supply_units_.load(), frame.old_tail);
+                    durable_restored = on_reorg_abort_(old_delta, chain_.back(),
+                                                       total_supply_units_.load(), frame.old_tail);
                 } catch (...) {
                     durable_restored = false;
                 }
@@ -8268,8 +8504,7 @@ private:
             } else {
                 // Preserve every old body when either memory restoration or
                 // its exact durable VUR1 compensation is not proven.
-                durability_compromised_.store(
-                    true, std::memory_order_release);
+                durability_compromised_.store(true, std::memory_order_release);
             }
             out_applied_blocks.clear();
             return ReorgDisposition::ConsensusInvalid;
@@ -8281,8 +8516,7 @@ private:
         // a reorg that AddBlockDirect subsequently rolled back.
         for (size_t i = 0; i < alt_blocks.size(); ++i) {
             if (replay_pow_ok[i])
-                frame.candidate_replay_pow_verified.insert(
-                    HashToHex(alt_blocks[i].GetHash()));
+                frame.candidate_replay_pow_verified.insert(HashToHex(alt_blocks[i].GetHash()));
         }
         pending_reorg_rollback_ = frame;
         reorg_harness_observed_count_.fetch_add(1);
@@ -8293,15 +8527,13 @@ private:
         return ReorgDisposition::Applied;
     }
 
-    ReorgDisposition Reorganize(
-            const std::string& new_tip_hash,
-            std::vector<Block>& out_applied_blocks,
-            const mining::PowAdmissionContext& trigger_admission) {
-        return ReorganizeBounded_(
-            new_tip_hash, out_applied_blocks, trigger_admission);
+    ReorgDisposition Reorganize(const std::string& new_tip_hash,
+                                std::vector<Block>& out_applied_blocks,
+                                const mining::PowAdmissionContext& trigger_admission) {
+        return ReorganizeBounded_(new_tip_hash, out_applied_blocks, trigger_admission);
     }
 
-public:
+  public:
     uint64_t GetReorgHarnessDivergenceCount() const {
         return reorg_harness_divergence_count_.load();
     }
@@ -8309,22 +8541,21 @@ public:
         return reorg_harness_observed_count_.load();
     }
     uint64_t LastReorgDisconnectCount() const {
-        return last_reorg_disconnect_count_.load(
-            std::memory_order_acquire);
+        return last_reorg_disconnect_count_.load(std::memory_order_acquire);
     }
     uint64_t LastReorgApplyCount() const {
-        return last_reorg_apply_count_.load(
-            std::memory_order_acquire);
+        return last_reorg_apply_count_.load(std::memory_order_acquire);
     }
-private:
+
+  private:
     std::atomic<uint64_t> reorg_harness_divergence_count_{0};
     std::atomic<uint64_t> reorg_harness_observed_count_{0};
     std::atomic<uint64_t> last_reorg_disconnect_count_{0};
     std::atomic<uint64_t> last_reorg_apply_count_{0};
-private:
-    bool RegisterVolatileSideBlockNoLock_(
-            const Block& block,
-            const mining::PowAdmissionContext& pow_admission) {
+
+  private:
+    bool RegisterVolatileSideBlockNoLock_(const Block& block,
+                                          const mining::PowAdmissionContext& pow_admission) {
         register_failure_tag_.clear();
         const std::string hash = HashToHex(block.GetHash());
         if (block_tree_.count(hash))
@@ -8343,24 +8574,20 @@ private:
         entry.prev_hash = block.header.prev_block_hash;
         entry.height = block.height;
         entry.on_main_chain = false;
-        auto prev_it = block_tree_.find(
-            HashToHex(block.header.prev_block_hash));
-        const ChainWork prev_work = prev_it == block_tree_.end()
-            ? ChainWork(0) : prev_it->second.cumulative_work;
-        entry.cumulative_work = AddChainWork(
-            prev_work, BlockWork(block.header.bits));
+        auto prev_it = block_tree_.find(HashToHex(block.header.prev_block_hash));
+        const ChainWork prev_work =
+            prev_it == block_tree_.end() ? ChainWork(0) : prev_it->second.cumulative_work;
+        entry.cumulative_work = AddChainWork(prev_work, BlockWork(block.header.bits));
         block_tree_[hash] = entry;
         side_branch_hashes_.insert(hash);
         volatile_side_quarantine_.insert(hash);
         side_pow_admission_.emplace(hash, pow_admission);
 
         if (!PruneSideBranchStateNoLock_()) {
-            register_failure_tag_ =
-                "side_branch_cleanup_failed_restart_required";
+            register_failure_tag_ = "side_branch_cleanup_failed_restart_required";
             return false;
         }
-        if (!block_tree_.count(hash) ||
-            !volatile_side_quarantine_.count(hash)) {
+        if (!block_tree_.count(hash) || !volatile_side_quarantine_.count(hash)) {
             register_failure_tag_ = "side_branch_capacity";
             return false;
         }
@@ -8369,8 +8596,7 @@ private:
 
     bool PromoteValidatedSideSuffixNoLock_(const std::string& tip_hash) {
         register_failure_tag_.clear();
-        const std::string ancestor =
-            FindCanonicalAncestorBoundedNoLock_(tip_hash);
+        const std::string ancestor = FindCanonicalAncestorBoundedNoLock_(tip_hash);
         if (ancestor.empty()) {
             register_failure_tag_ = "reorg_ancestor_unavailable";
             return false;
@@ -8381,10 +8607,10 @@ private:
             return false;
         }
         for (const auto& hash : path) {
-            if (!volatile_side_quarantine_.count(hash)) continue;
+            if (!volatile_side_quarantine_.count(hash))
+                continue;
             auto body_it = block_store_.find(hash);
-            if (body_it == block_store_.end() ||
-                body_it->second.transactions.empty()) {
+            if (body_it == block_store_.end() || body_it->second.transactions.empty()) {
                 register_failure_tag_ = "side_branch_body_unavailable";
                 return false;
             }
@@ -8394,8 +8620,7 @@ private:
                     register_failure_tag_ = "block_size";
                     return false;
                 }
-                if (!durable_block_body_writer_(
-                        body_it->second.GetHash(), raw)) {
+                if (!durable_block_body_writer_(body_it->second.GetHash(), raw)) {
                     register_failure_tag_ = "block_body_persist_failed";
                     return false;
                 }
@@ -8409,13 +8634,13 @@ private:
         return true;
     }
 
-private:
-    bool RegisterBlock(
-            const Block& block,
-            const mining::PowAdmissionContext* pow_admission = nullptr) {
+  private:
+    bool RegisterBlock(const Block& block,
+                       const mining::PowAdmissionContext* pow_admission = nullptr) {
         register_failure_tag_.clear();
         std::string h = HashToHex(block.GetHash());
-        if (block_tree_.count(h)) return true;
+        if (block_tree_.count(h))
+            return true;
 
         std::vector<uint8_t> raw;
         if (durable_block_body_writer_) {
@@ -8428,16 +8653,15 @@ private:
         block_store_[h] = block;
 
         ChainIndexEntry entry;
-        entry.hash     = block.GetHash();
+        entry.hash = block.GetHash();
         entry.prev_hash = block.header.prev_block_hash;
-        entry.height   = block.height;
+        entry.height = block.height;
         entry.on_main_chain = false;
 
         auto prev_it = block_tree_.find(HashToHex(block.header.prev_block_hash));
-        ChainWork prev_work = (prev_it != block_tree_.end())
-            ? prev_it->second.cumulative_work : ChainWork(0);
-        entry.cumulative_work = AddChainWork(
-            prev_work, BlockWork(block.header.bits));
+        ChainWork prev_work =
+            (prev_it != block_tree_.end()) ? prev_it->second.cumulative_work : ChainWork(0);
+        entry.cumulative_work = AddChainWork(prev_work, BlockWork(block.header.bits));
 
         block_tree_[h] = entry;
         side_branch_hashes_.insert(h);
@@ -8459,8 +8683,7 @@ private:
             volatile_side_quarantine_.erase(h);
         };
         if (!PruneSideBranchStateNoLock_()) {
-            register_failure_tag_ =
-                "side_branch_cleanup_failed_restart_required";
+            register_failure_tag_ = "side_branch_cleanup_failed_restart_required";
             erase_new_entry();
             return false;
         }
@@ -8474,17 +8697,18 @@ private:
         // reaching this point.  The temporary tree entry is protected by the
         // unique chain lock, so no public reader can observe it before the
         // durable body succeeds and CommitBlock marks it canonical.
-        if (durable_block_body_writer_ &&
-            !durable_block_body_writer_(block.GetHash(), raw)) {
+        if (durable_block_body_writer_ && !durable_block_body_writer_(block.GetHash(), raw)) {
             register_failure_tag_ = "block_body_persist_failed";
             erase_new_entry();
             if (durable_block_body_eraser_) {
                 bool erased = false;
-                try { erased = durable_block_body_eraser_(block.GetHash()); }
-                catch (...) { erased = false; }
+                try {
+                    erased = durable_block_body_eraser_(block.GetHash());
+                } catch (...) {
+                    erased = false;
+                }
                 if (!erased) {
-                    durability_compromised_.store(
-                        true, std::memory_order_release);
+                    durability_compromised_.store(true, std::memory_order_release);
                 }
             }
             return false;
@@ -8497,10 +8721,10 @@ private:
         return true;
     }
 
-    bool CommitBlock(const Block& block,
-                     bool persist_new_body = true) {
+    bool CommitBlock(const Block& block, bool persist_new_body = true) {
         uint64_t next_supply = total_supply_units_.load();
-        if (!AdvanceCanonicalSupply(block, next_supply)) return false;
+        if (!AdvanceCanonicalSupply(block, next_supply))
+            return false;
 
         //  Hardening. Fail CLOSED
         // BEFORE mutating utxo_set_. The apply loop below inserts a tx's
@@ -8516,8 +8740,8 @@ private:
         // AddBlockDirect dedup above; valid blocks always pass (the model is
         // apply-equivalent), so it never rejects an honest block.
         {
-            std::unordered_set<std::string> avail_in_block;  // outpoints created within this block
-            std::unordered_set<std::string> spent_in_block;  // outpoints consumed within this block
+            std::unordered_set<std::string> avail_in_block; // outpoints created within this block
+            std::unordered_set<std::string> spent_in_block; // outpoints consumed within this block
             auto okey = [](const Hash256& h, uint32_t i) {
                 return HashToHex(h) + ":" + std::to_string(i);
             };
@@ -8526,13 +8750,17 @@ private:
                 for (size_t i = 0; i < tx.outputs.size(); ++i)
                     if (!IsProvablyUnspendableOutput(tx.outputs[i]))
                         avail_in_block.insert(okey(txid, (uint32_t)i));
-                if (tx.IsCoinbase()) continue;
+                if (tx.IsCoinbase())
+                    continue;
                 for (const auto& in : tx.inputs) {
                     std::string k = okey(in.prev_tx_hash, in.prev_out_index);
-                    if (!spent_in_block.insert(k).second) return false; // intra-block double-spend
-                    bool present = (avail_in_block.count(k) != 0) ||
+                    if (!spent_in_block.insert(k).second)
+                        return false; // intra-block double-spend
+                    bool present =
+                        (avail_in_block.count(k) != 0) ||
                         static_cast<bool>(GetUTXONoLock(in.prev_tx_hash, in.prev_out_index));
-                    if (!present) return false;                         // missing / already-spent input
+                    if (!present)
+                        return false; // missing / already-spent input
                 }
             }
         }
@@ -8547,16 +8775,17 @@ private:
         for (const auto& tx : block.transactions) {
             const Hash256 txid = tx.GetTxID();
             for (size_t i = 0; i < tx.outputs.size(); ++i) {
-                if (IsProvablyUnspendableOutput(tx.outputs[i])) continue;
+                if (IsProvablyUnspendableOutput(tx.outputs[i]))
+                    continue;
                 const std::string key = UTXOKey(txid, (uint32_t)i);
                 if (!created_keys.insert(key).second || utxo_set_.count(key))
                     return false;
                 undo.created_outpoints.emplace_back(txid, (uint32_t)i);
             }
-            if (tx.IsCoinbase()) continue;
+            if (tx.IsCoinbase())
+                continue;
             for (const auto& input : tx.inputs) {
-                const std::string key =
-                    UTXOKey(input.prev_tx_hash, input.prev_out_index);
+                const std::string key = UTXOKey(input.prev_tx_hash, input.prev_out_index);
                 spent_keys.insert(key);
                 auto parent = utxo_set_.find(key);
                 // Inputs spending an output created earlier in this same block
@@ -8571,8 +8800,8 @@ private:
         }
 
         std::vector<CanonicalSpenderAddition> spender_additions;
-        if (!PrepareCanonicalSpendersForBlockNoLock(
-                block, spender_additions)) return false;
+        if (!PrepareCanonicalSpendersForBlockNoLock(block, spender_additions))
+            return false;
 
         const std::string commit_hash = HashToHex(block.GetHash());
         const bool already_indexed = block_tree_.count(commit_hash) != 0;
@@ -8581,18 +8810,19 @@ private:
             // body may become durable/indexed.  AddBlockDirect's complete
             // contextual checks and every non-mutating CommitBlock preflight
             // above have succeeded under the same transition/chain locks.
-            if (!persist_new_body || !RegisterBlock(block)) return false;
-        } else if (persist_new_body &&
-                   volatile_side_quarantine_.count(commit_hash)) {
+            if (!persist_new_body || !RegisterBlock(block))
+                return false;
+        } else if (persist_new_body && volatile_side_quarantine_.count(commit_hash)) {
             // A previously deferred side body can become a direct extension
             // after its parent wins.  It has now passed the linear contextual
             // gates, so promote its validated suffix before canonical apply.
-            if (!PromoteValidatedSideSuffixNoLock_(commit_hash)) return false;
+            if (!PromoteValidatedSideSuffixNoLock_(commit_hash))
+                return false;
         }
 
         ApplyCanonicalSpendersForBlockNoLock(spender_additions);
 
-        std::vector<std::pair<Hash256,uint32_t>> spent;
+        std::vector<std::pair<Hash256, uint32_t>> spent;
         std::vector<UTXO> created;
 
         for (const auto& tx : block.transactions) {
@@ -8601,12 +8831,12 @@ private:
                 if (IsProvablyUnspendableOutput(tx.outputs[i]))
                     continue;
                 UTXO utxo;
-                utxo.tx_hash       = tx.GetTxID();
-                utxo.output_index  = (uint32_t)i;
-                utxo.value         = tx.outputs[i].value;
+                utxo.tx_hash = tx.GetTxID();
+                utxo.output_index = (uint32_t)i;
+                utxo.value = tx.outputs[i].value;
                 utxo.script_pubkey = tx.outputs[i].script_pubkey;
-                utxo.block_height  = block.height;
-                utxo.is_coinbase   = tx_is_coinbase;
+                utxo.block_height = block.height;
+                utxo.is_coinbase = tx_is_coinbase;
                 InsertUTXO(utxo);
                 created.push_back(utxo);
             }
@@ -8617,8 +8847,8 @@ private:
                         std::cerr << "  [CRITICAL] Blockchain::CommitBlock: phantom "
                                   << "spent UTXO at h=" << block.height
                                   << " hash=" << HashToHex(block.GetHash()).substr(0, 16)
-                                  << " input=" << HashToHex(input.prev_tx_hash).substr(0, 16)
-                                  << ":" << input.prev_out_index
+                                  << " input=" << HashToHex(input.prev_tx_hash).substr(0, 16) << ":"
+                                  << input.prev_out_index
                                   << " — AddBlockDirect should have rejected this. "
                                   << "utxo_set_ may be inconsistent; "
                                   << "operator should restart the node.\n";
@@ -8646,22 +8876,24 @@ private:
             canonical_undo_.pop_front();
         atomic_height_.store(chain_.size() - 1);
 
-        #ifdef VELD_DEBUG_UTXO
+#ifdef VELD_DEBUG_UTXO
         {
             uint64_t utxo_total = 0;
-            for (auto& [k, u] : utxo_set_) utxo_total += u.value;
+            for (auto& [k, u] : utxo_set_)
+                utxo_total += u.value;
             uint64_t supply = total_supply_units_.load();
             if (utxo_total != supply) {
-                std::cerr << "  [UTXO MISMATCH] h=" << chain_.size()-1
-                          << " utxo=" << utxo_total << " supply=" << supply
-                          << " diff=" << (int64_t)utxo_total-(int64_t)supply
+                std::cerr << "  [UTXO MISMATCH] h=" << chain_.size() - 1 << " utxo=" << utxo_total
+                          << " supply=" << supply
+                          << " diff=" << (int64_t)utxo_total - (int64_t)supply
                           << " txcount=" << block.transactions.size() << "\n";
             }
         }
-        #endif
+#endif
 
         std::string h = HashToHex(block.GetHash());
-        if (block_tree_.count(h)) block_tree_[h].on_main_chain = true;
+        if (block_tree_.count(h))
+            block_tree_[h].on_main_chain = true;
         side_branch_hashes_.erase(h);
         side_pow_admission_.erase(h);
         reorg_pow_verified_.erase(h);
@@ -8673,9 +8905,10 @@ private:
         return true;
     }
 
-public:
+  public:
     uint64_t MedianTimePast() const {
-        if (chain_.empty()) return 0;
+        if (chain_.empty())
+            return 0;
         size_t count = std::min((size_t)11, chain_.size());
         std::vector<uint64_t> times;
         for (size_t i = chain_.size() - count; i < chain_.size(); ++i)
@@ -8688,8 +8921,10 @@ public:
     // height). Used by the relative time-locktime rule to date a spent output's
     // confirmation.
     uint64_t MedianTimePastAt(uint64_t height) const {
-        if (chain_.empty()) return 0;
-        if (height >= chain_.size()) height = chain_.size() - 1;
+        if (chain_.empty())
+            return 0;
+        if (height >= chain_.size())
+            height = chain_.size() - 1;
         size_t end = (size_t)height + 1;
         size_t count = std::min((size_t)11, end);
         std::vector<uint64_t> times;
@@ -8701,10 +8936,10 @@ public:
 
     // Defense-in-depth structural ceiling for coinbase output count and value.
     bool ValidateMinerCaps(const Block& block) const {
-        if (block.transactions.empty()) return false;
+        if (block.transactions.empty())
+            return false;
         constexpr uint64_t COINBASE_BACKSTOP_MULTIPLE = 6;
-        const uint64_t per_out_ceiling =
-            BLOCK_REWARD_UNITS * COINBASE_BACKSTOP_MULTIPLE;
+        const uint64_t per_out_ceiling = BLOCK_REWARD_UNITS * COINBASE_BACKSTOP_MULTIPLE;
         // this bounded per-output value and NOTHING
         // else, so as the last-resort emission backstop it permitted an
         // unbounded number of at-ceiling coinbase outputs (coinbase skips the
@@ -8718,22 +8953,24 @@ public:
         // is independently capped at MAX_FINALITY_MARKER_OUTPUTS.
         constexpr uint64_t CANONICAL_VALUE_LEGS = 4;
         const size_t coinbase_output_ceiling =
-            static_cast<size_t>(CANONICAL_VALUE_LEGS) +
-            MAX_FINALITY_MARKER_OUTPUTS;
-        const uint64_t total_ceiling =
-            per_out_ceiling * (CANONICAL_VALUE_LEGS + 1);
+            static_cast<size_t>(CANONICAL_VALUE_LEGS) + MAX_FINALITY_MARKER_OUTPUTS;
+        const uint64_t total_ceiling = per_out_ceiling * (CANONICAL_VALUE_LEGS + 1);
         for (const auto& tx : block.transactions) {
             if (tx.IsCoinbase()) {
-                if (tx.outputs.size() > coinbase_output_ceiling) return false;
+                if (tx.outputs.size() > coinbase_output_ceiling)
+                    return false;
                 uint64_t coinbase_total = 0;
                 for (const auto& out : tx.outputs) {
-                    if (out.value > per_out_ceiling) return false;
+                    if (out.value > per_out_ceiling)
+                        return false;
                     // Overflow-checked accumulation: never wrap into a
                     // deceptively small total.
-                    if (coinbase_total > UINT64_MAX - out.value) return false;
+                    if (coinbase_total > UINT64_MAX - out.value)
+                        return false;
                     coinbase_total += out.value;
                 }
-                if (coinbase_total > total_ceiling) return false;
+                if (coinbase_total > total_ceiling)
+                    return false;
             }
         }
         return true;
@@ -8741,23 +8978,19 @@ public:
 };
 
 struct CoinSelection {
-    std::vector<UTXO>  selected_utxos;
-    uint64_t           total_input;
-    uint64_t           change_amount;
-    bool               sufficient;
+    std::vector<UTXO> selected_utxos;
+    uint64_t total_input;
+    uint64_t change_amount;
+    bool sufficient;
 
     CoinSelection() : total_input(0), change_amount(0), sufficient(false) {}
 };
 
-inline CoinSelection SelectCoins(
-    const Blockchain& chain,
-    const std::vector<uint8_t>& script_pubkey,
-    uint64_t target_units,
-    uint64_t fee_units,
-    const std::unordered_set<std::string>& mempool_spent = {},
-    const std::vector<UTXO>& mempool_pending = {},
-    const std::unordered_set<std::string>& excluded_outpoints = {}
-) {
+inline CoinSelection SelectCoins(const Blockchain& chain, const std::vector<uint8_t>& script_pubkey,
+                                 uint64_t target_units, uint64_t fee_units,
+                                 const std::unordered_set<std::string>& mempool_spent = {},
+                                 const std::vector<UTXO>& mempool_pending = {},
+                                 const std::unordered_set<std::string>& excluded_outpoints = {}) {
     CoinSelection result;
 
     auto utxos = chain.GetUTXOsForScript(script_pubkey);
@@ -8765,27 +8998,26 @@ inline CoinSelection SelectCoins(
     utxos.insert(utxos.end(), mempool_pending.begin(), mempool_pending.end());
 
     uint64_t tip = chain.Height();
-    const bool enforce_maturity =
-        (tip + 1) >= COINBASE_MATURITY_CONSENSUS_HEIGHT;
+    const bool enforce_maturity = (tip + 1) >= COINBASE_MATURITY_CONSENSUS_HEIGHT;
 
     std::sort(utxos.begin(), utxos.end(),
-        [](const UTXO& a, const UTXO& b) { return a.value > b.value; });
+              [](const UTXO& a, const UTXO& b) { return a.value > b.value; });
 
     uint64_t accumulated = 0;
     for (const auto& utxo : utxos) {
         std::string ukey = HashToHex(utxo.tx_hash) + ":" + std::to_string(utxo.output_index);
-        if (!mempool_spent.empty() && mempool_spent.count(ukey)) continue;
+        if (!mempool_spent.empty() && mempool_spent.count(ukey))
+            continue;
         if (!excluded_outpoints.empty() && excluded_outpoints.count(ukey))
             continue;
-        if (enforce_maturity
-            && utxo.is_coinbase
-            && utxo.block_height <= tip
-            && (tip - utxo.block_height) < COINBASE_MATURITY) {
+        if (enforce_maturity && utxo.is_coinbase && utxo.block_height <= tip &&
+            (tip - utxo.block_height) < COINBASE_MATURITY) {
             continue;
         }
         result.selected_utxos.push_back(utxo);
         accumulated += utxo.value;
-        if (accumulated >= target_units + fee_units) break;
+        if (accumulated >= target_units + fee_units)
+            break;
     }
 
     if (accumulated < target_units + fee_units) {
@@ -8793,18 +9025,18 @@ inline CoinSelection SelectCoins(
         return result;
     }
 
-    result.total_input   = accumulated;
+    result.total_input = accumulated;
     result.change_amount = accumulated - target_units - fee_units;
-    result.sufficient    = true;
+    result.sufficient = true;
     return result;
 }
 
 class TransactionValidator {
-public:
+  public:
     explicit TransactionValidator(const Blockchain& chain) : chain_(chain) {}
 
     struct ValidationResult {
-        bool    valid;
+        bool valid;
         std::string error;
         uint64_t fee_units;
     };
@@ -8824,7 +9056,7 @@ public:
             return result;
         }
 
-        uint64_t input_total  = 0;
+        uint64_t input_total = 0;
         uint64_t output_total = tx.TotalOutput();
         ScriptInterpreter interpreter;
 
@@ -8833,10 +9065,10 @@ public:
         const uint64_t cov_mtp = covenants_active ? chain_.MedianTimePast() : 0;
         if (covenants_active) {
             auto utxo_conf = [&](size_t idx, uint64_t& out_h, uint64_t& out_mtp) -> bool {
-                auto u = chain_.GetUTXO(tx.inputs[idx].prev_tx_hash,
-                                        tx.inputs[idx].prev_out_index);
-                if (!u) return false;
-                out_h   = u->block_height;
+                auto u = chain_.GetUTXO(tx.inputs[idx].prev_tx_hash, tx.inputs[idx].prev_out_index);
+                if (!u)
+                    return false;
+                out_h = u->block_height;
                 out_mtp = chain_.MedianTimePastAt(u->block_height);
                 return true;
             };
@@ -8858,17 +9090,12 @@ public:
             }
 
             ScriptContext sctx;
-            sctx.block_height     = cov_height;
-            sctx.mtp              = cov_mtp;
-            sctx.utxo_height      = utxo->block_height;
+            sctx.block_height = cov_height;
+            sctx.mtp = cov_mtp;
+            sctx.utxo_height = utxo->block_height;
             sctx.covenants_active = covenants_active;
-            bool script_valid = interpreter.Execute(
-                input.script_sig,
-                utxo->script_pubkey,
-                tx,
-                i,
-                sctx
-            );
+            bool script_valid =
+                interpreter.Execute(input.script_sig, utxo->script_pubkey, tx, i, sctx);
 
             if (!script_valid) {
                 result.valid = false;
@@ -8876,8 +9103,7 @@ public:
                 return result;
             }
 
-            if (utxo->value > MAX_SUPPLY_UNITS ||
-                input_total > UINT64_MAX - utxo->value) {
+            if (utxo->value > MAX_SUPPLY_UNITS || input_total > UINT64_MAX - utxo->value) {
                 result.valid = false;
                 result.error = "Input value overflow";
                 return result;
@@ -8895,8 +9121,8 @@ public:
         return result;
     }
 
-private:
+  private:
     const Blockchain& chain_;
 };
 
-}
+} // namespace veld

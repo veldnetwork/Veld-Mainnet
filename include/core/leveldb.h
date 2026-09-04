@@ -43,7 +43,8 @@ namespace db {
 namespace fs = std::filesystem;
 
 inline bool IsCanonicalHash256Text(std::string_view text) noexcept {
-    if (text.size() != 64) return false;
+    if (text.size() != 64)
+        return false;
     for (const char c : text) {
         if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
             return false;
@@ -57,7 +58,11 @@ inline bool IsCanonicalHash256Text(std::string_view text) noexcept {
 // ─────────────────────────────────────────────
 struct WriteBatch {
     enum class Kind : uint8_t { Put, Delete };
-    struct Op { Kind kind; std::string key; std::string value; };
+    struct Op {
+        Kind kind;
+        std::string key;
+        std::string value;
+    };
     std::vector<Op> ops;
 
     void Put(const std::string& key, const std::string& value) {
@@ -66,30 +71,33 @@ struct WriteBatch {
     void Delete(const std::string& key) {
         ops.push_back({Kind::Delete, key, {}});
     }
-    void Clear() { ops.clear(); }
-    bool IsEmpty() const { return ops.empty(); }
+    void Clear() {
+        ops.clear();
+    }
+    bool IsEmpty() const {
+        return ops.empty();
+    }
 };
 
 class KVStore {
-public:
+  public:
     virtual ~KVStore() = default;
-    virtual bool         Put(const std::string& key, const std::string& value) = 0;
-    virtual bool         Delete(const std::string& key) = 0;
+    virtual bool Put(const std::string& key, const std::string& value) = 0;
+    virtual bool Delete(const std::string& key) = 0;
     virtual std::optional<std::string> Get(const std::string& key) = 0;
-    virtual bool         Has(const std::string& key) = 0;
-    virtual bool         Write(const WriteBatch& batch) = 0;
-    virtual void         Iterate(const std::string& prefix,
-                                 std::function<bool(const std::string&, const std::string&)> fn) = 0;
+    virtual bool Has(const std::string& key) = 0;
+    virtual bool Write(const WriteBatch& batch) = 0;
+    virtual void Iterate(const std::string& prefix,
+                         std::function<bool(const std::string&, const std::string&)> fn) = 0;
     // Ordered, exclusive-cursor iteration for bounded RPC/index pages.  The
     // production LevelDB implementation seeks directly to `start_after`; the
     // flat-file fallback sorts matching keys before invoking the callback.
     // Returning false stops immediately, so callers never need to materialize
     // an unbounded response just to discover whether another item exists.
-    virtual void         IterateFrom(const std::string& prefix,
-                                     const std::string& start_after,
-                                     std::function<bool(const std::string&, const std::string&)> fn) = 0;
-    virtual std::string  GetPath() const = 0;
-    virtual std::string  GetStats() const = 0;
+    virtual void IterateFrom(const std::string& prefix, const std::string& start_after,
+                             std::function<bool(const std::string&, const std::string&)> fn) = 0;
+    virtual std::string GetPath() const = 0;
+    virtual std::string GetStats() const = 0;
 };
 
 #ifdef VELD_USE_LEVELDB
@@ -105,8 +113,7 @@ inline uint32_t LevelDBLogCrc32c(const uint8_t* data, size_t size) noexcept {
     for (size_t i = 0; i < size; ++i) {
         crc ^= data[i];
         for (unsigned bit = 0; bit < 8; ++bit)
-            crc = (crc >> 1) ^ (0x82f63b78u &
-                                (0u - (crc & 1u)));
+            crc = (crc >> 1) ^ (0x82f63b78u & (0u - (crc & 1u)));
     }
     return ~crc;
 }
@@ -115,25 +122,26 @@ inline uint32_t MaskLevelDBLogCrc32c(uint32_t crc) noexcept {
     return ((crc >> 15) | (crc << 17)) + 0xa282ead8u;
 }
 
-inline bool ValidateLevelDBLogFile(const fs::path& path,
-                                   std::string* error = nullptr) {
+inline bool ValidateLevelDBLogFile(const fs::path& path, std::string* error = nullptr) {
     constexpr size_t LOG_BLOCK_SIZE = 32768;
     constexpr size_t LOG_HEADER_SIZE = 7;
     auto fail = [&](const std::string& why) {
-        if (error) *error = path.string() + ": " + why;
+        if (error)
+            *error = path.string() + ": " + why;
         return false;
     };
 
     std::ifstream in(path, std::ios::binary);
-    if (!in) return fail("cannot open LevelDB log for preflight");
+    if (!in)
+        return fail("cannot open LevelDB log for preflight");
 
     std::vector<uint8_t> block(LOG_BLOCK_SIZE);
     bool fragmented = false;
     for (;;) {
-        in.read(reinterpret_cast<char*>(block.data()),
-                static_cast<std::streamsize>(block.size()));
+        in.read(reinterpret_cast<char*>(block.data()), static_cast<std::streamsize>(block.size()));
         const size_t got = static_cast<size_t>(in.gcount());
-        if (got == 0) break;
+        if (got == 0)
+            break;
 
         size_t pos = 0;
         while (pos < got) {
@@ -147,14 +155,12 @@ inline bool ValidateLevelDBLogFile(const fs::path& path,
                 break;
             }
 
-            const uint32_t stored_crc =
-                static_cast<uint32_t>(block[pos]) |
-                (static_cast<uint32_t>(block[pos + 1]) << 8) |
-                (static_cast<uint32_t>(block[pos + 2]) << 16) |
-                (static_cast<uint32_t>(block[pos + 3]) << 24);
-            const uint16_t length =
-                static_cast<uint16_t>(block[pos + 4]) |
-                (static_cast<uint16_t>(block[pos + 5]) << 8);
+            const uint32_t stored_crc = static_cast<uint32_t>(block[pos]) |
+                                        (static_cast<uint32_t>(block[pos + 1]) << 8) |
+                                        (static_cast<uint32_t>(block[pos + 2]) << 16) |
+                                        (static_cast<uint32_t>(block[pos + 3]) << 24);
+            const uint16_t length = static_cast<uint16_t>(block[pos + 4]) |
+                                    (static_cast<uint16_t>(block[pos + 5]) << 8);
             const uint8_t type = block[pos + 6];
 
             // LevelDB leaves zero-filled trailers when a record cannot fit in
@@ -175,9 +181,8 @@ inline bool ValidateLevelDBLogFile(const fs::path& path,
             std::vector<uint8_t> checksum_input;
             checksum_input.reserve(static_cast<size_t>(length) + 1);
             checksum_input.push_back(type);
-            checksum_input.insert(
-                checksum_input.end(), block.begin() + pos + LOG_HEADER_SIZE,
-                block.begin() + pos + LOG_HEADER_SIZE + length);
+            checksum_input.insert(checksum_input.end(), block.begin() + pos + LOG_HEADER_SIZE,
+                                  block.begin() + pos + LOG_HEADER_SIZE + length);
             const uint32_t actual_crc = MaskLevelDBLogCrc32c(
                 LevelDBLogCrc32c(checksum_input.data(), checksum_input.size()));
             if (stored_crc != actual_crc)
@@ -215,28 +220,28 @@ inline bool ValidateLevelDBLogFile(const fs::path& path,
 inline bool ValidateLevelDBLogsInDirectory(const fs::path& directory,
                                            std::string* error = nullptr) {
     std::error_code ec;
-    for (fs::directory_iterator it(directory, ec), end; it != end;
-         it.increment(ec)) {
+    for (fs::directory_iterator it(directory, ec), end; it != end; it.increment(ec)) {
         if (ec) {
-            if (error) *error = directory.string() +
-                ": cannot enumerate LevelDB directory: " + ec.message();
+            if (error)
+                *error =
+                    directory.string() + ": cannot enumerate LevelDB directory: " + ec.message();
             return false;
         }
         if (!it->is_regular_file(ec)) {
             if (ec) {
-                if (error) *error = it->path().string() +
-                    ": cannot inspect LevelDB entry: " + ec.message();
+                if (error)
+                    *error =
+                        it->path().string() + ": cannot inspect LevelDB entry: " + ec.message();
                 return false;
             }
             continue;
         }
-        if (it->path().extension() == ".log" &&
-            !ValidateLevelDBLogFile(it->path(), error))
+        if (it->path().extension() == ".log" && !ValidateLevelDBLogFile(it->path(), error))
             return false;
     }
     if (ec) {
-        if (error) *error = directory.string() +
-            ": cannot enumerate LevelDB directory: " + ec.message();
+        if (error)
+            *error = directory.string() + ": cannot enumerate LevelDB directory: " + ec.message();
         return false;
     }
     return true;
@@ -245,7 +250,8 @@ inline bool ValidateLevelDBLogsInDirectory(const fs::path& directory,
 inline bool ValidateLevelDBCurrentManifest(const fs::path& directory,
                                            std::string* error = nullptr) {
     auto fail = [&](const std::string& why) {
-        if (error) *error = directory.string() + ": " + why;
+        if (error)
+            *error = directory.string() + ": " + why;
         return false;
     };
     const fs::path current = directory / "CURRENT";
@@ -254,11 +260,12 @@ inline bool ValidateLevelDBCurrentManifest(const fs::path& directory,
         return fail("CURRENT is missing or is not a regular file");
 
     std::ifstream in(current, std::ios::binary);
-    if (!in) return fail("cannot read CURRENT");
-    std::string manifest_name(
-        (std::istreambuf_iterator<char>(in)),
-        std::istreambuf_iterator<char>());
-    if (!in.eof() && in.fail()) return fail("I/O failure while reading CURRENT");
+    if (!in)
+        return fail("cannot read CURRENT");
+    std::string manifest_name((std::istreambuf_iterator<char>(in)),
+                              std::istreambuf_iterator<char>());
+    if (!in.eof() && in.fail())
+        return fail("I/O failure while reading CURRENT");
     if (manifest_name.empty() || manifest_name.back() != '\n')
         return fail("CURRENT is not newline terminated");
     manifest_name.pop_back();
@@ -276,21 +283,21 @@ inline bool ValidateLevelDBCurrentManifest(const fs::path& directory,
         return fail("CURRENT names a missing or non-regular manifest");
     std::string manifest_error;
     if (!ValidateLevelDBLogFile(manifest, &manifest_error)) {
-        if (error) *error = "index manifest preflight failed: " + manifest_error;
+        if (error)
+            *error = "index manifest preflight failed: " + manifest_error;
         return false;
     }
     return true;
 }
 
 class LevelDBStore : public KVStore {
-public:
-    explicit LevelDBStore(const std::string& path,
-                          bool create_if_missing = true) : path_(path) {
+  public:
+    explicit LevelDBStore(const std::string& path, bool create_if_missing = true) : path_(path) {
         leveldb::Options opts;
         opts.create_if_missing = create_if_missing;
         opts.paranoid_checks = true;
         size_t write_buffer_mb = 64;
-        size_t block_cache_mb  = 128;
+        size_t block_cache_mb = 128;
         if (const char* w = std::getenv("VELD_LEVELDB_WRITE_BUFFER_MB")) {
             uint64_t v = 0;
             if (ParseCanonicalUint64Text(w, v) && v >= 1 && v <= 4096)
@@ -332,8 +339,10 @@ public:
     std::optional<std::string> Get(const std::string& key) override {
         std::string value;
         auto s = db_->Get(leveldb::ReadOptions(), key, &value);
-        if (s.IsNotFound()) return std::nullopt;
-        if (!s.ok()) throw std::runtime_error("LevelDB get error: " + s.ToString());
+        if (s.IsNotFound())
+            return std::nullopt;
+        if (!s.ok())
+            throw std::runtime_error("LevelDB get error: " + s.ToString());
         return value;
     }
 
@@ -344,8 +353,10 @@ public:
     bool Write(const WriteBatch& batch) override {
         leveldb::WriteBatch ldb_batch;
         for (const auto& op : batch.ops) {
-            if (op.kind == WriteBatch::Kind::Put) ldb_batch.Put(op.key, op.value);
-            else                                  ldb_batch.Delete(op.key);
+            if (op.kind == WriteBatch::Kind::Put)
+                ldb_batch.Put(op.key, op.value);
+            else
+                ldb_batch.Delete(op.key);
         }
         leveldb::WriteOptions opts;
         opts.sync = true;
@@ -358,19 +369,25 @@ public:
         opts.snapshot = db_->GetSnapshot();
         auto it = db_->NewIterator(opts);
         struct Guard {
-            leveldb::DB* db; leveldb::Iterator* it; const leveldb::Snapshot* snap;
-            ~Guard() { delete it; db->ReleaseSnapshot(snap); }
+            leveldb::DB* db;
+            leveldb::Iterator* it;
+            const leveldb::Snapshot* snap;
+            ~Guard() {
+                delete it;
+                db->ReleaseSnapshot(snap);
+            }
         } guard{db_.get(), it, opts.snapshot};
 
         for (it->Seek(prefix); it->Valid(); it->Next()) {
             const std::string key = it->key().ToString();
-            if (key.size() < prefix.size() || key.substr(0, prefix.size()) != prefix) break;
-            if (!fn(key, it->value().ToString())) break;
+            if (key.size() < prefix.size() || key.substr(0, prefix.size()) != prefix)
+                break;
+            if (!fn(key, it->value().ToString()))
+                break;
         }
         const leveldb::Status status = it->status();
         if (!status.ok())
-            throw std::runtime_error(
-                "LevelDB prefix iteration failed: " + status.ToString());
+            throw std::runtime_error("LevelDB prefix iteration failed: " + status.ToString());
     }
 
     void IterateFrom(const std::string& prefix, const std::string& start_after,
@@ -379,25 +396,34 @@ public:
         opts.snapshot = db_->GetSnapshot();
         auto it = db_->NewIterator(opts);
         struct Guard {
-            leveldb::DB* db; leveldb::Iterator* it; const leveldb::Snapshot* snap;
-            ~Guard() { delete it; db->ReleaseSnapshot(snap); }
+            leveldb::DB* db;
+            leveldb::Iterator* it;
+            const leveldb::Snapshot* snap;
+            ~Guard() {
+                delete it;
+                db->ReleaseSnapshot(snap);
+            }
         } guard{db_.get(), it, opts.snapshot};
 
         const std::string seek = start_after.empty() ? prefix : start_after;
         for (it->Seek(seek); it->Valid(); it->Next()) {
             const std::string key = it->key().ToString();
-            if (!start_after.empty() && key == start_after) continue;
-            if (key.size() < prefix.size() || key.compare(0, prefix.size(), prefix) != 0) break;
-            if (!fn(key, it->value().ToString())) break;
+            if (!start_after.empty() && key == start_after)
+                continue;
+            if (key.size() < prefix.size() || key.compare(0, prefix.size(), prefix) != 0)
+                break;
+            if (!fn(key, it->value().ToString()))
+                break;
         }
         const leveldb::Status status = it->status();
         if (!status.ok())
-            throw std::runtime_error(
-                "LevelDB ordered prefix iteration failed: " +
-                status.ToString());
+            throw std::runtime_error("LevelDB ordered prefix iteration failed: " +
+                                     status.ToString());
     }
 
-    std::string GetPath() const override { return path_; }
+    std::string GetPath() const override {
+        return path_;
+    }
 
     std::string GetStats() const override {
         std::string stats;
@@ -418,14 +444,19 @@ public:
         dst_opts.compression = leveldb::kNoCompression;
         leveldb::DB* dst_db_raw = nullptr;
         leveldb::Status s = leveldb::DB::Open(dst_opts, target_path, &dst_db_raw);
-        if (!s.ok() || !dst_db_raw) return false;
+        if (!s.ok() || !dst_db_raw)
+            return false;
         std::unique_ptr<leveldb::DB> dst_db(dst_db_raw);
 
         leveldb::ReadOptions ropts;
         ropts.snapshot = db_->GetSnapshot();
         struct SnapGuard {
-            leveldb::DB* db; const leveldb::Snapshot* snap;
-            ~SnapGuard() { if (snap) db->ReleaseSnapshot(snap); }
+            leveldb::DB* db;
+            const leveldb::Snapshot* snap;
+            ~SnapGuard() {
+                if (snap)
+                    db->ReleaseSnapshot(snap);
+            }
         } guard{db_.get(), ropts.snapshot};
 
         std::unique_ptr<leveldb::Iterator> it(db_->NewIterator(ropts));
@@ -438,27 +469,31 @@ public:
             batch.Put(it->key(), it->value());
             pending_bytes += it->key().size() + it->value().size();
             if (pending_bytes >= FLUSH_BYTES) {
-                if (!dst_db->Write(wopts, &batch).ok()) return false;
+                if (!dst_db->Write(wopts, &batch).ok())
+                    return false;
                 batch.Clear();
                 pending_bytes = 0;
             }
         }
         // Invalid() is also LevelDB's terminal error signal.  Never promote a
         // truncated snapshot copy as a clean end-of-database traversal.
-        if (!it->status().ok()) return false;
+        if (!it->status().ok())
+            return false;
         if (pending_bytes > 0) {
-            if (!dst_db->Write(wopts, &batch).ok()) return false;
+            if (!dst_db->Write(wopts, &batch).ok())
+                return false;
         }
 
         leveldb::WriteOptions fsync_opts;
         fsync_opts.sync = true;
         leveldb::WriteBatch empty;
-        if (!dst_db->Write(fsync_opts, &empty).ok()) return false;
+        if (!dst_db->Write(fsync_opts, &empty).ok())
+            return false;
 
         return true;
     }
 
-private:
+  private:
     // Declared before db_ so reverse member destruction closes the database
     // before releasing policies referenced by its Options.
     std::unique_ptr<leveldb::Cache> block_cache_;
@@ -470,7 +505,7 @@ private:
 #endif
 
 class FlatFileStore : public KVStore {
-public:
+  public:
     explicit FlatFileStore(const std::string& path) : path_(path) {
         fs::create_directories(path);
         LoadFromDisk();
@@ -490,7 +525,8 @@ public:
     bool Delete(const std::string& key) override {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = store_.find(key);
-        if (it == store_.end()) return false;
+        if (it == store_.end())
+            return false;
         store_.erase(it);
         dirty_ = true;
         return true;
@@ -499,7 +535,8 @@ public:
     std::optional<std::string> Get(const std::string& key) override {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = store_.find(key);
-        if (it == store_.end()) return std::nullopt;
+        if (it == store_.end())
+            return std::nullopt;
         return it->second;
     }
 
@@ -512,8 +549,10 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         AppendWAL(batch);
         for (const auto& op : batch.ops) {
-            if (op.kind == WriteBatch::Kind::Put) store_[op.key] = op.value;
-            else                                  store_.erase(op.key);
+            if (op.kind == WriteBatch::Kind::Put)
+                store_[op.key] = op.value;
+            else
+                store_.erase(op.key);
         }
         dirty_ = true;
         FlushToDiskNoLock();
@@ -525,7 +564,8 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         for (const auto& [key, value] : store_) {
             if (key.substr(0, prefix.size()) == prefix) {
-                if (!fn(key, value)) break;
+                if (!fn(key, value))
+                    break;
             }
         }
     }
@@ -542,11 +582,14 @@ public:
         std::sort(keys.begin(), keys.end());
         for (const auto& key : keys) {
             auto it = store_.find(key);
-            if (it != store_.end() && !fn(it->first, it->second)) break;
+            if (it != store_.end() && !fn(it->first, it->second))
+                break;
         }
     }
 
-    std::string GetPath() const override { return path_; }
+    std::string GetPath() const override {
+        return path_;
+    }
 
     std::string GetStats() const override {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -558,67 +601,89 @@ public:
         return store_.size();
     }
 
-private:
+  private:
     std::string path_;
     std::unordered_map<std::string, std::string> store_;
     mutable std::mutex mutex_;
     bool dirty_ = false;
 
-    std::string DataFile()   const { return path_ + "/store.dat"; }
-    std::string TempFile()   const { return path_ + "/store.tmp"; }
-    std::string WalFile()    const { return path_ + "/wal.log";   }
+    std::string DataFile() const {
+        return path_ + "/store.dat";
+    }
+    std::string TempFile() const {
+        return path_ + "/store.tmp";
+    }
+    std::string WalFile() const {
+        return path_ + "/wal.log";
+    }
 
     void AppendWAL(const WriteBatch& batch) {
         FILE* f = std::fopen(WalFile().c_str(), "ab");
-        if (!f) return;
-        auto w = [&](const void* p, size_t n){ std::fwrite(p, 1, n, f); };
-        auto wle32 = [&](uint32_t v){
-            uint8_t b[4] = {(uint8_t)(v), (uint8_t)(v>>8), (uint8_t)(v>>16), (uint8_t)(v>>24)};
+        if (!f)
+            return;
+        auto w = [&](const void* p, size_t n) { std::fwrite(p, 1, n, f); };
+        auto wle32 = [&](uint32_t v) {
+            uint8_t b[4] = {(uint8_t)(v), (uint8_t)(v >> 8), (uint8_t)(v >> 16),
+                            (uint8_t)(v >> 24)};
             w(b, 4);
         };
         for (const auto& op : batch.ops) {
             char tag = op.kind == WriteBatch::Kind::Put ? 'P' : 'D';
             w(&tag, 1);
-            wle32((uint32_t)op.key.size()); w(op.key.data(), op.key.size());
+            wle32((uint32_t)op.key.size());
+            w(op.key.data(), op.key.size());
             wle32(op.kind == WriteBatch::Kind::Put ? (uint32_t)op.value.size() : 0);
-            if (op.kind == WriteBatch::Kind::Put) w(op.value.data(), op.value.size());
+            if (op.kind == WriteBatch::Kind::Put)
+                w(op.value.data(), op.value.size());
         }
         std::fflush(f);
 #ifdef _WIN32
         int fd = _fileno(f);
-        if (fd >= 0) _commit(fd);
+        if (fd >= 0)
+            _commit(fd);
 #else
         int fd = fileno(f);
-        if (fd >= 0) ::fsync(fd);
+        if (fd >= 0)
+            ::fsync(fd);
 #endif
         std::fclose(f);
     }
 
     void ReplayWAL() {
         std::ifstream wal(WalFile(), std::ios::binary);
-        if (!wal) return;
+        if (!wal)
+            return;
         auto rle32 = [&](uint32_t& out) -> bool {
             uint8_t b[4];
             wal.read(reinterpret_cast<char*>(b), 4);
-            if (!wal) return false;
-            out = (uint32_t)b[0] | ((uint32_t)b[1]<<8) | ((uint32_t)b[2]<<16) | ((uint32_t)b[3]<<24);
+            if (!wal)
+                return false;
+            out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) |
+                  ((uint32_t)b[3] << 24);
             return true;
         };
         while (wal.peek() != EOF) {
             char type = 0;
             wal.get(type);
-            if (type != 'P' && type != 'D') break;
+            if (type != 'P' && type != 'D')
+                break;
             uint32_t klen = 0;
-            if (!rle32(klen) || klen > 1024 * 1024) break;
+            if (!rle32(klen) || klen > 1024 * 1024)
+                break;
             std::string key(klen, '\0');
             wal.read(&key[0], klen);
             uint32_t vlen = 0;
-            if (!rle32(vlen) || vlen > 64 * 1024 * 1024) break;
+            if (!rle32(vlen) || vlen > 64 * 1024 * 1024)
+                break;
             std::string val(vlen, '\0');
-            if (vlen > 0) wal.read(&val[0], vlen);
-            if (!wal) break;
-            if (type == 'P') store_[key] = val;
-            else             store_.erase(key);
+            if (vlen > 0)
+                wal.read(&val[0], vlen);
+            if (!wal)
+                break;
+            if (type == 'P')
+                store_[key] = val;
+            else
+                store_.erase(key);
         }
     }
 
@@ -632,31 +697,40 @@ private:
         auto rle64 = [&](uint64_t& out) -> bool {
             uint8_t b[8];
             ifs.read(reinterpret_cast<char*>(b), 8);
-            if (!ifs) return false;
+            if (!ifs)
+                return false;
             out = 0;
-            for (int i = 0; i < 8; ++i) out |= (uint64_t)b[i] << (i * 8);
+            for (int i = 0; i < 8; ++i)
+                out |= (uint64_t)b[i] << (i * 8);
             return true;
         };
         auto rle32 = [&](uint32_t& out) -> bool {
             uint8_t b[4];
             ifs.read(reinterpret_cast<char*>(b), 4);
-            if (!ifs) return false;
-            out = (uint32_t)b[0] | ((uint32_t)b[1]<<8) | ((uint32_t)b[2]<<16) | ((uint32_t)b[3]<<24);
+            if (!ifs)
+                return false;
+            out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) |
+                  ((uint32_t)b[3] << 24);
             return true;
         };
 
         uint64_t count = 0;
-        if (!rle64(count)) return;
+        if (!rle64(count))
+            return;
 
         for (uint64_t i = 0; i < count; ++i) {
             uint32_t klen = 0, vlen = 0;
-            if (!rle32(klen)) break;
+            if (!rle32(klen))
+                break;
             std::string key(klen, '\0');
             ifs.read(&key[0], klen);
-            if (!rle32(vlen)) break;
+            if (!rle32(vlen))
+                break;
             std::string val(vlen, '\0');
-            if (vlen > 0) ifs.read(&val[0], vlen);
-            if (!ifs) break;
+            if (vlen > 0)
+                ifs.read(&val[0], vlen);
+            if (!ifs)
+                break;
             store_[key] = val;
         }
 
@@ -665,21 +739,24 @@ private:
 
     void FlushToDisk() {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!dirty_) return;
+        if (!dirty_)
+            return;
         FlushToDiskNoLock();
     }
 
     void FlushToDiskNoLock() {
         std::ofstream ofs(TempFile(), std::ios::binary | std::ios::trunc);
-        if (!ofs) return;
+        if (!ofs)
+            return;
 
-        auto wle64 = [&](uint64_t v){
+        auto wle64 = [&](uint64_t v) {
             uint8_t b[8];
-            for (int i = 0; i < 8; ++i) b[i] = (uint8_t)(v >> (i * 8));
+            for (int i = 0; i < 8; ++i)
+                b[i] = (uint8_t)(v >> (i * 8));
             ofs.write(reinterpret_cast<const char*>(b), 8);
         };
-        auto wle32 = [&](uint32_t v){
-            uint8_t b[4] = {(uint8_t)v, (uint8_t)(v>>8), (uint8_t)(v>>16), (uint8_t)(v>>24)};
+        auto wle32 = [&](uint32_t v) {
+            uint8_t b[4] = {(uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24)};
             ofs.write(reinterpret_cast<const char*>(b), 4);
         };
 
@@ -697,7 +774,8 @@ private:
         // If rename fails, temp file remains and WAL is NOT cleared (safe recovery)
         std::error_code ec;
         fs::rename(TempFile(), DataFile(), ec);
-        if (ec) return;
+        if (ec)
+            return;
 
         {
             std::ofstream wal(WalFile(), std::ios::binary | std::ios::trunc);
@@ -711,20 +789,18 @@ private:
 // after receiving this exception; they must fail-stop and let startup recovery
 // select the old or new journaled frame.
 class DurableWriteUncertain : public std::runtime_error {
-public:
-    explicit DurableWriteUncertain(const std::string& message)
-        : std::runtime_error(message) {}
+  public:
+    explicit DurableWriteUncertain(const std::string& message) : std::runtime_error(message) {}
 };
 
 class VeldDB {
-public:
+  public:
     // Opaque node-security memory carried in the authoritative index DB.  The
     // node owns the VLF1 codec; VeldDB only bounds the value and, critically,
     // publishes it in the same atomic WriteBatch as chain:tip.  This closes
     // the power-loss window between a durable anchor-promoting block and the
     // external owner-only VLF1 mirror.
-    static constexpr const char* ANCHOR_SECURITY_FLOOR_KEY =
-        "security:anchor-floor:v1";
+    static constexpr const char* ANCHOR_SECURITY_FLOOR_KEY = "security:anchor-floor:v1";
     static constexpr size_t MAX_ANCHOR_SECURITY_FLOOR_BYTES = 4096;
     static constexpr const char* DURABLE_PUBLICATION_PENDING_KEY =
         "security:durable-publication-pending:v1";
@@ -734,8 +810,7 @@ public:
     // `reorg:utxo:rebuilding` marker used by generic UTXO reconciliation:
     // reconciliation must never overwrite the exact identity needed to decide
     // which canonical chain is authoritative after a crash.
-    static constexpr const char* REORG_UTXO_PENDING_KEY =
-        "reorg:utxo:pending:v1";
+    static constexpr const char* REORG_UTXO_PENDING_KEY = "reorg:utxo:pending:v1";
     static constexpr size_t REORG_UTXO_PENDING_SIZE = 140;
 
     struct OfflineReindexResult {
@@ -751,14 +826,14 @@ public:
     // index contains only the deterministic most-work canonical path; normal
     // startup must subsequently replay every block through full consensus and
     // rebuild derived state. The prior index directory is retained verbatim.
-    static bool RebuildCanonicalIndexOffline(
-            const std::string& base_dir,
-            OfflineReindexResult& result,
-            std::string* error = nullptr) {
+    static bool RebuildCanonicalIndexOffline(const std::string& base_dir,
+                                             OfflineReindexResult& result,
+                                             std::string* error = nullptr) {
 #ifndef VELD_USE_LEVELDB
         (void)base_dir;
         (void)result;
-        if (error) *error = "offline canonical reindex requires LevelDB";
+        if (error)
+            *error = "offline canonical reindex requires LevelDB";
         return false;
 #else
         struct ReindexNode {
@@ -773,7 +848,8 @@ public:
         fs::path backup_path;
         bool old_index_moved = false;
         auto fail = [&](const std::string& why) {
-            if (error) *error = why;
+            if (error)
+                *error = why;
             return false;
         };
         try {
@@ -785,10 +861,9 @@ public:
             std::error_code ec;
             for (const auto& path : {blocks_path, utxo_path, index_path}) {
                 if (!fs::is_directory(path, ec) || ec) {
-                    return fail(
-                        "offline reindex requires an existing blocks/utxo/index "
-                        "LevelDB layout; missing or invalid path: " +
-                        path.string());
+                    return fail("offline reindex requires an existing blocks/utxo/index "
+                                "LevelDB layout; missing or invalid path: " +
+                                path.string());
                 }
             }
 
@@ -808,37 +883,29 @@ public:
             LevelDBStore blocks(blocks_path.string(), false);
             std::unordered_map<std::string, ReindexNode> nodes;
             std::unordered_map<std::string, std::vector<std::string>> children;
-            blocks.Iterate("b:", [&](const std::string& key,
-                                      const std::string& value) {
+            blocks.Iterate("b:", [&](const std::string& key, const std::string& value) {
                 if (key.size() != 66 || key.compare(0, 2, "b:") != 0 ||
-                    !IsCanonicalHash256Text(
-                        std::string_view(key).substr(2))) {
-                    throw std::runtime_error(
-                        "blocks database contains a non-canonical block key");
+                    !IsCanonicalHash256Text(std::string_view(key).substr(2))) {
+                    throw std::runtime_error("blocks database contains a non-canonical block key");
                 }
                 if (value.size() > static_cast<size_t>(MAX_BLOCK_SIZE)) {
-                    throw std::runtime_error(
-                        "blocks database contains an oversized block body");
+                    throw std::runtime_error("blocks database contains an oversized block body");
                 }
                 const std::vector<uint8_t> raw(value.begin(), value.end());
                 Block block;
                 const size_t consumed = Block::Deserialize(raw, 0, block);
-                if (consumed == 0 || consumed != raw.size() ||
-                    block.Serialize() != raw) {
-                    throw std::runtime_error(
-                        "blocks database contains non-canonical block bytes");
+                if (consumed == 0 || consumed != raw.size() || block.Serialize() != raw) {
+                    throw std::runtime_error("blocks database contains non-canonical block bytes");
                 }
                 const std::string hash = key.substr(2);
                 if (HashToHex(block.GetHash()) != hash) {
-                    throw std::runtime_error(
-                        "block key does not match its serialized header hash");
+                    throw std::runtime_error("block key does not match its serialized header hash");
                 }
                 ReindexNode node;
                 node.parent = HashToHex(block.header.prev_block_hash);
                 node.bits = block.header.bits;
                 if (!nodes.emplace(hash, std::move(node)).second) {
-                    throw std::runtime_error(
-                        "blocks database contains a duplicate block key");
+                    throw std::runtime_error("blocks database contains a duplicate block key");
                 }
                 children[HashToHex(block.header.prev_block_hash)].push_back(hash);
                 ++result.scanned_blocks;
@@ -849,15 +916,12 @@ public:
             const std::string genesis_hash = HashToHex(genesis.GetHash());
             const auto genesis_it = nodes.find(genesis_hash);
             if (genesis_it == nodes.end()) {
-                return fail(
-                    "compiled genesis block is absent from the retained block store");
+                return fail("compiled genesis block is absent from the retained block store");
             }
             auto genesis_raw = blocks.Get("b:" + genesis_hash);
-            if (!genesis_raw ||
-                std::vector<uint8_t>(genesis_raw->begin(), genesis_raw->end()) !=
-                    genesis.Serialize()) {
-                return fail(
-                    "retained genesis bytes do not exactly match this binary");
+            if (!genesis_raw || std::vector<uint8_t>(genesis_raw->begin(), genesis_raw->end()) !=
+                                    genesis.Serialize()) {
+                return fail("retained genesis bytes do not exactly match this binary");
             }
 
             ReindexNode& genesis_node = genesis_it->second;
@@ -876,12 +940,12 @@ public:
                 const std::string parent_hash = queue[cursor++];
                 const ReindexNode& parent = nodes.at(parent_hash);
                 auto child_it = children.find(parent_hash);
-                if (child_it == children.end()) continue;
+                if (child_it == children.end())
+                    continue;
                 for (const std::string& child_hash : child_it->second) {
                     ReindexNode& child = nodes.at(child_hash);
                     if (child.reachable) {
-                        throw std::runtime_error(
-                            "reachable block graph contains a cycle");
+                        throw std::runtime_error("reachable block graph contains a cycle");
                     }
                     const ChainWork block_work = BlockWork(child.bits);
                     if (block_work == ChainWork(0)) {
@@ -889,8 +953,7 @@ public:
                             "reachable block has an invalid compact work target");
                     }
                     if (parent.height == std::numeric_limits<uint64_t>::max()) {
-                        throw std::runtime_error(
-                            "reachable block height overflows uint64");
+                        throw std::runtime_error("reachable block height overflows uint64");
                     }
                     child.height = parent.height + 1;
                     child.work = AddChainWork(parent.work, block_work);
@@ -902,8 +965,7 @@ public:
                     if (child.work > best.work ||
                         (child.work == best.work &&
                          (child.height > best.height ||
-                          (child.height == best.height &&
-                           child_hash < best_hash)))) {
+                          (child.height == best.height && child_hash < best_hash)))) {
                         best_hash = child_hash;
                     }
                 }
@@ -915,22 +977,21 @@ public:
             for (;;) {
                 const ReindexNode& node = nodes.at(walk);
                 canonical.at(static_cast<size_t>(node.height)) = walk;
-                if (node.height == 0) break;
+                if (node.height == 0)
+                    break;
                 const auto parent = nodes.find(node.parent);
                 if (parent == nodes.end() || !parent->second.reachable ||
                     parent->second.height + 1 != node.height) {
-                    throw std::runtime_error(
-                        "reachable canonical path has a missing parent");
+                    throw std::runtime_error("reachable canonical path has a missing parent");
                 }
                 walk = node.parent;
             }
             if (canonical.front() != genesis_hash) {
-                throw std::runtime_error(
-                    "reconstructed canonical path does not begin at genesis");
+                throw std::runtime_error("reconstructed canonical path does not begin at genesis");
             }
 
-            const std::string nonce = std::to_string(
-                std::chrono::system_clock::now().time_since_epoch().count());
+            const std::string nonce =
+                std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
             candidate_path = root / ("index.reindex-candidate-" + nonce);
             backup_path = root / ("index.recovery-backup-" + nonce);
             if (fs::exists(candidate_path, ec) || fs::exists(backup_path, ec) || ec)
@@ -939,28 +1000,23 @@ public:
             {
                 LevelDBStore candidate(candidate_path.string(), true);
                 WriteBatch batch;
-                batch.Put("db:schema_version",
-                          std::to_string(CURRENT_SCHEMA_VERSION));
+                batch.Put("db:schema_version", std::to_string(CURRENT_SCHEMA_VERSION));
                 size_t batched_blocks = 0;
                 for (uint64_t height = 0; height < canonical.size(); ++height) {
                     const std::string& hash = canonical[static_cast<size_t>(height)];
                     const ReindexNode& node = nodes.at(hash);
-                    batch.Put("idx:" + hash + ":height",
-                              std::to_string(height));
-                    batch.Put("idx:" + hash + ":bits",
-                              std::to_string(node.bits));
+                    batch.Put("idx:" + hash + ":height", std::to_string(height));
+                    batch.Put("idx:" + hash + ":bits", std::to_string(node.bits));
                     batch.Put("idx:height:" + std::to_string(height), hash);
                     if (++batched_blocks == 4096) {
                         if (!candidate.Write(batch))
-                            throw std::runtime_error(
-                                "cannot write staged canonical index rows");
+                            throw std::runtime_error("cannot write staged canonical index rows");
                         batch.Clear();
                         batched_blocks = 0;
                     }
                 }
                 if (!batch.IsEmpty() && !candidate.Write(batch)) {
-                    throw std::runtime_error(
-                        "cannot write final staged canonical index rows");
+                    throw std::runtime_error("cannot write final staged canonical index rows");
                 }
                 WriteBatch tip;
                 tip.Put("chain:tip", best_hash);
@@ -969,26 +1025,21 @@ public:
                 // this seed with the exact recomputed value before serving.
                 tip.Put("chain:supply", "0");
                 if (!candidate.Write(tip)) {
-                    throw std::runtime_error(
-                        "cannot write staged canonical tip");
+                    throw std::runtime_error("cannot write staged canonical tip");
                 }
             }
 
             physical_error.clear();
-            if (!ValidateLevelDBCurrentManifest(candidate_path,
-                                                &physical_error) ||
-                !ValidateLevelDBLogsInDirectory(candidate_path,
-                                                &physical_error)) {
-                throw std::runtime_error(
-                    "staged canonical index failed physical verification: " +
-                    physical_error);
+            if (!ValidateLevelDBCurrentManifest(candidate_path, &physical_error) ||
+                !ValidateLevelDBLogsInDirectory(candidate_path, &physical_error)) {
+                throw std::runtime_error("staged canonical index failed physical verification: " +
+                                         physical_error);
             }
 
             fs::rename(index_path, backup_path, ec);
             if (ec) {
-                throw std::runtime_error(
-                    "cannot preserve prior index before replacement: " +
-                    ec.message());
+                throw std::runtime_error("cannot preserve prior index before replacement: " +
+                                         ec.message());
             }
             old_index_moved = true;
             fs::rename(candidate_path, index_path, ec);
@@ -998,21 +1049,20 @@ public:
                 fs::rename(backup_path, index_path, restore_ec);
                 old_index_moved = false;
                 if (restore_ec) {
-                    throw std::runtime_error(
-                        "cannot promote staged index (" + promote_error +
-                        ") and cannot restore prior index (" +
-                        restore_ec.message() + ")");
+                    throw std::runtime_error("cannot promote staged index (" + promote_error +
+                                             ") and cannot restore prior index (" +
+                                             restore_ec.message() + ")");
                 }
-                throw std::runtime_error(
-                    "cannot promote staged canonical index: " +
-                    promote_error + "; prior index restored");
+                throw std::runtime_error("cannot promote staged canonical index: " + promote_error +
+                                         "; prior index restored");
             }
             old_index_moved = false;
 
             result.height = best.height;
             result.tip_hash = best_hash;
             result.backup_path = backup_path.string();
-            if (error) error->clear();
+            if (error)
+                error->clear();
             return true;
         } catch (const std::exception& e) {
             std::error_code cleanup_ec;
@@ -1025,8 +1075,7 @@ public:
                     fs::rename(backup_path, index_path, cleanup_ec);
                 }
             }
-            return fail(std::string("offline canonical reindex failed: ") +
-                        e.what());
+            return fail(std::string("offline canonical reindex failed: ") + e.what());
         }
 #endif
     }
@@ -1055,16 +1104,13 @@ public:
 
     static bool SameReorgUtxoPending(const ReorgUtxoPending& a,
                                      const ReorgUtxoPending& b) noexcept {
-        return a.ancestor_height == b.ancestor_height &&
-               a.ancestor_hash == b.ancestor_hash &&
+        return a.ancestor_height == b.ancestor_height && a.ancestor_hash == b.ancestor_hash &&
                a.old_height == b.old_height && a.old_hash == b.old_hash &&
-               a.old_supply == b.old_supply &&
-               a.new_height == b.new_height && a.new_hash == b.new_hash &&
-               a.new_supply == b.new_supply;
+               a.old_supply == b.old_supply && a.new_height == b.new_height &&
+               a.new_hash == b.new_hash && a.new_supply == b.new_supply;
     }
 
-    static std::vector<uint8_t> EncodeReorgUtxoPending(
-            const ReorgUtxoPending& pending) {
+    static std::vector<uint8_t> EncodeReorgUtxoPending(const ReorgUtxoPending& pending) {
         std::vector<uint8_t> out;
         out.reserve(REORG_UTXO_PENDING_SIZE);
         out.insert(out.end(), {'V', 'U', 'R', '1'});
@@ -1086,10 +1132,9 @@ public:
         return out;
     }
 
-    static std::optional<ReorgUtxoPending> DecodeReorgUtxoPending(
-            const std::vector<uint8_t>& wire) {
-        if (wire.size() != REORG_UTXO_PENDING_SIZE ||
-            wire[0] != 'V' || wire[1] != 'U' ||
+    static std::optional<ReorgUtxoPending>
+    DecodeReorgUtxoPending(const std::vector<uint8_t>& wire) {
+        if (wire.size() != REORG_UTXO_PENDING_SIZE || wire[0] != 'V' || wire[1] != 'U' ||
             wire[2] != 'R' || wire[3] != '1')
             return std::nullopt;
         size_t offset = 4;
@@ -1102,8 +1147,7 @@ public:
         };
         auto get_hash = [&]() {
             Hash256 hash{};
-            std::copy(wire.begin() + offset, wire.begin() + offset + 32,
-                      hash.begin());
+            std::copy(wire.begin() + offset, wire.begin() + offset + 32, hash.begin());
             offset += 32;
             return hash;
         };
@@ -1116,22 +1160,18 @@ public:
         out.new_height = get_u64();
         out.new_hash = get_hash();
         out.new_supply = get_u64();
-        if (offset != wire.size() ||
-            out.ancestor_height >= out.old_height ||
+        if (offset != wire.size() || out.ancestor_height >= out.old_height ||
             out.ancestor_height >= out.new_height ||
             out.old_height - out.ancestor_height >= MAX_REORG_DEPTH ||
-            out.new_height - out.ancestor_height >
-                2 * MAX_REORG_DEPTH ||
-            HashIsZero(out.ancestor_hash) || HashIsZero(out.old_hash) ||
-            HashIsZero(out.new_hash) ||
-            out.old_supply > MAX_SUPPLY_UNITS ||
-            out.new_supply > MAX_SUPPLY_UNITS)
+            out.new_height - out.ancestor_height > 2 * MAX_REORG_DEPTH ||
+            HashIsZero(out.ancestor_hash) || HashIsZero(out.old_hash) || HashIsZero(out.new_hash) ||
+            out.old_supply > MAX_SUPPLY_UNITS || out.new_supply > MAX_SUPPLY_UNITS)
             return std::nullopt;
         return out;
     }
 
-    static std::vector<uint8_t> EncodeDurablePublicationPending(
-            uint64_t height, const Hash256& hash) {
+    static std::vector<uint8_t> EncodeDurablePublicationPending(uint64_t height,
+                                                                const Hash256& hash) {
         std::vector<uint8_t> out;
         out.reserve(DURABLE_PUBLICATION_PENDING_SIZE);
         out.insert(out.end(), {'V', 'D', 'P', '1'});
@@ -1143,8 +1183,7 @@ public:
 
     static std::optional<DurablePublicationPending>
     DecodeDurablePublicationPending(const std::vector<uint8_t>& wire) {
-        if (wire.size() != DURABLE_PUBLICATION_PENDING_SIZE ||
-            wire[0] != 'V' || wire[1] != 'D' ||
+        if (wire.size() != DURABLE_PUBLICATION_PENDING_SIZE || wire[0] != 'V' || wire[1] != 'D' ||
             wire[2] != 'P' || wire[3] != '1')
             return std::nullopt;
         DurablePublicationPending out;
@@ -1157,50 +1196,44 @@ public:
     explicit VeldDB(const std::string& base_dir) {
 #ifdef VELD_USE_LEVELDB
         const fs::path blocks_path = fs::path(base_dir) / "blocks";
-        const fs::path utxo_path   = fs::path(base_dir) / "utxo";
-        const fs::path index_path  = fs::path(base_dir) / "index";
+        const fs::path utxo_path = fs::path(base_dir) / "utxo";
+        const fs::path index_path = fs::path(base_dir) / "index";
         std::error_code ec;
         const bool blocks_existed = fs::exists(blocks_path, ec);
-        if (ec) throw std::runtime_error(
-            "FATAL: cannot inspect blocks database path: " + ec.message());
+        if (ec)
+            throw std::runtime_error("FATAL: cannot inspect blocks database path: " + ec.message());
         const bool utxo_existed = fs::exists(utxo_path, ec);
-        if (ec) throw std::runtime_error(
-            "FATAL: cannot inspect UTXO database path: " + ec.message());
+        if (ec)
+            throw std::runtime_error("FATAL: cannot inspect UTXO database path: " + ec.message());
         const bool index_existed = fs::exists(index_path, ec);
-        if (ec) throw std::runtime_error(
-            "FATAL: cannot inspect index database path: " + ec.message());
+        if (ec)
+            throw std::runtime_error("FATAL: cannot inspect index database path: " + ec.message());
 
-        const unsigned existing_count =
-            static_cast<unsigned>(blocks_existed) +
-            static_cast<unsigned>(utxo_existed) +
-            static_cast<unsigned>(index_existed);
+        const unsigned existing_count = static_cast<unsigned>(blocks_existed) +
+                                        static_cast<unsigned>(utxo_existed) +
+                                        static_cast<unsigned>(index_existed);
         if (existing_count != 0 && existing_count != 3) {
-            throw std::runtime_error(
-                "FATAL: incomplete LevelDB layout (blocks/utxo/index must all "
-                "exist or all be absent). Refusing to synthesize missing "
-                "canonical state; restore a coherent snapshot or run the "
-                "explicit offline recovery operation.");
+            throw std::runtime_error("FATAL: incomplete LevelDB layout (blocks/utxo/index must all "
+                                     "exist or all be absent). Refusing to synthesize missing "
+                                     "canonical state; restore a coherent snapshot or run the "
+                                     "explicit offline recovery operation.");
         }
         const bool fresh_layout = existing_count == 0;
         if (!fresh_layout) {
             for (const auto& path : {blocks_path, utxo_path, index_path}) {
                 if (!fs::is_directory(path, ec) || ec) {
-                    throw std::runtime_error(
-                        "FATAL: LevelDB path is not a directory: " +
-                        path.string());
+                    throw std::runtime_error("FATAL: LevelDB path is not a directory: " +
+                                             path.string());
                 }
             }
             // The index is authoritative for canonical height/order.  Check
             // its physical journal and manifest without opening any database,
             // so corruption cannot be auto-recovered into a height-zero view.
             std::string preflight_error;
-            if (!ValidateLevelDBCurrentManifest(
-                    index_path, &preflight_error) ||
-                !ValidateLevelDBLogsInDirectory(
-                    index_path, &preflight_error)) {
+            if (!ValidateLevelDBCurrentManifest(index_path, &preflight_error) ||
+                !ValidateLevelDBLogsInDirectory(index_path, &preflight_error)) {
                 throw std::runtime_error(
-                    "FATAL: canonical index preflight failed: " +
-                    preflight_error +
+                    "FATAL: canonical index preflight failed: " + preflight_error +
                     ". Refusing normal startup; restore a coherent snapshot "
                     "or run the explicit offline recovery operation.");
             }
@@ -1215,19 +1248,17 @@ public:
             ::chmod(p.c_str(), 0700);
         }
         std::error_code perms_ec;
-        if (fs::exists(base_dir, perms_ec)) ::chmod(base_dir.c_str(), 0700);
+        if (fs::exists(base_dir, perms_ec))
+            ::chmod(base_dir.c_str(), 0700);
 #endif
 #ifdef VELD_USE_LEVELDB
-        blocks_db_ = std::make_unique<LevelDBStore>(
-            base_dir + "/blocks", fresh_layout);
-        utxo_db_   = std::make_unique<LevelDBStore>(
-            base_dir + "/utxo", fresh_layout);
-        index_db_  = std::make_unique<LevelDBStore>(
-            base_dir + "/index", fresh_layout);
+        blocks_db_ = std::make_unique<LevelDBStore>(base_dir + "/blocks", fresh_layout);
+        utxo_db_ = std::make_unique<LevelDBStore>(base_dir + "/utxo", fresh_layout);
+        index_db_ = std::make_unique<LevelDBStore>(base_dir + "/index", fresh_layout);
 #else
         blocks_db_ = std::make_unique<FlatFileStore>(base_dir + "/blocks");
-        utxo_db_   = std::make_unique<FlatFileStore>(base_dir + "/utxo");
-        index_db_  = std::make_unique<FlatFileStore>(base_dir + "/index");
+        utxo_db_ = std::make_unique<FlatFileStore>(base_dir + "/utxo");
+        index_db_ = std::make_unique<FlatFileStore>(base_dir + "/index");
 #endif
         RecoverFromJournal();
         CheckOrInitSchemaVersion_();
@@ -1236,7 +1267,8 @@ public:
     static constexpr uint32_t CURRENT_SCHEMA_VERSION = 1;
 
     void CheckOrInitSchemaVersion_() {
-        if (!index_db_) return;
+        if (!index_db_)
+            return;
         auto raw = index_db_->Get("db:schema_version");
         if (!raw) {
             bool index_has_any_row = false;
@@ -1245,52 +1277,47 @@ public:
                 return false;
             });
             bool blocks_have_chain = false;
-            blocks_db_->Iterate("b:",
-                [&](const std::string&, const std::string&) {
-                    blocks_have_chain = true;
-                    return false;
-                });
+            blocks_db_->Iterate("b:", [&](const std::string&, const std::string&) {
+                blocks_have_chain = true;
+                return false;
+            });
             if (index_has_any_row || blocks_have_chain) {
-                throw std::runtime_error(
-                    "FATAL: canonical index schema marker is missing while "
-                    "durable state exists. Refusing to initialize a fresh "
-                    "height-zero index over retained chain data; restore a "
-                    "coherent snapshot or run explicit offline recovery.");
+                throw std::runtime_error("FATAL: canonical index schema marker is missing while "
+                                         "durable state exists. Refusing to initialize a fresh "
+                                         "height-zero index over retained chain data; restore a "
+                                         "coherent snapshot or run explicit offline recovery.");
             }
-            if (!index_db_->Put(
-                    "db:schema_version",
-                    std::to_string(CURRENT_SCHEMA_VERSION))) {
-                throw std::runtime_error(
-                    "FATAL: cannot initialize canonical index schema marker");
+            if (!index_db_->Put("db:schema_version", std::to_string(CURRENT_SCHEMA_VERSION))) {
+                throw std::runtime_error("FATAL: cannot initialize canonical index schema marker");
             }
             return;
         }
         uint32_t on_disk = 0;
         uint64_t parsed_schema = 0;
-        if (!ParseCanonicalUint64Text(*raw, parsed_schema) ||
-            parsed_schema > UINT32_MAX) {
-            throw std::runtime_error(
-                "FATAL: index_db db:schema_version is not parseable as a "
-                "uint32 ('" + *raw + "'). Datadir is corrupted or pre-"
-                "release. Restore from backup or wipe + IBD.");
+        if (!ParseCanonicalUint64Text(*raw, parsed_schema) || parsed_schema > UINT32_MAX) {
+            throw std::runtime_error("FATAL: index_db db:schema_version is not parseable as a "
+                                     "uint32 ('" +
+                                     *raw +
+                                     "'). Datadir is corrupted or pre-"
+                                     "release. Restore from backup or wipe + IBD.");
         }
         on_disk = static_cast<uint32_t>(parsed_schema);
         if (on_disk > CURRENT_SCHEMA_VERSION) {
-            throw std::runtime_error(
-                "FATAL: datadir was written by a NEWER binary "
-                "(schema_version=" + std::to_string(on_disk) +
-                ", this binary supports up to " +
-                std::to_string(CURRENT_SCHEMA_VERSION) + "). Refusing to "
-                "read forward-incompatible data — would silently "
-                "misinterpret unrecognised rows. Upgrade veld-node to "
-                "the same or newer build, or restore an older backup.");
+            throw std::runtime_error("FATAL: datadir was written by a NEWER binary "
+                                     "(schema_version=" +
+                                     std::to_string(on_disk) + ", this binary supports up to " +
+                                     std::to_string(CURRENT_SCHEMA_VERSION) +
+                                     "). Refusing to "
+                                     "read forward-incompatible data — would silently "
+                                     "misinterpret unrecognised rows. Upgrade veld-node to "
+                                     "the same or newer build, or restore an older backup.");
         }
         if (on_disk < CURRENT_SCHEMA_VERSION) {
-            throw std::runtime_error(
-                "FATAL: datadir was written by an OLDER binary "
-                "(schema_version=" + std::to_string(on_disk) +
-                "). No migration path defined. Either downgrade veld-"
-                "node to a matching version or wipe + IBD.");
+            throw std::runtime_error("FATAL: datadir was written by an OLDER binary "
+                                     "(schema_version=" +
+                                     std::to_string(on_disk) +
+                                     "). No migration path defined. Either downgrade veld-"
+                                     "node to a matching version or wipe + IBD.");
         }
     }
 
@@ -1308,7 +1335,8 @@ public:
 
     std::optional<std::vector<uint8_t>> ReadBlock(const Hash256& hash) {
         auto val = blocks_db_->Get("b:" + HashToHex(hash));
-        if (!val) return std::nullopt;
+        if (!val)
+            return std::nullopt;
         return std::vector<uint8_t>(val->begin(), val->end());
     }
 
@@ -1330,15 +1358,16 @@ public:
         if (height_text) {
             uint64_t height = 0;
             if (ParseCanonicalUint64Text(*height_text, height)) {
-                auto canonical = index_db_->Get(
-                    "idx:height:" + std::to_string(height));
-                if (canonical && *canonical == hex) return false;
+                auto canonical = index_db_->Get("idx:height:" + std::to_string(height));
+                if (canonical && *canonical == hex)
+                    return false;
             }
         }
         WriteBatch reverse;
         reverse.Delete("idx:" + hex + ":height");
         reverse.Delete("idx:" + hex + ":bits");
-        if (!index_db_->Write(reverse)) return false;
+        if (!index_db_->Write(reverse))
+            return false;
         return blocks_db_->Delete("b:" + hex);
     }
 
@@ -1351,44 +1380,40 @@ public:
     // bounded runtime cache and are not reconstructed after restart; without
     // this sweep, each restart could strand another full cache budget on disk.
     // The just-validated idx:height namespace is the sole keep set.
-    bool PruneNonCanonicalBlockBodies(
-            NonCanonicalBodyPruneStats* stats = nullptr) {
+    bool PruneNonCanonicalBlockBodies(NonCanonicalBodyPruneStats* stats = nullptr) {
         NonCanonicalBodyPruneStats local;
         std::unordered_set<std::string> canonical_hashes;
-        index_db_->Iterate("idx:height:",
-            [&](const std::string& key, const std::string& value) {
-                static constexpr std::string_view prefix = "idx:height:";
-                if (key.compare(0, prefix.size(), prefix) == 0 &&
-                    IsCanonicalHash256Text(value))
-                    canonical_hashes.insert(value);
-                return true;
-            });
+        index_db_->Iterate("idx:height:", [&](const std::string& key, const std::string& value) {
+            static constexpr std::string_view prefix = "idx:height:";
+            if (key.compare(0, prefix.size(), prefix) == 0 && IsCanonicalHash256Text(value))
+                canonical_hashes.insert(value);
+            return true;
+        });
         local.canonical = canonical_hashes.size();
 
         std::vector<std::string> stale;
-        blocks_db_->Iterate("b:",
-            [&](const std::string& key, const std::string&) {
-                if (key.size() == 66 && key.compare(0, 2, "b:") == 0) {
-                    const std::string hex = key.substr(2);
-                    if (IsCanonicalHash256Text(hex) &&
-                        !canonical_hashes.count(hex))
-                        stale.push_back(hex);
-                }
-                return true;
-            });
+        blocks_db_->Iterate("b:", [&](const std::string& key, const std::string&) {
+            if (key.size() == 66 && key.compare(0, 2, "b:") == 0) {
+                const std::string hex = key.substr(2);
+                if (IsCanonicalHash256Text(hex) && !canonical_hashes.count(hex))
+                    stale.push_back(hex);
+            }
+            return true;
+        });
         std::sort(stale.begin(), stale.end());
         for (const auto& hex : stale) {
             WriteBatch reverse;
             reverse.Delete("idx:" + hex + ":height");
             reverse.Delete("idx:" + hex + ":bits");
-            if (!index_db_->Write(reverse) ||
-                !blocks_db_->Delete("b:" + hex)) {
-                if (stats) *stats = local;
+            if (!index_db_->Write(reverse) || !blocks_db_->Delete("b:" + hex)) {
+                if (stats)
+                    *stats = local;
                 return false;
             }
             ++local.deleted;
         }
-        if (stats) *stats = local;
+        if (stats)
+            *stats = local;
         return true;
     }
 
@@ -1412,9 +1437,9 @@ public:
     // unchanged but actual writes dropped from ~30k to ~10-100).
     struct UTXORebuildStats {
         size_t deletes_emitted = 0;
-        size_t puts_emitted    = 0;
-        size_t puts_skipped    = 0;
-        size_t snapshot_size   = 0;
+        size_t puts_emitted = 0;
+        size_t puts_skipped = 0;
+        size_t snapshot_size = 0;
     };
 
     bool RebuildUTXOsFromSnapshot(const std::vector<std::pair<std::string, std::string>>& kvs,
@@ -1424,12 +1449,9 @@ public:
         // retires any superseded single-block journal.  A live reconciliation
         // creates its own marker but leaves pending:commit for the caller's
         // later canonical publication batch.
-        const auto inherited_marker =
-            index_db_->Get("reorg:utxo:rebuilding");
-        if (inherited_marker && *inherited_marker != "1" &&
-            *inherited_marker != "delta-v1")
-            throw std::runtime_error(
-                "unknown reorg:utxo:rebuilding marker version");
+        const auto inherited_marker = index_db_->Get("reorg:utxo:rebuilding");
+        if (inherited_marker && *inherited_marker != "1" && *inherited_marker != "delta-v1")
+            throw std::runtime_error("unknown reorg:utxo:rebuilding marker version");
         std::unordered_map<std::string, std::string> existing_kv;
         existing_kv.reserve(kvs.size() + 16);
         utxo_db_->Iterate("u:", [&](const std::string& k, const std::string& v) {
@@ -1438,12 +1460,14 @@ public:
         });
         std::unordered_set<std::string> new_keys;
         new_keys.reserve(kvs.size());
-        for (const auto& [k, _v] : kvs) new_keys.insert(k);
+        for (const auto& [k, _v] : kvs)
+            new_keys.insert(k);
 
         {
             WriteBatch intent;
             intent.Put("reorg:utxo:rebuilding", "1");
-            if (!index_db_->Write(intent)) return false;
+            if (!index_db_->Write(intent))
+                return false;
         }
         WriteBatch combined;
         size_t deletes = 0, puts = 0, skipped = 0;
@@ -1464,9 +1488,9 @@ public:
         }
         if (stats_out) {
             stats_out->deletes_emitted = deletes;
-            stats_out->puts_emitted    = puts;
-            stats_out->puts_skipped    = skipped;
-            stats_out->snapshot_size   = kvs.size();
+            stats_out->puts_emitted = puts;
+            stats_out->puts_skipped = skipped;
+            stats_out->snapshot_size = kvs.size();
         }
         if (!utxo_db_->Write(combined)) {
             return false;
@@ -1474,13 +1498,15 @@ public:
         {
             WriteBatch clear;
             clear.Delete("reorg:utxo:rebuilding");
-            if (inherited_marker) clear.Delete(PENDING_COMMIT_KEY);
+            if (inherited_marker)
+                clear.Delete(PENDING_COMMIT_KEY);
             // A retained VUR1 (on its separate key) deliberately survives
             // this generic reconciliation.  Do not claim success if even the
             // transient marker could not be durably cleared: the VUR startup
             // path must acknowledge reconciliation only after every write is
             // known complete.
-            if (!index_db_->Write(clear)) return false;
+            if (!index_db_->Write(clear))
+                return false;
         }
         return true;
     }
@@ -1491,9 +1517,8 @@ public:
     // than O(lifetime UTXO cardinality).  The same recovery marker as the legacy
     // full reconciliation makes an interrupted batch fail closed into startup's
     // authoritative chain replay.
-    bool ApplyUTXODelta(
-        const std::vector<std::pair<
-            std::string, std::optional<std::string>>>& delta) {
+    bool
+    ApplyUTXODelta(const std::vector<std::pair<std::string, std::optional<std::string>>>& delta) {
         std::unordered_set<std::string> seen;
         seen.reserve(delta.size());
         for (const auto& [key, _value] : delta) {
@@ -1503,14 +1528,18 @@ public:
         {
             WriteBatch intent;
             intent.Put("reorg:utxo:rebuilding", "delta-v1");
-            if (!index_db_->Write(intent)) return false;
+            if (!index_db_->Write(intent))
+                return false;
         }
         WriteBatch batch;
         for (const auto& [key, value] : delta) {
-            if (value) batch.Put(key, *value);
-            else batch.Delete(key);
+            if (value)
+                batch.Put(key, *value);
+            else
+                batch.Delete(key);
         }
-        if (!utxo_db_->Write(batch)) return false;
+        if (!utxo_db_->Write(batch))
+            return false;
         WriteBatch clear;
         clear.Delete("reorg:utxo:rebuilding");
         return index_db_->Write(clear);
@@ -1528,7 +1557,7 @@ public:
 
     bool WriteChainTip(const Hash256& tip, uint64_t height, uint64_t supply) {
         WriteBatch batch;
-        batch.Put("chain:tip",    HashToHex(tip));
+        batch.Put("chain:tip", HashToHex(tip));
         batch.Put("chain:height", std::to_string(height));
         batch.Put("chain:supply", std::to_string(supply));
         return index_db_->Write(batch);
@@ -1536,24 +1565,22 @@ public:
 
     struct ChainTip {
         std::string tip_hash;
-        uint64_t    height;
-        uint64_t    supply_units;
+        uint64_t height;
+        uint64_t supply_units;
     };
 
     // Strict view of the authoritative triplet written in one index batch.
     // Unlike ReadChainTip(), this never synthesizes a recovered tip from
     // reverse indexes; security journals use it to prove exact batch identity.
     std::optional<ChainTip> ReadChainTipExact() {
-        auto tip    = index_db_->Get("chain:tip");
+        auto tip = index_db_->Get("chain:tip");
         auto height = index_db_->Get("chain:height");
         auto supply = index_db_->Get("chain:supply");
         uint64_t parsed_height = 0;
         uint64_t parsed_supply = 0;
-        if (!tip || !height || !supply ||
-            !IsCanonicalHash256Text(*tip) ||
+        if (!tip || !height || !supply || !IsCanonicalHash256Text(*tip) ||
             !ParseCanonicalUint64Text(*height, parsed_height) ||
-            !ParseCanonicalUint64Text(*supply, parsed_supply) ||
-            parsed_supply > MAX_SUPPLY_UNITS)
+            !ParseCanonicalUint64Text(*supply, parsed_supply) || parsed_supply > MAX_SUPPLY_UNITS)
             return std::nullopt;
         return ChainTip{*tip, parsed_height, parsed_supply};
     }
@@ -1563,12 +1590,11 @@ public:
             if (exact->height == 0) {
                 uint64_t recovered = FindHighestIndexedHeight();
                 if (recovered > 0) {
-                    auto hash_at = index_db_->Get(
-                        "idx:height:" + std::to_string(recovered));
+                    auto hash_at = index_db_->Get("idx:height:" + std::to_string(recovered));
                     if (hash_at && IsCanonicalHash256Text(*hash_at)) {
                         std::cerr << "  [tip-recover] Stored tip was genesis but index has "
-                                     "blocks up to height " << recovered
-                                  << ". Recovering from block index.\n";
+                                     "blocks up to height "
+                                  << recovered << ". Recovering from block index.\n";
                         std::cerr.flush();
                         return ChainTip{*hash_at, recovered, 0};
                     }
@@ -1581,7 +1607,8 @@ public:
             auto hash_at = index_db_->Get("idx:height:" + std::to_string(recovered));
             if (hash_at && IsCanonicalHash256Text(*hash_at)) {
                 std::cerr << "  [tip-recover] chain:tip keys missing. Recovered tip at "
-                             "height " << recovered << " from block index.\n";
+                             "height "
+                          << recovered << " from block index.\n";
                 std::cerr.flush();
                 return ChainTip{*hash_at, recovered, 0};
             }
@@ -1591,75 +1618,72 @@ public:
 
     std::optional<std::vector<uint8_t>> ReadAnchorSecurityFloor() {
         auto value = index_db_->Get(ANCHOR_SECURITY_FLOOR_KEY);
-        if (!value) return std::nullopt;
+        if (!value)
+            return std::nullopt;
         return std::vector<uint8_t>(value->begin(), value->end());
     }
 
     bool WriteAnchorSecurityFloor(const std::vector<uint8_t>& wire) {
-        if (wire.empty() ||
-            wire.size() > MAX_ANCHOR_SECURITY_FLOOR_BYTES)
+        if (wire.empty() || wire.size() > MAX_ANCHOR_SECURITY_FLOOR_BYTES)
             return false;
         WriteBatch batch;
-        batch.Put(ANCHOR_SECURITY_FLOOR_KEY,
-                  std::string(wire.begin(), wire.end()));
+        batch.Put(ANCHOR_SECURITY_FLOOR_KEY, std::string(wire.begin(), wire.end()));
         return index_db_->Write(batch);
     }
 
-    std::optional<std::vector<uint8_t>>
-    ReadDurablePublicationPendingWire() {
+    std::optional<std::vector<uint8_t>> ReadDurablePublicationPendingWire() {
         auto value = index_db_->Get(DURABLE_PUBLICATION_PENDING_KEY);
-        if (!value) return std::nullopt;
+        if (!value)
+            return std::nullopt;
         std::vector<uint8_t> wire(value->begin(), value->end());
         if (!DecodeDurablePublicationPending(wire))
-            throw std::runtime_error(
-                "durable publication pending identity is malformed");
+            throw std::runtime_error("durable publication pending identity is malformed");
         return wire;
     }
 
-    std::optional<DurablePublicationPending>
-    ReadDurablePublicationPending() {
+    std::optional<DurablePublicationPending> ReadDurablePublicationPending() {
         const auto wire = ReadDurablePublicationPendingWire();
-        if (!wire) return std::nullopt;
+        if (!wire)
+            return std::nullopt;
         return DecodeDurablePublicationPending(*wire);
     }
 
     std::optional<std::vector<uint8_t>> ReadReorgUtxoPendingWire() {
         auto value = index_db_->Get(REORG_UTXO_PENDING_KEY);
-        if (!value) return std::nullopt;
+        if (!value)
+            return std::nullopt;
         std::vector<uint8_t> wire(value->begin(), value->end());
         if (!DecodeReorgUtxoPending(wire))
-            throw std::runtime_error(
-                "FATAL: retained VUR1 reorg identity is malformed; "
-                "refusing ambiguous UTXO recovery");
+            throw std::runtime_error("FATAL: retained VUR1 reorg identity is malformed; "
+                                     "refusing ambiguous UTXO recovery");
         return wire;
     }
 
     std::optional<ReorgUtxoPending> ReadReorgUtxoPending() {
         const auto wire = ReadReorgUtxoPendingWire();
-        if (!wire) return std::nullopt;
+        if (!wire)
+            return std::nullopt;
         return DecodeReorgUtxoPending(*wire);
     }
 
     bool UtxoRecoveryRequired() {
-        if (ReadReorgUtxoPending()) return true;
+        if (ReadReorgUtxoPending())
+            return true;
         const auto transient = index_db_->Get("reorg:utxo:rebuilding");
-        if (!transient) return false;
+        if (!transient)
+            return false;
         if (*transient != "1" && *transient != "delta-v1")
-            throw std::runtime_error(
-                "unknown reorg:utxo:rebuilding marker version");
+            throw std::runtime_error("unknown reorg:utxo:rebuilding marker version");
         return true;
     }
 
-    bool ClearDurablePublicationPending(
-            uint64_t expected_height, const Hash256& expected_hash) {
+    bool ClearDurablePublicationPending(uint64_t expected_height, const Hash256& expected_hash) {
         const auto current = ReadDurablePublicationPending();
-        if (!current || current->height != expected_height ||
-            current->hash != expected_hash)
+        if (!current || current->height != expected_height || current->hash != expected_hash)
             return false;
         const auto tip = ReadChainTipExact();
         const std::string expected_hex = HashToHex(expected_hash);
-        if (!tip || tip->height != expected_height ||
-            tip->tip_hash != expected_hex)
+        if (!tip || tip->height != expected_height || tip->tip_hash != expected_hex)
             return false;
         const auto indexed = GetHashAtHeight(expected_height);
         if (!indexed || *indexed != expected_hex || !HasBlock(expected_hash))
@@ -1673,12 +1697,12 @@ public:
         uint64_t max_h = 0;
         index_db_->Iterate("idx:height:", [&](const std::string& key, const std::string&) {
             static constexpr std::string_view prefix = "idx:height:";
-            if (key.size() <= prefix.size() ||
-                key.compare(0, prefix.size(), prefix) != 0) return true;
+            if (key.size() <= prefix.size() || key.compare(0, prefix.size(), prefix) != 0)
+                return true;
             uint64_t h = 0;
-            if (ParseCanonicalUint64Text(
-                    std::string_view(key).substr(prefix.size()), h) &&
-                h > max_h) max_h = h;
+            if (ParseCanonicalUint64Text(std::string_view(key).substr(prefix.size()), h) &&
+                h > max_h)
+                max_h = h;
             return true;
         });
         return max_h;
@@ -1687,7 +1711,7 @@ public:
     bool WriteBlockIndex(const std::string& hash_hex, uint64_t height, uint32_t bits) {
         WriteBatch batch;
         batch.Put("idx:" + hash_hex + ":height", std::to_string(height));
-        batch.Put("idx:" + hash_hex + ":bits",   std::to_string(bits));
+        batch.Put("idx:" + hash_hex + ":bits", std::to_string(bits));
         batch.Put("idx:height:" + std::to_string(height), hash_hex);
         return index_db_->Write(batch);
     }
@@ -1699,20 +1723,22 @@ public:
     std::string FindBlockHashByHeight(uint64_t target_height) {
         std::string target_str = std::to_string(target_height);
         std::string found;
-        index_db_->Iterate("idx:", [&](const std::string& key,
-                                       const std::string& val) {
-            if (key.compare(0, 11, "idx:height:") == 0) return true;
-            if (key.size() != 4 + 64 + 7) return true;
-            if (key.compare(key.size() - 7, 7, ":height") != 0) return true;
-            if (val != target_str) return true;
+        index_db_->Iterate("idx:", [&](const std::string& key, const std::string& val) {
+            if (key.compare(0, 11, "idx:height:") == 0)
+                return true;
+            if (key.size() != 4 + 64 + 7)
+                return true;
+            if (key.compare(key.size() - 7, 7, ":height") != 0)
+                return true;
+            if (val != target_str)
+                return true;
             found = key.substr(4, 64);
             return false;
         });
         return found;
     }
 
-    bool RepairHeightHashMapping(uint64_t height,
-                                 const std::string& hash_hex) {
+    bool RepairHeightHashMapping(uint64_t height, const std::string& hash_hex) {
         WriteBatch b;
         b.Put("idx:height:" + std::to_string(height), hash_hex);
         return index_db_->Write(b);
@@ -1720,23 +1746,18 @@ public:
 
     static constexpr const char* PENDING_COMMIT_KEY = "pending:commit";
 
-    using UTXODelta = std::vector<std::pair<
-        std::string, std::optional<std::string>>>;
-    using ReorgCanonicalSuffix =
-        std::vector<std::tuple<uint64_t, Hash256, uint32_t>>;
+    using UTXODelta = std::vector<std::pair<std::string, std::optional<std::string>>>;
+    using ReorgCanonicalSuffix = std::vector<std::tuple<uint64_t, Hash256, uint32_t>>;
 
-    static void WriteOrThrowUncertain(KVStore& store,
-                                      const WriteBatch& batch,
+    static void WriteOrThrowUncertain(KVStore& store, const WriteBatch& batch,
                                       const std::string& context) {
         try {
             if (!store.Write(batch))
-                throw DurableWriteUncertain(
-                    context + " reported failure");
+                throw DurableWriteUncertain(context + " reported failure");
         } catch (const DurableWriteUncertain&) {
             throw;
         } catch (const std::exception& e) {
-            throw DurableWriteUncertain(
-                context + " threw: " + e.what());
+            throw DurableWriteUncertain(context + " threw: " + e.what());
         } catch (...) {
             throw DurableWriteUncertain(context + " threw");
         }
@@ -1753,36 +1774,29 @@ public:
     }
 
     bool ReorgOldCanonicalMatches(const ReorgUtxoPending& pending) {
-        const auto valid = DecodeReorgUtxoPending(
-            EncodeReorgUtxoPending(pending));
-        if (!valid || !SameReorgUtxoPending(*valid, pending)) return false;
+        const auto valid = DecodeReorgUtxoPending(EncodeReorgUtxoPending(pending));
+        if (!valid || !SameReorgUtxoPending(*valid, pending))
+            return false;
         const auto tip = ReadChainTipExact();
         const std::string old_hex = HashToHex(pending.old_hash);
         const std::string ancestor_hex = HashToHex(pending.ancestor_hash);
-        if (!tip || tip->height != pending.old_height ||
-            tip->tip_hash != old_hex ||
+        if (!tip || tip->height != pending.old_height || tip->tip_hash != old_hex ||
             tip->supply_units != pending.old_supply)
             return false;
         const auto old_index = GetHashAtHeight(pending.old_height);
         const auto ancestor_index = GetHashAtHeight(pending.ancestor_height);
-        auto reverse_row_matches = [&](const std::string& hex,
-                                       uint64_t height) {
-            const auto reverse_height =
-                index_db_->Get("idx:" + hex + ":height");
-            const auto reverse_bits =
-                index_db_->Get("idx:" + hex + ":bits");
+        auto reverse_row_matches = [&](const std::string& hex, uint64_t height) {
+            const auto reverse_height = index_db_->Get("idx:" + hex + ":height");
+            const auto reverse_bits = index_db_->Get("idx:" + hex + ":bits");
             uint64_t parsed_bits = 0;
-            return reverse_height &&
-                   *reverse_height == std::to_string(height) &&
-                   reverse_bits &&
+            return reverse_height && *reverse_height == std::to_string(height) && reverse_bits &&
                    ParseCanonicalUint64Text(*reverse_bits, parsed_bits) &&
                    parsed_bits <= UINT32_MAX;
         };
-        return old_index && *old_index == old_hex &&
-               ancestor_index && *ancestor_index == ancestor_hex &&
+        return old_index && *old_index == old_hex && ancestor_index &&
+               *ancestor_index == ancestor_hex &&
                reverse_row_matches(old_hex, pending.old_height) &&
-               reverse_row_matches(ancestor_hex,
-                                   pending.ancestor_height) &&
+               reverse_row_matches(ancestor_hex, pending.ancestor_height) &&
                HasBlock(pending.old_hash) && HasBlock(pending.ancestor_hash);
     }
 
@@ -1793,52 +1807,45 @@ public:
     // cross-database transaction.  Startup's VUR1 recovery still tolerates a
     // coexisting legacy journal defensively and clears both only after an
     // authoritative replay/reconciliation succeeds.
-    bool BeginReorgUTXO(const UTXODelta& delta,
-                        const ReorgUtxoPending& pending) {
-        if (!ValidateUTXODelta(delta) ||
-            !ReorgOldCanonicalMatches(pending) ||
+    bool BeginReorgUTXO(const UTXODelta& delta, const ReorgUtxoPending& pending) {
+        if (!ValidateUTXODelta(delta) || !ReorgOldCanonicalMatches(pending) ||
             pending.old_hash == pending.new_hash)
             return false;
-        if (ReadReorgUtxoPending() ||
-            index_db_->Has("reorg:utxo:rebuilding") ||
-            index_db_->Has(PENDING_COMMIT_KEY) ||
-            ReadDurablePublicationPending())
+        if (ReadReorgUtxoPending() || index_db_->Has("reorg:utxo:rebuilding") ||
+            index_db_->Has(PENDING_COMMIT_KEY) || ReadDurablePublicationPending())
             return false;
 
         const auto wire = EncodeReorgUtxoPending(pending);
         WriteBatch intent;
-        intent.Put(REORG_UTXO_PENDING_KEY,
-                   std::string(wire.begin(), wire.end()));
+        intent.Put(REORG_UTXO_PENDING_KEY, std::string(wire.begin(), wire.end()));
         try {
             if (!index_db_->Write(intent))
-                throw DurableWriteUncertain(
-                    "VUR1 intent write reported failure");
+                throw DurableWriteUncertain("VUR1 intent write reported failure");
         } catch (const DurableWriteUncertain&) {
             throw;
         } catch (const std::exception& e) {
-            throw DurableWriteUncertain(
-                std::string("VUR1 intent write threw: ") + e.what());
+            throw DurableWriteUncertain(std::string("VUR1 intent write threw: ") + e.what());
         } catch (...) {
             throw DurableWriteUncertain("VUR1 intent write threw");
         }
 
         WriteBatch utxo_batch;
         for (const auto& [key, value] : delta) {
-            if (value) utxo_batch.Put(key, *value);
-            else utxo_batch.Delete(key);
+            if (value)
+                utxo_batch.Put(key, *value);
+            else
+                utxo_batch.Delete(key);
         }
         try {
             if (!utxo_db_->Write(utxo_batch))
-                throw DurableWriteUncertain(
-                    "VUR1 candidate UTXO write reported failure");
+                throw DurableWriteUncertain("VUR1 candidate UTXO write reported failure");
         } catch (const DurableWriteUncertain&) {
             throw;
         } catch (const std::exception& e) {
-            throw DurableWriteUncertain(
-                std::string("VUR1 candidate UTXO write threw: ") + e.what());
+            throw DurableWriteUncertain(std::string("VUR1 candidate UTXO write threw: ") +
+                                        e.what());
         } catch (...) {
-            throw DurableWriteUncertain(
-                "VUR1 candidate UTXO write threw");
+            throw DurableWriteUncertain("VUR1 candidate UTXO write threw");
         }
         return true;
     }
@@ -1846,37 +1853,35 @@ public:
     // Reverse a rejected pre-publication reorg.  The VUR1 remains present
     // while utxo_db is restored, making an interruption self-healing.  Do not
     // delete pending:commit here: it may predate the reorg transaction.
-    bool AbortReorgUTXO(const UTXODelta& reverse_delta,
-                        const ReorgUtxoPending& expected) {
-        if (!ValidateUTXODelta(reverse_delta)) return false;
+    bool AbortReorgUTXO(const UTXODelta& reverse_delta, const ReorgUtxoPending& expected) {
+        if (!ValidateUTXODelta(reverse_delta))
+            return false;
         const auto current = ReadReorgUtxoPending();
         if (!current) {
             // Begin's intent write may have reported an uncertain failure
             // without reaching the WAL.  Blockchain still runs its abort
             // callback; an exact old frame plus no VUR means no candidate UTXO
             // write was attempted, so compensation is an idempotent no-op.
-            return ReorgOldCanonicalMatches(expected) &&
-                   !ReadDurablePublicationPending();
+            return ReorgOldCanonicalMatches(expected) && !ReadDurablePublicationPending();
         }
-        if (!SameReorgUtxoPending(*current, expected) ||
-            !ReorgOldCanonicalMatches(expected) ||
+        if (!SameReorgUtxoPending(*current, expected) || !ReorgOldCanonicalMatches(expected) ||
             ReadDurablePublicationPending())
             return false;
 
         WriteBatch utxo_batch;
         for (const auto& [key, value] : reverse_delta) {
-            if (value) utxo_batch.Put(key, *value);
-            else utxo_batch.Delete(key);
+            if (value)
+                utxo_batch.Put(key, *value);
+            else
+                utxo_batch.Delete(key);
         }
         try {
             if (!utxo_db_->Write(utxo_batch))
-                throw DurableWriteUncertain(
-                    "VUR1 abort UTXO write reported failure");
+                throw DurableWriteUncertain("VUR1 abort UTXO write reported failure");
         } catch (const DurableWriteUncertain&) {
             throw;
         } catch (const std::exception& e) {
-            throw DurableWriteUncertain(
-                std::string("VUR1 abort UTXO write threw: ") + e.what());
+            throw DurableWriteUncertain(std::string("VUR1 abort UTXO write threw: ") + e.what());
         } catch (...) {
             throw DurableWriteUncertain("VUR1 abort UTXO write threw");
         }
@@ -1885,16 +1890,14 @@ public:
         clear.Delete(REORG_UTXO_PENDING_KEY);
         try {
             if (!index_db_->Write(clear))
-                throw DurableWriteUncertain(
-                    "VUR1 abort acknowledgement reported failure");
+                throw DurableWriteUncertain("VUR1 abort acknowledgement reported failure");
         } catch (const DurableWriteUncertain&) {
             throw;
         } catch (const std::exception& e) {
-            throw DurableWriteUncertain(
-                std::string("VUR1 abort acknowledgement threw: ") + e.what());
+            throw DurableWriteUncertain(std::string("VUR1 abort acknowledgement threw: ") +
+                                        e.what());
         } catch (...) {
-            throw DurableWriteUncertain(
-                "VUR1 abort acknowledgement threw");
+            throw DurableWriteUncertain("VUR1 abort acknowledgement threw");
         }
         return true;
     }
@@ -1904,12 +1907,10 @@ public:
     // one index batch prevents a crash from resurrecting a pending commit
     // whose UTXO effects the reconciliation has already removed.  This is
     // valid at genesis as well as at non-zero heights.
-    bool CompleteReorgUtxoRecoveryAfterReplay(
-            const ReorgUtxoPending& expected) {
+    bool CompleteReorgUtxoRecoveryAfterReplay(const ReorgUtxoPending& expected) {
         const auto current = ReadReorgUtxoPending();
         if (!current || !SameReorgUtxoPending(*current, expected) ||
-            !ReorgOldCanonicalMatches(expected) ||
-            index_db_->Has("reorg:utxo:rebuilding") ||
+            !ReorgOldCanonicalMatches(expected) || index_db_->Has("reorg:utxo:rebuilding") ||
             ReadDurablePublicationPending())
             return false;
         WriteBatch clear;
@@ -1917,17 +1918,14 @@ public:
         clear.Delete(PENDING_COMMIT_KEY);
         try {
             if (!index_db_->Write(clear))
-                throw DurableWriteUncertain(
-                    "VUR1 startup acknowledgement reported failure");
+                throw DurableWriteUncertain("VUR1 startup acknowledgement reported failure");
         } catch (const DurableWriteUncertain&) {
             throw;
         } catch (const std::exception& e) {
-            throw DurableWriteUncertain(
-                std::string("VUR1 startup acknowledgement threw: ") +
-                e.what());
+            throw DurableWriteUncertain(std::string("VUR1 startup acknowledgement threw: ") +
+                                        e.what());
         } catch (...) {
-            throw DurableWriteUncertain(
-                "VUR1 startup acknowledgement threw");
+            throw DurableWriteUncertain("VUR1 startup acknowledgement threw");
         }
         return true;
     }
@@ -1939,24 +1937,20 @@ public:
     // removed in the same commit.  VDP1 is armed atomically at the commit
     // point; the node clears it only after all required public/module mirrors
     // have completed.
-    bool CommitReorgMetadata(
-            const ReorgCanonicalSuffix& new_suffix,
-            const ReorgUtxoPending& expected,
-            const std::vector<uint8_t>* anchor_security_floor = nullptr) {
+    bool CommitReorgMetadata(const ReorgCanonicalSuffix& new_suffix,
+                             const ReorgUtxoPending& expected,
+                             const std::vector<uint8_t>* anchor_security_floor = nullptr) {
         if (anchor_security_floor &&
             (anchor_security_floor->empty() ||
-             anchor_security_floor->size() >
-                 MAX_ANCHOR_SECURITY_FLOOR_BYTES))
+             anchor_security_floor->size() > MAX_ANCHOR_SECURITY_FLOOR_BYTES))
             return false;
         const auto current = ReadReorgUtxoPending();
         if (!current || !SameReorgUtxoPending(*current, expected) ||
-            !ReorgOldCanonicalMatches(expected) ||
-            index_db_->Has("reorg:utxo:rebuilding") ||
+            !ReorgOldCanonicalMatches(expected) || index_db_->Has("reorg:utxo:rebuilding") ||
             ReadDurablePublicationPending())
             return false;
         if (new_suffix.empty() ||
-            expected.new_height - expected.ancestor_height !=
-                new_suffix.size())
+            expected.new_height - expected.ancestor_height != new_suffix.size())
             return false;
 
         std::unordered_set<std::string> new_hashes;
@@ -1968,21 +1962,18 @@ public:
                 !new_hashes.insert(HashToHex(hash)).second)
                 return false;
             const auto body = ReadBlock(hash);
-            if (!body || body->size() < 88 ||
-                Hash256d(body->data(), 88) != hash)
+            if (!body || body->size() < 88 || Hash256d(body->data(), 88) != hash)
                 return false;
             Hash256 body_prev{};
-            std::copy(body->begin() + 4, body->begin() + 36,
-                      body_prev.begin());
-            const uint32_t body_bits =
-                static_cast<uint32_t>((*body)[76]) |
-                (static_cast<uint32_t>((*body)[77]) << 8) |
-                (static_cast<uint32_t>((*body)[78]) << 16) |
-                (static_cast<uint32_t>((*body)[79]) << 24);
-            if (body_prev != prior_hash || body_bits != bits) return false;
+            std::copy(body->begin() + 4, body->begin() + 36, body_prev.begin());
+            const uint32_t body_bits = static_cast<uint32_t>((*body)[76]) |
+                                       (static_cast<uint32_t>((*body)[77]) << 8) |
+                                       (static_cast<uint32_t>((*body)[78]) << 16) |
+                                       (static_cast<uint32_t>((*body)[79]) << 24);
+            if (body_prev != prior_hash || body_bits != bits)
+                return false;
             prior_hash = hash;
-            if (wanted_height == UINT64_MAX &&
-                height != expected.new_height)
+            if (wanted_height == UINT64_MAX && height != expected.new_height)
                 return false;
             ++wanted_height;
         }
@@ -1993,71 +1984,62 @@ public:
         // Validate the complete displaced canonical suffix before building the
         // batch.  This also supplies the exact reverse-index rows to remove.
         std::vector<std::pair<uint64_t, std::string>> old_suffix;
-        old_suffix.reserve(static_cast<size_t>(
-            expected.old_height - expected.ancestor_height));
+        old_suffix.reserve(static_cast<size_t>(expected.old_height - expected.ancestor_height));
         Hash256 prior_old_hash = expected.ancestor_hash;
         for (uint64_t height = expected.ancestor_height + 1;; ++height) {
             const auto old_hash = GetHashAtHeight(height);
-            if (!old_hash || !IsCanonicalHash256Text(*old_hash)) return false;
+            if (!old_hash || !IsCanonicalHash256Text(*old_hash))
+                return false;
             const Hash256 old_hash_bytes = HexToHash(*old_hash);
-            const auto reverse_height =
-                index_db_->Get("idx:" + *old_hash + ":height");
-            const auto reverse_bits =
-                index_db_->Get("idx:" + *old_hash + ":bits");
+            const auto reverse_height = index_db_->Get("idx:" + *old_hash + ":height");
+            const auto reverse_bits = index_db_->Get("idx:" + *old_hash + ":bits");
             uint64_t parsed_bits = 0;
             const auto body = ReadBlock(old_hash_bytes);
-            if (!reverse_height ||
-                *reverse_height != std::to_string(height) ||
-                !reverse_bits ||
-                !ParseCanonicalUint64Text(*reverse_bits, parsed_bits) ||
-                parsed_bits > UINT32_MAX || !body || body->size() < 88 ||
-                Hash256d(body->data(), 88) != old_hash_bytes)
+            if (!reverse_height || *reverse_height != std::to_string(height) || !reverse_bits ||
+                !ParseCanonicalUint64Text(*reverse_bits, parsed_bits) || parsed_bits > UINT32_MAX ||
+                !body || body->size() < 88 || Hash256d(body->data(), 88) != old_hash_bytes)
                 return false;
             Hash256 body_prev{};
-            std::copy(body->begin() + 4, body->begin() + 36,
-                      body_prev.begin());
-            const uint32_t body_bits =
-                static_cast<uint32_t>((*body)[76]) |
-                (static_cast<uint32_t>((*body)[77]) << 8) |
-                (static_cast<uint32_t>((*body)[78]) << 16) |
-                (static_cast<uint32_t>((*body)[79]) << 24);
-            if (body_prev != prior_old_hash ||
-                body_bits != static_cast<uint32_t>(parsed_bits))
+            std::copy(body->begin() + 4, body->begin() + 36, body_prev.begin());
+            const uint32_t body_bits = static_cast<uint32_t>((*body)[76]) |
+                                       (static_cast<uint32_t>((*body)[77]) << 8) |
+                                       (static_cast<uint32_t>((*body)[78]) << 16) |
+                                       (static_cast<uint32_t>((*body)[79]) << 24);
+            if (body_prev != prior_old_hash || body_bits != static_cast<uint32_t>(parsed_bits))
                 return false;
             old_suffix.emplace_back(height, *old_hash);
             prior_old_hash = old_hash_bytes;
-            if (height == expected.old_height) break;
-            if (height == UINT64_MAX) return false;
+            if (height == expected.old_height)
+                break;
+            if (height == UINT64_MAX)
+                return false;
         }
 
         WriteBatch batch;
         bool height_namespace_valid = true;
-        index_db_->Iterate("idx:height:",
-            [&](const std::string& key, const std::string& value) {
-                static constexpr std::string_view prefix = "idx:height:";
-                uint64_t height = 0;
-                if (key.size() <= prefix.size() ||
-                    key.compare(0, prefix.size(), prefix) != 0 ||
-                    !ParseCanonicalUint64Text(
-                        std::string_view(key).substr(prefix.size()), height) ||
-                    !IsCanonicalHash256Text(value)) {
-                    height_namespace_valid = false;
-                    return false;
-                }
-                if (height > expected.new_height) {
-                    batch.Delete(key);
-                    batch.Delete("idx:" + value + ":height");
-                    batch.Delete("idx:" + value + ":bits");
-                }
-                return true;
-            });
-        if (!height_namespace_valid) return false;
+        index_db_->Iterate("idx:height:", [&](const std::string& key, const std::string& value) {
+            static constexpr std::string_view prefix = "idx:height:";
+            uint64_t height = 0;
+            if (key.size() <= prefix.size() || key.compare(0, prefix.size(), prefix) != 0 ||
+                !ParseCanonicalUint64Text(std::string_view(key).substr(prefix.size()), height) ||
+                !IsCanonicalHash256Text(value)) {
+                height_namespace_valid = false;
+                return false;
+            }
+            if (height > expected.new_height) {
+                batch.Delete(key);
+                batch.Delete("idx:" + value + ":height");
+                batch.Delete("idx:" + value + ":bits");
+            }
+            return true;
+        });
+        if (!height_namespace_valid)
+            return false;
 
         for (const auto& [height, old_hex] : old_suffix) {
-            const uint64_t offset = height -
-                                    (expected.ancestor_height + 1);
-            const bool retained_same = offset < new_suffix.size() &&
-                HashToHex(std::get<1>(new_suffix[offset])) == old_hex;
+            const uint64_t offset = height - (expected.ancestor_height + 1);
+            const bool retained_same =
+                offset < new_suffix.size() && HashToHex(std::get<1>(new_suffix[offset])) == old_hex;
             if (!retained_same) {
                 batch.Delete("idx:" + old_hex + ":height");
                 batch.Delete("idx:" + old_hex + ":bits");
@@ -2078,11 +2060,10 @@ public:
         batch.Put("tip:supply", std::to_string(expected.new_supply));
         if (anchor_security_floor) {
             batch.Put(ANCHOR_SECURITY_FLOOR_KEY,
-                      std::string(anchor_security_floor->begin(),
-                                  anchor_security_floor->end()));
+                      std::string(anchor_security_floor->begin(), anchor_security_floor->end()));
         }
-        const auto publication = EncodeDurablePublicationPending(
-            expected.new_height, expected.new_hash);
+        const auto publication =
+            EncodeDurablePublicationPending(expected.new_height, expected.new_hash);
         batch.Put(DURABLE_PUBLICATION_PENDING_KEY,
                   std::string(publication.begin(), publication.end()));
         batch.Delete(REORG_UTXO_PENDING_KEY);
@@ -2093,49 +2074,48 @@ public:
         // it.  Never return false and invite a pre-publication rollback.
         try {
             if (!index_db_->Write(batch))
-                throw DurableWriteUncertain(
-                    "VUR1 final canonical batch reported failure");
+                throw DurableWriteUncertain("VUR1 final canonical batch reported failure");
         } catch (const DurableWriteUncertain&) {
             throw;
         } catch (const std::exception& e) {
-            throw DurableWriteUncertain(
-                std::string("VUR1 final canonical batch threw: ") + e.what());
+            throw DurableWriteUncertain(std::string("VUR1 final canonical batch threw: ") +
+                                        e.what());
         } catch (...) {
-            throw DurableWriteUncertain(
-                "VUR1 final canonical batch threw");
+            throw DurableWriteUncertain("VUR1 final canonical batch threw");
         }
         return true;
     }
 
-    static std::string SerializePendingCommit(
-        const Hash256& block_hash,
-        uint64_t height,
-        uint64_t supply_units,
-        uint32_t bits,
-        const std::vector<std::string>& new_utxo_keys,
-        const std::vector<std::pair<std::string, std::string>>& spent_utxo_kvs)
-    {
+    static std::string
+    SerializePendingCommit(const Hash256& block_hash, uint64_t height, uint64_t supply_units,
+                           uint32_t bits, const std::vector<std::string>& new_utxo_keys,
+                           const std::vector<std::pair<std::string, std::string>>& spent_utxo_kvs) {
         std::string out;
         auto put_u32 = [&](uint32_t v) {
             char b[4];
-            b[0] = (char)( v        & 0xFF);
-            b[1] = (char)((v >>  8) & 0xFF);
+            b[0] = (char)(v & 0xFF);
+            b[1] = (char)((v >> 8) & 0xFF);
             b[2] = (char)((v >> 16) & 0xFF);
             b[3] = (char)((v >> 24) & 0xFF);
             out.append(b, 4);
         };
         auto put_u64 = [&](uint64_t v) {
             char b[8];
-            for (int i = 0; i < 8; ++i) b[i] = (char)((v >> (i * 8)) & 0xFF);
+            for (int i = 0; i < 8; ++i)
+                b[i] = (char)((v >> (i * 8)) & 0xFF);
             out.append(b, 8);
         };
-        auto put_bytes = [&](const char* p, size_t n) { put_u32((uint32_t)n); out.append(p, n); };
+        auto put_bytes = [&](const char* p, size_t n) {
+            put_u32((uint32_t)n);
+            out.append(p, n);
+        };
         put_u64(height);
         put_u32(bits);
         put_u64(supply_units);
         out.append(reinterpret_cast<const char*>(block_hash.data()), 32);
         put_u32((uint32_t)new_utxo_keys.size());
-        for (const auto& k : new_utxo_keys) put_bytes(k.data(), k.size());
+        for (const auto& k : new_utxo_keys)
+            put_bytes(k.data(), k.size());
         put_u32((uint32_t)spent_utxo_kvs.size());
         for (const auto& [k, v] : spent_utxo_kvs) {
             put_bytes(k.data(), k.size());
@@ -2145,13 +2125,13 @@ public:
     }
 
     struct PendingCommitRecord {
-        uint64_t                                              height = 0;
-        uint32_t                                              bits   = 0;
-        uint64_t                                              supply_units = 0;
-        Hash256                                               block_hash{};
-        std::vector<std::string>                              new_utxo_keys;
-        std::vector<std::pair<std::string, std::string>>      spent_utxo_kvs;
-        bool                                                  ok = false;
+        uint64_t height = 0;
+        uint32_t bits = 0;
+        uint64_t supply_units = 0;
+        Hash256 block_hash{};
+        std::vector<std::string> new_utxo_keys;
+        std::vector<std::pair<std::string, std::string>> spent_utxo_kvs;
+        bool ok = false;
     };
 
     static PendingCommitRecord DeserializePendingCommit(const std::string& blob) {
@@ -2159,42 +2139,62 @@ public:
         size_t p = 0;
         auto need = [&](size_t n) { return p + n <= blob.size(); };
         auto get_u32 = [&](uint32_t& out) -> bool {
-            if (!need(4)) return false;
+            if (!need(4))
+                return false;
             const uint8_t* b = reinterpret_cast<const uint8_t*>(blob.data() + p);
-            out = (uint32_t)b[0]
-                | ((uint32_t)b[1] << 8)
-                | ((uint32_t)b[2] << 16)
-                | ((uint32_t)b[3] << 24);
-            p += 4; return true;
+            out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) |
+                  ((uint32_t)b[3] << 24);
+            p += 4;
+            return true;
         };
         auto get_u64 = [&](uint64_t& out) -> bool {
-            if (!need(8)) return false;
+            if (!need(8))
+                return false;
             const uint8_t* b = reinterpret_cast<const uint8_t*>(blob.data() + p);
             out = 0;
-            for (int i = 0; i < 8; ++i) out |= ((uint64_t)b[i]) << (i * 8);
-            p += 8; return true;
+            for (int i = 0; i < 8; ++i)
+                out |= ((uint64_t)b[i]) << (i * 8);
+            p += 8;
+            return true;
         };
         auto get_str = [&](std::string& out) -> bool {
-            uint32_t n; if (!get_u32(n)) return false;
-            if (!need(n)) return false;
-            out.assign(blob.data() + p, n); p += n; return true;
+            uint32_t n;
+            if (!get_u32(n))
+                return false;
+            if (!need(n))
+                return false;
+            out.assign(blob.data() + p, n);
+            p += n;
+            return true;
         };
-        if (!get_u64(r.height)) return r;
-        if (!get_u32(r.bits)) return r;
-        if (!get_u64(r.supply_units)) return r;
-        if (!need(32)) return r;
-        std::memcpy(r.block_hash.data(), blob.data() + p, 32); p += 32;
-        uint32_t n_new = 0; if (!get_u32(n_new)) return r;
+        if (!get_u64(r.height))
+            return r;
+        if (!get_u32(r.bits))
+            return r;
+        if (!get_u64(r.supply_units))
+            return r;
+        if (!need(32))
+            return r;
+        std::memcpy(r.block_hash.data(), blob.data() + p, 32);
+        p += 32;
+        uint32_t n_new = 0;
+        if (!get_u32(n_new))
+            return r;
         r.new_utxo_keys.reserve(n_new);
         for (uint32_t i = 0; i < n_new; ++i) {
-            std::string k; if (!get_str(k)) return r;
+            std::string k;
+            if (!get_str(k))
+                return r;
             r.new_utxo_keys.push_back(std::move(k));
         }
-        uint32_t n_spent = 0; if (!get_u32(n_spent)) return r;
+        uint32_t n_spent = 0;
+        if (!get_u32(n_spent))
+            return r;
         r.spent_utxo_kvs.reserve(n_spent);
         for (uint32_t i = 0; i < n_spent; ++i) {
             std::string k, v;
-            if (!get_str(k) || !get_str(v)) return r;
+            if (!get_str(k) || !get_str(v))
+                return r;
             r.spent_utxo_kvs.emplace_back(std::move(k), std::move(v));
         }
         r.ok = true;
@@ -2209,62 +2209,55 @@ public:
         // pending:commit here: the full reconciliation supersedes it, and both
         // identities are cleared atomically only after recovery succeeds.
         if (auto retained_wire = index_db_->Get(REORG_UTXO_PENDING_KEY)) {
-            const std::vector<uint8_t> wire(retained_wire->begin(),
-                                            retained_wire->end());
+            const std::vector<uint8_t> wire(retained_wire->begin(), retained_wire->end());
             const auto retained = DecodeReorgUtxoPending(wire);
             if (!retained)
-                throw std::runtime_error(
-                    "FATAL: retained VUR1 reorg identity is malformed; "
-                    "refusing ambiguous UTXO recovery");
+                throw std::runtime_error("FATAL: retained VUR1 reorg identity is malformed; "
+                                         "refusing ambiguous UTXO recovery");
             if (!ReorgOldCanonicalMatches(*retained))
-                throw std::runtime_error(
-                    "FATAL: retained VUR1 old-tip identity does not match "
-                    "the authoritative chain frame");
+                throw std::runtime_error("FATAL: retained VUR1 old-tip identity does not match "
+                                         "the authoritative chain frame");
             if (ReadDurablePublicationPending())
-                throw std::runtime_error(
-                    "FATAL: VUR1 and VDP1 coexist; canonical publication "
-                    "state is ambiguous");
-            if (auto transient =
-                    index_db_->Get("reorg:utxo:rebuilding")) {
+                throw std::runtime_error("FATAL: VUR1 and VDP1 coexist; canonical publication "
+                                         "state is ambiguous");
+            if (auto transient = index_db_->Get("reorg:utxo:rebuilding")) {
                 if (*transient != "1" && *transient != "delta-v1")
-                    throw std::runtime_error(
-                        "FATAL: VUR1 coexists with an unknown UTXO rebuild "
-                        "marker version");
+                    throw std::runtime_error("FATAL: VUR1 coexists with an unknown UTXO rebuild "
+                                             "marker version");
             }
-            std::cerr
-                << "\n  [recover] retained VUR1 reorg transaction found "
-                << "(old h=" << retained->old_height
-                << ", intended h=" << retained->new_height << ").\n"
-                << "  [recover] Keeping the exact identity and any "
-                   "pending:commit until startup replay + UTXO "
-                   "reconciliation complete.\n\n";
+            std::cerr << "\n  [recover] retained VUR1 reorg transaction found "
+                      << "(old h=" << retained->old_height
+                      << ", intended h=" << retained->new_height << ").\n"
+                      << "  [recover] Keeping the exact identity and any "
+                         "pending:commit until startup replay + UTXO "
+                         "reconciliation complete.\n\n";
             std::cerr.flush();
             return;
         }
 
         auto rebuild_marker = index_db_->Get("reorg:utxo:rebuilding");
         if (rebuild_marker) {
-            if (*rebuild_marker != "1" &&
-                *rebuild_marker != "delta-v1")
-                throw std::runtime_error(
-                    "FATAL: unknown reorg:utxo:rebuilding marker version");
+            if (*rebuild_marker != "1" && *rebuild_marker != "delta-v1")
+                throw std::runtime_error("FATAL: unknown reorg:utxo:rebuilding marker version");
             // A generic UTXO rebuild was interrupted, so utxo_db may be
             // partially old/partially new.  Keep both this marker and any
             // pending:commit until startup ReplayChain performs a complete
             // authoritative reconciliation.  Clearing either identity in the
             // constructor would create a second-crash window where a snapshot
             // could publish the mixed UTXO namespace as healthy.
-            std::cerr << "\n  [recover] reorg:utxo:rebuilding marker present — a UTXO rebuild\n"
-                      << "  [recover] was interrupted (crash/kill mid-Reorganize). AUTO-RECOVERING:\n"
-                      << "  [recover] retaining the marker until startup chain replay rebuilds the\n"
-                      << "  [recover] UTXO set and a checked reconciliation clears it. No manual\n"
-                      << "  [recover] cleanup required.\n\n";
+            std::cerr
+                << "\n  [recover] reorg:utxo:rebuilding marker present — a UTXO rebuild\n"
+                << "  [recover] was interrupted (crash/kill mid-Reorganize). AUTO-RECOVERING:\n"
+                << "  [recover] retaining the marker until startup chain replay rebuilds the\n"
+                << "  [recover] UTXO set and a checked reconciliation clears it. No manual\n"
+                << "  [recover] cleanup required.\n\n";
             std::cerr.flush();
             return;
         }
 
         auto blob = index_db_->Get(PENDING_COMMIT_KEY);
-        if (!blob) return;
+        if (!blob)
+            return;
         // Do not deserialize or execute a linear journal during construction.
         // It is neither an authenticated canonical identity nor sufficient to
         // distinguish the Step-3 and Step-4 crash cuts.  In particular, a
@@ -2283,32 +2276,23 @@ public:
         // remains authoritative and is independently identity-checked.
         WriteBatch intent;
         intent.Put("reorg:utxo:rebuilding", "1");
-        WriteOrThrowUncertain(
-            *index_db_, intent,
-            "linear pending:commit recovery-marker write");
-        std::cerr
-            << "\n  [recover] retained linear pending:commit found.\n"
-            << "  [recover] Keeping the journal and deferring all UTXO "
-               "correction to\n"
-            << "  [recover] full canonical startup replay + checked UTXO "
-               "reconciliation.\n\n";
+        WriteOrThrowUncertain(*index_db_, intent, "linear pending:commit recovery-marker write");
+        std::cerr << "\n  [recover] retained linear pending:commit found.\n"
+                  << "  [recover] Keeping the journal and deferring all UTXO "
+                     "correction to\n"
+                  << "  [recover] full canonical startup replay + checked UTXO "
+                     "reconciliation.\n\n";
         std::cerr.flush();
     }
 
-    bool CommitBlock(
-        const Hash256& block_hash,
-        const std::vector<uint8_t>& block_data,
-        uint64_t height,
-        uint64_t supply_units,
-        uint32_t bits,
-        const std::vector<std::pair<Hash256, uint32_t>>& spent_utxos,
-        const std::vector<std::tuple<Hash256, uint32_t, std::string>>& new_utxos,
-        const std::vector<uint8_t>* anchor_security_floor = nullptr
-    ) {
+    bool CommitBlock(const Hash256& block_hash, const std::vector<uint8_t>& block_data,
+                     uint64_t height, uint64_t supply_units, uint32_t bits,
+                     const std::vector<std::pair<Hash256, uint32_t>>& spent_utxos,
+                     const std::vector<std::tuple<Hash256, uint32_t, std::string>>& new_utxos,
+                     const std::vector<uint8_t>* anchor_security_floor = nullptr) {
         if (anchor_security_floor &&
             (anchor_security_floor->empty() ||
-             anchor_security_floor->size() >
-                 MAX_ANCHOR_SECURITY_FLOOR_BYTES))
+             anchor_security_floor->size() > MAX_ANCHOR_SECURITY_FLOOR_BYTES))
             return false;
         {
             WriteBatch blk_batch;
@@ -2316,8 +2300,7 @@ public:
                           std::string(block_data.begin(), block_data.end()));
             if (!blocks_db_->Write(blk_batch)) {
                 std::cerr << "  [commit-fail] Step 1 (blocks_db Put) failed at "
-                          << "h=" << height
-                          << " hash=" << HashToHex(block_hash).substr(0, 16)
+                          << "h=" << height << " hash=" << HashToHex(block_hash).substr(0, 16)
                           << " — likely disk full or IO error; check df -h "
                           << "and disk health.\n";
                 std::cerr.flush();
@@ -2332,7 +2315,8 @@ public:
                 created_keys.insert("u:" + HashToHex(hash) + ":" + std::to_string(idx));
             for (const auto& [hash, idx] : spent_utxos) {
                 std::string k = "u:" + HashToHex(hash) + ":" + std::to_string(idx);
-                if (created_keys.count(k)) intra_block_transients.insert(k);
+                if (created_keys.count(k))
+                    intra_block_transients.insert(k);
             }
         }
 
@@ -2340,16 +2324,15 @@ public:
         spent_utxo_kvs.reserve(spent_utxos.size());
         for (const auto& [hash, idx] : spent_utxos) {
             std::string k = "u:" + HashToHex(hash) + ":" + std::to_string(idx);
-            if (intra_block_transients.count(k)) continue;
+            if (intra_block_transients.count(k))
+                continue;
             auto v = utxo_db_->Get(k);
             if (!v) {
-                std::cerr << "  [commit-fail] missing spent UTXO: " << k
-                          << " block_h=" << height
+                std::cerr << "  [commit-fail] missing spent UTXO: " << k << " block_h=" << height
                           << " block=" << HashToHex(block_hash).substr(0, 16)
                           << " spent_count=" << spent_utxos.size()
                           << " new_count=" << new_utxos.size()
-                          << " transients=" << intra_block_transients.size()
-                          << "\n";
+                          << " transients=" << intra_block_transients.size() << "\n";
                 std::cerr.flush();
                 return false;
             }
@@ -2362,57 +2345,53 @@ public:
 
         {
             WriteBatch jb;
-            jb.Put(PENDING_COMMIT_KEY,
-                   SerializePendingCommit(block_hash, height, supply_units, bits,
-                                          new_utxo_keys, spent_utxo_kvs));
+            jb.Put(PENDING_COMMIT_KEY, SerializePendingCommit(block_hash, height, supply_units,
+                                                              bits, new_utxo_keys, spent_utxo_kvs));
             // A false/sync error does not prove the journal missed the WAL.
             // Continuing or compensating in-process could overwrite a
             // recoverable intent, so force the caller into fail-stop recovery.
-            WriteOrThrowUncertain(*index_db_, jb,
-                "CommitBlock Step 3 journal write at h=" +
-                std::to_string(height));
+            WriteOrThrowUncertain(
+                *index_db_, jb, "CommitBlock Step 3 journal write at h=" + std::to_string(height));
         }
 
         {
             WriteBatch utxo_batch;
-            for (const auto& [k, _] : spent_utxo_kvs) utxo_batch.Delete(k);
+            for (const auto& [k, _] : spent_utxo_kvs)
+                utxo_batch.Delete(k);
             for (size_t i = 0; i < new_utxos.size(); ++i) {
-                if (intra_block_transients.count(new_utxo_keys[i])) continue;
+                if (intra_block_transients.count(new_utxo_keys[i]))
+                    continue;
                 utxo_batch.Put(new_utxo_keys[i], std::get<2>(new_utxos[i]));
             }
             WriteOrThrowUncertain(*utxo_db_, utxo_batch,
-                "CommitBlock Step 4 UTXO write at h=" +
-                std::to_string(height));
+                                  "CommitBlock Step 4 UTXO write at h=" + std::to_string(height));
         }
 
         {
             WriteBatch ib;
             std::string h_hex = HashToHex(block_hash);
             ib.Put("idx:" + h_hex + ":height", std::to_string(height));
-            ib.Put("idx:" + h_hex + ":bits",   std::to_string(bits));
+            ib.Put("idx:" + h_hex + ":bits", std::to_string(bits));
             ib.Put("idx:height:" + std::to_string(height), h_hex);
-            ib.Put("chain:tip",    h_hex);
+            ib.Put("chain:tip", h_hex);
             ib.Put("chain:height", std::to_string(height));
             ib.Put("chain:supply", std::to_string(supply_units));
-            ib.Put("tip:hash",     h_hex);
-            ib.Put("tip:height",   std::to_string(height));
-            ib.Put("tip:supply",   std::to_string(supply_units));
+            ib.Put("tip:hash", h_hex);
+            ib.Put("tip:height", std::to_string(height));
+            ib.Put("tip:supply", std::to_string(supply_units));
             if (anchor_security_floor) {
                 ib.Put(ANCHOR_SECURITY_FLOOR_KEY,
-                       std::string(anchor_security_floor->begin(),
-                                   anchor_security_floor->end()));
+                       std::string(anchor_security_floor->begin(), anchor_security_floor->end()));
             }
-            const auto pending = EncodeDurablePublicationPending(
-                height, block_hash);
-            ib.Put(DURABLE_PUBLICATION_PENDING_KEY,
-                   std::string(pending.begin(), pending.end()));
+            const auto pending = EncodeDurablePublicationPending(height, block_hash);
+            ib.Put(DURABLE_PUBLICATION_PENDING_KEY, std::string(pending.begin(), pending.end()));
             ib.Delete(PENDING_COMMIT_KEY);
             // This is the canonical cut point.  Once attempted, false/throw is
             // inherently uncertain: the WAL may become authoritative on
             // restart even when the current process reports a sync failure.
             WriteOrThrowUncertain(*index_db_, ib,
-                "CommitBlock Step 5 canonical index write at h=" +
-                std::to_string(height));
+                                  "CommitBlock Step 5 canonical index write at h=" +
+                                      std::to_string(height));
         }
         return true;
     }
@@ -2426,46 +2405,38 @@ public:
         return count;
     }
 
-    bool PersistBlockMetadata(
-        const Hash256& block_hash,
-        const std::vector<uint8_t>& block_data,
-        uint64_t height,
-        uint64_t supply_units,
-        uint32_t bits,
-        const std::vector<uint8_t>* anchor_security_floor = nullptr)
-    {
+    bool PersistBlockMetadata(const Hash256& block_hash, const std::vector<uint8_t>& block_data,
+                              uint64_t height, uint64_t supply_units, uint32_t bits,
+                              const std::vector<uint8_t>* anchor_security_floor = nullptr) {
         if (anchor_security_floor &&
             (anchor_security_floor->empty() ||
-             anchor_security_floor->size() >
-                 MAX_ANCHOR_SECURITY_FLOOR_BYTES))
+             anchor_security_floor->size() > MAX_ANCHOR_SECURITY_FLOOR_BYTES))
             return false;
         {
             WriteBatch blk_batch;
             blk_batch.Put("b:" + HashToHex(block_hash),
                           std::string(block_data.begin(), block_data.end()));
-            if (!blocks_db_->Write(blk_batch)) return false;
+            if (!blocks_db_->Write(blk_batch))
+                return false;
         }
         {
             WriteBatch ib;
             std::string h_hex = HashToHex(block_hash);
             ib.Put("idx:" + h_hex + ":height", std::to_string(height));
-            ib.Put("idx:" + h_hex + ":bits",   std::to_string(bits));
+            ib.Put("idx:" + h_hex + ":bits", std::to_string(bits));
             ib.Put("idx:height:" + std::to_string(height), h_hex);
-            ib.Put("chain:tip",    h_hex);
+            ib.Put("chain:tip", h_hex);
             ib.Put("chain:height", std::to_string(height));
             ib.Put("chain:supply", std::to_string(supply_units));
-            ib.Put("tip:hash",     h_hex);
-            ib.Put("tip:height",   std::to_string(height));
-            ib.Put("tip:supply",   std::to_string(supply_units));
+            ib.Put("tip:hash", h_hex);
+            ib.Put("tip:height", std::to_string(height));
+            ib.Put("tip:supply", std::to_string(supply_units));
             if (anchor_security_floor) {
                 ib.Put(ANCHOR_SECURITY_FLOOR_KEY,
-                       std::string(anchor_security_floor->begin(),
-                                   anchor_security_floor->end()));
+                       std::string(anchor_security_floor->begin(), anchor_security_floor->end()));
             }
-            const auto pending = EncodeDurablePublicationPending(
-                height, block_hash);
-            ib.Put(DURABLE_PUBLICATION_PENDING_KEY,
-                   std::string(pending.begin(), pending.end()));
+            const auto pending = EncodeDurablePublicationPending(height, block_hash);
+            ib.Put(DURABLE_PUBLICATION_PENDING_KEY, std::string(pending.begin(), pending.end()));
             // PersistBlockMetadata is also the final step of the linear
             // CommitBlock self-heal path.  If CommitBlock failed after writing
             // its journal, the rebuilt UTXO snapshot and this metadata batch
@@ -2476,8 +2447,8 @@ public:
             // metadata publication and any older linear journal is obsolete.
             ib.Delete(PENDING_COMMIT_KEY);
             WriteOrThrowUncertain(*index_db_, ib,
-                "PersistBlockMetadata canonical index write at h=" +
-                std::to_string(height));
+                                  "PersistBlockMetadata canonical index write at h=" +
+                                      std::to_string(height));
         }
         return true;
     }
@@ -2491,63 +2462,54 @@ public:
     // heights above the old tip, and publish the old tip in one index batch.
     bool RestoreCanonicalMetadata(
         const std::vector<std::tuple<uint64_t, Hash256, uint32_t>>& canonical_tail,
-        const Hash256& tip_hash,
-        uint64_t tip_height,
-        uint64_t supply_units,
+        const Hash256& tip_hash, uint64_t tip_height, uint64_t supply_units,
         // Optional tri-state restore instruction for the node's opaque local
         // anchor floor.  A null pointer leaves the key untouched (legacy
         // callers); a pointer to nullopt deletes an alt-branch-only floor; a
         // pointer containing bytes restores the exact pre-reorg floor.  The
         // selected operation lands in the same atomic batch as the old tip.
-        const std::optional<std::vector<uint8_t>>*
-            anchor_security_floor_restore = nullptr,
-        const std::optional<std::vector<uint8_t>>*
-            durable_publication_pending_restore = nullptr)
-    {
-        if (anchor_security_floor_restore &&
-            anchor_security_floor_restore->has_value() &&
+        const std::optional<std::vector<uint8_t>>* anchor_security_floor_restore = nullptr,
+        const std::optional<std::vector<uint8_t>>* durable_publication_pending_restore = nullptr) {
+        if (anchor_security_floor_restore && anchor_security_floor_restore->has_value() &&
             ((**anchor_security_floor_restore).empty() ||
-             (**anchor_security_floor_restore).size() >
-                 MAX_ANCHOR_SECURITY_FLOOR_BYTES))
+             (**anchor_security_floor_restore).size() > MAX_ANCHOR_SECURITY_FLOOR_BYTES))
             return false;
         if (durable_publication_pending_restore &&
             durable_publication_pending_restore->has_value()) {
-            const auto pending = DecodeDurablePublicationPending(
-                **durable_publication_pending_restore);
-            if (!pending || pending->height != tip_height ||
-                pending->hash != tip_hash)
+            const auto pending =
+                DecodeDurablePublicationPending(**durable_publication_pending_restore);
+            if (!pending || pending->height != tip_height || pending->hash != tip_hash)
                 return false;
         }
-        if (canonical_tail.empty()) return false;
+        if (canonical_tail.empty())
+            return false;
         bool first = true;
         uint64_t prior_height = 0;
         for (const auto& [height, hash, bits] : canonical_tail) {
             (void)hash;
             (void)bits;
-            if (height > tip_height) return false;
-            if (!first &&
-                (prior_height == UINT64_MAX || height != prior_height + 1))
+            if (height > tip_height)
+                return false;
+            if (!first && (prior_height == UINT64_MAX || height != prior_height + 1))
                 return false;
             first = false;
             prior_height = height;
         }
         if (std::get<0>(canonical_tail.back()) != tip_height ||
-            std::get<1>(canonical_tail.back()) != tip_hash) return false;
+            std::get<1>(canonical_tail.back()) != tip_hash)
+            return false;
 
         WriteBatch batch;
-        index_db_->Iterate("idx:height:",
-            [&](const std::string& key, const std::string&) {
-                static constexpr std::string_view prefix = "idx:height:";
-                uint64_t height = 0;
-                if (key.size() > prefix.size() &&
-                    key.compare(0, prefix.size(), prefix) == 0 &&
-                    ParseCanonicalUint64Text(
-                        std::string_view(key).substr(prefix.size()), height) &&
-                    height > tip_height) {
-                    batch.Delete(key);
-                }
-                return true;
-            });
+        index_db_->Iterate("idx:height:", [&](const std::string& key, const std::string&) {
+            static constexpr std::string_view prefix = "idx:height:";
+            uint64_t height = 0;
+            if (key.size() > prefix.size() && key.compare(0, prefix.size(), prefix) == 0 &&
+                ParseCanonicalUint64Text(std::string_view(key).substr(prefix.size()), height) &&
+                height > tip_height) {
+                batch.Delete(key);
+            }
+            return true;
+        });
 
         for (const auto& [height, hash, bits] : canonical_tail) {
             const std::string hex = HashToHex(hash);
@@ -2556,17 +2518,16 @@ public:
             batch.Put("idx:height:" + std::to_string(height), hex);
         }
         const std::string tip_hex = HashToHex(tip_hash);
-        batch.Put("chain:tip",    tip_hex);
+        batch.Put("chain:tip", tip_hex);
         batch.Put("chain:height", std::to_string(tip_height));
         batch.Put("chain:supply", std::to_string(supply_units));
-        batch.Put("tip:hash",     tip_hex);
-        batch.Put("tip:height",   std::to_string(tip_height));
-        batch.Put("tip:supply",   std::to_string(supply_units));
+        batch.Put("tip:hash", tip_hex);
+        batch.Put("tip:height", std::to_string(tip_height));
+        batch.Put("tip:supply", std::to_string(supply_units));
         if (anchor_security_floor_restore) {
             if (anchor_security_floor_restore->has_value()) {
                 const auto& wire = **anchor_security_floor_restore;
-                batch.Put(ANCHOR_SECURITY_FLOOR_KEY,
-                          std::string(wire.begin(), wire.end()));
+                batch.Put(ANCHOR_SECURITY_FLOOR_KEY, std::string(wire.begin(), wire.end()));
             } else {
                 batch.Delete(ANCHOR_SECURITY_FLOOR_KEY);
             }
@@ -2574,8 +2535,7 @@ public:
         if (durable_publication_pending_restore &&
             durable_publication_pending_restore->has_value()) {
             const auto& wire = **durable_publication_pending_restore;
-            batch.Put(DURABLE_PUBLICATION_PENDING_KEY,
-                      std::string(wire.begin(), wire.end()));
+            batch.Put(DURABLE_PUBLICATION_PENDING_KEY, std::string(wire.begin(), wire.end()));
         } else {
             // A normal pre-reorg frame has no pending publication. Legacy
             // callers therefore safely clear an alt-only obligation too.
@@ -2588,24 +2548,23 @@ public:
     std::string GetStats() const {
         std::string s;
         s += "blocks_db: " + blocks_db_->GetStats() + "\n";
-        s += "utxo_db:   " + utxo_db_->GetStats()   + "\n";
-        s += "index_db:  " + index_db_->GetStats()   + "\n";
+        s += "utxo_db:   " + utxo_db_->GetStats() + "\n";
+        s += "index_db:  " + index_db_->GetStats() + "\n";
         return s;
     }
 
-    bool DumpConsistentSnapshot(const std::string& target_dir,
-                                std::string* out_error = nullptr) {
+    bool DumpConsistentSnapshot(const std::string& target_dir, std::string* out_error = nullptr) {
         namespace fs = std::filesystem;
         auto set_err = [&](const std::string& m) {
-            if (out_error) *out_error = m;
+            if (out_error)
+                *out_error = m;
         };
 
         // A snapshot must never turn an explicitly recoverable cross-database
         // frame into an apparently clean bootstrap artifact.  The caller holds
         // the chain lock, so this preflight remains stable through all three
         // per-database dumps.
-        if (UtxoRecoveryRequired() ||
-            index_db_->Has(PENDING_COMMIT_KEY)) {
+        if (UtxoRecoveryRequired() || index_db_->Has(PENDING_COMMIT_KEY)) {
             set_err("durability journal/UTXO recovery is still pending");
             return false;
         }
@@ -2628,8 +2587,8 @@ public:
         }
 
         auto* src_blocks = dynamic_cast<LevelDBStore*>(blocks_db_.get());
-        auto* src_utxo   = dynamic_cast<LevelDBStore*>(utxo_db_.get());
-        auto* src_index  = dynamic_cast<LevelDBStore*>(index_db_.get());
+        auto* src_utxo = dynamic_cast<LevelDBStore*>(utxo_db_.get());
+        auto* src_index = dynamic_cast<LevelDBStore*>(index_db_.get());
         if (!src_blocks || !src_utxo || !src_index) {
             set_err("dump requires LevelDB backend (got non-LevelDB store)");
             fs::remove_all(target_dir, ec);
@@ -2637,8 +2596,8 @@ public:
         }
 
         const std::string p_blocks = target_dir + "/blocks";
-        const std::string p_utxo   = target_dir + "/utxo";
-        const std::string p_index  = target_dir + "/index";
+        const std::string p_utxo = target_dir + "/utxo";
+        const std::string p_index = target_dir + "/index";
 
         if (!src_blocks->DumpToFreshLevelDB(p_blocks)) {
             set_err("blocks dump failed");
@@ -2659,14 +2618,16 @@ public:
 #endif
     }
 
-private:
+  private:
     std::unique_ptr<KVStore> blocks_db_;
     std::unique_ptr<KVStore> utxo_db_;
     std::unique_ptr<KVStore> index_db_;
 
-public:
-    KVStore& GetIndexDB() { return *index_db_; }
+  public:
+    KVStore& GetIndexDB() {
+        return *index_db_;
+    }
 };
 
-}
-}
+} // namespace db
+} // namespace veld

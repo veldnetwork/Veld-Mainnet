@@ -55,11 +55,13 @@ struct Record {
 };
 
 inline void SetError(std::string* error, const std::string& message) {
-    if (error) *error = message;
+    if (error)
+        *error = message;
 }
 
 inline void ClearError(std::string* error) {
-    if (error) error->clear();
+    if (error)
+        error->clear();
 }
 
 inline void PutHash(std::vector<uint8_t>& out, const ::veld::Hash256& hash) {
@@ -108,10 +110,8 @@ inline ::veld::Hash256 ComputeFloorDigest(const Record& record) {
     return ::veld::state_digest::sha256_domain(VLF1_DOMAIN, prefix);
 }
 
-inline bool ValidateCheckpoint(
-    const AnchorSet::PermanentCheckpoint& checkpoint,
-    std::string* error = nullptr)
-{
+inline bool ValidateCheckpoint(const AnchorSet::PermanentCheckpoint& checkpoint,
+                               std::string* error = nullptr) {
     namespace fq = ::veld::finality::qc;
     const auto& e = checkpoint.entry;
     const auto& f = checkpoint.authorization_record;
@@ -119,8 +119,7 @@ inline bool ValidateCheckpoint(
     // T is an actual historical block and A is the later, exact Veld block
     // which carried its Bitcoin proof.  Record() fixtures have a null A hash,
     // null Bitcoin block, and no authorization record, so they fail here.
-    if (checkpoint.target_height == 0 ||
-        ::veld::HashIsZero(e.veld_block_hash)) {
+    if (checkpoint.target_height == 0 || ::veld::HashIsZero(e.veld_block_hash)) {
         SetError(error, "VLF1 target T is null");
         return false;
     }
@@ -129,14 +128,11 @@ inline bool ValidateCheckpoint(
         SetError(error, "VLF1 proof carrier A must be exact and later than T");
         return false;
     }
-    if (!::veld::BtcVeldAnchorTargetInWindow(
-            checkpoint.target_height, e.carrying_veld_height)) {
-        SetError(error,
-                 "VLF1 proof carrier A is outside the anchor admission window");
+    if (!::veld::BtcVeldAnchorTargetInWindow(checkpoint.target_height, e.carrying_veld_height)) {
+        SetError(error, "VLF1 proof carrier A is outside the anchor admission window");
         return false;
     }
-    if (::veld::HashIsZero(e.btc_block_hash) ||
-        ::veld::HashIsZero(e.btc_txid)) {
+    if (::veld::HashIsZero(e.btc_block_hash) || ::veld::HashIsZero(e.btc_txid)) {
         SetError(error, "VLF1 Bitcoin proof identity is null");
         return false;
     }
@@ -152,17 +148,14 @@ inline bool ValidateCheckpoint(
         SetError(error, "VLF1 authorization is not a PRECOMMIT record");
         return false;
     }
-    if (f.epoch_id == 0 ||
-        !fq::IsScheduledCheckpoint(f.target.height) ||
+    if (f.epoch_id == 0 || !fq::IsScheduledCheckpoint(f.target.height) ||
         f.epoch_id != fq::EpochOf(f.target.height) ||
         f.round != fq::CheckpointRound(f.target.height)) {
         SetError(error, "VLF1 authorization target/epoch/round is inconsistent");
         return false;
     }
-    if (::veld::HashIsZero(f.target.hash) ||
-        ::veld::HashIsZero(f.set_root) ||
-        ::veld::HashIsZero(f.cert_commit) ||
-        ::veld::HashIsZero(f.carrier.hash)) {
+    if (::veld::HashIsZero(f.target.hash) || ::veld::HashIsZero(f.set_root) ||
+        ::veld::HashIsZero(f.cert_commit) || ::veld::HashIsZero(f.carrier.hash)) {
         SetError(error, "VLF1 authorization contains a null commitment");
         return false;
     }
@@ -175,10 +168,8 @@ inline bool ValidateCheckpoint(
         SetError(error, "VLF1 finality target does not cover proof carrier A");
         return false;
     }
-    if (e.carrying_veld_height == f.target.height &&
-        e.carrying_veld_hash != f.target.hash) {
-        SetError(error,
-                 "VLF1 proof carrier A conflicts with finality target at the same height");
+    if (e.carrying_veld_height == f.target.height && e.carrying_veld_hash != f.target.hash) {
+        SetError(error, "VLF1 proof carrier A conflicts with finality target at the same height");
         return false;
     }
 
@@ -197,15 +188,15 @@ inline bool Validate(const Record& record, std::string* error = nullptr) {
         SetError(error, "VLF1 genesis identity is null");
         return false;
     }
-    if (!ValidateCheckpoint(record.checkpoint, error)) return false;
+    if (!ValidateCheckpoint(record.checkpoint, error))
+        return false;
 
     const std::vector<uint8_t> prefix = CanonicalPrefix(record);
     if (prefix.size() != VLF1_PREFIX_SIZE) {
         SetError(error, "internal VLF1 prefix size mismatch");
         return false;
     }
-    if (record.floor_digest !=
-        ::veld::state_digest::sha256_domain(VLF1_DOMAIN, prefix)) {
+    if (record.floor_digest != ::veld::state_digest::sha256_domain(VLF1_DOMAIN, prefix)) {
         SetError(error, "VLF1 floor digest mismatch");
         return false;
     }
@@ -214,12 +205,9 @@ inline bool Validate(const Record& record, std::string* error = nullptr) {
 
 // The only constructor for a new local floor.  It refuses the null
 // authorization produced by AnchorSet::Record() test fixtures.
-inline std::optional<Record> Make(
-    uint32_t network_magic,
-    const ::veld::Hash256& genesis_hash,
-    const AnchorSet::PermanentCheckpoint& checkpoint,
-    std::string* error = nullptr)
-{
+inline std::optional<Record> Make(uint32_t network_magic, const ::veld::Hash256& genesis_hash,
+                                  const AnchorSet::PermanentCheckpoint& checkpoint,
+                                  std::string* error = nullptr) {
     ClearError(error);
     Record out;
     out.network_magic = network_magic;
@@ -229,22 +217,22 @@ inline std::optional<Record> Make(
         SetError(error, "VLF1 genesis identity is null");
         return std::nullopt;
     }
-    if (!ValidateCheckpoint(out.checkpoint, error)) return std::nullopt;
+    if (!ValidateCheckpoint(out.checkpoint, error))
+        return std::nullopt;
     const std::vector<uint8_t> prefix = CanonicalPrefix(out);
     if (prefix.size() != VLF1_PREFIX_SIZE) {
         SetError(error, "internal VLF1 prefix size mismatch");
         return std::nullopt;
     }
-    out.floor_digest =
-        ::veld::state_digest::sha256_domain(VLF1_DOMAIN, prefix);
+    out.floor_digest = ::veld::state_digest::sha256_domain(VLF1_DOMAIN, prefix);
     return out;
 }
 
-inline std::optional<std::vector<uint8_t>> Encode(
-    const Record& record, std::string* error = nullptr)
-{
+inline std::optional<std::vector<uint8_t>> Encode(const Record& record,
+                                                  std::string* error = nullptr) {
     ClearError(error);
-    if (!Validate(record, error)) return std::nullopt;
+    if (!Validate(record, error))
+        return std::nullopt;
     std::vector<uint8_t> out = CanonicalPrefix(record);
     PutHash(out, record.floor_digest);
     if (out.size() != VLF1_ENCODED_SIZE) {
@@ -255,7 +243,7 @@ inline std::optional<std::vector<uint8_t>> Encode(
 }
 
 class Reader {
-public:
+  public:
     explicit Reader(const std::vector<uint8_t>& bytes) : bytes_(bytes) {}
 
     bool Magic() {
@@ -268,13 +256,15 @@ public:
     }
 
     bool U8(uint8_t& value) {
-        if (offset_ >= bytes_.size()) return false;
+        if (offset_ >= bytes_.size())
+            return false;
         value = bytes_[offset_++];
         return true;
     }
 
     bool U32(uint32_t& value) {
-        if (bytes_.size() - offset_ < 4) return false;
+        if (bytes_.size() - offset_ < 4)
+            return false;
         value = static_cast<uint32_t>(bytes_[offset_]) |
                 (static_cast<uint32_t>(bytes_[offset_ + 1]) << 8) |
                 (static_cast<uint32_t>(bytes_[offset_ + 2]) << 16) |
@@ -284,7 +274,8 @@ public:
     }
 
     bool U64(uint64_t& value) {
-        if (bytes_.size() - offset_ < 8) return false;
+        if (bytes_.size() - offset_ < 8)
+            return false;
         value = 0;
         for (unsigned i = 0; i < 8; ++i)
             value |= static_cast<uint64_t>(bytes_[offset_ + i]) << (8 * i);
@@ -293,23 +284,27 @@ public:
     }
 
     bool Hash(::veld::Hash256& value) {
-        if (bytes_.size() - offset_ < value.size()) return false;
+        if (bytes_.size() - offset_ < value.size())
+            return false;
         std::memcpy(value.data(), bytes_.data() + offset_, value.size());
         offset_ += value.size();
         return true;
     }
 
-    size_t Offset() const { return offset_; }
-    bool AtEnd() const { return offset_ == bytes_.size(); }
+    size_t Offset() const {
+        return offset_;
+    }
+    bool AtEnd() const {
+        return offset_ == bytes_.size();
+    }
 
-private:
+  private:
     const std::vector<uint8_t>& bytes_;
     size_t offset_ = 0;
 };
 
-inline std::optional<Record> Decode(
-    const std::vector<uint8_t>& bytes, std::string* error = nullptr)
-{
+inline std::optional<Record> Decode(const std::vector<uint8_t>& bytes,
+                                    std::string* error = nullptr) {
     ClearError(error);
     if (bytes.size() != VLF1_ENCODED_SIZE) {
         SetError(error, "VLF1 must be exactly 381 bytes");
@@ -322,27 +317,14 @@ inline std::optional<Record> Decode(
     auto& f = p.authorization_record;
     Reader reader(bytes);
     uint8_t phase = 0;
-    if (!reader.Magic() ||
-        !reader.U32(out.network_magic) ||
-        !reader.Hash(out.genesis_hash) ||
-        !reader.U64(p.target_height) ||
-        !reader.Hash(e.veld_block_hash) ||
-        !reader.U64(e.carrying_veld_height) ||
-        !reader.Hash(e.carrying_veld_hash) ||
-        !reader.Hash(e.btc_block_hash) ||
-        !reader.Hash(e.btc_txid) ||
-        !reader.U64(f.epoch_id) ||
-        !reader.U64(f.target.height) ||
-        !reader.Hash(f.target.hash) ||
-        !reader.Hash(f.set_root) ||
-        !reader.U32(f.round) ||
-        !reader.U8(phase) ||
-        !reader.Hash(f.cert_commit) ||
-        !reader.U64(f.carrier.height) ||
-        !reader.Hash(f.carrier.hash) ||
-        !reader.U64(f.retention_floor) ||
-        !reader.Hash(out.floor_digest) ||
-        !reader.AtEnd()) {
+    if (!reader.Magic() || !reader.U32(out.network_magic) || !reader.Hash(out.genesis_hash) ||
+        !reader.U64(p.target_height) || !reader.Hash(e.veld_block_hash) ||
+        !reader.U64(e.carrying_veld_height) || !reader.Hash(e.carrying_veld_hash) ||
+        !reader.Hash(e.btc_block_hash) || !reader.Hash(e.btc_txid) || !reader.U64(f.epoch_id) ||
+        !reader.U64(f.target.height) || !reader.Hash(f.target.hash) || !reader.Hash(f.set_root) ||
+        !reader.U32(f.round) || !reader.U8(phase) || !reader.Hash(f.cert_commit) ||
+        !reader.U64(f.carrier.height) || !reader.Hash(f.carrier.hash) ||
+        !reader.U64(f.retention_floor) || !reader.Hash(out.floor_digest) || !reader.AtEnd()) {
         SetError(error, "VLF1 truncated, malformed, or has trailing bytes");
         return std::nullopt;
     }
@@ -352,15 +334,16 @@ inline std::optional<Record> Decode(
     // fields are exact derivations, never a second spelling on disk.
     e.authorization_veld_height = f.carrier.height;
     e.authorization_veld_hash = f.carrier.hash;
-    e.authorization_finality_digest =
-        ::veld::finality::qc::RecordDigest(f);
+    e.authorization_finality_digest = ::veld::finality::qc::RecordDigest(f);
 
-    if (!Validate(out, error)) return std::nullopt;
+    if (!Validate(out, error))
+        return std::nullopt;
     return out;
 }
 
 inline bool ExactDuplicate(const Record& a, const Record& b) {
-    if (a.floor_digest != b.floor_digest) return false;
+    if (a.floor_digest != b.floor_digest)
+        return false;
     return CanonicalPrefix(a) == CanonicalPrefix(b);
 }
 
@@ -384,26 +367,27 @@ enum class LoadResult {
 // with exclusive temp creation, file fsync, atomic replacement, and directory
 // fsync (or Windows write-through), then advances memory only after success.
 class Store {
-public:
-    const std::optional<Record>& Current() const { return current_; }
+  public:
+    const std::optional<Record>& Current() const {
+        return current_;
+    }
 
     MergeResult Merge(const Record& incoming, std::string* error = nullptr) {
         ClearError(error);
         const MergeResult decision = Classify_(incoming, error);
-        if (decision == MergeResult::Installed ||
-            decision == MergeResult::Advanced) {
+        if (decision == MergeResult::Installed || decision == MergeResult::Advanced) {
             current_ = incoming;
             durable_path_.clear();
         }
         return decision;
     }
 
-    MergeResult MergeAndPersist(const std::string& path,
-                                const Record& incoming,
+    MergeResult MergeAndPersist(const std::string& path, const Record& incoming,
                                 std::string* error = nullptr) {
         ClearError(error);
         const MergeResult decision = Classify_(incoming, error);
-        if (decision == MergeResult::Rejected) return decision;
+        if (decision == MergeResult::Rejected)
+            return decision;
 
         // An exact duplicate is a no-op only if this exact Store learned it
         // from, or committed it to, this path.  A prior in-memory Merge must
@@ -412,10 +396,10 @@ public:
             return decision;
 
         const auto encoded = Encode(incoming, error);
-        if (!encoded) return MergeResult::Rejected;
-        if (!::veld::channel::secure_file::AtomicWrite(
-                path, *encoded, error,
-                /*require_private_parent=*/true)) {
+        if (!encoded)
+            return MergeResult::Rejected;
+        if (!::veld::channel::secure_file::AtomicWrite(path, *encoded, error,
+                                                       /*require_private_parent=*/true)) {
             return MergeResult::IoError;
         }
         current_ = incoming;
@@ -423,22 +407,20 @@ public:
         return decision;
     }
 
-    LoadResult Load(const std::string& path,
-                    uint32_t expected_network_magic,
-                    const ::veld::Hash256& expected_genesis_hash,
-                    std::string* error = nullptr) {
+    LoadResult Load(const std::string& path, uint32_t expected_network_magic,
+                    const ::veld::Hash256& expected_genesis_hash, std::string* error = nullptr) {
         ClearError(error);
         std::vector<uint8_t> bytes;
-        const auto read = ::veld::channel::secure_file::Read(
-            path, bytes, error, VLF1_ENCODED_SIZE,
-            /*require_private_parent=*/true);
+        const auto read = ::veld::channel::secure_file::Read(path, bytes, error, VLF1_ENCODED_SIZE,
+                                                             /*require_private_parent=*/true);
         if (read == ::veld::channel::secure_file::ReadResult::NotFound)
             return LoadResult::NotFound;
         if (read != ::veld::channel::secure_file::ReadResult::Ok)
             return LoadResult::IoError;
 
         const auto decoded = Decode(bytes, error);
-        if (!decoded) return LoadResult::Rejected;
+        if (!decoded)
+            return LoadResult::Rejected;
         if (decoded->network_magic != expected_network_magic ||
             decoded->genesis_hash != expected_genesis_hash) {
             SetError(error, "VLF1 belongs to a different network or genesis");
@@ -453,11 +435,12 @@ public:
         return LoadResult::Loaded;
     }
 
-private:
-    MergeResult Classify_(const Record& incoming,
-                          std::string* error) const {
-        if (!Validate(incoming, error)) return MergeResult::Rejected;
-        if (!current_) return MergeResult::Installed;
+  private:
+    MergeResult Classify_(const Record& incoming, std::string* error) const {
+        if (!Validate(incoming, error))
+            return MergeResult::Rejected;
+        if (!current_)
+            return MergeResult::Installed;
 
         if (incoming.network_magic != current_->network_magic ||
             incoming.genesis_hash != current_->genesis_hash) {
@@ -470,18 +453,14 @@ private:
         const uint64_t incoming_t = incoming.checkpoint.target_height;
         const uint64_t current_t = current_->checkpoint.target_height;
         if (incoming_t <= current_t) {
-            SetError(error,
-                     "VLF1 merge is lower or conflicts at the current T");
+            SetError(error, "VLF1 merge is lower or conflicts at the current T");
             return MergeResult::Rejected;
         }
 
-        const uint64_t incoming_c =
-            incoming.checkpoint.authorization_record.carrier.height;
-        const uint64_t current_c =
-            current_->checkpoint.authorization_record.carrier.height;
+        const uint64_t incoming_c = incoming.checkpoint.authorization_record.carrier.height;
+        const uint64_t current_c = current_->checkpoint.authorization_record.carrier.height;
         if (incoming_c <= current_c) {
-            SetError(error,
-                     "VLF1 merge must advance finality carrier C with T");
+            SetError(error, "VLF1 merge must advance finality carrier C with T");
             return MergeResult::Rejected;
         }
         return MergeResult::Advanced;
@@ -491,6 +470,6 @@ private:
     std::string durable_path_;
 };
 
-}  // namespace floor_store
-}  // namespace btcanchor
-}  // namespace veld
+} // namespace floor_store
+} // namespace btcanchor
+} // namespace veld

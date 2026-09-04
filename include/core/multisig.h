@@ -12,7 +12,7 @@
 namespace veld {
 
 class MultiSig {
-public:
+  public:
     MultiSig(uint32_t required, const std::vector<Secp256k1PubKey>& pubkeys)
         : required_(required), pubkeys_(pubkeys) {
         if (required == 0 || required > pubkeys.size())
@@ -24,22 +24,36 @@ public:
 
     std::string GetAddress(bool testnet = false) const {
         Hash160 script_hash = Hash160Compute(redeem_script_);
-        uint8_t version     = testnet ? 0xC4 : 0x05;
+        uint8_t version = testnet ? 0xC4 : 0x05;
 
         std::vector<uint8_t> data = {version};
         data.insert(data.end(), script_hash.begin(), script_hash.end());
         Hash256 chk = Hash256d(data);
-        data.push_back(chk[0]); data.push_back(chk[1]);
-        data.push_back(chk[2]); data.push_back(chk[3]);
+        data.push_back(chk[0]);
+        data.push_back(chk[1]);
+        data.push_back(chk[2]);
+        data.push_back(chk[3]);
 
         static const char* B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
         int lead = 0;
-        for (auto b : data) { if (b==0) ++lead; else break; }
+        for (auto b : data) {
+            if (b == 0)
+                ++lead;
+            else
+                break;
+        }
         std::vector<uint8_t> digits = {0};
         for (auto byte : data) {
             int carry = byte;
-            for (auto& d : digits) { carry += 256*d; d = carry%58; carry /= 58; }
-            while (carry > 0) { digits.push_back(carry%58); carry /= 58; }
+            for (auto& d : digits) {
+                carry += 256 * d;
+                d = carry % 58;
+                carry /= 58;
+            }
+            while (carry > 0) {
+                digits.push_back(carry % 58);
+                carry /= 58;
+            }
         }
         std::string addr(lead, '1');
         for (auto it = digits.rbegin(); it != digits.rend(); ++it)
@@ -57,13 +71,17 @@ public:
         return script;
     }
 
-    void Sign(Transaction& tx, uint32_t input_idx,
-              const Secp256k1PrivKey& privkey) {
+    void Sign(Transaction& tx, uint32_t input_idx, const Secp256k1PrivKey& privkey) {
         Secp256k1PubKey pubkey = DerivePublicKey(privkey);
 
         bool found = false;
-        for (auto& pk : pubkeys_) if (pk == pubkey) { found = true; break; }
-        if (!found) throw std::runtime_error("Key not in multisig set");
+        for (auto& pk : pubkeys_)
+            if (pk == pubkey) {
+                found = true;
+                break;
+            }
+        if (!found)
+            throw std::runtime_error("Key not in multisig set");
 
         Hash256 sighash = ComputeSighash(tx, input_idx, redeem_script_);
         Secp256k1SigDER sig = veld::Sign(privkey, sighash);
@@ -74,8 +92,10 @@ public:
 
     bool Finalize(Transaction& tx, uint32_t input_idx) {
         auto it = partial_sigs_.find(input_idx);
-        if (it == partial_sigs_.end()) return false;
-        if (it->second.size() < required_) return false;
+        if (it == partial_sigs_.end())
+            return false;
+        if (it->second.size() < required_)
+            return false;
 
         std::vector<uint8_t> script_sig;
         script_sig.push_back(0x00);
@@ -116,15 +136,22 @@ public:
 
     bool IsComplete(uint32_t input_idx) const {
         auto it = partial_sigs_.find(input_idx);
-        if (it == partial_sigs_.end()) return false;
+        if (it == partial_sigs_.end())
+            return false;
         return it->second.size() >= required_;
     }
 
-    uint32_t Required()  const { return required_; }
-    uint32_t Total()     const { return (uint32_t)pubkeys_.size(); }
-    const std::vector<uint8_t>& RedeemScript() const { return redeem_script_; }
+    uint32_t Required() const {
+        return required_;
+    }
+    uint32_t Total() const {
+        return (uint32_t)pubkeys_.size();
+    }
+    const std::vector<uint8_t>& RedeemScript() const {
+        return redeem_script_;
+    }
 
-private:
+  private:
     uint32_t required_;
     std::vector<Secp256k1PubKey> pubkeys_;
     std::vector<uint8_t> redeem_script_;
@@ -150,11 +177,9 @@ private:
     }
 };
 
-inline std::string CreateMultiSigAddress(
-    uint32_t required,
-    const std::vector<std::string>& pubkey_hexes,
-    bool testnet = false)
-{
+inline std::string CreateMultiSigAddress(uint32_t required,
+                                         const std::vector<std::string>& pubkey_hexes,
+                                         bool testnet = false) {
     std::vector<Secp256k1PubKey> pubkeys;
     for (const auto& hex : pubkey_hexes) {
         if (hex.size() != 3904)
@@ -162,11 +187,13 @@ inline std::string CreateMultiSigAddress(
         Secp256k1PubKey pk;
         for (int i = 0; i < 1952; ++i) {
             auto hc = [](char c) -> uint8_t {
-                if (c>='0'&&c<='9') return c-'0';
-                if (c>='a'&&c<='f') return c-'a'+10;
-                return c-'A'+10;
+                if (c >= '0' && c <= '9')
+                    return c - '0';
+                if (c >= 'a' && c <= 'f')
+                    return c - 'a' + 10;
+                return c - 'A' + 10;
             };
-            pk[i] = (hc(hex[i*2])<<4)|hc(hex[i*2+1]);
+            pk[i] = (hc(hex[i * 2]) << 4) | hc(hex[i * 2 + 1]);
         }
         pubkeys.push_back(pk);
     }
@@ -174,4 +201,4 @@ inline std::string CreateMultiSigAddress(
     return ms.GetAddress(testnet);
 }
 
-}
+} // namespace veld

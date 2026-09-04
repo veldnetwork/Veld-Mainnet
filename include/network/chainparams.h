@@ -17,8 +17,7 @@ inline constexpr uint16_t PUBLIC_TESTNET_RPC_PORT = 19334;
 inline constexpr uint16_t PUBLIC_TESTNET_EXPLORER_PORT = 19080;
 inline constexpr uint16_t PUBLIC_TESTNET_WALLET_UI_PORT = 19090;
 inline constexpr uint16_t PUBLIC_TESTNET_MINER_UI_PORT = 19095;
-inline constexpr const char* PUBLIC_TESTNET_DATA_DIR =
-    "./veld-public-testnet-data";
+inline constexpr const char* PUBLIC_TESTNET_DATA_DIR = "./veld-public-testnet-data";
 inline constexpr uint16_t PUBLIC_MAINNET_RPC_PORT = 8334;
 inline constexpr uint16_t PUBLIC_MAINNET_EXPLORER_PORT = 8080;
 inline constexpr uint16_t PUBLIC_MAINNET_WALLET_UI_PORT = 8090;
@@ -96,14 +95,16 @@ constexpr bool RuntimeNetworkAllowed(NetworkKind kind) {
 
 constexpr const char* DefaultDataDirForNetwork(NetworkKind kind) {
     switch (kind) {
-        case NetworkKind::Mainnet:
+    case NetworkKind::Mainnet:
 #if defined(VELD_PUBLIC_TESTNET)
-            return PUBLIC_TESTNET_DATA_DIR;
+        return PUBLIC_TESTNET_DATA_DIR;
 #else
-            return "./veld-data";
+        return "./veld-data";
 #endif
-        case NetworkKind::Testnet: return "./veld-data-testnet";
-        case NetworkKind::Regtest: return "./veld-data-regtest";
+    case NetworkKind::Testnet:
+        return "./veld-data-testnet";
+    case NetworkKind::Regtest:
+        return "./veld-data-regtest";
     }
     return "./veld-data-invalid";
 }
@@ -111,9 +112,9 @@ constexpr const char* DefaultDataDirForNetwork(NetworkKind kind) {
 struct NetworkConfig {
     NetworkKind kind{NetworkKind::Mainnet};
     std::string name;
-    uint32_t    magic;
-    uint16_t    port;
-    uint16_t    rpc_port{PUBLIC_MAINNET_RPC_PORT};
+    uint32_t magic;
+    uint16_t port;
+    uint16_t rpc_port{PUBLIC_MAINNET_RPC_PORT};
 
     uint64_t bootstrap_phase_end_units = STAKING_ACTIVATION_SUPPLY;
 
@@ -126,27 +127,27 @@ struct NetworkConfig {
 
 inline NetworkConfig MainnetConfig() {
     NetworkConfig config;
-    config.kind              = NetworkKind::Mainnet;
+    config.kind = NetworkKind::Mainnet;
 #if defined(VELD_PUBLIC_TESTNET)
-    config.name              = "Veld Public Testnet v1";
-    config.magic             = PUBLIC_TESTNET_MAGIC;
-    config.port              = CompiledPublicP2PPort();
-    config.rpc_port          = CompiledPublicRpcPort();
+    config.name = "Veld Public Testnet v1";
+    config.magic = PUBLIC_TESTNET_MAGIC;
+    config.port = CompiledPublicP2PPort();
+    config.rpc_port = CompiledPublicRpcPort();
 #else
-    config.name              = "Veld Mainnet";
-    config.magic             = MAINNET_MAGIC;
-    config.port              = CompiledPublicP2PPort();
-    config.rpc_port          = CompiledPublicRpcPort();
+    config.name = "Veld Mainnet";
+    config.magic = MAINNET_MAGIC;
+    config.port = CompiledPublicP2PPort();
+    config.rpc_port = CompiledPublicRpcPort();
 #endif
     return config;
 }
 
 inline NetworkConfig TestnetConfig() {
     NetworkConfig config;
-    config.kind              = NetworkKind::Testnet;
-    config.name              = "Veld Testnet";
-    config.magic             = TESTNET_MAGIC;
-    config.port              = TESTNET_PORT;
+    config.kind = NetworkKind::Testnet;
+    config.name = "Veld Testnet";
+    config.magic = TESTNET_MAGIC;
+    config.port = TESTNET_PORT;
 
     config.validator_system_always_active = true;
 
@@ -156,10 +157,10 @@ inline NetworkConfig TestnetConfig() {
 
 inline NetworkConfig RegtestConfig() {
     NetworkConfig config;
-    config.kind              = NetworkKind::Regtest;
-    config.name              = "Veld Regtest";
-    config.magic             = 0x72564C44;
-    config.port              = 28333;
+    config.kind = NetworkKind::Regtest;
+    config.name = "Veld Regtest";
+    config.magic = 0x72564C44;
+    config.port = 28333;
 
     config.validator_system_always_active = true;
 
@@ -167,4 +168,4 @@ inline NetworkConfig RegtestConfig() {
     return config;
 }
 
-}
+} // namespace veld

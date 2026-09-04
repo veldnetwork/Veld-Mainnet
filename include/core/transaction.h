@@ -22,7 +22,7 @@ inline constexpr size_t MAX_SPENDABLE_SCRIPT_PUBKEY_BYTES = 10'000;
 inline constexpr size_t MAX_OP_RETURN_SCRIPT_PUBKEY_BYTES = 65'535;
 
 struct TxInput {
-    Hash256  prev_tx_hash;
+    Hash256 prev_tx_hash;
     uint32_t prev_out_index;
     std::vector<uint8_t> script_sig;
     uint32_t sequence;
@@ -59,7 +59,8 @@ struct TxInput {
             data.push_back((slen >> 8) & 0xFF);
         } else {
             data.push_back(0xFE);
-            for (int i = 0; i < 4; ++i) data.push_back((slen >> (i*8)) & 0xFF);
+            for (int i = 0; i < 4; ++i)
+                data.push_back((slen >> (i * 8)) & 0xFF);
         }
         data.insert(data.end(), script_sig.begin(), script_sig.end());
         data.push_back(sequence & 0xFF);
@@ -91,7 +92,8 @@ struct TxOutput {
             data.push_back((slen >> 8) & 0xFF);
         } else {
             data.push_back(0xFE);
-            for (int i = 0; i < 4; ++i) data.push_back((slen >> (i*8)) & 0xFF);
+            for (int i = 0; i < 4; ++i)
+                data.push_back((slen >> (i * 8)) & 0xFF);
         }
         data.insert(data.end(), script_pubkey.begin(), script_pubkey.end());
         return data;
@@ -109,7 +111,7 @@ inline bool IsProvablyUnspendableOutput(const TxOutput& out) {
 
 struct Transaction {
     uint32_t version;
-    std::vector<TxInput>  inputs;
+    std::vector<TxInput> inputs;
     std::vector<TxOutput> outputs;
     uint32_t locktime;
 
@@ -124,10 +126,12 @@ struct Transaction {
             out.push_back((uint8_t)((v >> 8) & 0xFF));
         } else if (v <= 0xFFFFFFFFULL) {
             out.push_back(0xFE);
-            for (int i = 0; i < 4; ++i) out.push_back((uint8_t)((v >> (i*8)) & 0xFF));
+            for (int i = 0; i < 4; ++i)
+                out.push_back((uint8_t)((v >> (i * 8)) & 0xFF));
         } else {
             out.push_back(0xFF);
-            for (int i = 0; i < 8; ++i) out.push_back((uint8_t)((v >> (i*8)) & 0xFF));
+            for (int i = 0; i < 8; ++i)
+                out.push_back((uint8_t)((v >> (i * 8)) & 0xFF));
         }
     }
 
@@ -182,8 +186,7 @@ struct Transaction {
         // mutex would make Transaction non-copyable).
         Hash256 local = Hash256d(Serialize());
         bool expected = false;
-        if (txid_.writing.compare_exchange_strong(expected, true,
-                                                  std::memory_order_acq_rel)) {
+        if (txid_.writing.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
             txid_.value = local;
             txid_.ready.store(true, std::memory_order_release);
         }
@@ -208,34 +211,46 @@ struct Transaction {
         size_t pos = offset;
         const size_t n = data.size();
 
-        if (pos + 4 > n) return 0;
-        out.version = data[pos] | ((uint32_t)data[pos+1]<<8) | ((uint32_t)data[pos+2]<<16) | ((uint32_t)data[pos+3]<<24);
+        if (pos + 4 > n)
+            return 0;
+        out.version = data[pos] | ((uint32_t)data[pos + 1] << 8) | ((uint32_t)data[pos + 2] << 16) |
+                      ((uint32_t)data[pos + 3] << 24);
         pos += 4;
 
         auto read_varint = [&](uint64_t& v) -> bool {
-            if (pos + 1 > n) return false;
+            if (pos + 1 > n)
+                return false;
             uint8_t first = data[pos++];
-            if (first < 0xFD) { v = first; return true; }
+            if (first < 0xFD) {
+                v = first;
+                return true;
+            }
             if (first == 0xFD) {
-                if (pos + 2 > n) return false;
-                v = (uint64_t)data[pos] | ((uint64_t)data[pos+1] << 8);
-                pos += 2; return true;
+                if (pos + 2 > n)
+                    return false;
+                v = (uint64_t)data[pos] | ((uint64_t)data[pos + 1] << 8);
+                pos += 2;
+                return true;
             }
             if (first == 0xFE) {
-                if (pos + 4 > n) return false;
-                v = (uint64_t)data[pos] | ((uint64_t)data[pos+1] << 8)
-                  | ((uint64_t)data[pos+2] << 16) | ((uint64_t)data[pos+3] << 24);
-                pos += 4; return true;
+                if (pos + 4 > n)
+                    return false;
+                v = (uint64_t)data[pos] | ((uint64_t)data[pos + 1] << 8) |
+                    ((uint64_t)data[pos + 2] << 16) | ((uint64_t)data[pos + 3] << 24);
+                pos += 4;
+                return true;
             }
             return false;
         };
         uint64_t in_count = 0;
-        if (!read_varint(in_count)) return 0;
+        if (!read_varint(in_count))
+            return 0;
         // Reject impossible cardinalities before constructing element objects.
         // IsValid() has always capped valid transactions at the named 10k
         // consensus limits, so accepting ten times that many into a partially
         // parsed object only created a pre-validation memory/CPU amplifier.
-        if (in_count > MAX_TRANSACTION_INPUTS) return 0;
+        if (in_count > MAX_TRANSACTION_INPUTS)
+            return 0;
         out.inputs.clear();
         // Bound the pre-allocation by what the remaining buffer can physically
         // hold (min serialized input = 32 prevhash + 4 index + 1 scriptlen + 4
@@ -244,82 +259,104 @@ struct Transaction {
         // bounds-checks each element — a memory-amplification DoS. The parsed
         // result is unchanged (reserve only sets capacity), so this is not a
         // consensus change.
-        out.inputs.reserve((size_t)std::min<uint64_t>(in_count,
-            std::min<uint64_t>(1024, (uint64_t)(n - pos) / 41)));
+        out.inputs.reserve((size_t)std::min<uint64_t>(
+            in_count, std::min<uint64_t>(1024, (uint64_t)(n - pos) / 41)));
         for (uint64_t i = 0; i < in_count; ++i) {
             TxInput inp;
-            if (pos + 32 > n) return 0;
+            if (pos + 32 > n)
+                return 0;
             std::copy(data.begin() + pos, data.begin() + pos + 32, inp.prev_tx_hash.begin());
             pos += 32;
-            if (pos + 4 > n) return 0;
-            inp.prev_out_index = data[pos] | ((uint32_t)data[pos+1]<<8) | ((uint32_t)data[pos+2]<<16) | ((uint32_t)data[pos+3]<<24);
+            if (pos + 4 > n)
+                return 0;
+            inp.prev_out_index = data[pos] | ((uint32_t)data[pos + 1] << 8) |
+                                 ((uint32_t)data[pos + 2] << 16) | ((uint32_t)data[pos + 3] << 24);
             pos += 4;
-            if (pos + 1 > n) return 0;
+            if (pos + 1 > n)
+                return 0;
             uint64_t script_len = 0;
             uint8_t ss_first = data[pos++];
             if (ss_first < 0xFD) {
                 script_len = ss_first;
             } else if (ss_first == 0xFD) {
-                if (pos + 2 > n) return 0;
-                script_len = data[pos] | ((uint64_t)data[pos+1] << 8);
+                if (pos + 2 > n)
+                    return 0;
+                script_len = data[pos] | ((uint64_t)data[pos + 1] << 8);
                 pos += 2;
             } else if (ss_first == 0xFE) {
-                if (pos + 4 > n) return 0;
-                script_len = data[pos] | ((uint64_t)(uint32_t)data[pos+1]<<8)
-                           | ((uint64_t)(uint32_t)data[pos+2]<<16) | ((uint64_t)(uint32_t)data[pos+3]<<24);
+                if (pos + 4 > n)
+                    return 0;
+                script_len = data[pos] | ((uint64_t)(uint32_t)data[pos + 1] << 8) |
+                             ((uint64_t)(uint32_t)data[pos + 2] << 16) |
+                             ((uint64_t)(uint32_t)data[pos + 3] << 24);
                 pos += 4;
             } else {
                 return 0;
             }
-            if (script_len > MAX_TRANSACTION_SCRIPT_SIG_BYTES ||
-                pos + script_len > n) return 0;
-            inp.script_sig = std::vector<uint8_t>(data.begin() + pos, data.begin() + pos + script_len);
+            if (script_len > MAX_TRANSACTION_SCRIPT_SIG_BYTES || pos + script_len > n)
+                return 0;
+            inp.script_sig =
+                std::vector<uint8_t>(data.begin() + pos, data.begin() + pos + script_len);
             pos += script_len;
-            if (pos + 4 > n) return 0;
-            inp.sequence = data[pos] | ((uint32_t)data[pos+1]<<8) | ((uint32_t)data[pos+2]<<16) | ((uint32_t)data[pos+3]<<24);
+            if (pos + 4 > n)
+                return 0;
+            inp.sequence = data[pos] | ((uint32_t)data[pos + 1] << 8) |
+                           ((uint32_t)data[pos + 2] << 16) | ((uint32_t)data[pos + 3] << 24);
             pos += 4;
             out.inputs.push_back(inp);
         }
 
         uint64_t out_count = 0;
-        if (!read_varint(out_count)) return 0;
-        if (out_count > MAX_TRANSACTION_OUTPUTS) return 0;
+        if (!read_varint(out_count))
+            return 0;
+        if (out_count > MAX_TRANSACTION_OUTPUTS)
+            return 0;
         out.outputs.clear();
         // Same buffer-bounded reservation (min serialized output = 8 value +
         // 1 pk_len = 9 B). Capacity-only; not a consensus change.
-        out.outputs.reserve((size_t)std::min<uint64_t>(out_count,
-            std::min<uint64_t>(1024, (uint64_t)(n - pos) / 9)));
+        out.outputs.reserve((size_t)std::min<uint64_t>(
+            out_count, std::min<uint64_t>(1024, (uint64_t)(n - pos) / 9)));
         for (uint64_t i = 0; i < out_count; ++i) {
             TxOutput txout;
-            if (pos + 8 > n) return 0;
+            if (pos + 8 > n)
+                return 0;
             txout.value = 0;
             for (int j = 0; j < 8; ++j)
                 txout.value |= ((uint64_t)data[pos + j] << (j * 8));
             pos += 8;
-            if (pos + 1 > n) return 0;
+            if (pos + 1 > n)
+                return 0;
             uint64_t pk_len = 0;
             uint8_t varint_first = data[pos++];
             if (varint_first < 0xFD) {
                 pk_len = varint_first;
             } else if (varint_first == 0xFD) {
-                if (pos + 2 > n) return 0;
-                pk_len = data[pos] | ((uint64_t)data[pos+1] << 8);
+                if (pos + 2 > n)
+                    return 0;
+                pk_len = data[pos] | ((uint64_t)data[pos + 1] << 8);
                 pos += 2;
             } else if (varint_first == 0xFE) {
-                if (pos + 4 > n) return 0;
-                pk_len = data[pos] | ((uint64_t)(uint32_t)data[pos+1]<<8) | ((uint64_t)(uint32_t)data[pos+2]<<16) | ((uint64_t)(uint32_t)data[pos+3]<<24);
+                if (pos + 4 > n)
+                    return 0;
+                pk_len = data[pos] | ((uint64_t)(uint32_t)data[pos + 1] << 8) |
+                         ((uint64_t)(uint32_t)data[pos + 2] << 16) |
+                         ((uint64_t)(uint32_t)data[pos + 3] << 24);
                 pos += 4;
             } else {
                 return 0;
             }
-            if (pos + pk_len > n) return 0;
-            txout.script_pubkey = std::vector<uint8_t>(data.begin() + pos, data.begin() + pos + pk_len);
+            if (pos + pk_len > n)
+                return 0;
+            txout.script_pubkey =
+                std::vector<uint8_t>(data.begin() + pos, data.begin() + pos + pk_len);
             pos += pk_len;
             out.outputs.push_back(txout);
         }
 
-        if (pos + 4 > n) return 0;
-        out.locktime = data[pos] | ((uint32_t)data[pos+1]<<8) | ((uint32_t)data[pos+2]<<16) | ((uint32_t)data[pos+3]<<24);
+        if (pos + 4 > n)
+            return 0;
+        out.locktime = data[pos] | ((uint32_t)data[pos + 1] << 8) |
+                       ((uint32_t)data[pos + 2] << 16) | ((uint32_t)data[pos + 3] << 24);
         pos += 4;
 
         return pos - offset;
@@ -328,57 +365,61 @@ struct Transaction {
     uint64_t TotalOutput() const {
         uint64_t total = 0;
         for (const auto& out : outputs) {
-            if (out.value > MAX_SUPPLY_UNITS) return MAX_SUPPLY_UNITS + 1;
-            if (total > MAX_SUPPLY_UNITS - out.value) return MAX_SUPPLY_UNITS + 1;
+            if (out.value > MAX_SUPPLY_UNITS)
+                return MAX_SUPPLY_UNITS + 1;
+            if (total > MAX_SUPPLY_UNITS - out.value)
+                return MAX_SUPPLY_UNITS + 1;
             total += out.value;
         }
         return total;
     }
 
     bool IsValid() const {
-        if (inputs.empty() || outputs.empty()) return false;
-        if (TotalOutput() > MAX_SUPPLY_UNITS) return false;
-        if (inputs.size() > MAX_TRANSACTION_INPUTS ||
-            outputs.size() > MAX_TRANSACTION_OUTPUTS) return false;
+        if (inputs.empty() || outputs.empty())
+            return false;
+        if (TotalOutput() > MAX_SUPPLY_UNITS)
+            return false;
+        if (inputs.size() > MAX_TRANSACTION_INPUTS || outputs.size() > MAX_TRANSACTION_OUTPUTS)
+            return false;
         // The already-mined public-test genesis is the sole historical shape
         // that needs a zero-valued empty-script output.  Requiring it to be the
         // coinbase's only output prevents miners from padding every later
         // coinbase with hundreds of permanent zero-value UTXOs; height>0's
         // canonical coinbase validator independently requires OP_RETURN for a
         // genuinely zero-reward block.
-        const bool legacy_zero_coinbase_shape =
-            inputs.size() == 1 && inputs[0].IsCoinbase() &&
-            outputs.size() == 1 && outputs[0].value == 0 &&
-            outputs[0].script_pubkey.empty();
+        const bool legacy_zero_coinbase_shape = inputs.size() == 1 && inputs[0].IsCoinbase() &&
+                                                outputs.size() == 1 && outputs[0].value == 0 &&
+                                                outputs[0].script_pubkey.empty();
         for (const auto& inp : inputs) {
             if (inp.script_sig.size() > MAX_TRANSACTION_SCRIPT_SIG_BYTES)
                 return false;
         }
         for (const auto& out : outputs) {
-            bool is_op_return = !out.script_pubkey.empty()
-                             && out.script_pubkey[0] == 0x6A;
+            bool is_op_return = !out.script_pubkey.empty() && out.script_pubkey[0] == 0x6A;
             // Zero-valued ordinary outputs have no economic purpose, but each
             // one used to become a permanent UTXO.  In particular, an empty
             // script slipped through the old `!script.empty()` condition and
             // enabled 10,000-output UTXO/memory amplification.  Preserve only
             // the historical zero-reward coinbase shape (including genesis)
             // and provably unspendable OP_RETURN metadata.
-            if (out.value == 0 && !is_op_return &&
-                !legacy_zero_coinbase_shape)
+            if (out.value == 0 && !is_op_return && !legacy_zero_coinbase_shape)
                 return false;
-            const size_t max_script = is_op_return
-                ? MAX_OP_RETURN_SCRIPT_PUBKEY_BYTES
-                : MAX_SPENDABLE_SCRIPT_PUBKEY_BYTES;
-            if (out.script_pubkey.size() > max_script) return false;
+            const size_t max_script = is_op_return ? MAX_OP_RETURN_SCRIPT_PUBKEY_BYTES
+                                                   : MAX_SPENDABLE_SCRIPT_PUBKEY_BYTES;
+            if (out.script_pubkey.size() > max_script)
+                return false;
         }
         std::unordered_set<std::string> seen_inputs;
         for (const auto& inp : inputs) {
-            if (inp.IsCoinbase()) continue;
+            if (inp.IsCoinbase())
+                continue;
             std::string key;
-            for (auto b : inp.prev_tx_hash) key += (char)b;
+            for (auto b : inp.prev_tx_hash)
+                key += (char)b;
             key += ':';
             key += std::to_string(inp.prev_out_index);
-            if (!seen_inputs.insert(key).second) return false;
+            if (!seen_inputs.insert(key).second)
+                return false;
         }
         return true;
     }
@@ -388,21 +429,21 @@ struct Transaction {
     }
 
     bool HasDustOutput(uint64_t threshold) const {
-        if (threshold == 0) return false;
+        if (threshold == 0)
+            return false;
         for (const auto& out : outputs) {
-            const bool is_op_return =
-                !out.script_pubkey.empty() && out.script_pubkey[0] == 0x6A;
-            if (is_op_return) continue;
-            if (out.value > 0 && out.value < threshold) return true;
+            const bool is_op_return = !out.script_pubkey.empty() && out.script_pubkey[0] == 0x6A;
+            if (is_op_return)
+                continue;
+            if (out.value > 0 && out.value < threshold)
+                return true;
         }
         return false;
     }
 
-    static Transaction CreateCoinbase(
-        uint64_t reward_units,
-        const std::vector<uint8_t>& miner_script,
-        const std::string& message = GENESIS_MESSAGE
-    ) {
+    static Transaction CreateCoinbase(uint64_t reward_units,
+                                      const std::vector<uint8_t>& miner_script,
+                                      const std::string& message = GENESIS_MESSAGE) {
         Transaction tx;
         tx.inputs.push_back(TxInput::Coinbase(message));
         tx.outputs.push_back(TxOutput(reward_units, miner_script));
@@ -411,8 +452,7 @@ struct Transaction {
 
     static Transaction CreateProportionalCoinbase(
         const std::vector<std::pair<std::vector<uint8_t>, uint64_t>>& miner_rewards,
-        const std::string& message = GENESIS_MESSAGE
-    ) {
+        const std::string& message = GENESIS_MESSAGE) {
         Transaction tx;
         tx.inputs.push_back(TxInput::Coinbase(message));
         for (const auto& [script, reward] : miner_rewards) {
@@ -441,13 +481,26 @@ struct Transaction {
     struct TxidCache {
         std::atomic<bool> ready{false};
         std::atomic<bool> writing{false};
-        Hash256           value{};
+        Hash256 value{};
         TxidCache() = default;
-        TxidCache(const TxidCache& o)                { copy_from(o); }
-        TxidCache(TxidCache&& o) noexcept            { copy_from(o); }
-        TxidCache& operator=(const TxidCache& o)     { if (this != &o) copy_from(o); return *this; }
-        TxidCache& operator=(TxidCache&& o) noexcept { if (this != &o) copy_from(o); return *this; }
-    private:
+        TxidCache(const TxidCache& o) {
+            copy_from(o);
+        }
+        TxidCache(TxidCache&& o) noexcept {
+            copy_from(o);
+        }
+        TxidCache& operator=(const TxidCache& o) {
+            if (this != &o)
+                copy_from(o);
+            return *this;
+        }
+        TxidCache& operator=(TxidCache&& o) noexcept {
+            if (this != &o)
+                copy_from(o);
+            return *this;
+        }
+
+      private:
         void copy_from(const TxidCache& o) {
             writing.store(false, std::memory_order_relaxed);
             if (o.ready.load(std::memory_order_acquire)) {
@@ -461,4 +514,4 @@ struct Transaction {
     mutable TxidCache txid_;
 };
 
-}
+} // namespace veld

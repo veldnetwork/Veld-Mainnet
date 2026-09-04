@@ -27,50 +27,52 @@ namespace veld {
 
 struct StakeRecord {
     std::string address;
-    uint64_t    amount_units;
-    uint64_t    locked_at_height;
-    uint64_t    unlock_height;
-    bool        active{true};
-    uint8_t     lockup_tier{1};
+    uint64_t amount_units;
+    uint64_t locked_at_height;
+    uint64_t unlock_height;
+    bool active{true};
+    uint8_t lockup_tier{1};
     // Exact spendable output that economically backs this tranche.  These
     // fields are consensus state once outpoint backing is active.
-    Hash256     backing_txid{};
-    uint32_t    backing_vout{UINT32_MAX};
+    Hash256 backing_txid{};
+    uint32_t backing_vout{UINT32_MAX};
 };
 
 struct UnstakeRecord {
     std::string address;
-    uint64_t    amount_units;
-    uint64_t    block_height;
+    uint64_t amount_units;
+    uint64_t block_height;
 };
 
 struct LockupTierConfig {
     uint64_t blocks;
-    double   multiplier;
+    double multiplier;
     const char* label;
 };
 
 static constexpr LockupTierConfig LOCKUP_TIERS[4] = {
-    {  7ULL * BLOCKS_PER_DAY, 1.00, "Base"      },   //  7 days
-    { 14ULL * BLOCKS_PER_DAY, 1.10, "Short"     },   // 14 days
-    { 30ULL * BLOCKS_PER_DAY, 1.25, "Medium"    },   // 30 days
-    { 90ULL * BLOCKS_PER_DAY, 1.50, "Long"      },   // 90 days
+    {7ULL * BLOCKS_PER_DAY, 1.00, "Base"},    //  7 days
+    {14ULL * BLOCKS_PER_DAY, 1.10, "Short"},  // 14 days
+    {30ULL * BLOCKS_PER_DAY, 1.25, "Medium"}, // 30 days
+    {90ULL * BLOCKS_PER_DAY, 1.50, "Long"},   // 90 days
 };
 static_assert(TARGET_BLOCK_TIME != 60 ||
-              (LOCKUP_TIERS[0].blocks == 10080 && LOCKUP_TIERS[1].blocks == 20160 &&
-               LOCKUP_TIERS[2].blocks == 43200 && LOCKUP_TIERS[3].blocks == 129600),
+                  (LOCKUP_TIERS[0].blocks == 10080 && LOCKUP_TIERS[1].blocks == 20160 &&
+                   LOCKUP_TIERS[2].blocks == 43200 && LOCKUP_TIERS[3].blocks == 129600),
               "wall-clock re-expression must preserve the legacy 60s profile");
 static_assert(LOCKUP_TIERS[3].blocks == BOND_YIELD_VEST_BLOCKS,
               "the custodial bond draws yield at the Long-tier rate, so its vest horizon "
               "must equal the Long lockup tier — move them together");
-static constexpr double   LOCKUP_MAX_MULTIPLIER      = 3.0;
-static constexpr double   LOCKUP_REFERENCE_MIN_VELD  = 1000.0;
-static constexpr double   LOCKUP_REFERENCE_MAX_VELD  = 10000.0;
+static constexpr double LOCKUP_MAX_MULTIPLIER = 3.0;
+static constexpr double LOCKUP_REFERENCE_MIN_VELD = 1000.0;
+static constexpr double LOCKUP_REFERENCE_MAX_VELD = 10000.0;
 
-inline double ComputeStakeMultiplier(uint8_t tier, uint64_t ) {
-    if (tier < 1 || tier > 4) tier = 1;
+inline double ComputeStakeMultiplier(uint8_t tier, uint64_t) {
+    if (tier < 1 || tier > 4)
+        tier = 1;
     double mult = LOCKUP_TIERS[tier - 1].multiplier;
-    if (mult > LOCKUP_MAX_MULTIPLIER) mult = LOCKUP_MAX_MULTIPLIER;
+    if (mult > LOCKUP_MAX_MULTIPLIER)
+        mult = LOCKUP_MAX_MULTIPLIER;
     return mult;
 }
 
@@ -81,11 +83,16 @@ inline double ComputeStakeMultiplier(uint8_t tier, uint64_t ) {
 // 1.25 → 1_250_000, 1.50 → 1_500_000.
 inline uint64_t LockupTierMultiplierPpm(uint8_t tier) {
     switch (tier) {
-        case 1: return 1'000'000ULL;
-        case 2: return 1'100'000ULL;
-        case 3: return 1'250'000ULL;
-        case 4: return 1'500'000ULL;
-        default: return 1'000'000ULL;
+    case 1:
+        return 1'000'000ULL;
+    case 2:
+        return 1'100'000ULL;
+    case 3:
+        return 1'250'000ULL;
+    case 4:
+        return 1'500'000ULL;
+    default:
+        return 1'000'000ULL;
     }
 }
 
@@ -95,15 +102,14 @@ struct VaultDistribution {
 };
 
 class StakingLedger {
-public:
+  public:
     StakingLedger() = default;
     StakingLedger(const StakingLedger& src) {
         std::lock_guard<std::mutex> lock(src.mutex_);
         staking_activation_units_ = src.staking_activation_units_;
         min_stake_override_ = src.min_stake_override_;
-        total_supply_units_.store(
-            src.total_supply_units_.load(std::memory_order_relaxed),
-            std::memory_order_relaxed);
+        total_supply_units_.store(src.total_supply_units_.load(std::memory_order_relaxed),
+                                  std::memory_order_relaxed);
         stakes_ = src.stakes_;
         unstake_history_ = src.unstake_history_;
         total_stake_ = src.total_stake_;
@@ -135,8 +141,10 @@ public:
             }
             for (const auto& out : tx.outputs) {
                 auto data = ParseOpReturn(out.script_pubkey);
-                if (data.empty()) continue;
-                if (data.substr(0, std::string(STAKE_PREFIX).size()) != STAKE_PREFIX) continue;
+                if (data.empty())
+                    continue;
+                if (data.substr(0, std::string(STAKE_PREFIX).size()) != STAKE_PREFIX)
+                    continue;
                 if (!stake_snapshot_taken) {
                     stakes_before = stakes_;
                     unstake_before = unstake_history_;
@@ -167,26 +175,27 @@ public:
     }
 
     static std::string BuildLockOp(const std::string& address, uint64_t amount_units,
-                                    uint64_t current_height, uint8_t tier = 1) {
+                                   uint64_t current_height, uint8_t tier = 1) {
         (void)current_height;
-        if (tier < 1 || tier > 4) tier = 1;
-        return std::string(STAKE_PREFIX) + "LOCK|" + address + "|"
-             + std::to_string(amount_units) + "|"
-             + "T" + std::to_string((int)tier);
+        if (tier < 1 || tier > 4)
+            tier = 1;
+        return std::string(STAKE_PREFIX) + "LOCK|" + address + "|" + std::to_string(amount_units) +
+               "|" + "T" + std::to_string((int)tier);
     }
 
     static std::string BuildUnlockOp(const std::string& address, uint64_t amount_units) {
-        return std::string(STAKE_PREFIX) + "UNLOCK|" + address + "|"
-             + std::to_string(amount_units);
+        return std::string(STAKE_PREFIX) + "UNLOCK|" + address + "|" + std::to_string(amount_units);
     }
 
     uint64_t GetStake(const std::string& address) const {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = stakes_.find(address);
-        if (it == stakes_.end()) return 0;
+        if (it == stakes_.end())
+            return 0;
         uint64_t total = 0;
         for (auto& r : it->second)
-            if (RecordEconomicallyBacked(r)) total += r.amount_units;
+            if (RecordEconomicallyBacked(r))
+                total += r.amount_units;
         return total;
     }
 
@@ -197,8 +206,10 @@ public:
         for (const auto& [addr, recs] : stakes_) {
             uint64_t total = 0;
             for (const auto& r : recs)
-                if (RecordEconomicallyBacked(r)) total += r.amount_units;
-            if (total > 0) out.emplace(addr, total);
+                if (RecordEconomicallyBacked(r))
+                    total += r.amount_units;
+            if (total > 0)
+                out.emplace(addr, total);
         }
         return out;
     }
@@ -218,7 +229,7 @@ public:
         // vector deliberately retain their consensus insertion order.  Record
         // order affects which tranche a partial UNLOCK consumes first.
         std::vector<uint8_t> body;
-        sd::put_u32_le(body, 4);  // encoding version
+        sd::put_u32_le(body, 4); // encoding version
         // Mutable instance configuration is not block rollback state, but it
         // directly changes whether/how a future LOCK is accepted.  Commit it
         // so two same-chain nodes cannot report green while applying different
@@ -227,7 +238,8 @@ public:
         sd::put_u64_le(body, min_stake_override_);
         std::vector<std::string> addrs;
         addrs.reserve(stakes_.size());
-        for (const auto& [a, _r] : stakes_) addrs.push_back(a);
+        for (const auto& [a, _r] : stakes_)
+            addrs.push_back(a);
         std::sort(addrs.begin(), addrs.end());
         sd::put_u32_le(body, (uint32_t)addrs.size());
         for (const auto& a : addrs) {
@@ -241,14 +253,12 @@ public:
                 sd::put_u64_le(body, r.unlock_height);
                 sd::put_u8(body, r.active ? 1 : 0);
                 sd::put_u8(body, r.lockup_tier);
-                body.insert(body.end(), r.backing_txid.begin(),
-                            r.backing_txid.end());
+                body.insert(body.end(), r.backing_txid.begin(), r.backing_txid.end());
                 sd::put_u32_le(body, r.backing_vout);
             }
         }
         sd::put_u64_le(body, total_stake_);
-        sd::put_u64_le(
-            body, pending_distribution_height_.load(std::memory_order_relaxed));
+        sd::put_u64_le(body, pending_distribution_height_.load(std::memory_order_relaxed));
 
         sd::put_u32_le(body, (uint32_t)unstake_history_.size());
         for (const auto& r : unstake_history_) {
@@ -256,15 +266,15 @@ public:
             sd::put_u64_le(body, r.amount_units);
             sd::put_u64_le(body, r.block_height);
         }
-        sd::put_u64_le(
-            body, total_supply_units_.load(std::memory_order_relaxed));
+        sd::put_u64_le(body, total_supply_units_.load(std::memory_order_relaxed));
         return sd::sha256_domain(sd::tags::STAKING, body);
     }
 
     std::vector<StakeRecord> GetStakeRecords(const std::string& address) const {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = stakes_.find(address);
-        if (it == stakes_.end()) return {};
+        if (it == stakes_.end())
+            return {};
         return it->second;
     }
 
@@ -276,8 +286,7 @@ public:
             for (const auto& record : records) {
                 if (!RecordEconomicallyBacked(record))
                     continue;
-                out.insert(OutpointKey(record.backing_txid,
-                                       record.backing_vout));
+                out.insert(OutpointKey(record.backing_txid, record.backing_vout));
             }
         }
         return out;
@@ -291,8 +300,7 @@ public:
         bool valid{false};
     };
 
-    UnlockPlan PlanUnlock(const std::string& address,
-                          uint64_t requested_units,
+    UnlockPlan PlanUnlock(const std::string& address, uint64_t requested_units,
                           uint64_t height) const {
         std::lock_guard<std::mutex> lock(mutex_);
         return PlanUnlockLocked(address, requested_units, height);
@@ -302,17 +310,19 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         std::vector<UnstakeRecord> result;
         for (auto& r : unstake_history_)
-            if (r.address == address) result.push_back(r);
+            if (r.address == address)
+                result.push_back(r);
         return result;
     }
 
-    void ApplySlashBondLockup(const std::string& address,
-                              uint64_t min_unlock_height) {
+    void ApplySlashBondLockup(const std::string& address, uint64_t min_unlock_height) {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = stakes_.find(address);
-        if (it == stakes_.end()) return;
+        if (it == stakes_.end())
+            return;
         for (auto& r : it->second) {
-            if (!RecordEconomicallyBacked(r)) continue;
+            if (!RecordEconomicallyBacked(r))
+                continue;
             if (r.unlock_height < min_unlock_height)
                 r.unlock_height = min_unlock_height;
         }
@@ -326,7 +336,8 @@ public:
         for (const auto& [address, records] : stakes_) {
             (void)address;
             for (const auto& record : records) {
-                if (!RecordEconomicallyBacked(record)) continue;
+                if (!RecordEconomicallyBacked(record))
+                    continue;
                 if (total > UINT64_MAX - record.amount_units)
                     return UINT64_MAX;
                 total += record.amount_units;
@@ -383,24 +394,25 @@ public:
     // pays mature AND immature active stakes ("vault distribution pays ALL
     // stakers"). Parameter retained for forward compatibility with future
     // per-height filtering rules.
-    std::map<std::string, uint64_t>
-    GetWeightedStakeSnapshot(uint64_t ) const {
+    std::map<std::string, uint64_t> GetWeightedStakeSnapshot(uint64_t) const {
         std::lock_guard<std::mutex> lock(mutex_);
         std::map<std::string, uint64_t> out;
         std::vector<std::string> addrs;
         addrs.reserve(stakes_.size());
-        for (const auto& [a, _] : stakes_) addrs.push_back(a);
+        for (const auto& [a, _] : stakes_)
+            addrs.push_back(a);
         std::sort(addrs.begin(), addrs.end());
         for (const auto& addr : addrs) {
             auto it = stakes_.find(addr);
-            if (it == stakes_.end()) continue;
+            if (it == stakes_.end())
+                continue;
             uint64_t weighted_units = 0;
             for (const auto& r : it->second) {
-                if (!RecordEconomicallyBacked(r)) continue;
+                if (!RecordEconomicallyBacked(r))
+                    continue;
                 uint64_t ppm = LockupTierMultiplierPpm(r.lockup_tier);
-                uint64_t add = (uint64_t)
-                    ((__uint128_t)r.amount_units * (__uint128_t)ppm
-                     / (__uint128_t)1'000'000ULL);
+                uint64_t add = (uint64_t)((__uint128_t)r.amount_units * (__uint128_t)ppm /
+                                          (__uint128_t)1'000'000ULL);
                 if (UINT64_MAX - weighted_units < add) {
                     weighted_units = UINT64_MAX;
                     break;
@@ -414,46 +426,58 @@ public:
         return out;
     }
 
-    bool HasPendingDistribution() const { return pending_distribution_height_.load(std::memory_order_relaxed) > 0; }
-    uint64_t GetPendingDistributionHeight() const { return pending_distribution_height_.load(std::memory_order_relaxed); }
-    void ClearPendingDistribution() { pending_distribution_height_.store(0, std::memory_order_relaxed); }
+    bool HasPendingDistribution() const {
+        return pending_distribution_height_.load(std::memory_order_relaxed) > 0;
+    }
+    uint64_t GetPendingDistributionHeight() const {
+        return pending_distribution_height_.load(std::memory_order_relaxed);
+    }
+    void ClearPendingDistribution() {
+        pending_distribution_height_.store(0, std::memory_order_relaxed);
+    }
 
     uint64_t GetLatestStakeHeight(const std::string& address) const {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = stakes_.find(address);
-        if (it == stakes_.end()) return 0;
+        if (it == stakes_.end())
+            return 0;
         uint64_t latest = 0;
         for (const auto& r : it->second)
-            if (r.locked_at_height > latest) latest = r.locked_at_height;
+            if (r.locked_at_height > latest)
+                latest = r.locked_at_height;
         return latest;
     }
 
     double GetEffectiveMultiplier(const std::string& address) const {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = stakes_.find(address);
-        if (it == stakes_.end()) return 1.0;
+        if (it == stakes_.end())
+            return 1.0;
         double weighted = 0.0;
         uint64_t total = 0;
         for (const auto& r : it->second) {
-            if (!RecordEconomicallyBacked(r)) continue;
+            if (!RecordEconomicallyBacked(r))
+                continue;
             double m = ComputeStakeMultiplier(r.lockup_tier, r.amount_units);
             weighted += (double)r.amount_units * m;
             total += r.amount_units;
         }
-        if (total == 0) return 1.0;
+        if (total == 0)
+            return 1.0;
         double avg = weighted / (double)total;
-        if (avg > LOCKUP_MAX_MULTIPLIER) avg = LOCKUP_MAX_MULTIPLIER;
+        if (avg > LOCKUP_MAX_MULTIPLIER)
+            avg = LOCKUP_MAX_MULTIPLIER;
         return avg;
     }
 
     uint64_t GetMatureStake(const std::string& address, uint64_t current_height) const {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = stakes_.find(address);
-        if (it == stakes_.end()) return 0;
+        if (it == stakes_.end())
+            return 0;
         uint64_t mature = 0;
         for (const auto& r : it->second)
-            if (RecordEconomicallyBacked(r) &&
-                r.unlock_height <= current_height)
+            if (RecordEconomicallyBacked(r) && r.unlock_height <= current_height)
                 mature += r.amount_units;
         return mature;
     }
@@ -461,11 +485,11 @@ public:
     uint64_t GetNextUnlockHeight(const std::string& address, uint64_t current_height) const {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = stakes_.find(address);
-        if (it == stakes_.end()) return UINT64_MAX;
+        if (it == stakes_.end())
+            return UINT64_MAX;
         uint64_t earliest = UINT64_MAX;
         for (const auto& r : it->second)
-            if (RecordEconomicallyBacked(r) &&
-                r.unlock_height > current_height)
+            if (RecordEconomicallyBacked(r) && r.unlock_height > current_height)
                 earliest = std::min(earliest, r.unlock_height);
         return earliest;
     }
@@ -473,7 +497,8 @@ public:
     uint64_t GetEarliestUnlockHeight(const std::string& address) const {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = stakes_.find(address);
-        if (it == stakes_.end()) return UINT64_MAX;
+        if (it == stakes_.end())
+            return UINT64_MAX;
         uint64_t earliest = UINT64_MAX;
         for (const auto& r : it->second)
             if (RecordEconomicallyBacked(r))
@@ -483,8 +508,8 @@ public:
 
     struct StakerSummary {
         std::string address;
-        uint64_t    staked_units;
-        uint64_t    earliest_unlock_height;
+        uint64_t staked_units;
+        uint64_t earliest_unlock_height;
     };
     std::vector<StakerSummary> GetAllStakers() const {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -504,7 +529,7 @@ public:
         return result;
     }
 
-    uint64_t GetReserveBlockPayout(uint64_t ) const {
+    uint64_t GetReserveBlockPayout(uint64_t) const {
         return 0;
     }
 
@@ -526,30 +551,28 @@ public:
     // reject. Snapshot/restore must preserve Digest() byte-for-byte.
     struct StateSnapshot {
         std::unordered_map<std::string, std::vector<StakeRecord>> stakes;
-        uint64_t                   total_stake                 = 0;
-        uint64_t                   pending_distribution_height = 0;
-        std::deque<UnstakeRecord>  unstake_history;
-        uint64_t                   total_supply_units          = 0;
+        uint64_t total_stake = 0;
+        uint64_t pending_distribution_height = 0;
+        std::deque<UnstakeRecord> unstake_history;
+        uint64_t total_supply_units = 0;
     };
     StateSnapshot SnapshotState() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return StateSnapshot{ stakes_, total_stake_,
-                              pending_distribution_height_.load(std::memory_order_relaxed),
-                              unstake_history_,
-                              total_supply_units_.load(std::memory_order_relaxed) };
+        return StateSnapshot{stakes_, total_stake_,
+                             pending_distribution_height_.load(std::memory_order_relaxed),
+                             unstake_history_, total_supply_units_.load(std::memory_order_relaxed)};
     }
     void RestoreState(const StateSnapshot& s) {
         std::lock_guard<std::mutex> lock(mutex_);
-        stakes_          = s.stakes;
-        total_stake_     = s.total_stake;
+        stakes_ = s.stakes;
+        total_stake_ = s.total_stake;
         pending_distribution_height_.store(s.pending_distribution_height,
                                            std::memory_order_relaxed);
         unstake_history_ = s.unstake_history;
-        total_supply_units_.store(s.total_supply_units,
-                                  std::memory_order_relaxed);
+        total_supply_units_.store(s.total_supply_units, std::memory_order_relaxed);
     }
 
-private:
+  private:
     mutable std::mutex mutex_;
     uint64_t staking_activation_units_{STAKING_UNLOCK_SUPPLY};
     uint64_t min_stake_override_{0};
@@ -564,24 +587,26 @@ private:
     }
 
     static bool RecordEconomicallyBacked(const StakeRecord& record) {
-        if (!record.active) return false;
+        if (!record.active)
+            return false;
         if constexpr (STAKE_OUTPOINT_BACKING_ACTIVATION_HEIGHT == 0)
             return true;
         return record.backing_vout != UINT32_MAX;
     }
 
-    UnlockPlan PlanUnlockLocked(const std::string& address,
-                                uint64_t requested_units,
+    UnlockPlan PlanUnlockLocked(const std::string& address, uint64_t requested_units,
                                 uint64_t height) const {
         UnlockPlan plan;
         plan.requested_units = requested_units;
-        if (requested_units == 0) return plan;
+        if (requested_units == 0)
+            return plan;
         auto it = stakes_.find(address);
-        if (it == stakes_.end()) return plan;
+        if (it == stakes_.end())
+            return plan;
         uint64_t remaining = requested_units;
         for (const auto& record : it->second) {
-            if (!RecordEconomicallyBacked(record) ||
-                record.unlock_height > height) continue;
+            if (!RecordEconomicallyBacked(record) || record.unlock_height > height)
+                continue;
             if (plan.backing_input_units > UINT64_MAX - record.amount_units)
                 return UnlockPlan{};
             plan.consumed.push_back(record);
@@ -597,35 +622,37 @@ private:
         return plan;
     }
 
-    bool ValidateBackingSpendLocked(const Transaction& tx,
-                                    uint64_t height) const {
+    bool ValidateBackingSpendLocked(const Transaction& tx, uint64_t height) const {
         std::vector<CanonicalStakeOp> ops;
         for (const auto& out : tx.outputs) {
             const std::string data = ParseOpReturn(out.script_pubkey);
-            if (data.rfind(STAKE_PREFIX, 0) != 0) continue;
+            if (data.rfind(STAKE_PREFIX, 0) != 0)
+                continue;
             CanonicalStakeOp op;
-            if (!ParseCanonicalStakeOp(data, op)) return false;
+            if (!ParseCanonicalStakeOp(data, op))
+                return false;
             ops.push_back(std::move(op));
         }
-        if (ops.size() > 1) return false;
+        if (ops.size() > 1)
+            return false;
 
         std::unordered_set<std::string> active;
         for (const auto& [address, records] : stakes_) {
             (void)address;
             for (const auto& record : records) {
                 if (RecordEconomicallyBacked(record))
-                    active.insert(OutpointKey(record.backing_txid,
-                                              record.backing_vout));
+                    active.insert(OutpointKey(record.backing_txid, record.backing_vout));
             }
         }
         std::unordered_set<std::string> spent_backing;
         for (const auto& input : tx.inputs) {
-            const std::string key = OutpointKey(input.prev_tx_hash,
-                                                input.prev_out_index);
-            if (active.count(key)) spent_backing.insert(key);
+            const std::string key = OutpointKey(input.prev_tx_hash, input.prev_out_index);
+            if (active.count(key))
+                spent_backing.insert(key);
         }
 
-        if (ops.empty()) return spent_backing.empty();
+        if (ops.empty())
+            return spent_backing.empty();
         const CanonicalStakeOp& op = ops.front();
         const auto owner_script = AddressToScript(op.address);
         if (owner_script.empty() || !TxInputMatchesAddress(tx, op.address))
@@ -640,21 +667,18 @@ private:
                    tx.outputs[0].script_pubkey == owner_script;
         }
 
-        const UnlockPlan plan = PlanUnlockLocked(op.address,
-                                                  op.amount_units, height);
-        if (!plan.valid || plan.consumed.empty() ||
-            spent_backing.size() != plan.consumed.size()) return false;
+        const UnlockPlan plan = PlanUnlockLocked(op.address, op.amount_units, height);
+        if (!plan.valid || plan.consumed.empty() || spent_backing.size() != plan.consumed.size())
+            return false;
         for (const auto& record : plan.consumed) {
-            if (!spent_backing.count(OutpointKey(record.backing_txid,
-                                                 record.backing_vout)))
+            if (!spent_backing.count(OutpointKey(record.backing_txid, record.backing_vout)))
                 return false;
         }
         // A partial final tranche is rebound to output zero with the exact
         // residual value and original owner.  Whole-tranche exits have no
         // replacement backing output.
         if (plan.residual_units > 0) {
-            return !tx.outputs.empty() &&
-                   tx.outputs[0].value == plan.residual_units &&
+            return !tx.outputs.empty() && tx.outputs[0].value == plan.residual_units &&
                    tx.outputs[0].script_pubkey == owner_script;
         }
         return true;
@@ -663,8 +687,7 @@ private:
     // Require a verified signature; finding a public key in a sigless input is
     // not authorization. Delegates to the shared check in op_authorization.h.
     // must have actually signed an input of this transaction.
-    static bool TxInputMatchesAddress(const Transaction& tx,
-                                       const std::string& address) {
+    static bool TxInputMatchesAddress(const Transaction& tx, const std::string& address) {
         return TxVerifiedSignedBy(tx, address);
     }
 
@@ -672,61 +695,67 @@ private:
     // exceed the number of recipients a canonical vault transaction can emit.
     // All legacy malformed/unauthorized operations remain ignored (true), as
     // before; the caller rolls the whole stake transition back only on false.
-    bool ProcessStakeOp(const std::string& data, uint64_t height,
-                        const Transaction& tx) {
+    bool ProcessStakeOp(const std::string& data, uint64_t height, const Transaction& tx) {
         const bool fail_closed = StakeOutpointBackingActive(height);
         const auto invalid = [fail_closed]() noexcept { return !fail_closed; };
         CanonicalStakeOp op;
-        if (!ParseCanonicalStakeOp(data, op)) return invalid();
+        if (!ParseCanonicalStakeOp(data, op))
+            return invalid();
 
         const std::string& address = op.address;
         const uint64_t amount = op.amount_units;
-        if (amount == 0 || amount > MAX_STAKE_UNITS) return invalid();
+        if (amount == 0 || amount > MAX_STAKE_UNITS)
+            return invalid();
 
-        uint64_t effective_min_stake = min_stake_override_ > 0 ? min_stake_override_ : MIN_STAKE_UNITS;
-        if (op.action == CanonicalStakeOp::Action::LOCK &&
-            amount < effective_min_stake) return invalid();
-        if (op.action == CanonicalStakeOp::Action::LOCK &&
-            amount >= effective_min_stake) {
-            if (!TxInputMatchesAddress(tx, address)) return invalid();
-            if (total_supply_units_.load(std::memory_order_relaxed) < staking_activation_units_) return invalid();
+        uint64_t effective_min_stake =
+            min_stake_override_ > 0 ? min_stake_override_ : MIN_STAKE_UNITS;
+        if (op.action == CanonicalStakeOp::Action::LOCK && amount < effective_min_stake)
+            return invalid();
+        if (op.action == CanonicalStakeOp::Action::LOCK && amount >= effective_min_stake) {
+            if (!TxInputMatchesAddress(tx, address))
+                return invalid();
+            if (total_supply_units_.load(std::memory_order_relaxed) < staking_activation_units_)
+                return invalid();
             uint64_t current_stake = 0;
             auto sit = stakes_.find(address);
             if (sit != stakes_.end())
                 for (auto& r : sit->second)
                     if (RecordEconomicallyBacked(r))
                         current_stake += r.amount_units;
-            if (current_stake > MAX_STAKE_UNITS ||
-                amount > MAX_STAKE_UNITS - current_stake) return invalid();
+            if (current_stake > MAX_STAKE_UNITS || amount > MAX_STAKE_UNITS - current_stake)
+                return invalid();
 
             const uint8_t lockup_tier = op.lockup_tier;
             uint64_t tier_blocks = LOCKUP_TIERS[lockup_tier - 1].blocks;
             uint64_t unlock_height = height + tier_blocks;
-            if (unlock_height > height + 10ULL * BLOCKS_PER_YEAR) return invalid();
+            if (unlock_height > height + 10ULL * BLOCKS_PER_YEAR)
+                return invalid();
 
-            if (current_stake == 0 &&
-                stakes_.size() >= MAX_VAULT_PAYOUT_STAKERS) {
+            if (current_stake == 0 && stakes_.size() >= MAX_VAULT_PAYOUT_STAKERS) {
                 return false;
             }
 
             StakeRecord rec;
-            rec.address          = address;
-            rec.amount_units     = amount;
+            rec.address = address;
+            rec.amount_units = amount;
             rec.locked_at_height = height;
-            rec.unlock_height    = unlock_height;
-            rec.active           = true;
-            rec.lockup_tier      = lockup_tier;
+            rec.unlock_height = unlock_height;
+            rec.active = true;
+            rec.lockup_tier = lockup_tier;
             if (StakeOutpointBackingActive(height)) {
                 rec.backing_txid = tx.GetTxID();
                 rec.backing_vout = 0;
             }
-            if (total_stake_ > UINT64_MAX - amount) return invalid();
+            if (total_stake_ > UINT64_MAX - amount)
+                return invalid();
             stakes_[address].push_back(rec);
-            total_stake_       += amount;
+            total_stake_ += amount;
         } else if (op.action == CanonicalStakeOp::Action::UNLOCK) {
-            if (!TxInputMatchesAddress(tx, address)) return invalid();
+            if (!TxInputMatchesAddress(tx, address))
+                return invalid();
             auto it = stakes_.find(address);
-            if (it == stakes_.end()) return invalid();
+            if (it == stakes_.end())
+                return invalid();
 
             // LOCK admission requires at least the already-selected effective
             // minimum.  Preserve that invariant after a partial exit as well:
@@ -738,39 +767,42 @@ private:
             uint64_t current_stake = 0;
             uint64_t mature_stake = 0;
             for (const auto& r : it->second) {
-                if (!RecordEconomicallyBacked(r)) continue;
-                if (current_stake > UINT64_MAX - r.amount_units) return invalid();
+                if (!RecordEconomicallyBacked(r))
+                    continue;
+                if (current_stake > UINT64_MAX - r.amount_units)
+                    return invalid();
                 current_stake += r.amount_units;
                 if (r.unlock_height <= height) {
-                    if (mature_stake > UINT64_MAX - r.amount_units) return invalid();
+                    if (mature_stake > UINT64_MAX - r.amount_units)
+                        return invalid();
                     mature_stake += r.amount_units;
                 }
             }
-            if (!StakeUnlockPreservesMinimum(
-                    current_stake, mature_stake, amount,
-                    effective_min_stake)) return invalid();
+            if (!StakeUnlockPreservesMinimum(current_stake, mature_stake, amount,
+                                             effective_min_stake))
+                return invalid();
 
             const UnlockPlan backing_plan = StakeOutpointBackingActive(height)
-                ? PlanUnlockLocked(address, amount, height)
-                : UnlockPlan{};
+                                                ? PlanUnlockLocked(address, amount, height)
+                                                : UnlockPlan{};
             if (StakeOutpointBackingActive(height) && !backing_plan.valid)
                 return false;
 
             uint64_t remaining = amount;
             for (auto& r : it->second) {
-                if (!RecordEconomicallyBacked(r) ||
-                    r.unlock_height > height) continue;
-                if (remaining == 0) break;
+                if (!RecordEconomicallyBacked(r) || r.unlock_height > height)
+                    continue;
+                if (remaining == 0)
+                    break;
                 if (r.amount_units <= remaining) {
                     remaining -= r.amount_units;
                     unstake_history_.push_back({address, r.amount_units, height});
-                    total_stake_ = (total_stake_ >= r.amount_units)
-                                 ? total_stake_ - r.amount_units : 0;
+                    total_stake_ =
+                        (total_stake_ >= r.amount_units) ? total_stake_ - r.amount_units : 0;
                     r.active = false;
                 } else {
                     unstake_history_.push_back({address, remaining, height});
-                    total_stake_ = (total_stake_ >= remaining)
-                                 ? total_stake_ - remaining : 0;
+                    total_stake_ = (total_stake_ >= remaining) ? total_stake_ - remaining : 0;
                     r.amount_units -= remaining;
                     if (StakeOutpointBackingActive(height)) {
                         r.backing_txid = tx.GetTxID();
@@ -779,11 +811,11 @@ private:
                     remaining = 0;
                 }
             }
-            it->second.erase(
-                std::remove_if(it->second.begin(), it->second.end(),
-                    [](const StakeRecord& r){ return !r.active; }),
-                it->second.end());
-            if (it->second.empty()) stakes_.erase(it);
+            it->second.erase(std::remove_if(it->second.begin(), it->second.end(),
+                                            [](const StakeRecord& r) { return !r.active; }),
+                             it->second.end());
+            if (it->second.empty())
+                stakes_.erase(it);
             constexpr size_t UNSTAKE_HISTORY_CAP = 43'200;
             while (unstake_history_.size() > UNSTAKE_HISTORY_CAP)
                 unstake_history_.pop_front();
@@ -792,31 +824,36 @@ private:
     }
 
     static std::string ParseOpReturn(const std::vector<uint8_t>& script) {
-        if (script.size() < 2 || script[0] != 0x6A) return "";
+        if (script.size() < 2 || script[0] != 0x6A)
+            return "";
         size_t offset = 1;
         size_t len = 0;
         const uint8_t push = script[offset++];
         if (push <= 75) {
             len = push;
         } else if (push == 0x4C) {
-            if (offset >= script.size()) return "";
+            if (offset >= script.size())
+                return "";
             len = script[offset++];
-            if (len <= 75) return "";  // non-minimal PUSHDATA1
+            if (len <= 75)
+                return ""; // non-minimal PUSHDATA1
         } else if (push == 0x4D) {
-            if (offset + 2 > script.size()) return "";
-            len = (size_t)script[offset] |
-                  ((size_t)script[offset + 1] << 8);
+            if (offset + 2 > script.size())
+                return "";
+            len = (size_t)script[offset] | ((size_t)script[offset + 1] << 8);
             offset += 2;
-            if (len <= 0xFF) return "";  // non-minimal PUSHDATA2
+            if (len <= 0xFF)
+                return ""; // non-minimal PUSHDATA2
         } else {
             return "";
         }
         // One marker has one byte encoding.  Trailing script bytes used to be
         // ignored here even though relay's canonical parser rejected them,
         // creating consensus/mempool aliases for the same apparent request.
-        if (offset + len != script.size()) return "";
-        return std::string(script.begin()+offset, script.begin()+offset+len);
+        if (offset + len != script.size())
+            return "";
+        return std::string(script.begin() + offset, script.begin() + offset + len);
     }
 };
 
-}
+} // namespace veld

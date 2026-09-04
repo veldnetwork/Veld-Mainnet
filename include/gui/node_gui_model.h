@@ -87,34 +87,33 @@ struct TopologySnapshot {
 };
 
 inline bool IsTopologyRole(const std::string& role) {
-    return role == "fleet" || role == "node" || role == "miner" ||
-           role == "validator";
+    return role == "fleet" || role == "node" || role == "miner" || role == "validator";
 }
 
 inline bool IsTopologyTipState(const std::string& state) {
-    return state == "exact" || state == "differs" ||
-           state == "stale" || state == "unavailable";
+    return state == "exact" || state == "differs" || state == "stale" || state == "unavailable";
 }
 
 inline bool ParseUint(const btc_buy::JsonValue* value, uint64_t& out) {
-    if (!value || value->kind != btc_buy::JsonValue::Kind::Number ||
-        value->text.empty()) return false;
+    if (!value || value->kind != btc_buy::JsonValue::Kind::Number || value->text.empty())
+        return false;
     uint64_t parsed = 0;
     const char* begin = value->text.data();
     const char* end = begin + value->text.size();
     const auto result = std::from_chars(begin, end, parsed, 10);
-    if (result.ec != std::errc{} || result.ptr != end) return false;
+    if (result.ec != std::errc{} || result.ptr != end)
+        return false;
     out = parsed;
     return true;
 }
 
 inline bool ParseDouble(const btc_buy::JsonValue* value, double& out) {
-    if (!value || value->kind != btc_buy::JsonValue::Kind::Number ||
-        value->text.empty()) return false;
+    if (!value || value->kind != btc_buy::JsonValue::Kind::Number || value->text.empty())
+        return false;
     char* end = nullptr;
     const double parsed = std::strtod(value->text.c_str(), &end);
-    if (!end || end != value->text.c_str() + value->text.size() ||
-        !std::isfinite(parsed)) return false;
+    if (!end || end != value->text.c_str() + value->text.size() || !std::isfinite(parsed))
+        return false;
     out = parsed;
     return true;
 }
@@ -127,41 +126,37 @@ inline bool ParseBool(const btc_buy::JsonValue* value, bool& out) {
 }
 
 inline bool ParseInt(const btc_buy::JsonValue* value, int64_t& out) {
-    if (!value || value->kind != btc_buy::JsonValue::Kind::Number ||
-        value->text.empty()) return false;
+    if (!value || value->kind != btc_buy::JsonValue::Kind::Number || value->text.empty())
+        return false;
     int64_t parsed = 0;
     const char* begin = value->text.data();
     const char* end = begin + value->text.size();
     const auto result = std::from_chars(begin, end, parsed, 10);
-    if (result.ec != std::errc{} || result.ptr != end) return false;
+    if (result.ec != std::errc{} || result.ptr != end)
+        return false;
     out = parsed;
     return true;
 }
 
-inline bool ParseGuiPeerStatus(const std::string& body,
-                               std::vector<PeerSummary>& out,
-                               std::string& error,
-                               uint64_t* known_peer_count = nullptr,
-                               bool* port_mapped = nullptr,
-                               uint64_t* local_topology_id = nullptr) {
+inline bool ParseGuiPeerStatus(const std::string& body, std::vector<PeerSummary>& out,
+                               std::string& error, uint64_t* known_peer_count = nullptr,
+                               bool* port_mapped = nullptr, uint64_t* local_topology_id = nullptr) {
     btc_buy::JsonValue root;
     btc_buy::StrictJsonParser parser(body, 256U * 1024U,
                                      /*reject_escaped_object_keys=*/true);
-    if (!parser.Parse(root, error) ||
-        root.kind != btc_buy::JsonValue::Kind::Object) {
-        if (error.empty()) error = "GUI status is not an object";
+    if (!parser.Parse(root, error) || root.kind != btc_buy::JsonValue::Kind::Object) {
+        if (error.empty())
+            error = "GUI status is not an object";
         return false;
     }
     const auto* result = root.Get("peer_details");
-    if (!result || result->kind != btc_buy::JsonValue::Kind::Array ||
-         result->array.size() > 256) {
+    if (!result || result->kind != btc_buy::JsonValue::Kind::Array || result->array.size() > 256) {
         error = "GUI peer status is not a bounded array";
         return false;
     }
     uint64_t parsed_known_peer_count = result->array.size();
     if (const auto* known = root.Get("known_peer_count")) {
-        if (!ParseUint(known, parsed_known_peer_count) ||
-            parsed_known_peer_count > 4096) {
+        if (!ParseUint(known, parsed_known_peer_count) || parsed_known_peer_count > 4096) {
             error = "known peer count is invalid";
             return false;
         }
@@ -190,8 +185,7 @@ inline bool ParseGuiPeerStatus(const std::string& body,
         }
         PeerSummary peer;
         uint64_t anonymous_id = 0;
-        if (!ParseUint(item.Get("id"), anonymous_id) ||
-            anonymous_id == 0 ||
+        if (!ParseUint(item.Get("id"), anonymous_id) || anonymous_id == 0 ||
             !ParseBool(item.Get("inbound"), peer.inbound) ||
             !ParseBool(item.Get("exact_tip"), peer.exact_tip) ||
             !ParseUint(item.Get("bytes_sent"), peer.bytes_sent) ||
@@ -216,8 +210,7 @@ inline bool ParseGuiPeerStatus(const std::string& body,
         }
         if (const auto* role_index = item.Get("role_index")) {
             uint64_t parsed_role_index = 0;
-            if (!ParseUint(role_index, parsed_role_index) ||
-                parsed_role_index > 999) {
+            if (!ParseUint(role_index, parsed_role_index) || parsed_role_index > 999) {
                 error = "peer entry has invalid role index";
                 return false;
             }
@@ -234,26 +227,27 @@ inline bool ParseGuiPeerStatus(const std::string& body,
         peer.anonymous_id = anonymous_id;
         parsed.push_back(std::move(peer));
     }
-    std::sort(parsed.begin(), parsed.end(),
-              [](const PeerSummary& a, const PeerSummary& b) {
-                  return a.anonymous_id < b.anonymous_id;
-              });
+    std::sort(parsed.begin(), parsed.end(), [](const PeerSummary& a, const PeerSummary& b) {
+        return a.anonymous_id < b.anonymous_id;
+    });
     out = std::move(parsed);
-    if (known_peer_count) *known_peer_count = parsed_known_peer_count;
-    if (port_mapped) *port_mapped = parsed_port_mapped;
-    if (local_topology_id) *local_topology_id = parsed_local_topology_id;
+    if (known_peer_count)
+        *known_peer_count = parsed_known_peer_count;
+    if (port_mapped)
+        *port_mapped = parsed_port_mapped;
+    if (local_topology_id)
+        *local_topology_id = parsed_local_topology_id;
     return true;
 }
 
-inline bool ParseTopologySnapshot(const std::string& body,
-                                  TopologySnapshot& out,
+inline bool ParseTopologySnapshot(const std::string& body, TopologySnapshot& out,
                                   std::string& error) {
     btc_buy::JsonValue root;
     btc_buy::StrictJsonParser parser(body, 256U * 1024U,
                                      /*reject_escaped_object_keys=*/true);
-    if (!parser.Parse(root, error) ||
-        root.kind != btc_buy::JsonValue::Kind::Object) {
-        if (error.empty()) error = "topology response is not an object";
+    if (!parser.Parse(root, error) || root.kind != btc_buy::JsonValue::Kind::Object) {
+        if (error.empty())
+            error = "topology response is not an object";
         return false;
     }
 
@@ -271,10 +265,8 @@ inline bool ParseTopologySnapshot(const std::string& body,
 
     const auto* nodes = root.Get("nodes");
     const auto* edges = root.Get("edges");
-    if (!nodes || nodes->kind != btc_buy::JsonValue::Kind::Array ||
-        nodes->array.size() > 256 ||
-        !edges || edges->kind != btc_buy::JsonValue::Kind::Array ||
-        edges->array.size() > 1024) {
+    if (!nodes || nodes->kind != btc_buy::JsonValue::Kind::Array || nodes->array.size() > 256 ||
+        !edges || edges->kind != btc_buy::JsonValue::Kind::Array || edges->array.size() > 1024) {
         error = "topology graph exceeds its bounds";
         return false;
     }
@@ -287,8 +279,7 @@ inline bool ParseTopologySnapshot(const std::string& body,
             return false;
         }
         TopologyNode node;
-        if (!ParseUint(item.Get("id"), node.anonymous_id) ||
-            node.anonymous_id == 0 ||
+        if (!ParseUint(item.Get("id"), node.anonymous_id) || node.anonymous_id == 0 ||
             !ParseUint(item.Get("updated_at"), node.updated_at)) {
             error = "topology node has an invalid field";
             return false;
@@ -310,8 +301,7 @@ inline bool ParseTopologySnapshot(const std::string& body,
         }
         if (const auto* role_index = item.Get("role_index")) {
             uint64_t parsed_role_index = 0;
-            if (!ParseUint(role_index, parsed_role_index) ||
-                parsed_role_index > 999) {
+            if (!ParseUint(role_index, parsed_role_index) || parsed_role_index > 999) {
                 error = "topology node has an invalid role index";
                 return false;
             }
@@ -332,19 +322,16 @@ inline bool ParseTopologySnapshot(const std::string& body,
             return false;
         }
         TopologyEdge edge;
-        if (!ParseUint(item.Get("a"), edge.first) ||
-            !ParseUint(item.Get("b"), edge.second) ||
-            !ParseBool(item.Get("confirmed"), edge.confirmed) ||
-            edge.first == 0 || edge.second == 0 ||
-            edge.first == edge.second ||
-            node_ids.count(edge.first) == 0 ||
+        if (!ParseUint(item.Get("a"), edge.first) || !ParseUint(item.Get("b"), edge.second) ||
+            !ParseBool(item.Get("confirmed"), edge.confirmed) || edge.first == 0 ||
+            edge.second == 0 || edge.first == edge.second || node_ids.count(edge.first) == 0 ||
             node_ids.count(edge.second) == 0) {
             error = "topology edge has an invalid field";
             return false;
         }
-        if (edge.second < edge.first) std::swap(edge.first, edge.second);
-        const std::string edge_id = std::to_string(edge.first) + ":" +
-                                    std::to_string(edge.second);
+        if (edge.second < edge.first)
+            std::swap(edge.first, edge.second);
+        const std::string edge_id = std::to_string(edge.first) + ":" + std::to_string(edge.second);
         if (!edge_ids.insert(edge_id).second) {
             error = "topology contains a duplicate edge";
             return false;
@@ -356,14 +343,13 @@ inline bool ParseTopologySnapshot(const std::string& body,
     return true;
 }
 
-inline bool ParseStats(const std::string& body, ChainStats& out,
-                       std::string& error) {
+inline bool ParseStats(const std::string& body, ChainStats& out, std::string& error) {
     btc_buy::JsonValue root;
     btc_buy::StrictJsonParser parser(body, 256U * 1024U,
                                      /*reject_escaped_object_keys=*/true);
-    if (!parser.Parse(root, error) ||
-        root.kind != btc_buy::JsonValue::Kind::Object) {
-        if (error.empty()) error = "stats response is not an object";
+    if (!parser.Parse(root, error) || root.kind != btc_buy::JsonValue::Kind::Object) {
+        if (error.empty())
+            error = "stats response is not an object";
         return false;
     }
 
@@ -377,8 +363,7 @@ inline bool ParseStats(const std::string& body, ChainStats& out,
         return false;
     }
     const auto* hash = root.Get("best_block_hash");
-    if (!hash || hash->kind != btc_buy::JsonValue::Kind::String ||
-        hash->text.size() != 64) {
+    if (!hash || hash->kind != btc_buy::JsonValue::Kind::String || hash->text.size() != 64) {
         error = "stats response has an invalid best block hash";
         return false;
     }
@@ -387,14 +372,13 @@ inline bool ParseStats(const std::string& body, ChainStats& out,
     return true;
 }
 
-inline bool ParseMiningStats(const std::string& body, MiningStats& out,
-                             std::string& error) {
+inline bool ParseMiningStats(const std::string& body, MiningStats& out, std::string& error) {
     btc_buy::JsonValue root;
     btc_buy::StrictJsonParser parser(body, 64U * 1024U,
                                      /*reject_escaped_object_keys=*/true);
-    if (!parser.Parse(root, error) ||
-        root.kind != btc_buy::JsonValue::Kind::Object) {
-        if (error.empty()) error = "mining status is not an object";
+    if (!parser.Parse(root, error) || root.kind != btc_buy::JsonValue::Kind::Object) {
+        if (error.empty())
+            error = "mining status is not an object";
         return false;
     }
 
@@ -402,15 +386,12 @@ inline bool ParseMiningStats(const std::string& body, MiningStats& out,
     if (!ParseBool(root.Get("mining_configured"), parsed.mining_configured) ||
         !ParseBool(root.Get("mining_ready"), parsed.mining_ready) ||
         !ParseBool(root.Get("mining_active"), parsed.mining_active) ||
-        !ParseBool(root.Get("snapshot_bootstrap_compiled"),
-                   parsed.snapshot_bootstrap_compiled) ||
-        !ParseBool(root.Get("snapshot_fast_start_eligible"),
-                   parsed.snapshot_fast_start_eligible) ||
+        !ParseBool(root.Get("snapshot_bootstrap_compiled"), parsed.snapshot_bootstrap_compiled) ||
+        !ParseBool(root.Get("snapshot_fast_start_eligible"), parsed.snapshot_fast_start_eligible) ||
         !ParseBool(root.Get("full_ibd"), parsed.full_ibd) ||
         !ParseUint(root.Get("total_hashes"), parsed.total_hashes) ||
         !ParseUint(root.Get("threads"), parsed.threads) ||
-        !ParseUint(root.Get("blocks_mined_session"),
-                   parsed.blocks_mined_session) ||
+        !ParseUint(root.Get("blocks_mined_session"), parsed.blocks_mined_session) ||
         !ParseUint(root.Get("progress_counter"), parsed.progress_counter) ||
         !ParseUint(root.Get("updated_at"), parsed.updated_at) ||
         !ParseDouble(root.Get("hashrate"), parsed.hashrate)) {
@@ -435,14 +416,13 @@ inline bool ParseMiningStats(const std::string& body, MiningStats& out,
     return true;
 }
 
-inline bool ParseBlockSummary(const std::string& body, BlockSummary& out,
-                              std::string& error) {
+inline bool ParseBlockSummary(const std::string& body, BlockSummary& out, std::string& error) {
     btc_buy::JsonValue root;
     btc_buy::StrictJsonParser parser(body, 256U * 1024U,
                                      /*reject_escaped_object_keys=*/true);
-    if (!parser.Parse(root, error) ||
-        root.kind != btc_buy::JsonValue::Kind::Object) {
-        if (error.empty()) error = "block response is not an object";
+    if (!parser.Parse(root, error) || root.kind != btc_buy::JsonValue::Kind::Object) {
+        if (error.empty())
+            error = "block response is not an object";
         return false;
     }
 
@@ -456,10 +436,8 @@ inline bool ParseBlockSummary(const std::string& body, BlockSummary& out,
     }
     const auto* hash = root.Get("hash");
     const auto* winner = root.Get("winner");
-    if (!hash || hash->kind != btc_buy::JsonValue::Kind::String ||
-        hash->text.size() != 64 || !winner ||
-        winner->kind != btc_buy::JsonValue::Kind::String ||
-        winner->text.size() > 128) {
+    if (!hash || hash->kind != btc_buy::JsonValue::Kind::String || hash->text.size() != 64 ||
+        !winner || winner->kind != btc_buy::JsonValue::Kind::String || winner->text.size() > 128) {
         error = "block response has an invalid hash or winner";
         return false;
     }
@@ -478,18 +456,18 @@ struct SyncProgress {
     bool complete{false};
 };
 
-inline SyncProgress ComputeSyncProgress(uint64_t local_height,
-                                        uint64_t reference_height) {
+inline SyncProgress ComputeSyncProgress(uint64_t local_height, uint64_t reference_height) {
     SyncProgress out;
     out.local_height = local_height;
     out.target_height = std::max(local_height, reference_height);
     out.target_known = reference_height > 0;
-    if (!out.target_known) return out;
-    out.remaining = out.target_height > local_height
-        ? out.target_height - local_height : 0;
-    out.percent = out.target_height == 0 ? 0.0
-        : std::min(100.0, 100.0 * static_cast<double>(local_height) /
-                              static_cast<double>(out.target_height));
+    if (!out.target_known)
+        return out;
+    out.remaining = out.target_height > local_height ? out.target_height - local_height : 0;
+    out.percent = out.target_height == 0
+                      ? 0.0
+                      : std::min(100.0, 100.0 * static_cast<double>(local_height) /
+                                            static_cast<double>(out.target_height));
     out.complete = out.remaining == 0;
     return out;
 }

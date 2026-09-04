@@ -46,7 +46,10 @@ namespace tierladder {
 
 // One rung: sustained per-block work at or above `min_sustained_work` unlocks `cap_sats`.
 // Ordered ascending by threshold; rung 0 is the pilot floor (threshold 0 => always met).
-struct Tier { uint64_t min_sustained_work; int64_t cap_sats; };
+struct Tier {
+    uint64_t min_sustained_work;
+    int64_t cap_sats;
+};
 
 // The ladder. CALIBRATED against a real VeldHash bench (§3.4b): the home-miner
 // PC (i9-11900K) does 1047 H/s tuned / ~1197 H/s peak, at a $540 CPU MSRP ⇒ $0.52/(H/s) —
@@ -60,11 +63,11 @@ struct Tier { uint64_t min_sustained_work; int64_t cap_sats; };
 // rigs sustained for the complete 14-day window; tier 3 is roughly 2,400. No live
 // fleet-hashrate estimate is embedded here because that operational value changes.
 constexpr Tier TIERS[] = {
-    {          0,     100'000 },   // pilot   — 0.001 BTC — any hashrate (floor)
-    {  4'500'000,   1'000'000 },   // tier 1  — 0.01  BTC — ~25 kH/s @3min sustained (10×-conservative)
-    { 45'000'000,  10'000'000 },   // tier 2  — 0.1   BTC — ~250 kH/s
-    {450'000'000, 100'000'000 },   // tier 3  — 1     BTC — ~2.5 MH/s
-    {4'500'000'000ULL, 1'000'000'000 }, // tier 4 — 10 BTC — ~25 MH/s
+    {0, 100'000},               // pilot   — 0.001 BTC — any hashrate (floor)
+    {4'500'000, 1'000'000},     // tier 1  — 0.01  BTC — ~25 kH/s @3min sustained (10×-conservative)
+    {45'000'000, 10'000'000},   // tier 2  — 0.1   BTC — ~250 kH/s
+    {450'000'000, 100'000'000}, // tier 3  — 1     BTC — ~2.5 MH/s
+    {4'500'000'000ULL, 1'000'000'000}, // tier 4 — 10 BTC — ~25 MH/s
 };
 constexpr int TIER_COUNT = (int)(sizeof(TIERS) / sizeof(TIERS[0]));
 
@@ -74,8 +77,10 @@ constexpr int TIER_COUNT = (int)(sizeof(TIERS) / sizeof(TIERS[0]));
 inline int64_t TierCap(uint64_t sustained_work) {
     int64_t cap = TIERS[0].cap_sats;
     for (int i = 1; i < TIER_COUNT; ++i)
-        if (sustained_work >= TIERS[i].min_sustained_work) cap = TIERS[i].cap_sats;
-        else break;   // ascending thresholds: first miss ends the climb
+        if (sustained_work >= TIERS[i].min_sustained_work)
+            cap = TIERS[i].cap_sats;
+        else
+            break; // ascending thresholds: first miss ends the climb
     return cap;
 }
 
@@ -85,12 +90,14 @@ inline int64_t TierCap(uint64_t sustained_work) {
 // never below live supply (no forced burns). Fail-closed on nonsense (negative) inputs.
 inline int64_t EffectiveMintCeiling(int64_t declared_cap, int64_t live_supply,
                                     uint64_t sustained_work) {
-    if (declared_cap < 0)  declared_cap = 0;
-    if (live_supply < 0)   live_supply  = 0;
+    if (declared_cap < 0)
+        declared_cap = 0;
+    if (live_supply < 0)
+        live_supply = 0;
     int64_t tier = TierCap(sustained_work);
-    int64_t clamped = tier < declared_cap ? tier : declared_cap;   // min(declared, tier)
-    return clamped > live_supply ? clamped : live_supply;          // max(live_supply, clamped)
+    int64_t clamped = tier < declared_cap ? tier : declared_cap; // min(declared, tier)
+    return clamped > live_supply ? clamped : live_supply;        // max(live_supply, clamped)
 }
 
-}  // namespace tierladder
-}  // namespace veld
+} // namespace tierladder
+} // namespace veld

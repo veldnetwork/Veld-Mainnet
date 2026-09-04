@@ -24,7 +24,7 @@
 
 #include "../compat/platform.h"
 #include "../core/hash.h"
-#include "../crypto/ripemd160.h"  // Hash160 typedef
+#include "../crypto/ripemd160.h" // Hash160 typedef
 #include <array>
 #include <vector>
 #include <cstdint>
@@ -38,9 +38,9 @@ extern "C" {
 namespace veld {
 namespace dilithium {
 
-constexpr size_t PUBKEY_BYTES  = PQCLEAN_MLDSA65_CLEAN_CRYPTO_PUBLICKEYBYTES; // 1952
-constexpr size_t SECKEY_BYTES  = PQCLEAN_MLDSA65_CLEAN_CRYPTO_SECRETKEYBYTES; // 4032
-constexpr size_t SIG_MAX_BYTES = PQCLEAN_MLDSA65_CLEAN_CRYPTO_BYTES;          // 3309
+constexpr size_t PUBKEY_BYTES = PQCLEAN_MLDSA65_CLEAN_CRYPTO_PUBLICKEYBYTES; // 1952
+constexpr size_t SECKEY_BYTES = PQCLEAN_MLDSA65_CLEAN_CRYPTO_SECRETKEYBYTES; // 4032
+constexpr size_t SIG_MAX_BYTES = PQCLEAN_MLDSA65_CLEAN_CRYPTO_BYTES;         // 3309
 
 using PublicKey = std::array<uint8_t, PUBKEY_BYTES>;
 using SecretKey = std::array<uint8_t, SECKEY_BYTES>;
@@ -56,9 +56,9 @@ struct KeyPair {
 // randombytes()). Throws on CSPRNG failure.
 inline KeyPair Generate() {
     KeyPair kp;
-    int rc = PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(
-        kp.public_key.data(), kp.secret_key.data());
-    if (rc != 0) throw std::runtime_error("ML-DSA-65 keygen failed");
+    int rc = PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(kp.public_key.data(), kp.secret_key.data());
+    if (rc != 0)
+        throw std::runtime_error("ML-DSA-65 keygen failed");
     return kp;
 }
 
@@ -68,9 +68,10 @@ inline KeyPair Generate() {
 inline Signature Sign(const SecretKey& sk, const uint8_t* msg, size_t msglen) {
     Signature sig(SIG_MAX_BYTES, 0);
     size_t siglen = 0;
-    int rc = PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(
-        sig.data(), &siglen, msg, msglen, sk.data());
-    if (rc != 0) throw std::runtime_error("ML-DSA-65 sign failed");
+    int rc =
+        PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(sig.data(), &siglen, msg, msglen, sk.data());
+    if (rc != 0)
+        throw std::runtime_error("ML-DSA-65 sign failed");
     sig.resize(siglen);
     return sig;
 }
@@ -85,23 +86,20 @@ inline Signature Sign(const SecretKey& sk, const Hash256& sighash) {
 
 // Verify a detached signature. Returns false on any validation failure — never
 // throws (makes it safe to call from block-validation hot paths).
-inline bool Verify(const PublicKey& pk,
-                   const uint8_t* msg, size_t msglen,
-                   const uint8_t* sig, size_t siglen) noexcept {
-    if (siglen == 0 || siglen > SIG_MAX_BYTES) return false;
-    int rc = PQCLEAN_MLDSA65_CLEAN_crypto_sign_verify(
-        sig, siglen, msg, msglen, pk.data());
+inline bool Verify(const PublicKey& pk, const uint8_t* msg, size_t msglen, const uint8_t* sig,
+                   size_t siglen) noexcept {
+    if (siglen == 0 || siglen > SIG_MAX_BYTES)
+        return false;
+    int rc = PQCLEAN_MLDSA65_CLEAN_crypto_sign_verify(sig, siglen, msg, msglen, pk.data());
     return rc == 0;
 }
 
-inline bool Verify(const PublicKey& pk,
-                   const std::vector<uint8_t>& msg,
+inline bool Verify(const PublicKey& pk, const std::vector<uint8_t>& msg,
                    const std::vector<uint8_t>& sig) noexcept {
     return Verify(pk, msg.data(), msg.size(), sig.data(), sig.size());
 }
 
-inline bool Verify(const PublicKey& pk,
-                   const Hash256& sighash,
+inline bool Verify(const PublicKey& pk, const Hash256& sighash,
                    const std::vector<uint8_t>& sig) noexcept {
     return Verify(pk, sighash.data(), sighash.size(), sig.data(), sig.size());
 }

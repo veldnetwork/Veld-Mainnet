@@ -44,37 +44,36 @@ inline constexpr size_t IBD_GETBLOCKS_BATCH_BLOCKS = 32;
 inline constexpr auto IBD_GETBLOCKS_RETRY_IDLE = std::chrono::seconds(10);
 
 struct PeerState {
-    bool version_sent   = true;
-    bool version_acked  = false;
-    bool their_version  = false;
+    bool version_sent = true;
+    bool version_acked = false;
+    bool their_version = false;
     bool handshake_done = false;
 
-    bool getaddr_sent   = false;
+    bool getaddr_sent = false;
     using addr_clock_t = std::chrono::steady_clock;
-    using addr_tp_t    = addr_clock_t::time_point;
+    using addr_tp_t = addr_clock_t::time_point;
     addr_tp_t last_getaddr_sent;
-    bool      any_addr_received = false;
+    bool any_addr_received = false;
     // A GETADDR request authorizes one bounded ADDR response, not an
     // arbitrary stream for the whole response window.  This bit is reset only
     // when a new GETADDR is successfully queued/sent.
-    bool      addr_response_consumed = false;
+    bool addr_response_consumed = false;
 
     uint64_t their_start_height = 0;
 
     using clock_t = std::chrono::steady_clock;
-    using tp_t    = clock_t::time_point;
+    using tp_t = clock_t::time_point;
 
-    tp_t conn_started        = clock_t::now();
-    tp_t last_ping           = clock_t::now();
-    tp_t last_getblocks       = clock_t::now();
-    tp_t last_ibd_progress    = clock_t::now();
-    tp_t last_mempool_req     = clock_t::now();
+    tp_t conn_started = clock_t::now();
+    tp_t last_ping = clock_t::now();
+    tp_t last_getblocks = clock_t::now();
+    tp_t last_ibd_progress = clock_t::now();
+    tp_t last_mempool_req = clock_t::now();
     uint64_t ibd_observed_height = 0;
     // Inbound MEMPOOL inventory requests are substantially more expensive than
     // their empty wire payload suggests: they revalidate stateful roots and can
     // walk a large fee index.  Zero means this peer has not yet been served.
     tp_t last_mempool_served{};
-
 };
 
 // Observe canonical progress from the peer event loop. While expensive block
@@ -82,9 +81,7 @@ struct PeerState {
 // repeatedly requested the same suffix from every peer. Those duplicate streams
 // exhausted the servers' reconnect-stable response-work buckets and produced
 // long IBD stalls. Retry only after the canonical height itself is idle.
-inline bool IbdGetBlocksRetryDue(PeerState& state,
-                                 uint64_t canonical_height,
-                                 PeerState::tp_t now) {
+inline bool IbdGetBlocksRetryDue(PeerState& state, uint64_t canonical_height, PeerState::tp_t now) {
     if (canonical_height != state.ibd_observed_height) {
         state.ibd_observed_height = canonical_height;
         state.last_ibd_progress = now;
@@ -96,5 +93,5 @@ inline bool IbdGetBlocksRetryDue(PeerState& state,
 
 using PeerStatePtr = std::shared_ptr<PeerState>;
 
-}
-}
+} // namespace net
+} // namespace veld

@@ -9,9 +9,9 @@ namespace net {
 // socket activation boundary.  Keep exception handling identical for every
 // listener: an unavailable or throwing guard is an authority refusal, never
 // an ordinary bind failure.
-inline bool ListenerActivationPermitted(
-        const std::function<bool()>& activation_guard) noexcept {
-    if (!activation_guard) return true;
+inline bool ListenerActivationPermitted(const std::function<bool()>& activation_guard) noexcept {
+    if (!activation_guard)
+        return true;
     try {
         return activation_guard();
     } catch (...) {

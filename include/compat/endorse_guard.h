@@ -46,15 +46,15 @@
 #include <fstream>
 #include <cstdio>
 #ifdef _WIN32
-#  include <io.h>
+#include <io.h>
 #else
-#  include <unistd.h>
+#include <unistd.h>
 #endif
 
 struct EndorseAntiEquivGuard {
-    std::mutex                                   mu_;
-    std::unordered_map<std::string, std::string> map_;   // "height:pubkey_hex" -> block_hash_hex
-    std::string                                  path_;
+    std::mutex mu_;
+    std::unordered_map<std::string, std::string> map_; // "height:pubkey_hex" -> block_hash_hex
+    std::string path_;
 
     // Load the persisted records once at startup. Safe to call before the
     // endorse loop; idempotent if the file is absent.
@@ -67,8 +67,9 @@ struct EndorseAntiEquivGuard {
             while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
                 line.pop_back();
             auto eq = line.rfind('=');
-            if (eq == std::string::npos) continue;
-            map_[line.substr(0, eq)] = line.substr(eq + 1);   // last write wins
+            if (eq == std::string::npos)
+                continue;
+            map_[line.substr(0, eq)] = line.substr(eq + 1); // last write wins
         }
     }
 
@@ -89,15 +90,19 @@ struct EndorseAntiEquivGuard {
         std::lock_guard<std::mutex> lk(mu_);
         auto it = map_.find(key);
         if (it != map_.end()) {
-            if (it->second == hash_hex) return true;   // idempotent retry
-            return false;                              // conflicting vote
+            if (it->second == hash_hex)
+                return true; // idempotent retry
+            return false;    // conflicting vote
         }
-        if (path_.empty()) return false;
+        if (path_.empty())
+            return false;
         FILE* fp = std::fopen(path_.c_str(), "ab");
-        if (!fp) return false;
+        if (!fp)
+            return false;
         std::string rec = key + "=" + hash_hex + "\n";
         bool ok = std::fwrite(rec.data(), 1, rec.size(), fp) == rec.size();
-        if (ok) ok = std::fflush(fp) == 0;
+        if (ok)
+            ok = std::fflush(fp) == 0;
 #ifdef _WIN32
         if (ok) {
             const int fd = _fileno(fp);
@@ -109,8 +114,10 @@ struct EndorseAntiEquivGuard {
             ok = fd >= 0 && ::fsync(fd) == 0;
         }
 #endif
-        if (std::fclose(fp) != 0) ok = false;
-        if (!ok) return false;
+        if (std::fclose(fp) != 0)
+            ok = false;
+        if (!ok)
+            return false;
         map_[key] = hash_hex;
         return true;
     }

@@ -8,8 +8,7 @@
 
 namespace veld::operational_key {
 
-inline constexpr const char* TESTNET_RECORD_SCHEMA =
-    "VELD_OPERATIONAL_KEY_V1";
+inline constexpr const char* TESTNET_RECORD_SCHEMA = "VELD_OPERATIONAL_KEY_V1";
 
 struct RecordFields {
     std::string_view private_key_hex;
@@ -18,11 +17,11 @@ struct RecordFields {
 };
 
 inline std::string_view TrimRecordField(std::string_view value) {
-    auto space = [](char c) {
-        return c == ' ' || c == '\t' || c == '\r';
-    };
-    while (!value.empty() && space(value.front())) value.remove_prefix(1);
-    while (!value.empty() && space(value.back())) value.remove_suffix(1);
+    auto space = [](char c) { return c == ' ' || c == '\t' || c == '\r'; };
+    while (!value.empty() && space(value.front()))
+        value.remove_prefix(1);
+    while (!value.empty() && space(value.back()))
+        value.remove_suffix(1);
     return value;
 }
 
@@ -34,7 +33,8 @@ inline std::string_view TrimRecordField(std::string_view value) {
 inline bool ParseRecord(std::string_view content, RecordFields& out) {
     size_t cursor = 0;
     auto next_line = [&](std::string_view& line) -> bool {
-        if (cursor >= content.size()) return false;
+        if (cursor >= content.size())
+            return false;
         const size_t nl = content.find('\n', cursor);
         if (nl == std::string_view::npos) {
             line = content.substr(cursor);
@@ -53,8 +53,7 @@ inline bool ParseRecord(std::string_view content, RecordFields& out) {
         !next_line(genesis_hash)) {
         return false;
     }
-    if (schema != TESTNET_RECORD_SCHEMA ||
-        role != std::string("role=") + DEPLOYMENT_ROLE ||
+    if (schema != TESTNET_RECORD_SCHEMA || role != std::string("role=") + DEPLOYMENT_ROLE ||
         profile_id != std::string("profile_id=") + DEPLOYMENT_PROFILE_ID ||
         genesis_hash != std::string("genesis_hash=") + GENESIS_HASH) {
         return false;
@@ -62,8 +61,7 @@ inline bool ParseRecord(std::string_view content, RecordFields& out) {
 #endif
 
     RecordFields parsed;
-    if (!next_line(parsed.private_key_hex) ||
-        !next_line(parsed.public_key_hex) ||
+    if (!next_line(parsed.private_key_hex) || !next_line(parsed.public_key_hex) ||
         !next_line(parsed.address)) {
         return false;
     }
@@ -81,13 +79,11 @@ inline bool ParseRecord(std::string_view content, RecordFields& out) {
     return true;
 }
 
-inline std::string FormatRecord(std::string_view private_key_hex,
-                                std::string_view public_key_hex,
+inline std::string FormatRecord(std::string_view private_key_hex, std::string_view public_key_hex,
                                 std::string_view address) {
     std::string record;
 #ifdef VELD_PUBLIC_TESTNET
-    record.reserve(256 + private_key_hex.size() + public_key_hex.size() +
-                   address.size());
+    record.reserve(256 + private_key_hex.size() + public_key_hex.size() + address.size());
     record += TESTNET_RECORD_SCHEMA;
     record += "\nrole=";
     record += DEPLOYMENT_ROLE;
@@ -97,8 +93,7 @@ inline std::string FormatRecord(std::string_view private_key_hex,
     record += GENESIS_HASH;
     record.push_back('\n');
 #else
-    record.reserve(private_key_hex.size() + public_key_hex.size() +
-                   address.size() + 3);
+    record.reserve(private_key_hex.size() + public_key_hex.size() + address.size() + 3);
 #endif
     record.append(private_key_hex.data(), private_key_hex.size());
     record.push_back('\n');
@@ -109,4 +104,4 @@ inline std::string FormatRecord(std::string_view private_key_hex,
     return record;
 }
 
-}  // namespace veld::operational_key
+} // namespace veld::operational_key

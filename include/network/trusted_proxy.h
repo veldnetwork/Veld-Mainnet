@@ -20,19 +20,20 @@
 
 namespace veld::net::trusted_proxy {
 
-inline constexpr const char* kAuthorizationHeader =
-    "x-veld-proxy-authorization";
+inline constexpr const char* kAuthorizationHeader = "x-veld-proxy-authorization";
 inline constexpr const char* kClientIpHeader = "x-veld-client-ip";
 
 inline int HexNibble(char c) noexcept {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
     return -1;
 }
 
-inline bool DecodeToken(std::string_view text,
-                        std::array<uint8_t, 32>& out) noexcept {
-    if (text.size() != 64) return false;
+inline bool DecodeToken(std::string_view text, std::array<uint8_t, 32>& out) noexcept {
+    if (text.size() != 64)
+        return false;
     std::array<uint8_t, 32> parsed{};
     for (size_t i = 0; i < parsed.size(); ++i) {
         const int hi = HexNibble(text[i * 2]);
@@ -59,7 +60,8 @@ inline bool ConstantTimeEqual(const std::array<uint8_t, 32>& a,
 // Canonicalize a single address literal.  IPv4-mapped IPv6 is folded into
 // the IPv4 key so one client cannot acquire two quota identities.
 inline bool CanonicalIp(const std::string& input, std::string& out) {
-    if (input.empty() || input.size() > 64) return false;
+    if (input.empty() || input.size() > 64)
+        return false;
     for (unsigned char c : input)
         if (c <= 0x20 || c == 0x7f || c == '%' || c == ',' || c == '[' || c == ']')
             return false;
@@ -67,20 +69,24 @@ inline bool CanonicalIp(const std::string& input, std::string& out) {
     in_addr v4{};
     char buf[INET6_ADDRSTRLEN]{};
     if (::inet_pton(AF_INET, input.c_str(), &v4) == 1) {
-        if (!::inet_ntop(AF_INET, &v4, buf, sizeof(buf))) return false;
+        if (!::inet_ntop(AF_INET, &v4, buf, sizeof(buf)))
+            return false;
         out.assign(buf);
         return out.size() <= 45;
     }
 
     in6_addr v6{};
-    if (::inet_pton(AF_INET6, input.c_str(), &v6) != 1) return false;
+    if (::inet_pton(AF_INET6, input.c_str(), &v6) != 1)
+        return false;
     const uint8_t* b = reinterpret_cast<const uint8_t*>(&v6);
     bool mapped = true;
-    for (size_t i = 0; i < 10; ++i) mapped &= b[i] == 0;
+    for (size_t i = 0; i < 10; ++i)
+        mapped &= b[i] == 0;
     mapped &= b[10] == 0xff && b[11] == 0xff;
     if (mapped) {
         std::memcpy(&v4, b + 12, sizeof(v4));
-        if (!::inet_ntop(AF_INET, &v4, buf, sizeof(buf))) return false;
+        if (!::inet_ntop(AF_INET, &v4, buf, sizeof(buf)))
+            return false;
     } else if (!::inet_ntop(AF_INET6, &v6, buf, sizeof(buf))) {
         return false;
     }
@@ -93,15 +99,17 @@ struct Configuration {
     std::string peer;
     std::array<uint8_t, 32> token{};
 
-    ~Configuration() { veld::compat::SecureZero(token.data(), token.size()); }
+    ~Configuration() {
+        veld::compat::SecureZero(token.data(), token.size());
+    }
 };
 
-inline bool LoadTokenFile(const std::string& path,
-                          std::array<uint8_t, 32>& token,
+inline bool LoadTokenFile(const std::string& path, std::array<uint8_t, 32>& token,
                           std::string* error = nullptr) {
     std::vector<uint8_t> bytes;
     const auto status = channel::secure_file::Read(path, bytes, error, 66, true);
-    if (status != channel::secure_file::ReadResult::Ok) return false;
+    if (status != channel::secure_file::ReadResult::Ok)
+        return false;
     while (!bytes.empty() && (bytes.back() == '\n' || bytes.back() == '\r'))
         bytes.pop_back();
     std::string encoded(bytes.begin(), bytes.end());
@@ -109,20 +117,22 @@ inline bool LoadTokenFile(const std::string& path,
     channel::secure_file::WipeAndClear(bytes);
     if (!encoded.empty())
         veld::compat::SecureZero(encoded.data(), encoded.size());
-    if (!ok && error) *error = "proxy token must be exactly 64 lowercase hex characters";
+    if (!ok && error)
+        *error = "proxy token must be exactly 64 lowercase hex characters";
     return ok;
 }
 
-inline bool Configure(Configuration& out, const std::string& peer,
-                      const std::string& token_file,
+inline bool Configure(Configuration& out, const std::string& peer, const std::string& token_file,
                       std::string* error = nullptr) {
     std::string canonical_peer;
     if (!CanonicalIp(peer, canonical_peer)) {
-        if (error) *error = "trusted proxy peer must be one canonical IP literal";
+        if (error)
+            *error = "trusted proxy peer must be one canonical IP literal";
         return false;
     }
     std::array<uint8_t, 32> token{};
-    if (!LoadTokenFile(token_file, token, error)) return false;
+    if (!LoadTokenFile(token_file, token, error))
+        return false;
     out.peer = std::move(canonical_peer);
     out.token = token;
     out.enabled = true;
@@ -137,11 +147,9 @@ struct Resolution {
     std::string error;
 };
 
-inline Resolution Resolve(
-        const Configuration& config,
-        const std::string& socket_peer,
-        const std::unordered_map<std::string, std::string>& headers,
-        bool ambiguous_headers = false) {
+inline Resolution Resolve(const Configuration& config, const std::string& socket_peer,
+                          const std::unordered_map<std::string, std::string>& headers,
+                          bool ambiguous_headers = false) {
     Resolution result;
     std::string peer;
     if (ambiguous_headers || !CanonicalIp(socket_peer, peer)) {
@@ -152,9 +160,8 @@ inline Resolution Resolve(
     const auto ip_it = headers.find(kClientIpHeader);
     const bool has_auth = auth_it != headers.end();
     const bool has_client = ip_it != headers.end();
-    const bool has_legacy = headers.count("x-forwarded-for") != 0
-                         || headers.count("x-real-ip") != 0
-                         || headers.count("forwarded") != 0;
+    const bool has_legacy = headers.count("x-forwarded-for") != 0 ||
+                            headers.count("x-real-ip") != 0 || headers.count("forwarded") != 0;
 
     if (has_legacy || has_auth != has_client) {
         result.error = "untrusted forwarding metadata";
@@ -171,15 +178,14 @@ inline Resolution Resolve(
     }
     static constexpr const char kPrefix[] = "VeldProxy v1=";
     const std::string& authorization = auth_it->second;
-    if (authorization.size() != sizeof(kPrefix) - 1 + 64
-            || authorization.compare(0, sizeof(kPrefix) - 1, kPrefix) != 0) {
+    if (authorization.size() != sizeof(kPrefix) - 1 + 64 ||
+        authorization.compare(0, sizeof(kPrefix) - 1, kPrefix) != 0) {
         result.error = "proxy authentication failed";
         return result;
     }
     std::array<uint8_t, 32> supplied{};
-    if (!DecodeToken(std::string_view(authorization).substr(sizeof(kPrefix) - 1),
-                     supplied)
-            || !ConstantTimeEqual(config.token, supplied)) {
+    if (!DecodeToken(std::string_view(authorization).substr(sizeof(kPrefix) - 1), supplied) ||
+        !ConstantTimeEqual(config.token, supplied)) {
         veld::compat::SecureZero(supplied.data(), supplied.size());
         result.error = "proxy authentication failed";
         return result;

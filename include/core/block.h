@@ -15,8 +15,8 @@ namespace veld {
 
 struct BlockHeader {
     uint32_t version;
-    Hash256  prev_block_hash;
-    Hash256  merkle_root;
+    Hash256 prev_block_hash;
+    Hash256 merkle_root;
     uint64_t timestamp;
     uint32_t bits;
     uint64_t nonce;
@@ -36,32 +36,38 @@ struct BlockHeader {
         data.push_back((version >> 24) & 0xFF);
         data.insert(data.end(), prev_block_hash.begin(), prev_block_hash.end());
         data.insert(data.end(), merkle_root.begin(), merkle_root.end());
-        for (int i = 0; i < 8; ++i) data.push_back((uint8_t)((timestamp >> (i*8)) & 0xFF));
+        for (int i = 0; i < 8; ++i)
+            data.push_back((uint8_t)((timestamp >> (i * 8)) & 0xFF));
         data.push_back(bits & 0xFF);
         data.push_back((bits >> 8) & 0xFF);
         data.push_back((bits >> 16) & 0xFF);
         data.push_back((bits >> 24) & 0xFF);
-        for (int i = 0; i < 8; ++i) data.push_back((uint8_t)((nonce >> (i*8)) & 0xFF));
+        for (int i = 0; i < 8; ++i)
+            data.push_back((uint8_t)((nonce >> (i * 8)) & 0xFF));
         return data;
     }
 
     bool Deserialize(const std::vector<uint8_t>& data, size_t offset = 0) {
-        if (data.size() < offset + 88) return false;
+        if (data.size() < offset + 88)
+            return false;
         auto rd32 = [](const std::vector<uint8_t>& d, size_t o) -> uint32_t {
-            return (uint32_t)d[o] | ((uint32_t)d[o+1]<<8)
-                 | ((uint32_t)d[o+2]<<16) | ((uint32_t)d[o+3]<<24);
+            return (uint32_t)d[o] | ((uint32_t)d[o + 1] << 8) | ((uint32_t)d[o + 2] << 16) |
+                   ((uint32_t)d[o + 3] << 24);
         };
         auto rd64 = [](const std::vector<uint8_t>& d, size_t o) -> uint64_t {
             uint64_t v = 0;
-            for (int i = 0; i < 8; ++i) v |= ((uint64_t)d[o+i]) << (i*8);
+            for (int i = 0; i < 8; ++i)
+                v |= ((uint64_t)d[o + i]) << (i * 8);
             return v;
         };
-        version   = rd32(data, offset);
-        for (int _i=0;_i<32;_i++) prev_block_hash[_i]=data[offset+4+_i];
-        for (int _i=0;_i<32;_i++) merkle_root[_i]=data[offset+36+_i];
-        timestamp = rd64(data, offset+68);
-        bits      = rd32(data, offset+76);
-        nonce     = rd64(data, offset+80);
+        version = rd32(data, offset);
+        for (int _i = 0; _i < 32; _i++)
+            prev_block_hash[_i] = data[offset + 4 + _i];
+        for (int _i = 0; _i < 32; _i++)
+            merkle_root[_i] = data[offset + 36 + _i];
+        timestamp = rd64(data, offset + 68);
+        bits = rd32(data, offset + 76);
+        nonce = rd64(data, offset + 80);
         return true;
     }
 
@@ -99,7 +105,7 @@ struct BlockHeader {
     }
 
     bool MeetsTarget() const {
-        Hash256 hash   = GetHash();
+        Hash256 hash = GetHash();
         Hash256 target = GetTarget();
         return hash < target;
     }
@@ -115,12 +121,13 @@ inline Hash256 TaggedHash(const std::string& tag, const uint8_t* data, size_t le
     buf.insert(buf.end(), data, data + len);
     return Hash256d(buf);
 }
-}
+} // namespace internal_merkle
 
 inline Hash256 ComputeMerkleRoot(const std::vector<Transaction>& txs) {
-    if (txs.empty()) return ZeroHash();
+    if (txs.empty())
+        return ZeroHash();
 
-    static const std::string LEAF_TAG   = "VeldMerkleLeaf";
+    static const std::string LEAF_TAG = "VeldMerkleLeaf";
     static const std::string BRANCH_TAG = "VeldMerkleBranch";
 
     std::vector<Hash256> hashes;
@@ -136,7 +143,7 @@ inline Hash256 ComputeMerkleRoot(const std::vector<Transaction>& txs) {
         size_t i = 0;
         for (; i + 1 < hashes.size(); i += 2) {
             uint8_t pair[64];
-            ::memcpy(pair,      hashes[i].data(),     32);
+            ::memcpy(pair, hashes[i].data(), 32);
             ::memcpy(pair + 32, hashes[i + 1].data(), 32);
             next.push_back(internal_merkle::TaggedHash(BRANCH_TAG, pair, 64));
         }
@@ -149,9 +156,9 @@ inline Hash256 ComputeMerkleRoot(const std::vector<Transaction>& txs) {
 }
 
 struct Block {
-    BlockHeader             header;
+    BlockHeader header;
     std::vector<Transaction> transactions;
-    uint64_t                height;
+    uint64_t height;
 
     Block() : height(0) {}
 
@@ -175,20 +182,27 @@ struct Block {
     // the new preferred name for clarity; `IsValid` retained as alias
     // for backward compat with explorer display path.
     bool IsStructurallyValid() const {
-        if (transactions.empty()) return false;
-        if (!transactions[0].IsCoinbase()) return false;
+        if (transactions.empty())
+            return false;
+        if (!transactions[0].IsCoinbase())
+            return false;
 
         Hash256 computed = ComputeMerkleRoot(transactions);
-        if (computed != header.merkle_root) return false;
+        if (computed != header.merkle_root)
+            return false;
 
-        if (!header.MeetsTarget()) return false;
+        if (!header.MeetsTarget())
+            return false;
 
-        if (transactions.size() > MAX_TRANSACTIONS_PER_BLOCK) return false;
+        if (transactions.size() > MAX_TRANSACTIONS_PER_BLOCK)
+            return false;
 
         return true;
     }
 
-    bool IsValid() const { return IsStructurallyValid(); }
+    bool IsValid() const {
+        return IsStructurallyValid();
+    }
 
     std::vector<uint8_t> Serialize() const {
         std::vector<uint8_t> data;
@@ -225,9 +239,11 @@ struct Block {
         size_t pos = offset;
         const size_t n = data.size();
 
-        if (pos + 88 > n) return 0;
+        if (pos + 88 > n)
+            return 0;
         BlockHeader hdr;
-        hdr.version = data[pos] | ((uint32_t)data[pos+1]<<8) | ((uint32_t)data[pos+2]<<16) | ((uint32_t)data[pos+3]<<24);
+        hdr.version = data[pos] | ((uint32_t)data[pos + 1] << 8) | ((uint32_t)data[pos + 2] << 16) |
+                      ((uint32_t)data[pos + 3] << 24);
         pos += 4;
         std::copy(data.begin() + pos, data.begin() + pos + 32, hdr.prev_block_hash.begin());
         pos += 32;
@@ -235,29 +251,36 @@ struct Block {
         pos += 32;
         {
             uint64_t ts = 0;
-            for (int i = 0; i < 8; ++i) ts |= ((uint64_t)data[pos+i]) << (i*8);
+            for (int i = 0; i < 8; ++i)
+                ts |= ((uint64_t)data[pos + i]) << (i * 8);
             hdr.timestamp = ts;
             pos += 8;
         }
-        hdr.bits  = data[pos] | ((uint32_t)data[pos+1]<<8) | ((uint32_t)data[pos+2]<<16) | ((uint32_t)data[pos+3]<<24);
+        hdr.bits = data[pos] | ((uint32_t)data[pos + 1] << 8) | ((uint32_t)data[pos + 2] << 16) |
+                   ((uint32_t)data[pos + 3] << 24);
         pos += 4;
         {
             uint64_t n8 = 0;
-            for (int i = 0; i < 8; ++i) n8 |= ((uint64_t)data[pos+i]) << (i*8);
+            for (int i = 0; i < 8; ++i)
+                n8 |= ((uint64_t)data[pos + i]) << (i * 8);
             hdr.nonce = n8;
             pos += 8;
         }
         out.header = hdr;
 
-        if (pos + 4 > n) return 0;
-        uint32_t tx_count = data[pos] | ((uint32_t)data[pos+1]<<8) | ((uint32_t)data[pos+2]<<16) | ((uint32_t)data[pos+3]<<24);
+        if (pos + 4 > n)
+            return 0;
+        uint32_t tx_count = data[pos] | ((uint32_t)data[pos + 1] << 8) |
+                            ((uint32_t)data[pos + 2] << 16) | ((uint32_t)data[pos + 3] << 24);
         pos += 4;
-        if (tx_count > MAX_TRANSACTIONS_PER_BLOCK) return 0;
+        if (tx_count > MAX_TRANSACTIONS_PER_BLOCK)
+            return 0;
         out.transactions.clear();
         for (uint32_t i = 0; i < tx_count; ++i) {
             Transaction tx;
             size_t consumed = Transaction::Deserialize(data, pos, tx);
-            if (consumed == 0) return 0;
+            if (consumed == 0)
+                return 0;
             pos += consumed;
             out.transactions.push_back(tx);
         }
@@ -277,11 +300,11 @@ inline Block CreateGenesisBlock() {
 
     genesis.UpdateMerkleRoot();
 
-    genesis.header.version         = 1;
+    genesis.header.version = 1;
     genesis.header.prev_block_hash = ZeroHash();
-    genesis.header.timestamp       = GENESIS_TIME;
-    genesis.header.bits            = GENESIS_BITS;
-    genesis.header.nonce           = GENESIS_NONCE;
+    genesis.header.timestamp = GENESIS_TIME;
+    genesis.header.bits = GENESIS_BITS;
+    genesis.header.nonce = GENESIS_NONCE;
 
     if (GENESIS_HASH[0] != '\0') {
         std::string computed = HashToHex(genesis.header.GetHash());
@@ -293,16 +316,15 @@ inline Block CreateGenesisBlock() {
             be_hex += buf;
         }
         if (be_hex != std::string(GENESIS_HASH)) {
-            throw std::runtime_error(
-                "FATAL: genesis hash mismatch. Computed " + be_hex +
-                " but constants.h pins " + std::string(GENESIS_HASH) +
-                ". Either re-mine genesis (genesis_miner) and update "
-                "GENESIS_HASH, or revert your local source. Refusing to "
-                "start with a divergent genesis.");
+            throw std::runtime_error("FATAL: genesis hash mismatch. Computed " + be_hex +
+                                     " but constants.h pins " + std::string(GENESIS_HASH) +
+                                     ". Either re-mine genesis (genesis_miner) and update "
+                                     "GENESIS_HASH, or revert your local source. Refusing to "
+                                     "start with a divergent genesis.");
         }
     }
 
     return genesis;
 }
 
-}
+} // namespace veld

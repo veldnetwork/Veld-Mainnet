@@ -11,14 +11,14 @@
 namespace veld {
 
 struct VaultEntry {
-    uint64_t    timestamp;
-    uint64_t    amount_units;
+    uint64_t timestamp;
+    uint64_t amount_units;
     std::string type;
     std::string label;
 };
 
 class VaultLedger {
-public:
+  public:
     struct StateSnapshot {
         uint64_t total_deposited{0};
         uint64_t total_distributed{0};
@@ -43,7 +43,8 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         total_deposited_ += amount_units;
         log_.push_back({(uint64_t)std::time(nullptr), amount_units, "deposit", label});
-        if (log_.size() > 10000) log_.erase(log_.begin());
+        if (log_.size() > 10000)
+            log_.erase(log_.begin());
     }
 
     void Distribute(uint64_t amount_units, const std::string& label = "",
@@ -54,10 +55,10 @@ public:
         // pass unconditionally. Every other reader in this class uses the
         // guarded ternary form; match them. Exposure is RestoreState and reorg
         // rollback, where a partially-restored frame can invert the pair.
-        const uint64_t available = total_deposited_ > total_distributed_
-                                       ? (total_deposited_ - total_distributed_)
-                                       : 0;
-        if (amount_units > available) return;
+        const uint64_t available =
+            total_deposited_ > total_distributed_ ? (total_deposited_ - total_distributed_) : 0;
+        if (amount_units > available)
+            return;
         total_distributed_ += amount_units;
         log_.push_back({(uint64_t)std::time(nullptr), amount_units, "distribute",
                         label + (recipient.empty() ? "" : " → " + recipient)});
@@ -65,18 +66,22 @@ public:
 
     double BalanceVeld() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        uint64_t bal = total_deposited_ > total_distributed_
-                     ? total_deposited_ - total_distributed_ : 0;
+        uint64_t bal =
+            total_deposited_ > total_distributed_ ? total_deposited_ - total_distributed_ : 0;
         return (double)bal / VELD_UNITS;
     }
 
-    uint64_t TotalDeposited()   const { return total_deposited_; }
-    uint64_t TotalDistributed() const { return total_distributed_; }
+    uint64_t TotalDeposited() const {
+        return total_deposited_;
+    }
+    uint64_t TotalDistributed() const {
+        return total_distributed_;
+    }
 
     void ResetLog() {
         std::lock_guard<std::mutex> lock(mutex_);
         log_.clear();
-        total_deposited_   = 0;
+        total_deposited_ = 0;
         total_distributed_ = 0;
     }
 
@@ -84,23 +89,22 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         std::ostringstream j;
         j << std::fixed << std::setprecision(8);
-        uint64_t bal = total_deposited_ > total_distributed_
-                     ? total_deposited_ - total_distributed_ : 0;
+        uint64_t bal =
+            total_deposited_ > total_distributed_ ? total_deposited_ - total_distributed_ : 0;
         j << "{"
           << "\"balance_veld\":" << (double)bal / VELD_UNITS << ","
           << "\"total_deposited_veld\":" << (double)total_deposited_ / VELD_UNITS << ","
           << "\"total_distributed_veld\":" << (double)total_distributed_ / VELD_UNITS << ","
           << "\"vault_address\":\"" << VAULT_ADDRESS << "\","
-          << "\"log_entries\":" << log_.size()
-          << "}";
+          << "\"log_entries\":" << log_.size() << "}";
         return j.str();
     }
 
-private:
+  private:
     mutable std::mutex mutex_;
     uint64_t total_deposited_{0};
     uint64_t total_distributed_{0};
     std::vector<VaultEntry> log_;
 };
 
-}
+} // namespace veld

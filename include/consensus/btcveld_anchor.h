@@ -23,11 +23,11 @@
 // finalized checkpoint; there is no BTCVELD_ANCHOR_ACTIVATION_HEIGHT constant.
 
 #include "core/btc_header_chain.h"
-#include "core/btc_deposit_verify.h"   // ParseBtcTxOutputs, ExtractOpReturn, BtcTxOut, ::veld::Hash256d
-#include "core/block.h"                // candidate-branch binding for the applying Veld block
-#include "core/constants.h"            // chain-depth gate remains independent of anchor admission
+#include "core/btc_deposit_verify.h" // ParseBtcTxOutputs, ExtractOpReturn, BtcTxOut, ::veld::Hash256d
+#include "core/block.h"              // candidate-branch binding for the applying Veld block
+#include "core/constants.h"          // chain-depth gate remains independent of anchor admission
 #include "consensus/btcveld_anchor_params.h" // advertised proof-admission horizon
-#include "consensus/finality_qc.h"     // full promotion record retained by permanent floor
+#include "consensus/finality_qc.h"           // full promotion record retained by permanent floor
 #include "consensus/state_digest.h"
 #include <unordered_map>
 #include <vector>
@@ -41,39 +41,47 @@
 namespace veld {
 namespace btcanchor {
 
-using ::veld::btcspv::H256;              // std::array<uint8_t,32> — Bitcoin-side hashes
 using ::veld::btcspv::BtcHeaderChain;
 using ::veld::btcspv::BtcTxOut;
-using ::veld::btcspv::ParseBtcTxOutputs;
 using ::veld::btcspv::ExtractOpReturn;
+using ::veld::btcspv::H256; // std::array<uint8_t,32> — Bitcoin-side hashes
+using ::veld::btcspv::ParseBtcTxOutputs;
 
 // ANCHOR_SPV v1 payload. Unlike fresh-genesis MINT_SPV MSP2, anchors retain the
 // legacy remainder-is-transaction layout because they carry no mint nullifier:
 //   "ANCH" | btc_block_hash(32) | merkle_dirs(u32 LE) | merkle_len(u8) | len×branch(32) | legacy_anchor_tx
-inline bool ParseAnchorSpvOp(const uint8_t* p, size_t len, H256& btc_block_hash,
-                             uint64_t& dirs, std::vector<H256>& branch,
-                             std::vector<uint8_t>& legacy_tx) {
-    if (len < 4 + 32 + 4 + 1) return false;
-    if (p[0] != 'A' || p[1] != 'N' || p[2] != 'C' || p[3] != 'H') return false;
+inline bool ParseAnchorSpvOp(const uint8_t* p, size_t len, H256& btc_block_hash, uint64_t& dirs,
+                             std::vector<H256>& branch, std::vector<uint8_t>& legacy_tx) {
+    if (len < 4 + 32 + 4 + 1)
+        return false;
+    if (p[0] != 'A' || p[1] != 'N' || p[2] != 'C' || p[3] != 'H')
+        return false;
     size_t off = 4;
-    std::memcpy(btc_block_hash.data(), p + off, 32); off += 32;
-    dirs = ::veld::btcspv::rd_le32(p + off); off += 4;
+    std::memcpy(btc_block_hash.data(), p + off, 32);
+    off += 32;
+    dirs = ::veld::btcspv::rd_le32(p + off);
+    off += 4;
     uint8_t mlen = p[off++];
-    if (mlen > 32) return false;                              // a BTC block's Merkle depth is <= 32
-    if (off + (size_t)mlen * 32 > len) return false;
+    if (mlen > 32)
+        return false; // a BTC block's Merkle depth is <= 32
+    if (off + (size_t)mlen * 32 > len)
+        return false;
     branch.clear();
-    for (int i = 0; i < mlen; ++i) { branch.push_back(::veld::btcspv::rd_hash(p + off)); off += 32; }
+    for (int i = 0; i < mlen; ++i) {
+        branch.push_back(::veld::btcspv::rd_hash(p + off));
+        off += 32;
+    }
     legacy_tx.assign(p + off, p + len);
     return !legacy_tx.empty();
 }
 
 struct AnchorResult {
-    bool        ok = false;
-    std::string reason;                 // diagnostic on reject
-    uint64_t    veld_height = 0;
-    ::veld::Hash256 veld_block_hash{};   // the committed VELD block hash (VELD-side type)
-    H256        btc_block_hash{};        // exact best-chain block proven by the SPV payload
-    H256        btc_txid{};             // idempotency key (BTC-side)
+    bool ok = false;
+    std::string reason; // diagnostic on reject
+    uint64_t veld_height = 0;
+    ::veld::Hash256 veld_block_hash{}; // the committed VELD block hash (VELD-side type)
+    H256 btc_block_hash{};             // exact best-chain block proven by the SPV payload
+    H256 btc_txid{};                   // idempotency key (BTC-side)
 };
 
 // A Bitcoin proof authenticates the bytes carried by the anchor transaction;
@@ -91,7 +99,8 @@ template <typename ResolveAncestor>
 inline bool MatchesAppliedVeldBranch(const AnchorResult& anchor,
                                      const ::veld::Block& applying_block,
                                      ResolveAncestor&& resolve_ancestor) {
-    if (!anchor.ok || anchor.veld_height > applying_block.height) return false;
+    if (!anchor.ok || anchor.veld_height > applying_block.height)
+        return false;
 
     ::veld::Hash256 expected{};
     if (anchor.veld_height == applying_block.height) {
@@ -105,37 +114,62 @@ inline bool MatchesAppliedVeldBranch(const AnchorResult& anchor,
 // Read-only verify: proves the anchor tx sits in a >= k_btc-final Bitcoin block and reads
 // (veld_height, veld_block_hash) from its single VELD_ANCHOR OP_RETURN. Fail-closed —
 // structurally identical to VerifyDepositMint (the proven MINT gate).
-inline AnchorResult VerifyAnchor(const BtcHeaderChain& ch, const uint8_t* payload,
-                                 size_t len, uint32_t k_btc) {
+inline AnchorResult VerifyAnchor(const BtcHeaderChain& ch, const uint8_t* payload, size_t len,
+                                 uint32_t k_btc) {
     AnchorResult r;
-    H256 blk; uint64_t dirs = 0; std::vector<H256> branch; std::vector<uint8_t> tx;
-    if (!ParseAnchorSpvOp(payload, len, blk, dirs, branch, tx)) { r.reason = "malformed ANCHOR_SPV op"; return r; }
+    H256 blk;
+    uint64_t dirs = 0;
+    std::vector<H256> branch;
+    std::vector<uint8_t> tx;
+    if (!ParseAnchorSpvOp(payload, len, blk, dirs, branch, tx)) {
+        r.reason = "malformed ANCHOR_SPV op";
+        return r;
+    }
 
     // Merkle-ambiguity guard (CVE-2012-2459 class) — a 64-byte "tx" can masquerade as two
     // interior nodes. A real anchor tx (>= one output + one OP_RETURN) is always larger.
-    if (tx.size() <= 64) { r.reason = "anchor tx implausibly short (merkle-ambiguity guard)"; return r; }
+    if (tx.size() <= 64) {
+        r.reason = "anchor tx implausibly short (merkle-ambiguity guard)";
+        return r;
+    }
 
     H256 txid = ::veld::Hash256d(tx);
-    if (!ch.VerifyMerkle(blk, txid, branch, dirs)) { r.reason = "merkle proof invalid"; return r; }
-    if (!ch.IsFinal(blk, k_btc))                   { r.reason = "btc block not final / not on best chain"; return r; }
+    if (!ch.VerifyMerkle(blk, txid, branch, dirs)) {
+        r.reason = "merkle proof invalid";
+        return r;
+    }
+    if (!ch.IsFinal(blk, k_btc)) {
+        r.reason = "btc block not final / not on best chain";
+        return r;
+    }
 
     std::vector<BtcTxOut> outs;
-    if (!ParseBtcTxOutputs(tx.data(), tx.size(), outs)) { r.reason = "anchor tx unparseable"; return r; }
+    if (!ParseBtcTxOutputs(tx.data(), tx.size(), outs)) {
+        r.reason = "anchor tx unparseable";
+        return r;
+    }
 
     // exactly one "VELD_ANCHOR:" OP_RETURN carrying height(8 LE) + veld_block_hash(32)
     static const std::string TAG = "VELD_ANCHOR:";
-    int n = 0; uint64_t h = 0; ::veld::Hash256 vh{};
+    int n = 0;
+    uint64_t h = 0;
+    ::veld::Hash256 vh{};
     for (const auto& o : outs) {
         std::vector<uint8_t> d = ExtractOpReturn(o.spk);
         if (d.size() == TAG.size() + 8 + 32 && std::equal(TAG.begin(), TAG.end(), d.begin())) {
             const uint8_t* q = d.data() + TAG.size();
-            uint64_t hv = 0; for (int i = 0; i < 8; ++i) hv |= (uint64_t)q[i] << (8 * i);
+            uint64_t hv = 0;
+            for (int i = 0; i < 8; ++i)
+                hv |= (uint64_t)q[i] << (8 * i);
             h = hv;
             std::memcpy(vh.data(), q + 8, 32);
             ++n;
         }
     }
-    if (n != 1) { r.reason = "anchor must have exactly one VELD_ANCHOR OP_RETURN"; return r; }
+    if (n != 1) {
+        r.reason = "anchor must have exactly one VELD_ANCHOR OP_RETURN";
+        return r;
+    }
 
     r.ok = true;
     r.veld_height = h;
@@ -149,7 +183,7 @@ inline AnchorResult VerifyAnchor(const BtcHeaderChain& ch, const uint8_t* payloa
 // given Veld height; later or conflicting anchors are ignored. Digest-included so every
 // node agrees. Only records what VerifyAnchor already proved.
 class AnchorSet {
-public:
+  public:
     struct Entry {
         ::veld::Hash256 veld_block_hash{};
         uint64_t carrying_veld_height = 0;
@@ -211,30 +245,26 @@ public:
     // (drop the proof carrier while sharing its target, then rewrite the now-
     // forgotten target) without making two competing, unfinalized proof
     // carriers permanently freeze opposite sides of a partition.
-    bool Stage(uint64_t veld_height,
-               const ::veld::Hash256& veld_block_hash,
-               uint64_t carrying_veld_height,
-               const ::veld::Hash256& carrying_veld_hash,
-               const H256& btc_block_hash,
-               const H256& btc_txid) {
+    bool Stage(uint64_t veld_height, const ::veld::Hash256& veld_block_hash,
+               uint64_t carrying_veld_height, const ::veld::Hash256& carrying_veld_hash,
+               const H256& btc_block_hash, const H256& btc_txid) {
         std::lock_guard<std::mutex> lk(m_);
-        if (veld_height > carrying_veld_height ||
-            carrying_veld_hash == ::veld::Hash256{} ||
-            btc_block_hash == H256{}) return false;
+        if (veld_height > carrying_veld_height || carrying_veld_hash == ::veld::Hash256{} ||
+            btc_block_hash == H256{})
+            return false;
         AdvanceHeightLocked_(carrying_veld_height);
-        if (veld_height < retain_from_) return false;
+        if (veld_height < retain_from_)
+            return false;
         if (anchored_.count(veld_height) || pending_.count(veld_height))
             return false;
-        if (used_.count(btc_txid)) return false;
-        constexpr size_t kPendingCap =
-            static_cast<size_t>(BTCVELD_ANCHOR_ACCEPT_WINDOW) + 1u;
-        if (pending_.size() >= kPendingCap) return false;
+        if (used_.count(btc_txid))
+            return false;
+        constexpr size_t kPendingCap = static_cast<size_t>(BTCVELD_ANCHOR_ACCEPT_WINDOW) + 1u;
+        if (pending_.size() >= kPendingCap)
+            return false;
         used_.insert(btc_txid);
-        pending_[veld_height] = Entry{veld_block_hash,
-                                      carrying_veld_height,
-                                      carrying_veld_hash,
-                                      btc_block_hash,
-                                      btc_txid};
+        pending_[veld_height] = Entry{veld_block_hash, carrying_veld_height, carrying_veld_hash,
+                                      btc_block_hash, btc_txid};
         return true;
     }
 
@@ -243,11 +273,10 @@ public:
     // or substituted carrier fails atomically rather than publishing a partial
     // anchor set.
     template <typename ResolveCarrier, typename IsBtcFinal>
-    PromotionResult PromoteFinalized(uint64_t finalized_height,
-                                     ResolveCarrier&& resolve_carrier,
-                                     IsBtcFinal&& is_btc_final,
-                                     const ::veld::finality::qc::FinalizedRecord&
-                                         authorization_record) {
+    PromotionResult
+    PromoteFinalized(uint64_t finalized_height, ResolveCarrier&& resolve_carrier,
+                     IsBtcFinal&& is_btc_final,
+                     const ::veld::finality::qc::FinalizedRecord& authorization_record) {
         std::lock_guard<std::mutex> lk(m_);
         std::vector<uint64_t> eligible;
         eligible.reserve(pending_.size());
@@ -258,14 +287,11 @@ public:
         std::sort(eligible.begin(), eligible.end());
         if (!eligible.empty()) {
             if (authorization_record.IsNull() ||
-                authorization_record.phase !=
-                    ::veld::finality::qc::Phase::PRECOMMIT ||
+                authorization_record.phase != ::veld::finality::qc::Phase::PRECOMMIT ||
                 authorization_record.target.height != finalized_height ||
-                authorization_record.carrier.height <
-                    authorization_record.target.height ||
+                authorization_record.carrier.height < authorization_record.target.height ||
                 authorization_record.carrier.hash == ::veld::Hash256{} ||
-                ::veld::finality::qc::RecordDigest(authorization_record) ==
-                    ::veld::Hash256{})
+                ::veld::finality::qc::RecordDigest(authorization_record) == ::veld::Hash256{})
                 return PromotionResult{false, 0, 0};
 
             // A superseding floor is authorized only on a canonical branch
@@ -273,19 +299,17 @@ public:
             // online reorg gate already enforces this; repeat the ancestry
             // check at the state transition so isolated/replay callers cannot
             // accidentally replace a floor after consulting the wrong branch.
-            if (permanent_ &&
-                !permanent_->authorization_record.IsNull()) {
+            if (permanent_ && !permanent_->authorization_record.IsNull()) {
                 ::veld::Hash256 prior_carrier{};
-                const auto& prior =
-                    permanent_->authorization_record.carrier;
-                if (!resolve_carrier(prior.height, prior_carrier) ||
-                    prior_carrier != prior.hash)
+                const auto& prior = permanent_->authorization_record.carrier;
+                if (!resolve_carrier(prior.height, prior_carrier) || prior_carrier != prior.hash)
                     return PromotionResult{false, 0, 0};
             }
         }
         for (uint64_t target_height : eligible) {
             const auto it = pending_.find(target_height);
-            if (it == pending_.end()) return PromotionResult{false, 0, 0};
+            if (it == pending_.end())
+                return PromotionResult{false, 0, 0};
             ::veld::Hash256 canonical{};
             if (!resolve_carrier(it->second.carrying_veld_height, canonical) ||
                 canonical != it->second.carrying_veld_hash)
@@ -308,18 +332,13 @@ public:
                 continue;
             }
             Entry entry = it->second;
-            if (authorization_record.target.height <
-                    entry.carrying_veld_height ||
-                authorization_record.carrier.height <
-                    entry.carrying_veld_height)
+            if (authorization_record.target.height < entry.carrying_veld_height ||
+                authorization_record.carrier.height < entry.carrying_veld_height)
                 return PromotionResult{false, 0, 0};
-            entry.authorization_veld_height =
-                authorization_record.carrier.height;
-            entry.authorization_veld_hash =
-                authorization_record.carrier.hash;
+            entry.authorization_veld_height = authorization_record.carrier.height;
+            entry.authorization_veld_hash = authorization_record.carrier.hash;
             entry.authorization_finality_digest =
-                ::veld::finality::qc::RecordDigest(
-                    authorization_record);
+                ::veld::finality::qc::RecordDigest(authorization_record);
             pending_.erase(it);
             if (target_height < retain_from_) {
                 // Admission was valid in the earlier carrier, but a prolonged
@@ -331,10 +350,10 @@ public:
             } else {
                 anchored_[target_height] = entry;
             }
-            if (target_height > high_water_) high_water_ = target_height;
+            if (target_height > high_water_)
+                high_water_ = target_height;
             if (!permanent_ || target_height > permanent_->target_height)
-                permanent_ = PermanentCheckpoint{
-                    target_height, entry, authorization_record};
+                permanent_ = PermanentCheckpoint{target_height, entry, authorization_record};
             ++promoted;
         }
         return PromotionResult{true, promoted, dropped_btc_reorg};
@@ -347,25 +366,27 @@ public:
     bool Record(uint64_t veld_height, const ::veld::Hash256& veld_block_hash,
                 uint64_t carrying_veld_height, const H256& btc_txid) {
         std::lock_guard<std::mutex> lk(m_);
-        if (veld_height > carrying_veld_height) return false;
+        if (veld_height > carrying_veld_height)
+            return false;
         // Record() is a defense-in-depth boundary as well as an internal API:
         // a verified anchor cannot commit a future Veld block, and callers
         // which forgot the per-block AdvanceHeight() still cannot grow state
         // beyond the public admission/retention horizon.
         AdvanceHeightLocked_(carrying_veld_height);
-        if (veld_height < retain_from_) return false;
+        if (veld_height < retain_from_)
+            return false;
         if (anchored_.count(veld_height) || pending_.count(veld_height))
-            return false;                                   // first-seen wins — no state change
-        if (used_.count(btc_txid)) return false;             // same anchor tx replayed
+            return false; // first-seen wins — no state change
+        if (used_.count(btc_txid))
+            return false; // same anchor tx replayed
         used_.insert(btc_txid);
-        anchored_[veld_height] = Entry{veld_block_hash, carrying_veld_height,
-                                       ::veld::Hash256{}, H256{}, btc_txid,
-                                       0, ::veld::Hash256{},
-                                       ::veld::Hash256{}};
-        if (veld_height > high_water_) high_water_ = veld_height;
+        anchored_[veld_height] =
+            Entry{veld_block_hash,   carrying_veld_height, ::veld::Hash256{}, H256{}, btc_txid, 0,
+                  ::veld::Hash256{}, ::veld::Hash256{}};
+        if (veld_height > high_water_)
+            high_water_ = veld_height;
         if (!permanent_ || veld_height > permanent_->target_height)
-            permanent_ = PermanentCheckpoint{veld_height,
-                                              anchored_.at(veld_height), {}};
+            permanent_ = PermanentCheckpoint{veld_height, anchored_.at(veld_height), {}};
         return true;
     }
 
@@ -387,13 +408,13 @@ public:
     // promotion, otherwise replay could erase the checkpoint transition.
     bool PermanentReorgPermitted(uint64_t common_ancestor_height) const {
         std::lock_guard<std::mutex> lk(m_);
-        if (!permanent_) return true;
-        const uint64_t carrier =
-            !permanent_->authorization_record.IsNull()
-                ? permanent_->authorization_record.carrier.height
-                : (permanent_->entry.authorization_veld_height != 0
-                    ? permanent_->entry.authorization_veld_height
-                    : permanent_->entry.carrying_veld_height);
+        if (!permanent_)
+            return true;
+        const uint64_t carrier = !permanent_->authorization_record.IsNull()
+                                     ? permanent_->authorization_record.carrier.height
+                                     : (permanent_->entry.authorization_veld_height != 0
+                                            ? permanent_->entry.authorization_veld_height
+                                            : permanent_->entry.carrying_veld_height);
         return common_ancestor_height >= carrier;
     }
 
@@ -419,11 +440,26 @@ public:
         return out;
     }
 
-    uint64_t HighWater() const { std::lock_guard<std::mutex> lk(m_); return high_water_; }
-    uint64_t RetentionFloor() const { std::lock_guard<std::mutex> lk(m_); return retain_from_; }
-    uint64_t RetiredCount() const { std::lock_guard<std::mutex> lk(m_); return retired_count_; }
-    size_t ActiveSize() const { std::lock_guard<std::mutex> lk(m_); return anchored_.size(); }
-    size_t PendingSize() const { std::lock_guard<std::mutex> lk(m_); return pending_.size(); }
+    uint64_t HighWater() const {
+        std::lock_guard<std::mutex> lk(m_);
+        return high_water_;
+    }
+    uint64_t RetentionFloor() const {
+        std::lock_guard<std::mutex> lk(m_);
+        return retain_from_;
+    }
+    uint64_t RetiredCount() const {
+        std::lock_guard<std::mutex> lk(m_);
+        return retired_count_;
+    }
+    size_t ActiveSize() const {
+        std::lock_guard<std::mutex> lk(m_);
+        return anchored_.size();
+    }
+    size_t PendingSize() const {
+        std::lock_guard<std::mutex> lk(m_);
+        return pending_.size();
+    }
     bool HasPermanentCheckpoint() const {
         std::lock_guard<std::mutex> lk(m_);
         return permanent_.has_value();
@@ -439,8 +475,7 @@ public:
                r.target.height <= r.carrier.height &&
                p.entry.authorization_veld_height == r.carrier.height &&
                p.entry.authorization_veld_hash == r.carrier.hash &&
-               p.entry.authorization_finality_digest ==
-                   ::veld::finality::qc::RecordDigest(r);
+               p.entry.authorization_finality_digest == ::veld::finality::qc::RecordDigest(r);
     }
     void Reset() {
         std::lock_guard<std::mutex> lk(m_);
@@ -460,24 +495,24 @@ public:
     struct StateSnapshot {
         std::unordered_map<uint64_t, Entry> anchored;
         std::unordered_map<uint64_t, Entry> pending;
-        std::optional<PermanentCheckpoint>  permanent;
-        std::set<H256>                      used;
-        uint64_t                            high_water = 0;
-        uint64_t                            retain_from = 0;
-        uint64_t                            retired_count = 0;
-        ::veld::Hash256                     retired_root{};
+        std::optional<PermanentCheckpoint> permanent;
+        std::set<H256> used;
+        uint64_t high_water = 0;
+        uint64_t retain_from = 0;
+        uint64_t retired_count = 0;
+        ::veld::Hash256 retired_root{};
     };
     StateSnapshot SnapshotState() const {
         std::lock_guard<std::mutex> lk(m_);
-        return StateSnapshot{ anchored_, pending_, permanent_, used_, high_water_,
-                              retain_from_, retired_count_, retired_root_ };
+        return StateSnapshot{anchored_,   pending_,     permanent_,     used_,
+                             high_water_, retain_from_, retired_count_, retired_root_};
     }
     void RestoreState(const StateSnapshot& s) {
         std::lock_guard<std::mutex> lk(m_);
-        anchored_   = s.anchored;
-        pending_    = s.pending;
-        permanent_  = s.permanent;
-        used_       = s.used;
+        anchored_ = s.anchored;
+        pending_ = s.pending;
+        permanent_ = s.permanent;
+        used_ = s.used;
         high_water_ = s.high_water;
         retain_from_ = s.retain_from;
         retired_count_ = s.retired_count;
@@ -494,11 +529,13 @@ public:
     ::veld::Hash256 Digest() const {
         std::lock_guard<std::mutex> lk(m_);
         namespace sd = ::veld::state_digest;
-        std::vector<uint64_t> keys; keys.reserve(anchored_.size());
-        for (const auto& [k, _v] : anchored_) keys.push_back(k);
+        std::vector<uint64_t> keys;
+        keys.reserve(anchored_.size());
+        for (const auto& [k, _v] : anchored_)
+            keys.push_back(k);
         std::sort(keys.begin(), keys.end());
         std::vector<uint8_t> body;
-        sd::put_u32_le(body, 7);  // encoding version
+        sd::put_u32_le(body, 7); // encoding version
         sd::put_u64_le(body, retain_from_);
         sd::put_u64_le(body, retired_count_);
         body.insert(body.end(), retired_root_.begin(), retired_root_.end());
@@ -508,10 +545,8 @@ public:
             sd::put_u64_le(body, k);
             body.insert(body.end(), e.veld_block_hash.begin(), e.veld_block_hash.end());
             sd::put_u64_le(body, e.carrying_veld_height);
-            body.insert(body.end(), e.carrying_veld_hash.begin(),
-                        e.carrying_veld_hash.end());
-            body.insert(body.end(), e.btc_block_hash.begin(),
-                        e.btc_block_hash.end());
+            body.insert(body.end(), e.carrying_veld_hash.begin(), e.carrying_veld_hash.end());
+            body.insert(body.end(), e.btc_block_hash.begin(), e.btc_block_hash.end());
             body.insert(body.end(), e.btc_txid.begin(), e.btc_txid.end());
             sd::put_u64_le(body, e.authorization_veld_height);
             body.insert(body.end(), e.authorization_veld_hash.begin(),
@@ -521,19 +556,17 @@ public:
         }
         keys.clear();
         keys.reserve(pending_.size());
-        for (const auto& [k, _v] : pending_) keys.push_back(k);
+        for (const auto& [k, _v] : pending_)
+            keys.push_back(k);
         std::sort(keys.begin(), keys.end());
         sd::put_u32_le(body, (uint32_t)keys.size());
         for (uint64_t k : keys) {
             const auto& e = pending_.at(k);
             sd::put_u64_le(body, k);
-            body.insert(body.end(), e.veld_block_hash.begin(),
-                        e.veld_block_hash.end());
+            body.insert(body.end(), e.veld_block_hash.begin(), e.veld_block_hash.end());
             sd::put_u64_le(body, e.carrying_veld_height);
-            body.insert(body.end(), e.carrying_veld_hash.begin(),
-                        e.carrying_veld_hash.end());
-            body.insert(body.end(), e.btc_block_hash.begin(),
-                        e.btc_block_hash.end());
+            body.insert(body.end(), e.carrying_veld_hash.begin(), e.carrying_veld_hash.end());
+            body.insert(body.end(), e.btc_block_hash.begin(), e.btc_block_hash.end());
             body.insert(body.end(), e.btc_txid.begin(), e.btc_txid.end());
             sd::put_u64_le(body, e.authorization_veld_height);
             body.insert(body.end(), e.authorization_veld_hash.begin(),
@@ -546,24 +579,19 @@ public:
             const auto& p = *permanent_;
             const auto& e = p.entry;
             sd::put_u64_le(body, p.target_height);
-            body.insert(body.end(), e.veld_block_hash.begin(),
-                        e.veld_block_hash.end());
+            body.insert(body.end(), e.veld_block_hash.begin(), e.veld_block_hash.end());
             sd::put_u64_le(body, e.carrying_veld_height);
-            body.insert(body.end(), e.carrying_veld_hash.begin(),
-                        e.carrying_veld_hash.end());
-            body.insert(body.end(), e.btc_block_hash.begin(),
-                        e.btc_block_hash.end());
+            body.insert(body.end(), e.carrying_veld_hash.begin(), e.carrying_veld_hash.end());
+            body.insert(body.end(), e.btc_block_hash.begin(), e.btc_block_hash.end());
             body.insert(body.end(), e.btc_txid.begin(), e.btc_txid.end());
             sd::put_u64_le(body, e.authorization_veld_height);
             body.insert(body.end(), e.authorization_veld_hash.begin(),
                         e.authorization_veld_hash.end());
             body.insert(body.end(), e.authorization_finality_digest.begin(),
                         e.authorization_finality_digest.end());
-            sd::put_u8(body,
-                       p.authorization_record.IsNull() ? 0 : 1);
+            sd::put_u8(body, p.authorization_record.IsNull() ? 0 : 1);
             if (!p.authorization_record.IsNull()) {
-                const auto rd = ::veld::finality::qc::RecordDigest(
-                    p.authorization_record);
+                const auto rd = ::veld::finality::qc::RecordDigest(p.authorization_record);
                 body.insert(body.end(), rd.begin(), rd.end());
             }
         }
@@ -574,24 +602,20 @@ public:
         return sd::sha256_domain(sd::tags::ANCHORS, body);
     }
 
-private:
+  private:
     void FoldRetiredLocked_(uint64_t height, const Entry& e) {
         namespace sd = ::veld::state_digest;
         std::vector<uint8_t> body;
         body.reserve(32 + 8 + 32 + 8 + 32 + 32 + 32 + 8 + 32 + 32);
         body.insert(body.end(), retired_root_.begin(), retired_root_.end());
         sd::put_u64_le(body, height);
-        body.insert(body.end(), e.veld_block_hash.begin(),
-                    e.veld_block_hash.end());
+        body.insert(body.end(), e.veld_block_hash.begin(), e.veld_block_hash.end());
         sd::put_u64_le(body, e.carrying_veld_height);
-        body.insert(body.end(), e.carrying_veld_hash.begin(),
-                    e.carrying_veld_hash.end());
-        body.insert(body.end(), e.btc_block_hash.begin(),
-                    e.btc_block_hash.end());
+        body.insert(body.end(), e.carrying_veld_hash.begin(), e.carrying_veld_hash.end());
+        body.insert(body.end(), e.btc_block_hash.begin(), e.btc_block_hash.end());
         body.insert(body.end(), e.btc_txid.begin(), e.btc_txid.end());
         sd::put_u64_le(body, e.authorization_veld_height);
-        body.insert(body.end(), e.authorization_veld_hash.begin(),
-                    e.authorization_veld_hash.end());
+        body.insert(body.end(), e.authorization_veld_hash.begin(), e.authorization_veld_hash.end());
         body.insert(body.end(), e.authorization_finality_digest.begin(),
                     e.authorization_finality_digest.end());
         retired_root_ = sd::sha256_domain("VELD_ANCHOR_RETIRED_v3|", body);
@@ -605,18 +629,21 @@ private:
         if (canonical_height > BTCVELD_ANCHOR_ACCEPT_WINDOW) {
             next_floor = canonical_height - BTCVELD_ANCHOR_ACCEPT_WINDOW;
         }
-        if (next_floor <= retain_from_) return;
+        if (next_floor <= retain_from_)
+            return;
 
         std::vector<uint64_t> retiring;
         retiring.reserve(anchored_.size());
         for (const auto& [height, _entry] : anchored_) {
-            if (height < next_floor) retiring.push_back(height);
+            if (height < next_floor)
+                retiring.push_back(height);
         }
         std::sort(retiring.begin(), retiring.end());
 
         for (uint64_t height : retiring) {
             const auto it = anchored_.find(height);
-            if (it == anchored_.end()) continue;
+            if (it == anchored_.end())
+                continue;
             const Entry& e = it->second;
             FoldRetiredLocked_(height, e);
             used_.erase(e.btc_txid);
@@ -626,14 +653,14 @@ private:
     }
 
     mutable std::mutex m_;
-    std::unordered_map<uint64_t, Entry> anchored_;   // veld_height -> authoritative anchor
-    std::unordered_map<uint64_t, Entry> pending_;    // target -> proof awaiting carrier finality
-    std::optional<PermanentCheckpoint>  permanent_;  // highest promoted target, never pruned
-    std::set<H256>                      used_;       // btc_txid idempotency set
-    uint64_t                            high_water_ = 0;
-    uint64_t                            retain_from_ = 0; // inclusive public admission/active floor
-    uint64_t                            retired_count_ = 0;
-    ::veld::Hash256                     retired_root_{};
+    std::unordered_map<uint64_t, Entry> anchored_; // veld_height -> authoritative anchor
+    std::unordered_map<uint64_t, Entry> pending_;  // target -> proof awaiting carrier finality
+    std::optional<PermanentCheckpoint> permanent_; // highest promoted target, never pruned
+    std::set<H256> used_;                          // btc_txid idempotency set
+    uint64_t high_water_ = 0;
+    uint64_t retain_from_ = 0; // inclusive public admission/active floor
+    uint64_t retired_count_ = 0;
+    ::veld::Hash256 retired_root_{};
 };
 
 // Consensus integration:
@@ -645,5 +672,5 @@ private:
 //  5. The target must already be validator-final, and a staged proof remains
 //     non-authoritative until its exact carrier is finalized.
 
-}  // namespace btcanchor
-}  // namespace veld
+} // namespace btcanchor
+} // namespace veld

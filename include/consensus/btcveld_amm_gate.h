@@ -40,7 +40,8 @@ namespace ammgate {
 // May a VELD<->btcVELD AMM swap (either direction) execute at `height`?
 // Dormant => always. Armed => only at/after the swap-unlock height.
 inline bool SwapAllowed(uint64_t height) {
-    if (!BtcVeldAmmGateActive(height)) return true;
+    if (!BtcVeldAmmGateActive(height))
+        return true;
     return height >= BTCVELD_AMM_SWAP_UNLOCK_HEIGHT;
 }
 
@@ -49,11 +50,14 @@ inline bool SwapAllowed(uint64_t height) {
 // grandfathered over-cap reserve can only shrink), increases only up to the
 // pool cap. Fail-closed on a negative (wrapped/corrupt) new_reserve.
 inline bool PoolReserveAllowed(uint64_t height, int64_t old_reserve, int64_t new_reserve) {
-    if (new_reserve < 0) return false;
-    if (!BtcVeldAmmGateActive(height)) return true;
-    if (new_reserve <= old_reserve) return true;
+    if (new_reserve < 0)
+        return false;
+    if (!BtcVeldAmmGateActive(height))
+        return true;
+    if (new_reserve <= old_reserve)
+        return true;
     return new_reserve <= BTCVELD_AMM_MAX_POOL_BTCVELD_SATS;
 }
 
-}  // namespace ammgate
-}  // namespace veld
+} // namespace ammgate
+} // namespace veld

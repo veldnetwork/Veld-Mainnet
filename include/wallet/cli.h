@@ -42,18 +42,21 @@ namespace fs = std::filesystem;
 #ifndef _WIN32
 struct TermiosNoEchoGuard {
     struct termios saved_;
-    bool           active_;
+    bool active_;
     explicit TermiosNoEchoGuard() : saved_{}, active_(false) {
-        if (tcgetattr(STDIN_FILENO, &saved_) != 0) return;
+        if (tcgetattr(STDIN_FILENO, &saved_) != 0)
+            return;
         struct termios noecho = saved_;
         noecho.c_lflag &= ~(tcflag_t)(ECHO | ECHOE | ECHOK | ECHONL);
-        if (tcsetattr(STDIN_FILENO, TCSANOW, &noecho) != 0) return;
+        if (tcsetattr(STDIN_FILENO, TCSANOW, &noecho) != 0)
+            return;
         active_ = true;
     }
     ~TermiosNoEchoGuard() {
-        if (active_) tcsetattr(STDIN_FILENO, TCSANOW, &saved_);
+        if (active_)
+            tcsetattr(STDIN_FILENO, TCSANOW, &saved_);
     }
-    TermiosNoEchoGuard(const TermiosNoEchoGuard&)            = delete;
+    TermiosNoEchoGuard(const TermiosNoEchoGuard&) = delete;
     TermiosNoEchoGuard& operator=(const TermiosNoEchoGuard&) = delete;
 };
 #endif
@@ -65,8 +68,15 @@ inline SecureString ReadPassword(const std::string& prompt) {
 #ifdef _WIN32
     int c;
     while ((c = _getch()) != 13) {
-        if (c == 8) { if (!pw.empty()) { pw.pop_back(); std::cout << "\b \b" << std::flush; } }
-        else if (c >= 32) { pw += (char)c; std::cout << '*' << std::flush; }
+        if (c == 8) {
+            if (!pw.empty()) {
+                pw.pop_back();
+                std::cout << "\b \b" << std::flush;
+            }
+        } else if (c >= 32) {
+            pw += (char)c;
+            std::cout << '*' << std::flush;
+        }
     }
     std::cout << "\n";
 #else
@@ -74,8 +84,11 @@ inline SecureString ReadPassword(const std::string& prompt) {
         TermiosNoEchoGuard guard;
         int ch;
         while ((ch = std::getchar()) != EOF && ch != '\n' && ch != '\r') {
-            if (ch == 127 || ch == 8) { if (!pw.empty()) pw.pop_back(); }
-            else if (ch >= 32 && pw.size() < pw.capacity()) pw += (char)ch;
+            if (ch == 127 || ch == 8) {
+                if (!pw.empty())
+                    pw.pop_back();
+            } else if (ch >= 32 && pw.size() < pw.capacity())
+                pw += (char)ch;
         }
     }
     std::cout << "\n";
@@ -87,7 +100,9 @@ struct SecureStringBridge {
     std::string value;
     SecureStringBridge() = default;
     explicit SecureStringBridge(const SecureString& s) : value(s.data(), s.size()) {}
-    SecureStringBridge(SecureStringBridge&& o) noexcept : value(std::move(o.value)) { o.value.clear(); }
+    SecureStringBridge(SecureStringBridge&& o) noexcept : value(std::move(o.value)) {
+        o.value.clear();
+    }
     SecureStringBridge& operator=(SecureStringBridge&& o) noexcept {
         veld::WipeString(value);
         value = std::move(o.value);
@@ -96,7 +111,9 @@ struct SecureStringBridge {
     }
     SecureStringBridge(const SecureStringBridge&) = delete;
     SecureStringBridge& operator=(const SecureStringBridge&) = delete;
-    ~SecureStringBridge() { veld::WipeString(value); }
+    ~SecureStringBridge() {
+        veld::WipeString(value);
+    }
 };
 
 inline SecureStringBridge SecureToStdString(const SecureString& s) {
@@ -126,7 +143,8 @@ struct WalletFile {
     }
 
     bool Save(const std::string& path, const std::string& password) const {
-        if (keys.size() > MAX_WALLET_KEYS) return false;
+        if (keys.size() > MAX_WALLET_KEYS)
+            return false;
         std::string plain = Serialize();
         if (plain.size() > MAX_WALLET_FILE_BYTES - 12) {
             veld::WipeString(plain);
@@ -145,9 +163,10 @@ struct WalletFile {
         // Wallets may live directly in an owner-controlled 0755 home/cwd;
         // require owner control of the parent and an owner-only 0600 file, but
         // reserve mandatory 0700 parents for node operational secret dirs.
-        const bool ok = channel::secure_file::AtomicWrite(
-            path, payload, &error, /*require_private_parent=*/false);
-        if (!payload.empty()) VELD_SECURE_BZERO(payload.data(), payload.size());
+        const bool ok = channel::secure_file::AtomicWrite(path, payload, &error,
+                                                          /*require_private_parent=*/false);
+        if (!payload.empty())
+            VELD_SECURE_BZERO(payload.data(), payload.size());
         return ok;
     }
 
@@ -156,11 +175,13 @@ struct WalletFile {
     // old vector-of-lines amplification (an 8 MiB file containing only newlines
     // could allocate hundreds of MiB before it was rejected).
     static std::optional<WalletFile> ParsePlaintext(std::string_view plain) {
-        if (plain.size() > MAX_WALLET_FILE_BYTES) return std::nullopt;
+        if (plain.size() > MAX_WALLET_FILE_BYTES)
+            return std::nullopt;
 
         size_t cursor = 0;
         auto next_line = [&](std::string_view& line) -> bool {
-            if (cursor >= plain.size()) return false;
+            if (cursor >= plain.size())
+                return false;
             const size_t nl = plain.find('\n', cursor);
             if (nl == std::string_view::npos) {
                 line = plain.substr(cursor);
@@ -169,15 +190,15 @@ struct WalletFile {
                 line = plain.substr(cursor, nl - cursor);
                 cursor = nl + 1;
             }
-            if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+            if (!line.empty() && line.back() == '\r')
+                line.remove_suffix(1);
             return true;
         };
 
         std::string_view header, network, count_line;
-        if (!next_line(header) || !next_line(network) || !next_line(count_line)
-            || header != "veld_wallet_v2"
-            || (network != "testnet=0" && network != "testnet=1")
-            || count_line.substr(0, 5) != "keys=")
+        if (!next_line(header) || !next_line(network) || !next_line(count_line) ||
+            header != "veld_wallet_v2" || (network != "testnet=0" && network != "testnet=1") ||
+            count_line.substr(0, 5) != "keys=")
             return std::nullopt;
 
         const std::string_view count_text = count_line.substr(5);
@@ -185,17 +206,23 @@ struct WalletFile {
             return std::nullopt;
         size_t count = 0;
         for (char c : count_text) {
-            if (c < '0' || c > '9') return std::nullopt;
+            if (c < '0' || c > '9')
+                return std::nullopt;
             const size_t digit = static_cast<size_t>(c - '0');
-            if (count > (MAX_WALLET_KEYS - digit) / 10) return std::nullopt;
+            if (count > (MAX_WALLET_KEYS - digit) / 10)
+                return std::nullopt;
             count = count * 10 + digit;
         }
-        if (count > MAX_WALLET_KEYS) return std::nullopt;
+        if (count > MAX_WALLET_KEYS)
+            return std::nullopt;
 
         auto nibble = [](char c) -> int {
-            if (c >= '0' && c <= '9') return c - '0';
-            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+            if (c >= '0' && c <= '9')
+                return c - '0';
+            if (c >= 'a' && c <= 'f')
+                return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F')
+                return c - 'A' + 10;
             return -1;
         };
         WalletFile wf;
@@ -203,11 +230,12 @@ struct WalletFile {
         wf.keys.reserve(count);
         for (size_t i = 0; i < count; ++i) {
             std::string_view priv_line, addr_line;
-            if (!next_line(priv_line) || !next_line(addr_line)) return std::nullopt;
+            if (!next_line(priv_line) || !next_line(addr_line))
+                return std::nullopt;
             const std::string priv_prefix = "key" + std::to_string(i) + "_priv=";
             const std::string addr_prefix = "key" + std::to_string(i) + "_addr=";
-            if (priv_line.substr(0, priv_prefix.size()) != priv_prefix
-                || addr_line.substr(0, addr_prefix.size()) != addr_prefix)
+            if (priv_line.substr(0, priv_prefix.size()) != priv_prefix ||
+                addr_line.substr(0, addr_prefix.size()) != addr_prefix)
                 return std::nullopt;
             const std::string_view hex = priv_line.substr(priv_prefix.size());
             const std::string_view file_addr = addr_line.substr(addr_prefix.size());
@@ -217,18 +245,22 @@ struct WalletFile {
             Secp256k1PrivKey priv{};
             struct PrivWiper {
                 Secp256k1PrivKey& value;
-                ~PrivWiper() { veld::compat::SecureZero(value.data(), value.size()); }
+                ~PrivWiper() {
+                    veld::compat::SecureZero(value.data(), value.size());
+                }
             } wipe_priv{priv};
             for (size_t b = 0; b < priv.size(); ++b) {
                 const int hi = nibble(hex[b * 2]);
                 const int lo = nibble(hex[b * 2 + 1]);
-                if (hi < 0 || lo < 0) return std::nullopt;
+                if (hi < 0 || lo < 0)
+                    return std::nullopt;
                 priv[b] = static_cast<uint8_t>((hi << 4) | lo);
             }
             try {
                 const auto pub = DerivePublicKey(priv);
                 const std::string derived = PubKeyToAddress(pub, wf.testnet);
-                if (derived != file_addr) return std::nullopt;
+                if (derived != file_addr)
+                    return std::nullopt;
                 RealKeyPair kp;
                 kp.testnet = wf.testnet;
                 kp.private_key = priv;
@@ -242,24 +274,24 @@ struct WalletFile {
 
         // Accept either EOF immediately after the final address or one final
         // LF/CRLF, but reject blank lines, appended records, and hidden data.
-        if (cursor < plain.size()) return std::nullopt;
+        if (cursor < plain.size())
+            return std::nullopt;
         return wf;
     }
 
     static std::optional<WalletFile> Load(const std::string& path, const std::string& password) {
         std::vector<uint8_t> raw;
         std::string error;
-        if (channel::secure_file::Read(
-                path, raw, &error, MAX_WALLET_FILE_BYTES,
-                /*require_private_parent=*/false)
-            != channel::secure_file::ReadResult::Ok)
+        if (channel::secure_file::Read(path, raw, &error, MAX_WALLET_FILE_BYTES,
+                                       /*require_private_parent=*/false) !=
+            channel::secure_file::ReadResult::Ok)
             return std::nullopt;
         static constexpr char magic[] = "VELDWALLET2\n";
-        if (raw.size() < sizeof(magic) - 1
-            || !std::equal(magic, magic + sizeof(magic) - 1, raw.begin()))
+        if (raw.size() < sizeof(magic) - 1 ||
+            !std::equal(magic, magic + sizeof(magic) - 1, raw.begin()))
             return std::nullopt;
-        std::vector<uint8_t> encrypted(
-            raw.begin() + static_cast<std::ptrdiff_t>(sizeof(magic) - 1), raw.end());
+        std::vector<uint8_t> encrypted(raw.begin() + static_cast<std::ptrdiff_t>(sizeof(magic) - 1),
+                                       raw.end());
 
         std::string plain;
         try {
@@ -269,7 +301,9 @@ struct WalletFile {
         }
         struct PlainWiper {
             std::string& s;
-            ~PlainWiper() { veld::WipeString(s); }
+            ~PlainWiper() {
+                veld::WipeString(s);
+            }
         } wipe_plain{plain};
         return ParsePlaintext(plain);
     }
@@ -289,13 +323,14 @@ inline void RunWalletCLI(const std::string& wallet_path) {
 
         SecureString pw, pw2;
         while (true) {
-            pw  = ReadPassword("  Set wallet password: ");
+            pw = ReadPassword("  Set wallet password: ");
             pw2 = ReadPassword("  Confirm password:    ");
             auto policy_bridge = SecureToStdString(pw);
             std::string policy_error;
-            const bool policy_ok = wallet_crypto::ValidateNewPassphrase(
-                policy_bridge.value, &policy_error);
-            if (veld::ConstantTimeEquals(pw, pw2) && policy_ok) break;
+            const bool policy_ok =
+                wallet_crypto::ValidateNewPassphrase(policy_bridge.value, &policy_error);
+            if (veld::ConstantTimeEquals(pw, pw2) && policy_ok)
+                break;
             if (!veld::ConstantTimeEquals(pw, pw2))
                 std::cout << "  ✗ Passwords don't match. Try again.\n\n";
             else
@@ -337,7 +372,8 @@ inline void RunWalletCLI(const std::string& wallet_path) {
         for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt) {
             if (fail_count > 0) {
                 int backoff_sec = (1 << fail_count) - 1;
-                if (backoff_sec > 30) backoff_sec = 30;
+                if (backoff_sec > 30)
+                    backoff_sec = 30;
                 std::cout << "  [retry-backoff] waiting " << backoff_sec
                           << "s before next attempt...\n";
                 std::cout.flush();
@@ -349,12 +385,14 @@ inline void RunWalletCLI(const std::string& wallet_path) {
                 auto bridge = SecureToStdString(pw);
                 wf_opt = WalletFile::Load(wallet_path, bridge.value);
             }
-            if (wf_opt) { unlock_pw = std::move(pw); break; }
+            if (wf_opt) {
+                unlock_pw = std::move(pw);
+                break;
+            }
             ++fail_count;
             int remaining = MAX_ATTEMPTS - 1 - attempt;
             if (remaining > 0) {
-                std::cout << "  ✗ Wrong password. " << remaining
-                          << " attempt(s) remaining.\n\n";
+                std::cout << "  ✗ Wrong password. " << remaining << " attempt(s) remaining.\n\n";
             } else {
                 std::cout << "  ✗ Wrong password. Too many failed attempts; "
                           << "exiting. Re-run to try again.\n\n";
@@ -368,11 +406,9 @@ inline void RunWalletCLI(const std::string& wallet_path) {
             std::vector<uint8_t> header;
             std::string header_error;
             if (channel::secure_file::Read(
-                    wallet_path, header, &header_error,
-                    WalletFile::MAX_WALLET_FILE_BYTES,
-                    /*require_private_parent=*/false)
-                    == channel::secure_file::ReadResult::Ok
-                && header.size() > 14) {
+                    wallet_path, header, &header_error, WalletFile::MAX_WALLET_FILE_BYTES,
+                    /*require_private_parent=*/false) == channel::secure_file::ReadResult::Ok &&
+                header.size() > 14) {
                 const bool is_current =
                     header[14] == veld::wallet_crypto::VELD_WALLET_VERSION_CURRENT;
                 if (!is_current) {
@@ -413,7 +449,8 @@ inline void RunWalletCLI(const std::string& wallet_path) {
             std::string cmd;
             std::getline(std::cin, cmd);
 
-            if (cmd == "q" || cmd == "Q") break;
+            if (cmd == "q" || cmd == "Q")
+                break;
 
             else if (cmd == "s" || cmd == "S") {
                 std::cout << "\n  Addresses in this wallet:\n";
@@ -427,7 +464,10 @@ inline void RunWalletCLI(const std::string& wallet_path) {
                 auto pw = ReadPassword("  Confirm password to add address: ");
                 auto bridge = SecureToStdString(pw);
                 auto check = WalletFile::Load(wallet_path, bridge.value);
-                if (!check) { std::cout << "  ✗ Wrong password.\n\n"; continue; }
+                if (!check) {
+                    std::cout << "  ✗ Wrong password.\n\n";
+                    continue;
+                }
                 RealKeyPair kp = GenerateKeyPair(wf.testnet);
                 wf.keys.push_back(kp);
                 if (!wf.Save(wallet_path, bridge.value)) {
@@ -449,12 +489,22 @@ inline void RunWalletCLI(const std::string& wallet_path) {
                 std::string idx_str;
                 std::getline(std::cin, idx_str);
                 size_t idx = 0;
-                try { idx = std::stoull(idx_str); } catch (...) { continue; }
-                if (idx >= wf.keys.size()) { std::cout << "  ✗ Invalid index.\n\n"; continue; }
+                try {
+                    idx = std::stoull(idx_str);
+                } catch (...) {
+                    continue;
+                }
+                if (idx >= wf.keys.size()) {
+                    std::cout << "  ✗ Invalid index.\n\n";
+                    continue;
+                }
                 auto pw = ReadPassword("  Confirm password: ");
                 auto bridge = SecureToStdString(pw);
                 auto check = WalletFile::Load(wallet_path, bridge.value);
-                if (!check) { std::cout << "  ✗ Wrong password.\n\n"; continue; }
+                if (!check) {
+                    std::cout << "  ✗ Wrong password.\n\n";
+                    continue;
+                }
                 std::cout << "\n  Address: " << wf.keys[idx].address << "\n";
                 std::cout << "  Private key (hex): ";
                 for (auto b : wf.keys[idx].private_key)
@@ -465,5 +515,5 @@ inline void RunWalletCLI(const std::string& wallet_path) {
     }
 }
 
-}
-}
+} // namespace cli
+} // namespace veld

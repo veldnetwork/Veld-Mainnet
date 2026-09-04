@@ -13,15 +13,14 @@
 #include <mutex>
 
 extern "C" {
-int veld_mldsa65_keypair_from_seed(const uint8_t seed[32],
-                                   uint8_t *pk, uint8_t *sk);
+int veld_mldsa65_keypair_from_seed(const uint8_t seed[32], uint8_t* pk, uint8_t* sk);
 }
 
 namespace veld {
 
 using Secp256k1PrivKey = std::array<uint8_t, 32>;
-using Secp256k1PubKey  = std::array<uint8_t, 1952>;
-using Secp256k1SigDER  = std::vector<uint8_t>;
+using Secp256k1PubKey = std::array<uint8_t, 1952>;
+using Secp256k1SigDER = std::vector<uint8_t>;
 
 namespace key_entropy {
 
@@ -39,10 +38,8 @@ inline bool CandidateLooksSane(const Secp256k1PrivKey& candidate) noexcept {
 
 inline bool SamplesLookIndependent(const Secp256k1PrivKey& probe,
                                    const Secp256k1PrivKey& candidate) noexcept {
-    return CandidateLooksSane(probe)
-        && CandidateLooksSane(candidate)
-        && !veld::compat::ConstantTimeEqual(
-            probe.data(), candidate.data(), candidate.size());
+    return CandidateLooksSane(probe) && CandidateLooksSane(candidate) &&
+           !veld::compat::ConstantTimeEqual(probe.data(), candidate.data(), candidate.size());
 }
 
 inline bool AcceptFreshCandidate(const Secp256k1PrivKey& candidate) {
@@ -56,8 +53,8 @@ inline bool AcceptFreshCandidate(const Secp256k1PrivKey& candidate) {
     static Hash256 previous{};
     static bool have_previous = false;
     std::lock_guard<std::mutex> lock(mutex);
-    if (have_previous && veld::compat::ConstantTimeEqual(
-            previous.data(), fingerprint.data(), fingerprint.size()))
+    if (have_previous &&
+        veld::compat::ConstantTimeEqual(previous.data(), fingerprint.data(), fingerprint.size()))
         return false;
     previous = fingerprint;
     have_previous = true;
@@ -69,13 +66,10 @@ inline bool AcceptFreshCandidate(const Secp256k1PrivKey& candidate) {
 inline Secp256k1PrivKey GeneratePrivateKey() {
     Secp256k1PrivKey probe{};
     Secp256k1PrivKey key{};
-    const bool probe_ok = veld::compat::SecureRandom(
-        probe.data(), probe.size());
-    const bool key_ok = veld::compat::SecureRandom(
-        key.data(), key.size());
-    if (!probe_ok || !key_ok
-        || !key_entropy::SamplesLookIndependent(probe, key)
-        || !key_entropy::AcceptFreshCandidate(key)) {
+    const bool probe_ok = veld::compat::SecureRandom(probe.data(), probe.size());
+    const bool key_ok = veld::compat::SecureRandom(key.data(), key.size());
+    if (!probe_ok || !key_ok || !key_entropy::SamplesLookIndependent(probe, key) ||
+        !key_entropy::AcceptFreshCandidate(key)) {
         veld::compat::SecureZero(probe.data(), probe.size());
         veld::compat::SecureZero(key.data(), key.size());
         throw std::runtime_error(
@@ -97,7 +91,8 @@ inline Secp256k1PubKey DerivePublicKey(const Secp256k1PrivKey& privkey) {
     int rc = veld_mldsa65_keypair_from_seed(privkey.data(), pk.data(), sk_tmp.data());
     veld::compat::SecureZero(sk_tmp.data(), sk_tmp.size());
     veld::compat::SecureUnlockMemory(sk_tmp.data(), sk_tmp.size());
-    if (rc != 0) throw std::runtime_error("ML-DSA-65 seed-keygen failed");
+    if (rc != 0)
+        throw std::runtime_error("ML-DSA-65 seed-keygen failed");
     return pk;
 }
 
@@ -113,11 +108,12 @@ inline Secp256k1SigDER Sign(const Secp256k1PrivKey& privkey, const Hash256& hash
     }
     Secp256k1SigDER sig(veld::dilithium::SIG_MAX_BYTES, 0);
     size_t siglen = 0;
-    int rc = PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(
-        sig.data(), &siglen, hash.data(), hash.size(), sk_tmp.data());
+    int rc = PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(sig.data(), &siglen, hash.data(),
+                                                         hash.size(), sk_tmp.data());
     veld::compat::SecureZero(sk_tmp.data(), sk_tmp.size());
     veld::compat::SecureUnlockMemory(sk_tmp.data(), sk_tmp.size());
-    if (rc != 0) throw std::runtime_error("ML-DSA-65 sign failed");
+    if (rc != 0)
+        throw std::runtime_error("ML-DSA-65 sign failed");
     sig.resize(siglen);
     return sig;
 }
@@ -125,11 +121,10 @@ inline Secp256k1SigDER Sign(const Secp256k1PrivKey& privkey, const Hash256& hash
 inline bool Verify(const Secp256k1PubKey& pub, const Hash256& hash,
                    const Secp256k1SigDER& der_sig) {
     (void)PQCLEAN_MLDSA65_CLEAN_crypto_sign_verify;
-    if (der_sig.empty() || der_sig.size() > veld::dilithium::SIG_MAX_BYTES) return false;
-    int rc = PQCLEAN_MLDSA65_CLEAN_crypto_sign_verify(
-        der_sig.data(), der_sig.size(),
-        hash.data(), hash.size(),
-        pub.data());
+    if (der_sig.empty() || der_sig.size() > veld::dilithium::SIG_MAX_BYTES)
+        return false;
+    int rc = PQCLEAN_MLDSA65_CLEAN_crypto_sign_verify(der_sig.data(), der_sig.size(), hash.data(),
+                                                      hash.size(), pub.data());
     return rc == 0;
 }
 
@@ -140,16 +135,15 @@ inline bool Verify(const Secp256k1PubKey& pub, const Hash256& hash,
 
 constexpr uint8_t SCHEME_ID_MLDSA65 = 0x01;
 
-inline Hash256 ComputeSighash(
-    const Transaction& tx,
-    uint32_t input_index,
-    const std::vector<uint8_t>& subscript,
-    uint8_t scheme_id = SCHEME_ID_MLDSA65
-) {
+inline Hash256 ComputeSighash(const Transaction& tx, uint32_t input_index,
+                              const std::vector<uint8_t>& subscript,
+                              uint8_t scheme_id = SCHEME_ID_MLDSA65) {
     std::vector<uint8_t> pre;
     auto push_le32 = [&](uint32_t v) {
-        pre.push_back(v&0xFF); pre.push_back((v>>8)&0xFF);
-        pre.push_back((v>>16)&0xFF); pre.push_back((v>>24)&0xFF);
+        pre.push_back(v & 0xFF);
+        pre.push_back((v >> 8) & 0xFF);
+        pre.push_back((v >> 16) & 0xFF);
+        pre.push_back((v >> 24) & 0xFF);
     };
     auto push_varint = [&](uint64_t v) {
         if (v < 0xFD) {
@@ -160,10 +154,12 @@ inline Hash256 ComputeSighash(
             pre.push_back((uint8_t)((v >> 8) & 0xFF));
         } else if (v <= 0xFFFFFFFFULL) {
             pre.push_back(0xFE);
-            for (int i = 0; i < 4; ++i) pre.push_back((uint8_t)((v >> (i*8)) & 0xFF));
+            for (int i = 0; i < 4; ++i)
+                pre.push_back((uint8_t)((v >> (i * 8)) & 0xFF));
         } else {
             pre.push_back(0xFF);
-            for (int i = 0; i < 8; ++i) pre.push_back((uint8_t)((v >> (i*8)) & 0xFF));
+            for (int i = 0; i < 8; ++i)
+                pre.push_back((uint8_t)((v >> (i * 8)) & 0xFF));
         }
     };
     //  (cross-chain replay defence):
@@ -176,19 +172,17 @@ inline Hash256 ComputeSighash(
     // (8 bytes) ensures any future sighash format change (e.g. a new
     // tag byte) produces an entirely distinct preimage space; any
     // two schemes cannot collide.
-    static const uint8_t kSighashTag[8] = {
-        'V','E','L','D','_','S','I','G'
-    };
+    static const uint8_t kSighashTag[8] = {'V', 'E', 'L', 'D', '_', 'S', 'I', 'G'};
     pre.insert(pre.end(), kSighashTag, kSighashTag + 8);
-    pre.push_back(0x03);  // sighash format version.
-                          //   v1 ( 12th bump): chain-id-binding only
-                          //   v2: + signature scheme_id
-                          //   v3: + network-id byte
-                          //                              (mainnet vs testnet)
-                          // The VIII-byte tag + version byte guarantee that
-                          // every version's preimage space is disjoint, so no
-                          // cross-version replay is possible. Bump this byte
-                          // on every future sighash layout change.
+    pre.push_back(0x03); // sighash format version.
+                         //   v1 ( 12th bump): chain-id-binding only
+                         //   v2: + signature scheme_id
+                         //   v3: + network-id byte
+                         //                              (mainnet vs testnet)
+                         // The VIII-byte tag + version byte guarantee that
+                         // every version's preimage space is disjoint, so no
+                         // cross-version replay is possible. Bump this byte
+                         // on every future sighash layout change.
     // Bind signatures to the network explicitly. Genesis header bytes can be
     // identical across proof-of-work profiles, so the genesis hash alone is
     // not a sufficient network discriminator. 0x4D identifies mainnet and
@@ -198,7 +192,8 @@ inline Hash256 ComputeSighash(
 #else
     pre.push_back(0x54);
 #endif
-    for (const char* p = GENESIS_HASH; *p; ++p) pre.push_back((uint8_t)*p);
+    for (const char* p = GENESIS_HASH; *p; ++p)
+        pre.push_back((uint8_t)*p);
     pre.push_back(scheme_id);
 
     push_le32(tx.version);
@@ -217,7 +212,8 @@ inline Hash256 ComputeSighash(
     }
     push_varint((uint64_t)tx.outputs.size());
     for (const auto& out : tx.outputs) {
-        for (int i = 0; i < 8; ++i) pre.push_back((out.value>>(i*8))&0xFF);
+        for (int i = 0; i < 8; ++i)
+            pre.push_back((out.value >> (i * 8)) & 0xFF);
         push_varint((uint64_t)out.script_pubkey.size());
         pre.insert(pre.end(), out.script_pubkey.begin(), out.script_pubkey.end());
     }
@@ -226,15 +222,13 @@ inline Hash256 ComputeSighash(
     return Hash256d(pre);
 }
 
-struct SignedInput { std::vector<uint8_t> script_sig; };
+struct SignedInput {
+    std::vector<uint8_t> script_sig;
+};
 
-inline SignedInput BuildScriptSig(
-    const Secp256k1PrivKey& priv,
-    const Secp256k1PubKey&  pub,
-    const Transaction& tx,
-    uint32_t input_index,
-    const std::vector<uint8_t>& prev_script
-) {
+inline SignedInput BuildScriptSig(const Secp256k1PrivKey& priv, const Secp256k1PubKey& pub,
+                                  const Transaction& tx, uint32_t input_index,
+                                  const std::vector<uint8_t>& prev_script) {
     constexpr uint8_t scheme_id = SCHEME_ID_MLDSA65;
 
     Hash256 sighash = ComputeSighash(tx, input_index, prev_script, scheme_id);
@@ -261,28 +255,23 @@ inline SignedInput BuildScriptSig(
 
 struct RealKeyPair {
     Secp256k1PrivKey private_key;
-    Secp256k1PubKey  public_key;
-    std::string      address;
-    bool             testnet = false;
+    Secp256k1PubKey public_key;
+    std::string address;
+    bool testnet = false;
     std::vector<uint8_t> script_override;
 
     RealKeyPair() {
         veld::compat::SecureLockMemory(private_key.data(), private_key.size());
     }
     RealKeyPair(const RealKeyPair& o)
-      : private_key(o.private_key),
-        public_key(o.public_key),
-        address(o.address),
-        testnet(o.testnet),
-        script_override(o.script_override) {
+        : private_key(o.private_key), public_key(o.public_key), address(o.address),
+          testnet(o.testnet), script_override(o.script_override) {
         veld::compat::SecureLockMemory(private_key.data(), private_key.size());
     }
     RealKeyPair(RealKeyPair&& o) noexcept
-      : private_key(o.private_key),
-        public_key(std::move(o.public_key)),
-        address(std::move(o.address)),
-        testnet(o.testnet),
-        script_override(std::move(o.script_override)) {
+        : private_key(o.private_key), public_key(std::move(o.public_key)),
+          address(std::move(o.address)), testnet(o.testnet),
+          script_override(std::move(o.script_override)) {
         veld::compat::SecureLockMemory(private_key.data(), private_key.size());
         veld::compat::SecureZero(o.private_key.data(), o.private_key.size());
         veld::compat::SecureUnlockMemory(o.private_key.data(), o.private_key.size());
@@ -317,43 +306,61 @@ struct RealKeyPair {
     }
 
     std::vector<uint8_t> GetP2PKHScript() const {
-        if (!script_override.empty()) return script_override;
+        if (!script_override.empty())
+            return script_override;
         Hash160 h = Hash160Compute(public_key);
         std::vector<uint8_t> s;
-        s.push_back(0x76); s.push_back(0xA9); s.push_back(0x14);
+        s.push_back(0x76);
+        s.push_back(0xA9);
+        s.push_back(0x14);
         s.insert(s.end(), h.begin(), h.end());
-        s.push_back(0x88); s.push_back(0xAC);
+        s.push_back(0x88);
+        s.push_back(0xAC);
         return s;
     }
 
     SignedInput SignInput(const Transaction& tx, uint32_t idx,
-                         const std::vector<uint8_t>& prev_script) const {
+                          const std::vector<uint8_t>& prev_script) const {
         return BuildScriptSig(private_key, public_key, tx, idx, prev_script);
     }
 };
 
 inline RealKeyPair GenerateKeyPair(bool testnet = false) {
     RealKeyPair kp;
-    kp.testnet     = testnet;
+    kp.testnet = testnet;
     kp.private_key = GeneratePrivateKey();
-    kp.public_key  = DerivePublicKey(kp.private_key);
+    kp.public_key = DerivePublicKey(kp.private_key);
 
     Hash160 h = Hash160Compute(kp.public_key);
     uint8_t ver = testnet ? 0x6F : 0x46;
     std::vector<uint8_t> data = {ver};
     data.insert(data.end(), h.begin(), h.end());
     Hash256 chk = Hash256d(data);
-    data.push_back(chk[0]); data.push_back(chk[1]);
-    data.push_back(chk[2]); data.push_back(chk[3]);
+    data.push_back(chk[0]);
+    data.push_back(chk[1]);
+    data.push_back(chk[2]);
+    data.push_back(chk[3]);
 
     static const char* B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
     int lead = 0;
-    for (auto b : data) { if (b==0) ++lead; else break; }
+    for (auto b : data) {
+        if (b == 0)
+            ++lead;
+        else
+            break;
+    }
     std::vector<uint8_t> digits = {0};
     for (auto byte : data) {
         int carry = byte;
-        for (auto& d : digits) { carry += 256*d; d = carry%58; carry /= 58; }
-        while (carry > 0) { digits.push_back(carry%58); carry /= 58; }
+        for (auto& d : digits) {
+            carry += 256 * d;
+            d = carry % 58;
+            carry /= 58;
+        }
+        while (carry > 0) {
+            digits.push_back(carry % 58);
+            carry /= 58;
+        }
     }
     kp.address = std::string(lead, '1');
     for (auto it = digits.rbegin(); it != digits.rend(); ++it)
@@ -361,4 +368,4 @@ inline RealKeyPair GenerateKeyPair(bool testnet = false) {
     return kp;
 }
 
-}
+} // namespace veld

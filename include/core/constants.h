@@ -14,16 +14,13 @@
 #if defined(VELD_PUBLIC_TESTNET) && defined(VELD_PUBLIC_MAINNET)
 #error "a public artifact cannot be both testnet and final mainnet"
 #endif
-#if defined(VELD_PUBLIC_RELEASE) && !defined(VELD_PUBLIC_TESTNET) && \
-    !defined(VELD_PUBLIC_MAINNET)
+#if defined(VELD_PUBLIC_RELEASE) && !defined(VELD_PUBLIC_TESTNET) && !defined(VELD_PUBLIC_MAINNET)
 #error "VELD_PUBLIC_RELEASE requires exactly one explicit deployment role"
 #endif
-#if (defined(VELD_PUBLIC_TESTNET) || defined(VELD_PUBLIC_MAINNET)) && \
-    !defined(VELD_PUBLIC_RELEASE)
+#if (defined(VELD_PUBLIC_TESTNET) || defined(VELD_PUBLIC_MAINNET)) && !defined(VELD_PUBLIC_RELEASE)
 #error "a public deployment role requires VELD_PUBLIC_RELEASE"
 #endif
-#if (defined(VELD_PUBLIC_TESTNET) || defined(VELD_PUBLIC_MAINNET)) && \
-    !defined(VELD_MAINNET_POW)
+#if (defined(VELD_PUBLIC_TESTNET) || defined(VELD_PUBLIC_MAINNET)) && !defined(VELD_MAINNET_POW)
 #error "a public deployment role requires VELD_MAINNET_POW"
 #endif
 
@@ -31,13 +28,11 @@
 // public-release artifact.  A developer/test build must opt in explicitly;
 // accidentally carrying any of these profiles into a release is a hard build
 // failure rather than a runtime configuration choice.
-#if defined(VELD_PUBLIC_RELEASE) && \
-    (defined(VELD_ENABLE_DIAGNOSTIC_TX_HISTORY) || \
-     defined(VELD_ENABLE_UPNP))
+#if defined(VELD_PUBLIC_RELEASE) &&                                                                \
+    (defined(VELD_ENABLE_DIAGNOSTIC_TX_HISTORY) || defined(VELD_ENABLE_UPNP))
 #error "public releases cannot contain diagnostic history or UPnP"
 #endif
-#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP) && \
-    !defined(VELD_USE_LEVELDB)
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP) && !defined(VELD_USE_LEVELDB)
 #error "snapshot bootstrap requires the canonical LevelDB storage backend"
 #endif
 
@@ -45,44 +40,31 @@
 // fingerprint for the disposable L3 consensus profile.  Do not let a
 // partial macro set compile into an artifact that getnetworkinfo and the
 // startup guard would misidentify as the complete four-part profile.
-#if defined(VELD_REGTEST_FIXED_DIFF) && \
-    (!defined(VELD_MAINNET_POW) || \
-     !defined(VELD_TEST_CHAIN_BUILD) || \
+#if defined(VELD_REGTEST_FIXED_DIFF) &&                                                            \
+    (!defined(VELD_MAINNET_POW) || !defined(VELD_TEST_CHAIN_BUILD) ||                              \
      !defined(VELD_BTCVELD_REGTEST))
-#error "VELD_REGTEST_FIXED_DIFF requires VELD_MAINNET_POW, VELD_TEST_CHAIN_BUILD, and VELD_BTCVELD_REGTEST"
+#error                                                                                             \
+    "VELD_REGTEST_FIXED_DIFF requires VELD_MAINNET_POW, VELD_TEST_CHAIN_BUILD, and VELD_BTCVELD_REGTEST"
 #endif
 
 // A public-release artifact may never contain a consensus test seam or bypass.
 // Keep this interlock at the top of the shared constants header so every
 // consensus-bearing binary (not just veld-node) fails during compilation if a
 // build profile accidentally mixes production identity with a harness flag.
-#if defined(VELD_PUBLIC_RELEASE) && \
-    (defined(VELD_FUZZ_BUILD) || \
-     defined(VELD_LOCAL_SIM) || \
-     defined(VELD_REGTEST_FIXED_DIFF) || \
-     defined(VELD_TEST_CHAIN_BUILD) || \
-     defined(VELD_TEST_GOV_GATE) || \
-     defined(VELD_TEST_PHASE_INTERLEAVE) || \
-     defined(VELD_TEST_MINER_HISTORY_BLOCKS) || \
-     defined(VELD_TEST_HOOKS) || \
-     defined(VELD_GUI_TEST_INSTANCE) || \
-     defined(VELD_DSTATE_QUALIFICATION) || \
-     defined(VELD_TEST_NMS_BRANCH_CONTEXT) || \
-     defined(VELD_TEST_STAKE_OUTPOINT_BACKING) || \
-     defined(VELD_TEST_BTC_CUSTODY_LINEAGE) || \
-     defined(VELD_TEST_BTC_REDEEM_BINDING) || \
-     defined(VELD_TEST_BTC_RELAY_FRESHNESS) || \
-     defined(VELD_TEST_BTC_OBSERVATION_FINALITY) || \
-     defined(VELD_TEST_AMM_MARKET_SEED) || \
-     defined(VELD_TEST_BRANCH_CONTEXT) || \
-     defined(VELD_BTCVELD_REGTEST) || \
-     defined(VELD_L3_DISPOSABLE_BTCVELD_AUTHORITY_ADDRESS) || \
-     defined(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX) || \
-     defined(BTCVELD_REGTEST) || \
-     defined(VELD_ROUTERD_TEST_KEYS) || \
-     defined(VELD_RPC_TEST_NO_AUTH) || \
-     defined(VELD_VDR_TEST) || \
-     defined(VELD_TESTING))
+#if defined(VELD_PUBLIC_RELEASE) &&                                                                \
+    (defined(VELD_FUZZ_BUILD) || defined(VELD_LOCAL_SIM) || defined(VELD_REGTEST_FIXED_DIFF) ||    \
+     defined(VELD_TEST_CHAIN_BUILD) || defined(VELD_TEST_GOV_GATE) ||                              \
+     defined(VELD_TEST_PHASE_INTERLEAVE) || defined(VELD_TEST_MINER_HISTORY_BLOCKS) ||             \
+     defined(VELD_TEST_HOOKS) || defined(VELD_GUI_TEST_INSTANCE) ||                                \
+     defined(VELD_DSTATE_QUALIFICATION) || defined(VELD_TEST_NMS_BRANCH_CONTEXT) ||                \
+     defined(VELD_TEST_STAKE_OUTPOINT_BACKING) || defined(VELD_TEST_BTC_CUSTODY_LINEAGE) ||        \
+     defined(VELD_TEST_BTC_REDEEM_BINDING) || defined(VELD_TEST_BTC_RELAY_FRESHNESS) ||            \
+     defined(VELD_TEST_BTC_OBSERVATION_FINALITY) || defined(VELD_TEST_AMM_MARKET_SEED) ||          \
+     defined(VELD_TEST_BRANCH_CONTEXT) || defined(VELD_BTCVELD_REGTEST) ||                         \
+     defined(VELD_L3_DISPOSABLE_BTCVELD_AUTHORITY_ADDRESS) ||                                      \
+     defined(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX) || defined(BTCVELD_REGTEST) ||            \
+     defined(VELD_ROUTERD_TEST_KEYS) || defined(VELD_RPC_TEST_NO_AUTH) ||                          \
+     defined(VELD_VDR_TEST) || defined(VELD_TESTING))
 #error "VELD_PUBLIC_RELEASE cannot be combined with consensus test or bypass macros"
 #endif
 
@@ -93,26 +75,22 @@
 // in external evidence.  Reject either seam in every public or non-regtest
 // profile, and reject an L3 btcVELD build that omits either value, so no
 // artifact can silently fall back to a hardcoded test identity.
-#if defined(VELD_L3_DISPOSABLE_BTCVELD_AUTHORITY_ADDRESS) && \
-    (!defined(VELD_BTCVELD_REGTEST) || \
-     !defined(VELD_TEST_CHAIN_BUILD) || \
-     !defined(VELD_REGTEST_FIXED_DIFF) || \
-     defined(VELD_PUBLIC_RELEASE))
-#error "the disposable btcVELD authority override is restricted to the non-public fixed-difficulty L3 regtest profile"
+#if defined(VELD_L3_DISPOSABLE_BTCVELD_AUTHORITY_ADDRESS) &&                                       \
+    (!defined(VELD_BTCVELD_REGTEST) || !defined(VELD_TEST_CHAIN_BUILD) ||                          \
+     !defined(VELD_REGTEST_FIXED_DIFF) || defined(VELD_PUBLIC_RELEASE))
+#error                                                                                             \
+    "the disposable btcVELD authority override is restricted to the non-public fixed-difficulty L3 regtest profile"
 #endif
-#if defined(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX) && \
-    (!defined(VELD_BTCVELD_REGTEST) || \
-     !defined(VELD_TEST_CHAIN_BUILD) || \
-     !defined(VELD_REGTEST_FIXED_DIFF) || \
-     defined(VELD_PUBLIC_RELEASE))
-#error "the disposable btcVELD custody override is restricted to the non-public fixed-difficulty L3 regtest profile"
+#if defined(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX) &&                                         \
+    (!defined(VELD_BTCVELD_REGTEST) || !defined(VELD_TEST_CHAIN_BUILD) ||                          \
+     !defined(VELD_REGTEST_FIXED_DIFF) || defined(VELD_PUBLIC_RELEASE))
+#error                                                                                             \
+    "the disposable btcVELD custody override is restricted to the non-public fixed-difficulty L3 regtest profile"
 #endif
-#if defined(VELD_BTCVELD_REGTEST) && \
-    !defined(VELD_L3_DISPOSABLE_BTCVELD_AUTHORITY_ADDRESS)
+#if defined(VELD_BTCVELD_REGTEST) && !defined(VELD_L3_DISPOSABLE_BTCVELD_AUTHORITY_ADDRESS)
 #error "VELD_BTCVELD_REGTEST requires a compile-time disposable btcVELD authority address"
 #endif
-#if defined(VELD_BTCVELD_REGTEST) && \
-    !defined(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX)
+#if defined(VELD_BTCVELD_REGTEST) && !defined(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX)
 #error "VELD_BTCVELD_REGTEST requires a compile-time disposable btcVELD custody script"
 #endif
 #if defined(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX)
@@ -138,20 +116,26 @@ namespace veld {
 // sink: MinGW mishandles thread_local objects with non-trivial destructors at
 // mining-thread exit, corrupting the heap (the 2.7.28 Windows crash, exit
 // 0xC0000374). A plain call-site conditional has no per-thread state at all.
-inline std::atomic<bool>& DiagVerbose() { static std::atomic<bool> v{false}; return v; }
-inline std::ostream& vcerr() { return std::cerr; }
+inline std::atomic<bool>& DiagVerbose() {
+    static std::atomic<bool> v{false};
+    return v;
+}
+inline std::ostream& vcerr() {
+    return std::cerr;
+}
 
-constexpr uint64_t MAX_SUPPLY              = 21'000'000;
-constexpr uint64_t VELD_UNITS              = 100'000'000;
-constexpr uint64_t VEL_PER_VELD            = VELD_UNITS;
-constexpr uint64_t MAX_SUPPLY_UNITS        = MAX_SUPPLY * VELD_UNITS;
-constexpr uint64_t ANNUAL_EMISSION_CAP     = 550'000;   // flat 3.13926940 VELD/block @180s, split 50/20/20/10, mined all the way to the 21M cap in ~38 years (21M / 550K), then fee-funded. No separate premine or reserve schedule — the whole 21M is coinbase-issued. Chosen for a long fee-market runway before the subsidy ends + low steady-state dilution while keeping a real early-security subsidy (see 500-600K analysis).
-constexpr uint64_t ANNUAL_EMISSION_UNITS   = ANNUAL_EMISSION_CAP * VELD_UNITS;
+constexpr uint64_t MAX_SUPPLY = 21'000'000;
+constexpr uint64_t VELD_UNITS = 100'000'000;
+constexpr uint64_t VEL_PER_VELD = VELD_UNITS;
+constexpr uint64_t MAX_SUPPLY_UNITS = MAX_SUPPLY * VELD_UNITS;
+constexpr uint64_t ANNUAL_EMISSION_CAP =
+    550'000; // flat 3.13926940 VELD/block @180s, split 50/20/20/10, mined all the way to the 21M cap in ~38 years (21M / 550K), then fee-funded. No separate premine or reserve schedule — the whole 21M is coinbase-issued. Chosen for a long fee-market runway before the subsidy ends + low steady-state dilution while keeping a real early-security subsidy (see 500-600K analysis).
+constexpr uint64_t ANNUAL_EMISSION_UNITS = ANNUAL_EMISSION_CAP * VELD_UNITS;
 
-constexpr uint32_t TARGET_BLOCK_TIME       = 180;   // three-minute target for the fresh genesis chain
-constexpr uint32_t BLOCKS_PER_HOUR        = 3600 / TARGET_BLOCK_TIME;
-constexpr uint32_t BLOCKS_PER_DAY         = BLOCKS_PER_HOUR * 24;
-constexpr uint32_t BLOCKS_PER_YEAR        = BLOCKS_PER_DAY * 365;
+constexpr uint32_t TARGET_BLOCK_TIME = 180; // three-minute target for the fresh genesis chain
+constexpr uint32_t BLOCKS_PER_HOUR = 3600 / TARGET_BLOCK_TIME;
+constexpr uint32_t BLOCKS_PER_DAY = BLOCKS_PER_HOUR * 24;
+constexpr uint32_t BLOCKS_PER_YEAR = BLOCKS_PER_DAY * 365;
 
 // Wall-clock sweep (fresh-genesis 3-min interlock, ): every consensus
 // duration whose SEMANTIC is wall-clock (hours/days/years) is expressed via
@@ -164,33 +148,32 @@ constexpr uint32_t BLOCKS_PER_YEAR        = BLOCKS_PER_DAY * 365;
 // checkpoint + coinbase-routing cadences, short anti-abuse cooldowns) stay
 // literal by design. The 144-block settlement/staker-flush cadence CANNOT move on
 // the legacy profile; its fresh-genesis re-decision is force-interlocked at its definition.
-constexpr uint64_t BLOCK_REWARD_UNITS      = (ANNUAL_EMISSION_UNITS / BLOCKS_PER_YEAR);
+constexpr uint64_t BLOCK_REWARD_UNITS = (ANNUAL_EMISSION_UNITS / BLOCKS_PER_YEAR);
 
-constexpr uint64_t ANNUAL_EMISSION_REMAINDER = ANNUAL_EMISSION_UNITS
-                                               - (BLOCK_REWARD_UNITS * BLOCKS_PER_YEAR);
+constexpr uint64_t ANNUAL_EMISSION_REMAINDER =
+    ANNUAL_EMISSION_UNITS - (BLOCK_REWARD_UNITS * BLOCKS_PER_YEAR);
 
 // Standard post-ramp LWMA retarget window. This is deliberately a block-count
 // parameter (144 blocks, nominally 7.2 hours at the 180-second target), not a
 // wall-clock "daily" duration.
 constexpr uint32_t DIFFICULTY_ADJUSTMENT_INTERVAL = 144;
-constexpr uint32_t CONFIRMATION_DEPTH             = 6;
-constexpr uint32_t MAX_BLOCK_SIZE                 = 8'000'000;
-constexpr uint32_t MAX_TRANSACTIONS_PER_BLOCK     = 4'096;
-constexpr uint32_t MAX_TRANSACTION_INPUTS         = 10'000;
-constexpr uint32_t MAX_TRANSACTION_OUTPUTS        = 10'000;
+constexpr uint32_t CONFIRMATION_DEPTH = 6;
+constexpr uint32_t MAX_BLOCK_SIZE = 8'000'000;
+constexpr uint32_t MAX_TRANSACTIONS_PER_BLOCK = 4'096;
+constexpr uint32_t MAX_TRANSACTION_INPUTS = 10'000;
+constexpr uint32_t MAX_TRANSACTION_OUTPUTS = 10'000;
 constexpr uint32_t MAX_STANDARD_TRANSACTION_OUTPUTS = 256;
 static_assert(MAX_STANDARD_TRANSACTION_OUTPUTS < MAX_TRANSACTION_OUTPUTS,
               "standard fanout bound must remain below the system-distribution ceiling");
 constexpr uint32_t VAULT_DISTRIBUTION_RESERVED_OUTPUTS = 2;
 constexpr uint32_t MAX_VAULT_PAYOUT_STAKERS =
     MAX_TRANSACTION_OUTPUTS - VAULT_DISTRIBUTION_RESERVED_OUTPUTS;
-static_assert(MAX_VAULT_PAYOUT_STAKERS +
-                  VAULT_DISTRIBUTION_RESERVED_OUTPUTS ==
-              MAX_TRANSACTION_OUTPUTS,
+static_assert(MAX_VAULT_PAYOUT_STAKERS + VAULT_DISTRIBUTION_RESERVED_OUTPUTS ==
+                  MAX_TRANSACTION_OUTPUTS,
               "vault recipient capacity must exactly fit a valid transaction");
-constexpr uint64_t MAX_REORG_DEPTH                = 100;
+constexpr uint64_t MAX_REORG_DEPTH = 100;
 
-constexpr uint64_t CHECKPOINT_INTERVAL_BLOCKS               = 100;
+constexpr uint64_t CHECKPOINT_INTERVAL_BLOCKS = 100;
 constexpr uint64_t CHECKPOINT_ENFORCEMENT_ACTIVATES_AT_HEIGHT = 0;
 
 constexpr const char* FLEET_CHECKPOINT_PUBKEY_HEX =
@@ -256,23 +239,23 @@ constexpr const char* FLEET_CHECKPOINT_PUBKEY_HEX =
     "a83cd90e8bad9459a65f577df589ff272d9896f84cf7cdc734ad4e72653d1752"
     "f699c5da219ba6762c1ddc99c5419ff5355eed264f62c8fd426db9f55fa1bd93";
 
-inline const char* CheckpointPubkeyAtHeight(uint64_t ) {
+inline const char* CheckpointPubkeyAtHeight(uint64_t) {
     return FLEET_CHECKPOINT_PUBKEY_HEX;
 }
 
 #ifdef VELD_REGTEST_FIXED_DIFF
-constexpr uint64_t COINBASE_MATURITY              = 3;
+constexpr uint64_t COINBASE_MATURITY = 3;
 #else
-constexpr uint64_t COINBASE_MATURITY              = 100;
+constexpr uint64_t COINBASE_MATURITY = 100;
 #endif
 
 constexpr uint64_t COINBASE_MATURITY_ACTIVATES_AT_HEIGHT = 0;
-constexpr uint64_t COINBASE_MATURITY_CONSENSUS_HEIGHT    = 0;
-constexpr uint64_t GAMING_GUARD_CONSENSUS_HEIGHT         = 0;
-constexpr uint64_t FEES_TO_VAULT_ACTIVATES_AT            = 1;
-constexpr uint64_t PROTOCOL_VAULT_SHARE_PCT              = 20;
+constexpr uint64_t COINBASE_MATURITY_CONSENSUS_HEIGHT = 0;
+constexpr uint64_t GAMING_GUARD_CONSENSUS_HEIGHT = 0;
+constexpr uint64_t FEES_TO_VAULT_ACTIVATES_AT = 1;
+constexpr uint64_t PROTOCOL_VAULT_SHARE_PCT = 20;
 
-#if (defined(VELD_MAINNET_POW) && defined(VELD_PUBLIC_RELEASE)) || \
+#if (defined(VELD_MAINNET_POW) && defined(VELD_PUBLIC_RELEASE)) ||                                 \
     defined(VELD_TEST_STAKE_OUTPOINT_BACKING)
 constexpr uint64_t STAKE_OUTPOINT_BACKING_ACTIVATION_HEIGHT = 1;
 #else
@@ -286,10 +269,10 @@ inline constexpr bool StakeOutpointBackingActive(uint64_t height) noexcept {
 
 #ifdef VELD_MAINNET_POW
 #if defined(VELD_PUBLIC_RELEASE) || defined(VELD_DSTATE_QUALIFICATION)
-constexpr uint64_t MIN_STAKE_UNITS         = 1'000ULL * VELD_UNITS;
-constexpr uint64_t MAX_STAKE_UNITS         = 10'000ULL * VELD_UNITS;
-constexpr uint64_t STAKING_UNLOCK_SUPPLY   = 10'000ULL * VELD_UNITS;
-constexpr uint64_t MIN_VALIDATOR_STAKE     = 10'000ULL * VELD_UNITS;
+constexpr uint64_t MIN_STAKE_UNITS = 1'000ULL * VELD_UNITS;
+constexpr uint64_t MAX_STAKE_UNITS = 10'000ULL * VELD_UNITS;
+constexpr uint64_t STAKING_UNLOCK_SUPPLY = 10'000ULL * VELD_UNITS;
+constexpr uint64_t MIN_VALIDATOR_STAKE = 10'000ULL * VELD_UNITS;
 constexpr uint64_t VALIDATOR_UNLOCK_STAKED = 10'000ULL * VELD_UNITS;
 static_assert(MIN_STAKE_UNITS == 1'000ULL * VELD_UNITS,
               "production consensus profile: Sybil threshold mis-set");
@@ -298,34 +281,35 @@ static_assert(STAKING_UNLOCK_SUPPLY == 10'000ULL * VELD_UNITS,
 static_assert(MIN_VALIDATOR_STAKE == 10'000ULL * VELD_UNITS,
               "production consensus profile: validator threshold mis-set");
 static_assert(VALIDATOR_UNLOCK_STAKED == MIN_VALIDATOR_STAKE,
-              "production consensus profile: validator system must unlock with staking at the configured aggregate threshold");
+              "production consensus profile: validator system must unlock with staking at the "
+              "configured aggregate threshold");
 #else
-constexpr uint64_t MIN_STAKE_UNITS         = 10ULL * VELD_UNITS;
-constexpr uint64_t MAX_STAKE_UNITS         = 10'000ULL * VELD_UNITS;
-constexpr uint64_t STAKING_UNLOCK_SUPPLY   = 50ULL * VELD_UNITS;
-constexpr uint64_t MIN_VALIDATOR_STAKE     = 50ULL * VELD_UNITS;
+constexpr uint64_t MIN_STAKE_UNITS = 10ULL * VELD_UNITS;
+constexpr uint64_t MAX_STAKE_UNITS = 10'000ULL * VELD_UNITS;
+constexpr uint64_t STAKING_UNLOCK_SUPPLY = 50ULL * VELD_UNITS;
+constexpr uint64_t MIN_VALIDATOR_STAKE = 50ULL * VELD_UNITS;
 constexpr uint64_t VALIDATOR_UNLOCK_STAKED = 50ULL * VELD_UNITS;
 #endif
 #else
-constexpr uint64_t MIN_STAKE_UNITS         = 10 * VELD_UNITS;
-constexpr uint64_t MAX_STAKE_UNITS         = 10'000 * VELD_UNITS;
-constexpr uint64_t STAKING_UNLOCK_SUPPLY   = 50ULL * VELD_UNITS;
-constexpr uint64_t MIN_VALIDATOR_STAKE     = 20 * VELD_UNITS;
+constexpr uint64_t MIN_STAKE_UNITS = 10 * VELD_UNITS;
+constexpr uint64_t MAX_STAKE_UNITS = 10'000 * VELD_UNITS;
+constexpr uint64_t STAKING_UNLOCK_SUPPLY = 50ULL * VELD_UNITS;
+constexpr uint64_t MIN_VALIDATOR_STAKE = 20 * VELD_UNITS;
 constexpr uint64_t VALIDATOR_UNLOCK_STAKED = 10ULL * VELD_UNITS;
 #endif
 
 constexpr uint64_t GOVERNANCE_ACTIVATION_BONDED_UNITS = 5ULL * MIN_VALIDATOR_STAKE;
-#if (defined(VELD_MAINNET_POW) && \
-     (!defined(VELD_TEST_CHAIN_BUILD) || defined(VELD_DSTATE_QUALIFICATION)) && \
-     !defined(VELD_FUZZ_BUILD)) \
-    || defined(VELD_TEST_GOV_GATE)
+#if (defined(VELD_MAINNET_POW) &&                                                                  \
+     (!defined(VELD_TEST_CHAIN_BUILD) || defined(VELD_DSTATE_QUALIFICATION)) &&                    \
+     !defined(VELD_FUZZ_BUILD)) ||                                                                 \
+    defined(VELD_TEST_GOV_GATE)
 constexpr bool GOVERNANCE_BOND_GATE_ACTIVE = true;
 #else
 constexpr bool GOVERNANCE_BOND_GATE_ACTIVE = false;
 #endif
-#if defined(VELD_MAINNET_POW) && \
-    (!defined(VELD_TEST_CHAIN_BUILD) || defined(VELD_DSTATE_QUALIFICATION)) \
-    && !defined(VELD_FUZZ_BUILD) && !defined(VELD_TEST_GOV_GATE)
+#if defined(VELD_MAINNET_POW) &&                                                                   \
+    (!defined(VELD_TEST_CHAIN_BUILD) || defined(VELD_DSTATE_QUALIFICATION)) &&                     \
+    !defined(VELD_FUZZ_BUILD) && !defined(VELD_TEST_GOV_GATE)
 static_assert(GOVERNANCE_ACTIVATION_BONDED_UNITS == 50'000ULL * VELD_UNITS,
               "mainnet governance activation must be 50,000 VELD (5 validators × 10k bonded)");
 #endif
@@ -339,28 +323,28 @@ constexpr bool VALIDATOR_SYSTEM_ALWAYS_ACTIVE = true;
 constexpr uint64_t SLASH_EVIDENCE_WINDOW = 7ULL * BLOCKS_PER_DAY;
 static_assert(TARGET_BLOCK_TIME != 60 || SLASH_EVIDENCE_WINDOW == 10080,
               "wall-clock re-expression must not change the legacy 60-second profile");
-constexpr size_t   MAX_SLASHED_EVIDENCE  = 50000;
+constexpr size_t MAX_SLASHED_EVIDENCE = 50000;
 constexpr uint32_t MAX_EVIDENCE_PER_PUBKEY = 10;
-constexpr uint64_t VALIDATOR_SLASHING_HEIGHT   = 0;
-constexpr uint64_t SLASH_BOND_LOCKUP_BLOCKS    = 30ULL * BLOCKS_PER_DAY;
+constexpr uint64_t VALIDATOR_SLASHING_HEIGHT = 0;
+constexpr uint64_t SLASH_BOND_LOCKUP_BLOCKS = 30ULL * BLOCKS_PER_DAY;
 static_assert(TARGET_BLOCK_TIME != 60 || SLASH_BOND_LOCKUP_BLOCKS == 43200,
               "wall-clock re-expression must not change the legacy 60-second profile");
-constexpr uint64_t BOND_YIELD_VEST_BLOCKS      = 90ULL * BLOCKS_PER_DAY;
+constexpr uint64_t BOND_YIELD_VEST_BLOCKS = 90ULL * BLOCKS_PER_DAY;
 static_assert(TARGET_BLOCK_TIME != 60 || BOND_YIELD_VEST_BLOCKS == 129600,
               "wall-clock re-expression must not change the legacy 60-second profile");
 constexpr uint64_t SLASH_EQUIV_SLASHER_PPM = 250'000;
-constexpr uint64_t SLASH_EQUIV_BURN_PPM    = 750'000;
+constexpr uint64_t SLASH_EQUIV_BURN_PPM = 750'000;
 static_assert(SLASH_EQUIV_SLASHER_PPM + SLASH_EQUIV_BURN_PPM == 1'000'000,
               "equivocation slash must return 0% of principal");
-static const std::string STAKE_VAULT_ADDRESS   = "VV6pcrLQvxq7uBZEFtc4qxCizQ26azxTtK";
+static const std::string STAKE_VAULT_ADDRESS = "VV6pcrLQvxq7uBZEFtc4qxCizQ26azxTtK";
 constexpr uint64_t STAKE_VAULT_ACTIVATION_HEIGHT = VALIDATOR_SLASHING_HEIGHT;
-constexpr uint64_t BOND_SETTLEMENT_INTERVAL    = BLOCKS_PER_DAY;
+constexpr uint64_t BOND_SETTLEMENT_INTERVAL = BLOCKS_PER_DAY;
 static_assert(TARGET_BLOCK_TIME == 60 || BOND_SETTLEMENT_INTERVAL == BLOCKS_PER_DAY,
               "the settlement/staker-flush cadence is BLOCKS_PER_DAY on any non-60s chain");
-constexpr uint64_t SLASH_SLASHER_PPM           = 250000;
-constexpr uint64_t SLASH_VAULT_PPM             = 250000;
-constexpr uint64_t SLASH_BOUNTY_HEIGHT         = 0;
-constexpr uint64_t ENDORSEMENT_DEDUP_HEIGHT    = 0;
+constexpr uint64_t SLASH_SLASHER_PPM = 250000;
+constexpr uint64_t SLASH_VAULT_PPM = 250000;
+constexpr uint64_t SLASH_BOUNTY_HEIGHT = 0;
+constexpr uint64_t ENDORSEMENT_DEDUP_HEIGHT = 0;
 static_assert(SLASH_SLASHER_PPM + SLASH_VAULT_PPM <= 1'000'000,
               "slash split ppm must not exceed 100%");
 static const std::string BOND_YIELD_ESCROW = "VSBBBLkFn775t1BoSn7a7nPUNJxxByyALd";
@@ -372,9 +356,9 @@ static_assert(BOND_YIELD_ACTIVATION_HEIGHT % BOND_SETTLEMENT_INTERVAL == 0,
               "bond-yield activation must be a clean settlement-boundary multiple");
 constexpr uint64_t COVENANTS_ACTIVATION_HEIGHT = 0;
 
-inline constexpr const char* BTCVELD_TOKEN_ID  = "btcVELD";
+inline constexpr const char* BTCVELD_TOKEN_ID = "btcVELD";
 inline constexpr const char* BTCVELD_PEG_ASSET = "BTC";
-constexpr uint8_t            BTCVELD_DECIMALS   = 8;
+constexpr uint8_t BTCVELD_DECIMALS = 8;
 constexpr const char* BTCVELD_CUSTODY_DESCRIPTOR_SHA256 =
     "8cb9c00d473f7ecf9cb8e022f8345f023e6a12a3c2bbd87f87c13f9052773c84";
 constexpr const char* BTCVELD_CUSTODY_MANIFEST_SHA256 =
@@ -384,141 +368,148 @@ constexpr const char* BTCVELD_SPV_CUSTODY_SPK_HEX =
 constexpr uint32_t BTCVELD_SPV_CUSTODY_DESCRIPTOR_INDEX = 0;
 constexpr uint32_t BTCVELD_CUSTODY_DESCRIPTOR_RANGE_START = 0;
 constexpr uint32_t BTCVELD_CUSTODY_DESCRIPTOR_RANGE_END = 999;
-constexpr int64_t BTCVELD_ISSUER_MAX_CUSTODY_SATS  = 1000000000LL;
-constexpr uint32_t BTCVELD_ANCHOR_BTC_CONFS         = 144;
+constexpr int64_t BTCVELD_ISSUER_MAX_CUSTODY_SATS = 1000000000LL;
+constexpr uint32_t BTCVELD_ANCHOR_BTC_CONFS = 144;
 constexpr uint64_t BTCVELD_FINALITY_ACTIVATION_HEIGHT = 0;
-constexpr uint64_t BTCVELD_FINALITY_WINDOW            = 7ULL * BLOCKS_PER_DAY;
+constexpr uint64_t BTCVELD_FINALITY_WINDOW = 7ULL * BLOCKS_PER_DAY;
 static_assert(TARGET_BLOCK_TIME != 60 || BTCVELD_FINALITY_WINDOW == 10080,
               "wall-clock re-expression must not change the legacy 60-second profile");
 constexpr uint64_t BTCVELD_TIER_LADDER_ACTIVATION_HEIGHT = 1;
-constexpr uint64_t BTCVELD_TIER_WINDOW_BLOCKS            = 14ULL * BLOCKS_PER_DAY;
+constexpr uint64_t BTCVELD_TIER_WINDOW_BLOCKS = 14ULL * BLOCKS_PER_DAY;
 static_assert(TARGET_BLOCK_TIME != 60 || BTCVELD_TIER_WINDOW_BLOCKS == 20160,
               "wall-clock re-expression must not change the legacy 60-second profile");
 constexpr uint64_t BTCVELD_REDEEM_GUARD_ACTIVATION_HEIGHT = 1;
-constexpr uint64_t BTCVELD_REDEEM_WINDOW_BLOCKS           = BLOCKS_PER_DAY;
-constexpr uint64_t BTCVELD_REDEEM_WINDOW_PPM_OF_CAP       = 200'000;
-static_assert(BTCVELD_REDEEM_WINDOW_BLOCKS > 0,
-              "redeem drain-guard window must be nonzero");
-static_assert(BTCVELD_REDEEM_WINDOW_PPM_OF_CAP > 0 &&
-              BTCVELD_REDEEM_WINDOW_PPM_OF_CAP <= 1'000'000,
+constexpr uint64_t BTCVELD_REDEEM_WINDOW_BLOCKS = BLOCKS_PER_DAY;
+constexpr uint64_t BTCVELD_REDEEM_WINDOW_PPM_OF_CAP = 200'000;
+static_assert(BTCVELD_REDEEM_WINDOW_BLOCKS > 0, "redeem drain-guard window must be nonzero");
+static_assert(BTCVELD_REDEEM_WINDOW_PPM_OF_CAP > 0 && BTCVELD_REDEEM_WINDOW_PPM_OF_CAP <= 1'000'000,
               "redeem window fraction is parts-per-million of the custody cap");
 constexpr uint64_t BTCVELD_REDEEM_SPK_CHECK_ACTIVATION_HEIGHT = 1;
 constexpr uint64_t BTCVELD_MINT_DEPOSIT_ID_ACTIVATION_HEIGHT = 1;
 constexpr uint64_t BTCVELD_AMM_ACTIVATION_HEIGHT = 1;
 constexpr uint64_t BTCVELD_AMM_SWAP_GATE_ACTIVATION_HEIGHT = 1;
-constexpr uint64_t BTCVELD_AMM_SWAP_UNLOCK_HEIGHT          = 0;
-constexpr int64_t  BTCVELD_AMM_MAX_POOL_BTCVELD_SATS       = 1'000'000'000;
+constexpr uint64_t BTCVELD_AMM_SWAP_UNLOCK_HEIGHT = 0;
+constexpr int64_t BTCVELD_AMM_MAX_POOL_BTCVELD_SATS = 1'000'000'000;
 // Legacy fixed-ratio constant retained for historical/test profiles and tooling.
-constexpr int64_t  BTCVELD_AMM_OPENING_VELD_UNITS_PER_BTCVELD_SAT = 100'000;
+constexpr int64_t BTCVELD_AMM_OPENING_VELD_UNITS_PER_BTCVELD_SAT = 100'000;
 // Owner-approved launch policy: public releases let the first valid LP seed set
 // the immutable opening market anchor.  The existing per-leg floors, permanent
 // locked LP, supply/custody caps, seed-liveness checks and four-band fee model
 // remain consensus-enforced; only the fixed 100,000:1 price pin is removed.
-#if (defined(VELD_MAINNET_POW) && defined(VELD_PUBLIC_RELEASE)) || \
+#if (defined(VELD_MAINNET_POW) && defined(VELD_PUBLIC_RELEASE)) ||                                 \
     defined(VELD_TEST_AMM_MARKET_SEED)
 constexpr uint64_t BTCVELD_AMM_MARKET_SEED_ACTIVATION_HEIGHT = 1;
 #else
 constexpr uint64_t BTCVELD_AMM_MARKET_SEED_ACTIVATION_HEIGHT = 0;
 #endif
 
-constexpr uint32_t BTCVELD_AMM_FEE_BPS                     = 100;
-constexpr uint32_t BTCVELD_AMM_FEE_MIN_BPS                 = 30;
-static_assert(BTCVELD_AMM_MAX_POOL_BTCVELD_SATS > 0,
-              "the Layer-4 pool cap must be positive");
+constexpr uint32_t BTCVELD_AMM_FEE_BPS = 100;
+constexpr uint32_t BTCVELD_AMM_FEE_MIN_BPS = 30;
+static_assert(BTCVELD_AMM_MAX_POOL_BTCVELD_SATS > 0, "the Layer-4 pool cap must be positive");
 static_assert(BTCVELD_AMM_MAX_POOL_BTCVELD_SATS == BTCVELD_ISSUER_MAX_CUSTODY_SATS,
               "the AMM must not impose a smaller ceiling than aggregate BTC custody");
 static_assert((unsigned __int128)BTCVELD_AMM_MAX_POOL_BTCVELD_SATS *
-                  BTCVELD_AMM_OPENING_VELD_UNITS_PER_BTCVELD_SAT <=
-              (unsigned __int128)MAX_SUPPLY_UNITS,
+                      BTCVELD_AMM_OPENING_VELD_UNITS_PER_BTCVELD_SAT <=
+                  (unsigned __int128)MAX_SUPPLY_UNITS,
               "legacy canonical seed ratio must fit the native supply domain");
 static_assert(BTCVELD_AMM_FEE_MIN_BPS <= BTCVELD_AMM_FEE_BPS,
               "AMM base fee must not exceed its ceiling");
-constexpr uint32_t BTCVELD_AMM_BAND_EDGE_BPS[3] = { 500, 1000, 2000 };
-constexpr uint32_t BTCVELD_AMM_BAND_FEE_BPS[4]  = { 30, 50, 75, 100 };
+constexpr uint32_t BTCVELD_AMM_BAND_EDGE_BPS[3] = {500, 1000, 2000};
+constexpr uint32_t BTCVELD_AMM_BAND_FEE_BPS[4] = {30, 50, 75, 100};
 constexpr uint64_t BTCVELD_AMM_FOURBAND_ACTIVATION_HEIGHT = 1;
 static_assert(BTCVELD_AMM_BAND_FEE_BPS[0] == BTCVELD_AMM_FEE_MIN_BPS &&
-              BTCVELD_AMM_BAND_FEE_BPS[3] == BTCVELD_AMM_FEE_BPS,
+                  BTCVELD_AMM_BAND_FEE_BPS[3] == BTCVELD_AMM_FEE_BPS,
               "four-band endpoints must equal the 30-bps base and 100-bps ceiling");
 static_assert(BTCVELD_AMM_BAND_FEE_BPS[0] < BTCVELD_AMM_BAND_FEE_BPS[1] &&
-              BTCVELD_AMM_BAND_FEE_BPS[1] < BTCVELD_AMM_BAND_FEE_BPS[2] &&
-              BTCVELD_AMM_BAND_FEE_BPS[2] < BTCVELD_AMM_BAND_FEE_BPS[3] &&
-              BTCVELD_AMM_BAND_EDGE_BPS[0] < BTCVELD_AMM_BAND_EDGE_BPS[1] &&
-              BTCVELD_AMM_BAND_EDGE_BPS[1] < BTCVELD_AMM_BAND_EDGE_BPS[2],
+                  BTCVELD_AMM_BAND_FEE_BPS[1] < BTCVELD_AMM_BAND_FEE_BPS[2] &&
+                  BTCVELD_AMM_BAND_FEE_BPS[2] < BTCVELD_AMM_BAND_FEE_BPS[3] &&
+                  BTCVELD_AMM_BAND_EDGE_BPS[0] < BTCVELD_AMM_BAND_EDGE_BPS[1] &&
+                  BTCVELD_AMM_BAND_EDGE_BPS[1] < BTCVELD_AMM_BAND_EDGE_BPS[2],
               "four-band fees and edges must be strictly ascending");
 
 #if defined(VELD_BTCVELD_REGTEST)
-constexpr uint64_t           BTCVELD_ACTIVATION_HEIGHT = 0;
-inline constexpr const char* BTCVELD_ISSUER_ADDRESS =
-    VELD_L3_DISPOSABLE_BTCVELD_AUTHORITY_ADDRESS;
+constexpr uint64_t BTCVELD_ACTIVATION_HEIGHT = 0;
+inline constexpr const char* BTCVELD_ISSUER_ADDRESS = VELD_L3_DISPOSABLE_BTCVELD_AUTHORITY_ADDRESS;
 static_assert(sizeof(VELD_L3_DISPOSABLE_BTCVELD_AUTHORITY_ADDRESS) == 35,
               "the disposable btcVELD authority must be a quoted 34-character Veld address");
 #else
-constexpr uint64_t           BTCVELD_ACTIVATION_HEIGHT = 0;
-inline constexpr const char* BTCVELD_ISSUER_ADDRESS    = "VUjD1JoewGkiGxRqJ52FkK1UiMotjsp9Tg";
+constexpr uint64_t BTCVELD_ACTIVATION_HEIGHT = 0;
+inline constexpr const char* BTCVELD_ISSUER_ADDRESS = "VUjD1JoewGkiGxRqJ52FkK1UiMotjsp9Tg";
 #endif
 
 constexpr uint64_t BOND_YIELD_STAKED_POSITION_HEIGHT = 0;
 static_assert(BOND_YIELD_STAKED_POSITION_HEIGHT % BOND_SETTLEMENT_INTERVAL == 0,
               "staked-position gate must be a clean settlement/vault-boundary multiple");
-static_assert(BOND_YIELD_STAKED_POSITION_HEIGHT > BOND_YIELD_ACTIVATION_HEIGHT
-              || (BOND_YIELD_STAKED_POSITION_HEIGHT == 0
-                  && BOND_YIELD_ACTIVATION_HEIGHT == 0),
+static_assert(BOND_YIELD_STAKED_POSITION_HEIGHT > BOND_YIELD_ACTIVATION_HEIGHT ||
+                  (BOND_YIELD_STAKED_POSITION_HEIGHT == 0 && BOND_YIELD_ACTIVATION_HEIGHT == 0),
               "staked-position gate must be strictly after D' activation unless both are zero");
 constexpr uint64_t TX_FULL_VALIDATION_ACTIVATION_HEIGHT = 0;
 static_assert(TX_FULL_VALIDATION_ACTIVATION_HEIGHT % BOND_SETTLEMENT_INTERVAL == 0,
               "C1/C2 gate must be a clean settlement/vault boundary");
-static_assert(TX_FULL_VALIDATION_ACTIVATION_HEIGHT > BOND_YIELD_STAKED_POSITION_HEIGHT
-              || (TX_FULL_VALIDATION_ACTIVATION_HEIGHT == 0
-                  && BOND_YIELD_STAKED_POSITION_HEIGHT == 0),
+static_assert(TX_FULL_VALIDATION_ACTIVATION_HEIGHT > BOND_YIELD_STAKED_POSITION_HEIGHT ||
+                  (TX_FULL_VALIDATION_ACTIVATION_HEIGHT == 0 &&
+                   BOND_YIELD_STAKED_POSITION_HEIGHT == 0),
               "C1/C2 gate ordering invalid");
 constexpr uint64_t TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT = 0;
 static_assert(TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT % BOND_SETTLEMENT_INTERVAL == 0,
               "C1-v2 gate must be a clean settlement/vault boundary");
-static_assert(TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT > TX_FULL_VALIDATION_ACTIVATION_HEIGHT
-              || (TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT == 0
-                  && TX_FULL_VALIDATION_ACTIVATION_HEIGHT == 0),
+static_assert(TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT > TX_FULL_VALIDATION_ACTIVATION_HEIGHT ||
+                  (TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT == 0 &&
+                   TX_FULL_VALIDATION_ACTIVATION_HEIGHT == 0),
               "C1-v2 gate ordering invalid");
 
-constexpr uint16_t MAINNET_PORT            = 8333;
-constexpr uint16_t TESTNET_PORT            = 18333;
-constexpr uint32_t PROTOCOL_VERSION        = 2;
-constexpr uint32_t MIN_PEER_CONNECTIONS    = 4;
-constexpr uint32_t MAX_PEER_CONNECTIONS    = 125;
-constexpr uint32_t MAINNET_MAGIC           = 0x56454C44;
-constexpr uint32_t TESTNET_MAGIC           = 0x74564C44;
+constexpr uint16_t MAINNET_PORT = 8333;
+constexpr uint16_t TESTNET_PORT = 18333;
+constexpr uint32_t PROTOCOL_VERSION = 2;
+constexpr uint32_t MIN_PEER_CONNECTIONS = 4;
+constexpr uint32_t MAX_PEER_CONNECTIONS = 125;
+constexpr uint32_t MAINNET_MAGIC = 0x56454C44;
+constexpr uint32_t TESTNET_MAGIC = 0x74564C44;
 constexpr const char* GENESIS_TIMESTAMP_STR = "2026-08-01T15:46:00Z";
-constexpr const char* GENESIS_MESSAGE        = "Veld - Where value is earned.";
+constexpr const char* GENESIS_MESSAGE = "Veld - Where value is earned.";
 
 namespace genesis_iso {
-    constexpr int  digit(char c)  { return (c >= '0' && c <= '9') ? c - '0' : -1; }
-    constexpr bool isleap(int y)  { return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0); }
-    constexpr int  mdays(int y, int m) {
-        constexpr int t[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
-        return (m == 2 && isleap(y)) ? 29 : t[m - 1];
-    }
-    constexpr uint64_t parse(const char* s) {
-        if (!s) return 0;
-        for (int i = 0; i < 20; ++i) if (s[i] == '\0') return 0;
-        if (s[20] != '\0') return 0;
-        if (s[4]!='-'||s[7]!='-'||s[10]!='T'||s[13]!=':'||s[16]!=':'||s[19]!='Z') return 0;
-        int y = digit(s[0])*1000 + digit(s[1])*100 + digit(s[2])*10 + digit(s[3]);
-        int mo = digit(s[5])*10 + digit(s[6]);
-        int d  = digit(s[8])*10 + digit(s[9]);
-        int hh = digit(s[11])*10 + digit(s[12]);
-        int mm = digit(s[14])*10 + digit(s[15]);
-        int ss = digit(s[17])*10 + digit(s[18]);
-        if (y < 1970 || mo < 1 || mo > 12 || d < 1 || d > mdays(y, mo)
-            || hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 60) return 0;
-        uint64_t days = 0;
-        for (int yy = 1970; yy < y; ++yy) days += isleap(yy) ? 366 : 365;
-        for (int mm2 = 1; mm2 < mo; ++mm2) days += mdays(y, mm2);
-        days += (uint64_t)(d - 1);
-        return days * 86400ULL + (uint64_t)hh * 3600ULL + (uint64_t)mm * 60ULL + (uint64_t)ss;
-    }
+constexpr int digit(char c) {
+    return (c >= '0' && c <= '9') ? c - '0' : -1;
 }
+constexpr bool isleap(int y) {
+    return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+}
+constexpr int mdays(int y, int m) {
+    constexpr int t[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    return (m == 2 && isleap(y)) ? 29 : t[m - 1];
+}
+constexpr uint64_t parse(const char* s) {
+    if (!s)
+        return 0;
+    for (int i = 0; i < 20; ++i)
+        if (s[i] == '\0')
+            return 0;
+    if (s[20] != '\0')
+        return 0;
+    if (s[4] != '-' || s[7] != '-' || s[10] != 'T' || s[13] != ':' || s[16] != ':' || s[19] != 'Z')
+        return 0;
+    int y = digit(s[0]) * 1000 + digit(s[1]) * 100 + digit(s[2]) * 10 + digit(s[3]);
+    int mo = digit(s[5]) * 10 + digit(s[6]);
+    int d = digit(s[8]) * 10 + digit(s[9]);
+    int hh = digit(s[11]) * 10 + digit(s[12]);
+    int mm = digit(s[14]) * 10 + digit(s[15]);
+    int ss = digit(s[17]) * 10 + digit(s[18]);
+    if (y < 1970 || mo < 1 || mo > 12 || d < 1 || d > mdays(y, mo) || hh < 0 || hh > 23 || mm < 0 ||
+        mm > 59 || ss < 0 || ss > 60)
+        return 0;
+    uint64_t days = 0;
+    for (int yy = 1970; yy < y; ++yy)
+        days += isleap(yy) ? 366 : 365;
+    for (int mm2 = 1; mm2 < mo; ++mm2)
+        days += mdays(y, mm2);
+    days += (uint64_t)(d - 1);
+    return days * 86400ULL + (uint64_t)hh * 3600ULL + (uint64_t)mm * 60ULL + (uint64_t)ss;
+}
+} // namespace genesis_iso
 static_assert(genesis_iso::parse(GENESIS_TIMESTAMP_STR) != 0,
               "GENESIS_TIMESTAMP_STR must parse as YYYY-MM-DDTHH:MM:SSZ");
-constexpr uint64_t    GENESIS_NONCE          = 187948ULL;
+constexpr uint64_t GENESIS_NONCE = 187948ULL;
 constexpr const char* GENESIS_HASH =
     "880a0057852ffcfa35119a83e556802848ed5cb469b260fb9fbd20e8b97ae77b";
 // The first launch-chain block is a second, signed-snapshot identity boundary.
@@ -528,49 +519,55 @@ constexpr const char* GENESIS_HASH =
 constexpr uint64_t SNAPSHOT_LAUNCH_ANCHOR_HEIGHT = 1;
 constexpr const char* SNAPSHOT_LAUNCH_ANCHOR_HASH =
     "c595cc31fe47999186a402ee7c6fb8bdf97415e4e9d9e643733a828e2ce573d1";
-constexpr uint64_t    GENESIS_TIME           = 1785599160;
-static_assert(sizeof(std::time_t) >= 8,
-              "Veld requires 64-bit time_t");
+constexpr uint64_t GENESIS_TIME = 1785599160;
+static_assert(sizeof(std::time_t) >= 8, "Veld requires 64-bit time_t");
 static_assert(genesis_iso::parse(GENESIS_TIMESTAMP_STR) == GENESIS_TIME,
               "GENESIS_TIMESTAMP_STR must equal GENESIS_TIME — bump both together");
-constexpr uint32_t    GENESIS_BITS           = 0x1e390000;
-static_assert((GENESIS_BITS & 0x00FFFFFFu) != 0,
-              "GENESIS_BITS mantissa is zero");
-static_assert((GENESIS_BITS & 0x00800000u) == 0,
-              "GENESIS_BITS mantissa sign bit is set");
-static_assert(((GENESIS_BITS >> 24) & 0xFFu) >= 0x1cu &&
-              ((GENESIS_BITS >> 24) & 0xFFu) <= 0x1fu,
+constexpr uint32_t GENESIS_BITS = 0x1e390000;
+static_assert((GENESIS_BITS & 0x00FFFFFFu) != 0, "GENESIS_BITS mantissa is zero");
+static_assert((GENESIS_BITS & 0x00800000u) == 0, "GENESIS_BITS mantissa sign bit is set");
+static_assert(((GENESIS_BITS >> 24) & 0xFFu) >= 0x1cu && ((GENESIS_BITS >> 24) & 0xFFu) <= 0x1fu,
               "GENESIS_BITS exponent out of the sane PoW band");
-#if defined(VELD_MAINNET_POW) && !defined(VELD_FUZZ_BUILD) && \
+#if defined(VELD_MAINNET_POW) && !defined(VELD_FUZZ_BUILD) &&                                      \
     (!defined(VELD_TEST_CHAIN_BUILD) || defined(VELD_DSTATE_QUALIFICATION))
 static_assert(GENESIS_BITS != 0x1e400000u,
               "GENESIS_BITS regressed to the retired pre-relaunch seed");
 #endif
-#if defined(VELD_MAINNET_POW) && defined(VELD_TEST_CHAIN_BUILD) && \
-    !defined(VELD_FUZZ_BUILD) && !defined(VELD_DSTATE_QUALIFICATION)
+#if defined(VELD_MAINNET_POW) && defined(VELD_TEST_CHAIN_BUILD) && !defined(VELD_FUZZ_BUILD) &&    \
+    !defined(VELD_DSTATE_QUALIFICATION)
 static_assert(GENESIS_BITS == 0x1e390000u,
               "GENESIS_BITS no longer matches this source tree's test-chain seed");
 #endif
 
-static const std::string VAULT_ADDRESS            = "VVzm6RG8W1t3U9KQYoD34z49jHcYb1sXdv";
-inline const std::string& VaultAddressAtHeight(uint64_t ) { return VAULT_ADDRESS; }
-static const std::string POOL_ADDRESS             = "VHkWh9Xfbnp3gCotHSeM9LLN5MwcoXYijZ";
+static const std::string VAULT_ADDRESS = "VVzm6RG8W1t3U9KQYoD34z49jHcYb1sXdv";
+inline const std::string& VaultAddressAtHeight(uint64_t) {
+    return VAULT_ADDRESS;
+}
+static const std::string POOL_ADDRESS = "VHkWh9Xfbnp3gCotHSeM9LLN5MwcoXYijZ";
 static const std::string ENDORSEMENT_POOL_ADDRESS = "VQ3MkHSNrXYXiWQErPfUUu4hWWEVvpfAFT";
-inline const std::string& PoolAddressAtHeight(uint64_t ) { return POOL_ADDRESS; }
-inline const std::string& EndorsementPoolAddressAtHeight(uint64_t ) { return ENDORSEMENT_POOL_ADDRESS; }
-inline const std::string& StakeVaultAddressAtHeight(uint64_t ) { return STAKE_VAULT_ADDRESS; }
-inline const std::string& BondYieldEscrowAtHeight(uint64_t ) { return BOND_YIELD_ESCROW; }
+inline const std::string& PoolAddressAtHeight(uint64_t) {
+    return POOL_ADDRESS;
+}
+inline const std::string& EndorsementPoolAddressAtHeight(uint64_t) {
+    return ENDORSEMENT_POOL_ADDRESS;
+}
+inline const std::string& StakeVaultAddressAtHeight(uint64_t) {
+    return STAKE_VAULT_ADDRESS;
+}
+inline const std::string& BondYieldEscrowAtHeight(uint64_t) {
+    return BOND_YIELD_ESCROW;
+}
 
 #ifdef VELD_MAINNET_POW
-constexpr uint64_t STAKING_ACTIVATION_SUPPLY  = STAKING_UNLOCK_SUPPLY;
-constexpr uint64_t STAKING_ACTIVATION_VELD    = STAKING_ACTIVATION_SUPPLY / VELD_UNITS;
-constexpr uint64_t STAKE_LOCKUP_BLOCKS        = 7ULL * BLOCKS_PER_DAY;
+constexpr uint64_t STAKING_ACTIVATION_SUPPLY = STAKING_UNLOCK_SUPPLY;
+constexpr uint64_t STAKING_ACTIVATION_VELD = STAKING_ACTIVATION_SUPPLY / VELD_UNITS;
+constexpr uint64_t STAKE_LOCKUP_BLOCKS = 7ULL * BLOCKS_PER_DAY;
 static_assert(TARGET_BLOCK_TIME != 60 || STAKE_LOCKUP_BLOCKS == 10'080,
               "wall-clock re-expression must not change the legacy 60-second profile");
 #else
-constexpr uint64_t STAKING_ACTIVATION_SUPPLY  = STAKING_UNLOCK_SUPPLY;
-constexpr uint64_t STAKING_ACTIVATION_VELD    = STAKING_ACTIVATION_SUPPLY / VELD_UNITS;
-constexpr uint64_t STAKE_LOCKUP_BLOCKS         = 20;
+constexpr uint64_t STAKING_ACTIVATION_SUPPLY = STAKING_UNLOCK_SUPPLY;
+constexpr uint64_t STAKING_ACTIVATION_VELD = STAKING_ACTIVATION_SUPPLY / VELD_UNITS;
+constexpr uint64_t STAKE_LOCKUP_BLOCKS = 20;
 #endif
 static_assert(STAKING_ACTIVATION_VELD * VELD_UNITS == STAKING_ACTIVATION_SUPPLY,
               "staking activation display value must match the consensus supply gate");
@@ -582,60 +579,58 @@ constexpr uint64_t VAULT_SIGLESS_ACTIVATION_HEIGHT = 1;
 #else
 constexpr uint64_t VAULT_SIGLESS_ACTIVATION_HEIGHT = 0;
 #endif
-constexpr uint64_t VAULT_DISTRIBUTION_PPM       = 80000;
-constexpr uint64_t VAULT_INFLOW_PAYOUT_PPM      = 900'000;
+constexpr uint64_t VAULT_DISTRIBUTION_PPM = 80000;
+constexpr uint64_t VAULT_INFLOW_PAYOUT_PPM = 900'000;
 constexpr uint64_t VAULT_INFLOW_CAP_ACTIVATION_HEIGHT = 0;
-constexpr uint64_t VAULT_FEE_PER_INPUT_UNITS    = 1000;
-constexpr uint64_t VAULT_CONCENTRATION_CAP_PPM  = 750000;
+constexpr uint64_t VAULT_FEE_PER_INPUT_UNITS = 1000;
+constexpr uint64_t VAULT_CONCENTRATION_CAP_PPM = 750000;
 constexpr uint64_t VAULT_MIN_DISTRIBUTABLE_UNITS = 1000;
-constexpr uint32_t COMINE_NEARMISS_MULTIPLIER  = 4;
-constexpr const char*    NMS_MAGIC                  = "VELD_NMS";
-constexpr size_t         NMS_MAGIC_LEN              = 8;
-constexpr uint8_t        NMS_VERSION                = 0x01;
-constexpr size_t         NMS_HEADER_LEN             = 88;
-constexpr size_t         NMS_PAYLOAD_LEN            = NMS_MAGIC_LEN + 1 + NMS_HEADER_LEN;
-constexpr uint64_t       NMS_MAX_PREV_HEIGHT_GAP    = 100;
+constexpr uint32_t COMINE_NEARMISS_MULTIPLIER = 4;
+constexpr const char* NMS_MAGIC = "VELD_NMS";
+constexpr size_t NMS_MAGIC_LEN = 8;
+constexpr uint8_t NMS_VERSION = 0x01;
+constexpr size_t NMS_HEADER_LEN = 88;
+constexpr size_t NMS_PAYLOAD_LEN = NMS_MAGIC_LEN + 1 + NMS_HEADER_LEN;
+constexpr uint64_t NMS_MAX_PREV_HEIGHT_GAP = 100;
 // NMS verification performs the same memory-hard primitive as block PoW.
 // Public-mainnet-v2 begins at fresh genesis, so consensus admits a deliberately
 // small fixed work envelope rather than allowing 4,095 hashes in one block.
-constexpr size_t         MAX_NMS_RECORDS_PER_BLOCK  = 4;
-constexpr uint64_t       NMS_WINDOW_DEDUP_BLOCKS    = 200;
-constexpr uint64_t       COMINE_WINDOW_BLOCKS       = 100;
-constexpr uint64_t       BOOTSTRAP_BLOCKS           = 30;
+constexpr size_t MAX_NMS_RECORDS_PER_BLOCK = 4;
+constexpr uint64_t NMS_WINDOW_DEDUP_BLOCKS = 200;
+constexpr uint64_t COMINE_WINDOW_BLOCKS = 100;
+constexpr uint64_t BOOTSTRAP_BLOCKS = 30;
 #ifdef VELD_MAINNET_POW
-constexpr uint64_t       EARLY_RAMP_END_HEIGHT      = 390;
-constexpr uint64_t       EARLY_RETARGET_INTERVAL    = 36;
-constexpr uint64_t       EARLY_LWMA_WINDOW          = 36;
-constexpr uint64_t       EARLY_CLAMP_DIVISOR        = 4;
+constexpr uint64_t EARLY_RAMP_END_HEIGHT = 390;
+constexpr uint64_t EARLY_RETARGET_INTERVAL = 36;
+constexpr uint64_t EARLY_LWMA_WINDOW = 36;
+constexpr uint64_t EARLY_CLAMP_DIVISOR = 4;
 static_assert(EARLY_RAMP_END_HEIGHT == BOOTSTRAP_BLOCKS + 10 * EARLY_RETARGET_INTERVAL,
               "EARLY_RAMP_END_HEIGHT must equal BOOTSTRAP_BLOCKS + 10 windows");
 static_assert(EARLY_RETARGET_INTERVAL >= 1 && EARLY_RETARGET_INTERVAL <= 144,
               "EARLY_RETARGET_INTERVAL out of sane range");
-static_assert(EARLY_CLAMP_DIVISOR >= 2,
-              "EARLY_CLAMP_DIVISOR must be >= 2");
+static_assert(EARLY_CLAMP_DIVISOR >= 2, "EARLY_CLAMP_DIVISOR must be >= 2");
 #endif
-constexpr size_t         LOTTERY_K_SMALL_FLEET           = 5;
-constexpr size_t         LOTTERY_K_LARGE_FLEET           = 20;
-constexpr size_t         LOTTERY_FLEET_SIZE_THRESHOLD    = 1000;
-constexpr uint64_t       LOTTERY_KSLOT_DIVISOR_HEIGHT    = 0;
-constexpr uint32_t LOTTERY_AGG_SEED_K                       = 8;
-constexpr uint64_t LOTTERY_AGG_SEED_ACTIVATION_HEIGHT       = 1;
-constexpr uint64_t       NMS_MIN_BOND_UNITS         = MIN_STAKE_UNITS;
-constexpr bool           OPTION_B_CONSENSUS_GATE_ENABLED = true;
-constexpr uint64_t VAULT_BLOCK_INTERVAL      = 100;
-constexpr uint64_t MIN_TX_FEE                = 100'000;
+constexpr size_t LOTTERY_K_SMALL_FLEET = 5;
+constexpr size_t LOTTERY_K_LARGE_FLEET = 20;
+constexpr size_t LOTTERY_FLEET_SIZE_THRESHOLD = 1000;
+constexpr uint64_t LOTTERY_KSLOT_DIVISOR_HEIGHT = 0;
+constexpr uint32_t LOTTERY_AGG_SEED_K = 8;
+constexpr uint64_t LOTTERY_AGG_SEED_ACTIVATION_HEIGHT = 1;
+constexpr uint64_t NMS_MIN_BOND_UNITS = MIN_STAKE_UNITS;
+constexpr bool OPTION_B_CONSENSUS_GATE_ENABLED = true;
+constexpr uint64_t VAULT_BLOCK_INTERVAL = 100;
+constexpr uint64_t MIN_TX_FEE = 100'000;
 constexpr uint64_t AMM_SEED_LIVENESS_TX_FEE_UNITS = 100'000;
-constexpr uint64_t AMM_SEED_LIVENESS_FEE_RESERVE_UNITS =
-    2 * AMM_SEED_LIVENESS_TX_FEE_UNITS;
+constexpr uint64_t AMM_SEED_LIVENESS_FEE_RESERVE_UNITS = 2 * AMM_SEED_LIVENESS_TX_FEE_UNITS;
 static_assert(AMM_SEED_LIVENESS_TX_FEE_UNITS == MIN_TX_FEE,
               "seed-liveness transaction fee must match the launch wallet/relay fee");
-constexpr uint64_t VALIDATOR_OP_COOLDOWN_BLOCKS    = 100;
-constexpr uint64_t GOV_SUBMIT_COOLDOWN_BLOCKS      = BLOCKS_PER_DAY / 2;
+constexpr uint64_t VALIDATOR_OP_COOLDOWN_BLOCKS = 100;
+constexpr uint64_t GOV_SUBMIT_COOLDOWN_BLOCKS = BLOCKS_PER_DAY / 2;
 constexpr uint64_t GOV_VOTE_CHANGE_COOLDOWN_BLOCKS = 6;
-constexpr uint64_t GOV_SIG_REPLAY_WINDOW_BLOCKS    = 60;
-constexpr uint64_t GOV_PRUNE_DELAY_BLOCKS          = 30ULL * BLOCKS_PER_DAY;
+constexpr uint64_t GOV_SIG_REPLAY_WINDOW_BLOCKS = 60;
+constexpr uint64_t GOV_PRUNE_DELAY_BLOCKS = 30ULL * BLOCKS_PER_DAY;
 static_assert(TARGET_BLOCK_TIME != 60 ||
-              (GOV_SUBMIT_COOLDOWN_BLOCKS == 720 && GOV_PRUNE_DELAY_BLOCKS == 43200),
+                  (GOV_SUBMIT_COOLDOWN_BLOCKS == 720 && GOV_PRUNE_DELAY_BLOCKS == 43200),
               "wall-clock re-expression must not change the legacy 60-second profile");
 #ifdef VELD_MAINNET_POW
 constexpr uint64_t BATCH1_HARDENING_HEIGHT = 0;
@@ -657,16 +652,15 @@ static_assert(ENDORSE_CANONICAL_HEIGHT % BOND_SETTLEMENT_INTERVAL == 0,
               "ENDORSE_CANONICAL_HEIGHT must be a flush/settlement boundary");
 constexpr uint64_t DUST_THRESHOLD_UNITS = 1000;
 
-#if defined(VELD_MAINNET_POW) && !defined(VELD_FUZZ_BUILD) && \
+#if defined(VELD_MAINNET_POW) && !defined(VELD_FUZZ_BUILD) &&                                      \
     (!defined(VELD_TEST_CHAIN_BUILD) || defined(VELD_DSTATE_QUALIFICATION))
 static_assert(TX_FULL_VALIDATION_ACTIVATION_HEIGHT == 0,
-    "Mainnet build must zero TX_FULL_VALIDATION_ACTIVATION_HEIGHT");
+              "Mainnet build must zero TX_FULL_VALIDATION_ACTIVATION_HEIGHT");
 static_assert(TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT == 0,
-    "Mainnet build must zero TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT");
+              "Mainnet build must zero TX_FULL_VALIDATION_V2_ACTIVATION_HEIGHT");
 #endif
 static_assert(MAX_REORG_DEPTH <= COMINE_WINDOW_BLOCKS,
-    "MAX_REORG_DEPTH must not exceed COMINE_WINDOW_BLOCKS");
-static_assert(SLASH_EVIDENCE_WINDOW >= MIN_EVIDENCE_WINDOW,
-    "slash-evidence window too short");
+              "MAX_REORG_DEPTH must not exceed COMINE_WINDOW_BLOCKS");
+static_assert(SLASH_EVIDENCE_WINDOW >= MIN_EVIDENCE_WINDOW, "slash-evidence window too short");
 
-}
+} // namespace veld
