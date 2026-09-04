@@ -35,6 +35,8 @@ clearnet_launcher = (ROOT / "pkg/Start Mining (Clearnet).bat").read_text(
 portal = (ROOT / "src/veld-miner-portal.py").read_text(encoding="utf-8")
 gui = (ROOT / "src/veld-node-gui.cpp").read_text(encoding="utf-8")
 explorer = (ROOT / "include/network/explorer.h").read_text(encoding="utf-8")
+address_history = (ROOT / "include/core/address_history.h").read_text(
+    encoding="utf-8")
 
 check("VELD_ENABLE_DIAGNOSTIC_TX_HISTORY" in constants,
       "missing public/history profile interlock")
@@ -51,31 +53,40 @@ allowlist = desktop[desktop.index("REMOTE_ALLOWED_METHODS"):]
 allowlist = allowlist[:allowlist.index("};")]
 check('"gettxhistory"' not in allowlist,
       "hosted/public desktop allow-list still exposes gettxhistory")
-check("VELD_PUBLIC_HISTORY_UNAVAILABLE" in ui,
-      "desktop does not fail safely with a visible history-unavailable state")
+check('methods_["getaddresshistory"]' in rpc,
+      "bounded indexed address-history RPC is missing")
+check('"getaddresshistory"' in allowlist,
+      "hosted desktop does not expose bounded indexed history")
 check("rpc('gettxhistory'" not in ui and 'rpc("gettxhistory"' not in ui,
       "desktop still contains a gettxhistory RPC call")
 check("getearnings" not in desktop and "getearnings" not in ui and
       "getearnings" not in wallet_cli,
       "desktop or wallet still retains the unbounded earnings/history method")
-history_helper = ui[ui.index("function publicHistoryUnavailable()"):
+history_helper = ui[ui.index("function publicAddressHistory(address, limit)"):
                     ui.index("function rpc(method, params)")]
-check("return Promise.resolve([])" in history_helper and
-      "fetch(" not in history_helper and "rpc(" not in history_helper and
+check("rpc('getaddresshistory'" in history_helper and
+      "Math.min(50" in history_helper and "gettxhistory" not in history_helper and
       "setTimeout" not in history_helper and "setInterval" not in history_helper,
-      "desktop history-unavailable helper can reject, retry, or touch the network")
+      "desktop history helper is not bound to the capped indexed RPC")
 earnings_helper = ui[ui.index("function loadEarningsPage(addr) {"):
                      ui.index("function loadPayoutEndorsements() {")]
-check("Earnings and payout history are unavailable in this release." in
-      earnings_helper and "rpc(" not in earnings_helper and
-      "fetch(" not in earnings_helper and "Promise" not in earnings_helper and
+check("publicAddressHistory(addr, 50)" in earnings_helper and
+      "gettxhistory" not in earnings_helper and
       "setTimeout" not in earnings_helper and "setInterval" not in earnings_helper,
-      "desktop earnings view does not fail explicitly without network/retry")
+      "desktop earnings view is not using bounded indexed history")
 check('method == "gettxhistory"' not in wallet_cli and
       'method\":\"gettxhistory' not in wallet_cli,
       "wallet CLI still tells users to call unavailable history")
 check("txhistory" not in explorer.lower(),
       "legacy explorer txhistory route/scanner remains in source")
+check('resource == "addresshistory"' in explorer and
+      'limit > 50' in explorer,
+      "explorer indexed-history route is missing its hard page cap")
+check("MAX_PAGE_SIZE = 50" in address_history and
+      "IterateFrom(prefix, cursor" in address_history and
+      "block_loader" not in address_history[
+          address_history.index("inline std::optional<Page> ReadPage"):],
+      "address-history query can exceed its row cap or load block bodies")
 
 check("PublicSnapshotDatadirRefusal" in node,
       "legacy public snapshot-marker boundary disappeared")

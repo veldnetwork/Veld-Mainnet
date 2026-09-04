@@ -4695,26 +4695,14 @@ function _veldAssertActiveSignerSeed(seedHex) {
 // ═══════════════════════════════════════
 // RPC
 // ═══════════════════════════════════════
-var VELD_PUBLIC_HISTORY_UNAVAILABLE =
-  'Transaction history is unavailable in the Veld 3.0.0 public release.';
-function showPublicHistoryUnavailable() {
-  if (document.getElementById('veld-history-unavailable')) return;
-  var banner = document.createElement('div');
-  banner.id = 'veld-history-unavailable';
-  banner.setAttribute('role', 'status');
-  banner.style.cssText =
-    'margin:12px;padding:12px;border:1px solid #9b7935;border-radius:8px;' +
-    'background:#211b10;color:#f2d38b;font-size:13px';
-  banner.textContent = VELD_PUBLIC_HISTORY_UNAVAILABLE;
-  var target = document.querySelector('main') || document.body;
-  if (target.firstChild) target.insertBefore(banner, target.firstChild);
-  else target.appendChild(banner);
-}
-function publicHistoryUnavailable() {
-  showPublicHistoryUnavailable();
-  // Resolve to an empty bounded result so legacy view renderers fail safely
-  // without an unhandled rejection, retry loop, or network request.
-  return Promise.resolve([]);
+function publicAddressHistory(address, limit) {
+  if (!address) return Promise.resolve([]);
+  var bounded = Math.max(1, Math.min(50, parseInt(limit || 50, 10) || 50));
+  return rpc('getaddresshistory', [address, String(bounded)]).then(function(page) {
+    if (!page || !Array.isArray(page.entries))
+      throw new Error('Invalid address-history response');
+    return page.entries;
+  });
 }
 function rpc(method, params) {
   // fetch has no built-in timeout; without an AbortController
@@ -9073,11 +9061,9 @@ function loadDashRecentBlocks(tipHeight) {
 
 function loadActivityFeed() {
   if (!currentAddr) return;
-  // Public history is intentionally unavailable. The shared helper displays
-  // the stable release notice and returns an empty bounded result locally.
-  publicHistoryUnavailable().then(function(txs) {
+  publicAddressHistory(currentAddr, 10).then(function(txs) {
     if (!txs || !txs.length) {
-      document.getElementById('d-activity').innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:10px">Transaction history unavailable in this release</div>';
+      document.getElementById('d-activity').innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:10px">No transactions found</div>';
       return;
     }
     var html = '';
@@ -9402,13 +9388,15 @@ function loadWalletAddr(addr) {
     window._statusVaultETA = (rem != null) ? rem : 0;
   }).catch(function(){ window._statusVaultETA = 0; });
 
-  // History-derived lifetime earnings are unavailable in the public release.
-  // No local or hosted fallback performs a chain scan.
-  publicHistoryUnavailable().then(function() {
+  publicAddressHistory(addr, 50).then(function(txs) {
     var el  = document.getElementById('w-bal-lifetime');
     var sub = document.getElementById('w-bal-lifetime-sub');
-    if (el)  el.textContent  = '—';
-    if (sub) sub.textContent = 'transaction history unavailable';
+    var income = (txs || []).reduce(function(total, tx) {
+      var n = parseFloat(tx.net_veld || 0) || 0;
+      return total + (n > 0 ? n : 0);
+    }, 0);
+    if (el)  el.textContent  = fmt(income, 2);
+    if (sub) sub.textContent = 'recent indexed income';
   }).catch(function() {
     var el = document.getElementById('w-bal-lifetime');
     if (el) el.textContent = '—';
@@ -9695,9 +9683,9 @@ function loadWalletAddr(addr) {
   // Recent transactions inline
   var _txh = parseInt((document.getElementById('d-height')?.textContent||'0').replace(/,/g,''))||0;
   var _txfrom = Math.max(0, _txh - 5000);
-  publicHistoryUnavailable().then(function(txs) {
+  publicAddressHistory(addr, 50).then(function(txs) {
     if (!txs || !txs.length) {
-      document.getElementById('w-recent-txs').innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">Transaction history unavailable in this release</div>';
+      document.getElementById('w-recent-txs').innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">No transactions found</div>';
       return;
     }
     // Same friendly label set as the full history panel below
@@ -11800,7 +11788,7 @@ async function acTick() {
     // history is unavailable, so the empty local result below safely leaves
     // auto-compound idle instead of scanning blocks or staking other funds.
     var sinceH = (c.last_action_h || 0) + 1;
-    var hist = await publicHistoryUnavailable();
+    var hist = await publicAddressHistory(currentAddr, 50);
     if (!Array.isArray(hist)) hist = [];
     var stakingRewardDelta = 0;
     hist.forEach(function(t) {
@@ -12269,7 +12257,7 @@ function loadSendTransfers() {
   if (!currentAddr) return;
   var el = document.getElementById('s-transfers');
   el.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:12px">Loading...</div>';
-  publicHistoryUnavailable().then(function(txs) {
+  publicAddressHistory(currentAddr, 50).then(function(txs) {
     // Recent transfers filter tightened. Only show
     // entries that actually moved VELD between distinct wallets. The
     // prior filter included every "sent" TX, which surfaced
@@ -12284,7 +12272,7 @@ function loadSendTransfers() {
       return Math.abs(n) > FEE_FLOOR;
     });
     if (!transfers.length) {
-      el.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:12px">Transaction history unavailable in this release</div>';
+      el.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:12px">No recent transfers found</div>';
       return;
     }
     var html = '<div class="tbl-scroll list-box"><table class="tbl"><thead><tr><th>Type</th><th>Amount</th><th>Block</th></tr></thead><tbody>';
@@ -12315,7 +12303,7 @@ function loadHistory() {
   // btcVELD token ledger remains best-effort for peg wrap/redeem activity.
   window._histScanFrom = _txfrom;
   Promise.all([
-    publicHistoryUnavailable().catch(function(){ return []; }),
+    publicAddressHistory(addr, 50).catch(function(){ return []; }),
     rpc('gettokenhistory',[addr]).catch(function(){ return []; }),
     rpc('getbalance',[addr]).catch(function(){ return null; })
   ]).then(function(res) {
@@ -12360,7 +12348,7 @@ function renderWalletRecentTxs() {
   if (!host) return;
   var txs = window._wRecentTxs || [];
   if (!txs.length) {
-    host.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">Public transaction history is unavailable; no indexed token activity was found.</div>';
+    host.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">No indexed transaction or token activity found.</div>';
     return;
   }
   var _typeLabel = {
@@ -14972,13 +14960,13 @@ function loadCominingHistory() {
   var addr = document.getElementById('cm-addr').value.trim();
   if (!addr) return;
   var histEl = document.getElementById('cm-history');
-  histEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">Transaction history unavailable in this release</div>';
+  histEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">Loading...</div>';
   var _txh = parseInt((document.getElementById('d-height')?.textContent||'0').replace(/,/g,''))||0;
   var _txfrom = Math.max(0, _txh - 5000);
-  publicHistoryUnavailable().then(function(txs) {
+  publicAddressHistory(addr, 50).then(function(txs) {
     var payouts = (txs||[]).filter(function(t){ return parseFloat(t.net_veld||0) > 0 && (t.type === 'received' || t.type === 'comine_payout'); });
     if (!payouts.length) {
-      histEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">Transaction history unavailable in this release</div>';
+      histEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">No recent payouts found</div>';
       return;
     }
     var total = payouts.reduce(function(s,t){ return s + parseFloat(t.net_veld||0); }, 0);
@@ -16222,15 +16210,11 @@ function renderVhTab() {
 // ═══════════════════════════════════════
 // EARNINGS
 // ═══════════════════════════════════════
-// Public per-transaction and derived earnings history are unavailable. This
-// view renders a stable local notice and deliberately performs no RPC, fetch,
-// timer, or retry. A future indexed implementation needs a separate review.
 function loadEarningsPage(addr) {
   if (!addr) addr = currentAddr;
   if (!addr) return;
   var setText = function(id, v){ var el=document.getElementById(id); if(el) el.textContent=v; };
   setText('earn-recent-addr', addr.substr(0,10)+'…'+addr.substr(-4));
-  showPublicHistoryUnavailable();
   [
     'earn-30d', 'earn-life', 'earn-next', 'earn-bar-mining-amt',
     'earn-bar-comine-amt', 'earn-bar-staking-amt',
@@ -16243,7 +16227,7 @@ function loadEarningsPage(addr) {
     'earn-up-stake-meta', 'earn-up-endorse-when',
     'earn-up-endorse-meta', 'earn-up-unlock-when',
     'earn-up-unlock-meta'
-  ].forEach(function(id){ setText(id, 'Earnings history unavailable in this release'); });
+  ].forEach(function(id){ setText(id, 'Latest 50 indexed transactions'); });
   var body = document.getElementById('earn-recent-body');
   if (body) {
     body.textContent = '';
@@ -16254,10 +16238,37 @@ function loadEarningsPage(addr) {
     td.style.textAlign='center';
     td.style.color='var(--muted2)';
     td.style.fontSize='12px';
-    td.textContent='Earnings and payout history are unavailable in this release.';
+    td.textContent='Loading indexed earnings history...';
     tr.appendChild(td);
     body.appendChild(tr);
   }
+  publicAddressHistory(addr, 50).then(function(rows) {
+    rows = Array.isArray(rows) ? rows : [];
+    var totals = {mining:0, comine:0, staking:0, endorse:0};
+    rows.forEach(function(t) {
+      var amount = Math.max(0, parseFloat(t.net_veld || 0) || 0);
+      if (t.type === 'coinbase') totals.mining += amount;
+      else if (t.type === 'comine_payout') totals.comine += amount;
+      else if (t.type === 'vault_distribution' || t.type === 'staking_distribution') totals.staking += amount;
+      else if (t.type === 'endorsement_reward' || t.type === 'endorsement_payout') totals.endorse += amount;
+    });
+    setText('earn-30d', fmt(totals.mining + totals.comine + totals.staking + totals.endorse, 2) + ' VELD');
+    setText('earn-bar-mining-amt', fmt(totals.mining, 2));
+    setText('earn-bar-comine-amt', fmt(totals.comine, 2));
+    setText('earn-bar-staking-amt', fmt(totals.staking, 2));
+    setText('earn-bar-endorse-amt', fmt(totals.endorse, 2));
+    if (!body) return;
+    if (!rows.length) {
+      body.innerHTML='<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--muted2)">No indexed earnings found.</td></tr>';
+      return;
+    }
+    body.innerHTML=rows.slice(0, 25).map(function(t) {
+      var amount=parseFloat(t.net_veld||0)||0;
+      return '<tr><td>'+escHtml(t.type||'transaction')+'</td><td>'+escHtml(t.block_height||0)+'</td><td>'+escHtml(shortHash(t.txid||''))+'</td><td>'+fmt(amount,4)+' VELD</td><td>Confirmed</td></tr>';
+    }).join('');
+  }).catch(function(e) {
+    if (body) body.innerHTML='<tr><td colspan="5" class="alert alert-err">'+escHtml(e.message||'History unavailable')+'</td></tr>';
+  });
 }
 
 // ═══════════════════════════════════════

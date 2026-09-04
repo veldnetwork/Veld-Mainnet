@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -145,6 +146,38 @@ int main() {
         RpcServer rpc(chain, mempool, storage);
         BlockExplorer explorer(chain, mempool, 0);
 
+        std::atomic<size_t> indexed_calls{0};
+        const auto bounded_history =
+            [&](const std::string&, size_t limit, const std::string&) {
+                indexed_calls.fetch_add(1, std::memory_order_relaxed);
+                Check(limit <= 50,
+                      "indexed callback receives only a bounded page limit");
+                return std::string(
+                    "{\"entries\":[{\"txid\":\"") +
+                    std::string(64, '1') +
+                    "\",\"block_height\":1,\"net_veld\":1.0,"
+                    "\"fee_veld\":0.0,\"type\":\"received\"}],"
+                    "\"has_more\":false,\"next_cursor\":\"\"}";
+            };
+        rpc.SetAddressHistoryFn(bounded_history);
+        explorer.SetAddressHistoryFn(bounded_history);
+
+        const std::string indexed_request =
+            R"({"jsonrpc":"2.0","method":"getaddresshistory","params":["address",50],"id":3})";
+        const std::string indexed_response = rpc.Handle(indexed_request);
+        Check(indexed_response.find("\"type\":\"received\"") !=
+                  std::string::npos,
+              "legitimate bounded indexed RPC request remains available");
+        const auto indexed_http = explorer.Route(HttpRequest::Parse(
+            "GET /api/v1/addresshistory/address/50 HTTP/1.1\r\n"
+            "Host: 127.0.0.1\r\n\r\n"));
+        Check(indexed_http.status_code == 200 &&
+                  indexed_http.body.find("\"has_more\":false") !=
+                      std::string::npos,
+              "legitimate bounded explorer history request remains available");
+        Check(loader_calls.load(std::memory_order_relaxed) == 0,
+              "legitimate indexed requests never invoke the block loader");
+
         const std::string history_request =
             R"({"jsonrpc":"2.0","method":"gettxhistory","params":["address",0,5001,8000000],"id":1})";
         const std::string earnings_request =
@@ -201,6 +234,40 @@ int main() {
               "concurrent removed-surface allocation work stays bounded");
         Check(allocation_probe::calls.load(std::memory_order_relaxed) < 20'000,
               "concurrent removed-surface allocation count stays bounded");
+
+        std::mutex history_gate_mutex;
+        std::condition_variable history_gate_cv;
+        size_t history_gate_entered = 0;
+        bool release_history_gate = false;
+        rpc.SetAddressHistoryFn(
+            [&](const std::string&, size_t, const std::string&) {
+                std::unique_lock<std::mutex> lock(history_gate_mutex);
+                ++history_gate_entered;
+                history_gate_cv.notify_all();
+                history_gate_cv.wait(lock,
+                    [&] { return release_history_gate; });
+                return std::string(
+                    "{\"entries\":[],\"has_more\":false,"
+                    "\"next_cursor\":\"\"}");
+            });
+        std::vector<std::thread> held_queries;
+        for (size_t i = 0; i < 4; ++i)
+            held_queries.emplace_back([&] { (void)rpc.Handle(indexed_request); });
+        {
+            std::unique_lock<std::mutex> lock(history_gate_mutex);
+            history_gate_cv.wait(lock,
+                [&] { return history_gate_entered == 4; });
+        }
+        const std::string busy_response = rpc.Handle(indexed_request);
+        Check(busy_response.find("address history is busy") !=
+                  std::string::npos,
+              "fifth concurrent indexed request fails at the method cap");
+        {
+            std::lock_guard<std::mutex> lock(history_gate_mutex);
+            release_history_gate = true;
+        }
+        history_gate_cv.notify_all();
+        for (auto& worker : held_queries) worker.join();
     }
 
     Check(loader_calls.load(std::memory_order_relaxed) == 0,

@@ -1168,6 +1168,11 @@ public:
     void SetPeerStatsFn(std::function<std::vector<PeerStatsItem>()> fn) {
         peer_stats_fn_ = std::move(fn);
     }
+    void SetAddressHistoryFn(
+            std::function<std::string(const std::string&, size_t,
+                                      const std::string&)> fn) {
+        address_history_fn_ = std::move(fn);
+    }
     std::vector<PeerStatsItem> LivePeerStats() const {
         return peer_stats_fn_ ? peer_stats_fn_() : std::vector<PeerStatsItem>{};
     }
@@ -1490,6 +1495,36 @@ self.addEventListener('fetch', event => {
                 j << std::fixed << std::setprecision(8);
                 j << "{\"address\":\"" << HttpResponse::JsonEscape(parts[3]) << "\",\"balance_veld\":" << bal << "}";
                 return HttpResponse::JSON(j.str());
+            }
+
+            if (resource == "addresshistory" && parts.size() == 5) {
+                uint64_t limit = 0;
+                if (!ParseExplorerHeight_(parts[4], limit) || limit == 0 ||
+                    limit > 50)
+                    return HttpResponse::JSON(
+                        "{\"error\":\"limit must be an integer from 1 to 50\"}",
+                        400);
+                if (!address_history_fn_)
+                    return HttpResponse::JSON(
+                        "{\"error\":\"address history index unavailable\"}",
+                        503);
+                try {
+                    std::string body = address_history_fn_(
+                        parts[3], static_cast<size_t>(limit), "");
+                    if (body.size() > 32768)
+                        return HttpResponse::JSON(
+                            "{\"error\":\"address history response exceeded bound\"}",
+                            503);
+                    return HttpResponse::JSON(body);
+                } catch (const std::invalid_argument& e) {
+                    return HttpResponse::JSON(
+                        "{\"error\":\"" +
+                        HttpResponse::JsonEscape(e.what()) + "\"}", 400);
+                } catch (const std::exception& e) {
+                    return HttpResponse::JSON(
+                        "{\"error\":\"" +
+                        HttpResponse::JsonEscape(e.what()) + "\"}", 503);
+                }
             }
 
             // One bounded request serves a complete history page.  The old UI
@@ -2275,6 +2310,8 @@ private:
     std::function<uint64_t()> network_height_fn_;
     std::function<size_t()>   peer_count_fn_;
     std::function<std::vector<PeerStatsItem>()> peer_stats_fn_;
+    std::function<std::string(const std::string&, size_t,
+                              const std::string&)> address_history_fn_;
 
     std::string                                cache_dir_;
     net::trusted_proxy::Configuration          trusted_proxy_;
@@ -3307,6 +3344,9 @@ private:
             if (second.rfind("utxos", 0) == 0) return "utxos";
             if (second == "v1" && req.path_parts.size() >= 3
                     && req.path_parts[2] == "address") return "address-api";
+            if (second == "v1" && req.path_parts.size() >= 3
+                    && req.path_parts[2] == "addresshistory")
+                return "address-history-api";
             if (second == "v1" && req.path_parts.size() >= 3
                     && req.path_parts[2] == "blocks") return "block";
             static const std::unordered_set<std::string> cheap = {
@@ -5507,7 +5547,7 @@ loadStats();
           << "  var d = window._expHist || [];"
           << "  var host = document.getElementById('tx-hist');"
           << "  if(!host) return;"
-          << "  if(!d.length){host.innerHTML='<div style=\"color:var(--muted);text-align:center;padding:16px;font-size:11px\">No transactions found in scanned range.</div>';return;}"
+          << "  if(!d.length){host.innerHTML='<div style=\"color:var(--muted);text-align:center;padding:16px;font-size:11px\">No transactions found.</div>';return;}"
           << "  var totalPages = Math.max(1, Math.ceil(d.length / EXP_HIST_PAGE_SIZE));"
           << "  var page = Math.min(Math.max(1, window._expHistPage || 1), totalPages);"
           << "  window._expHistPage = page;"
@@ -5581,7 +5621,7 @@ loadStats();
           << "    t = t.parentNode;"
           << "  }"
           << "});"
-          << "document.getElementById('tx-hist').innerHTML='<div style=\"color:var(--muted);text-align:center;padding:16px\">Public transaction history is unavailable in Veld 3.0.0.</div>';"
+          << "fetch('/api/v1/addresshistory/" << address << "/50',{cache:'no-store'}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'History unavailable');return d;});}).then(function(d){window._expHist=Array.isArray(d.entries)?d.entries:[];window._expHistPage=1;expHistRender();}).catch(function(e){document.getElementById('tx-hist').innerHTML='<div style=\"color:var(--muted);text-align:center;padding:16px\">'+escHtml(e.message||'History unavailable')+'</div>';});"
           << "fetch('/api/v1/address/" << address << "').then(r=>r.json()).then(function(d){"
           << "  document.getElementById('addr-staked').textContent=d.staked_veld!==undefined?parseFloat(d.staked_veld).toFixed(2)+' VELD':'0.00 VELD';"
           << "}).catch(function(){document.getElementById('addr-staked').textContent='--';});"

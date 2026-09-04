@@ -51,6 +51,7 @@
 #include <cstring>
 #include <limits>
 #include <utility>
+#include <atomic>
 #include "../compat/platform.h"
 #include "../crypto/vendored.h"
 
@@ -1163,6 +1164,11 @@ public:
     void SetIBDCompleteFn(std::function<bool()> fn) { ibd_complete_fn_ = fn; }
     void SetTxIndexEnabledFn(std::function<bool()> fn) { txindex_enabled_fn_ = std::move(fn); }
     void SetTxIndexLookupFn(std::function<std::optional<uint64_t>(const std::string&)> fn) { txindex_lookup_fn_ = std::move(fn); }
+    void SetAddressHistoryFn(
+            std::function<std::string(const std::string&, size_t,
+                                      const std::string&)> fn) {
+        address_history_fn_ = std::move(fn);
+    }
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     void SetDumpSnapshotFn(std::function<std::string(const std::string&)> fn) { dump_snapshot_fn_ = fn; }
 #endif
@@ -1448,6 +1454,9 @@ private:
     std::function<bool()> ibd_complete_fn_;
     std::function<bool()> txindex_enabled_fn_;
     std::function<std::optional<uint64_t>(const std::string&)> txindex_lookup_fn_;
+    std::function<std::string(const std::string&, size_t,
+                              const std::string&)> address_history_fn_;
+    std::atomic<uint32_t> address_history_queries_{0};
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     std::function<std::string(const std::string&)> dump_snapshot_fn_;
 #endif
@@ -2526,6 +2535,55 @@ private:
                << ",\"spendable_veld\":" << spendable << "}";
             return jb.str();
         });
+
+        // Bounded, index-only public history. This deliberately does not
+        // accept block ranges: one request performs one ordered index seek,
+        // returns at most 50 fixed-shape rows, and never loads block bodies.
+        methods_["getaddresshistory"] = RpcMethod(
+            [this](const P& params) -> std::string {
+                if (params.empty() || params.size() > 3)
+                    throw std::invalid_argument(
+                        "expected address, optional limit, optional cursor");
+                size_t limit = 25;
+                if (params.size() >= 2) {
+                    const uint64_t parsed = ParseCanonicalRpcU64OrThrow(
+                        params[1], "limit");
+                    if (parsed == 0 || parsed > 50)
+                        throw std::invalid_argument(
+                            "limit must be an integer from 1 to 50");
+                    limit = static_cast<size_t>(parsed);
+                }
+                const std::string cursor =
+                    params.size() >= 3 ? params[2] : std::string{};
+                if (cursor.size() > 192)
+                    throw std::invalid_argument("cursor is too long");
+                if (!address_history_fn_)
+                    throw rpc_error(-32004,
+                                    "address history index unavailable");
+
+                uint32_t active = address_history_queries_.load(
+                    std::memory_order_relaxed);
+                do {
+                    if (active >= 4)
+                        throw rpc_error(-32005,
+                                        "address history is busy; retry shortly");
+                } while (!address_history_queries_.compare_exchange_weak(
+                    active, active + 1, std::memory_order_acq_rel,
+                    std::memory_order_relaxed));
+                struct QueryGuard {
+                    std::atomic<uint32_t>& count;
+                    ~QueryGuard() {
+                        count.fetch_sub(1, std::memory_order_release);
+                    }
+                } guard{address_history_queries_};
+
+                std::string result = address_history_fn_(
+                    params[0], limit, cursor);
+                if (result.size() > 32768)
+                    throw rpc_error(-32004,
+                                    "address history response exceeded bound");
+                return result;
+            });
 
         methods_["listunspent"] = RpcMethod([this](const P& params) -> std::string {
             if (params.empty()) throw std::invalid_argument("Missing address");

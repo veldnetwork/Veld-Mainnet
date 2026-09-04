@@ -7,6 +7,7 @@
 #include "../core/storage.h"
 #include "../core/leveldb.h"
 #include "../core/miner_archive.h"
+#include "../core/address_history.h"
 #include "../core/script.h"
 #include "../core/pqc_script.h"
 #include "../core/onchain_tokens.h"
@@ -3155,6 +3156,14 @@ public:
                 } catch (...) { return std::nullopt; }
             });
 
+        auto address_history_page =
+            [this](const std::string& address, size_t limit,
+                   const std::string& cursor) {
+                return AddressHistoryPageJson_(address, limit, cursor);
+            };
+        rpc_.SetAddressHistoryFn(address_history_page);
+        explorer_.SetAddressHistoryFn(address_history_page);
+
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         rpc_.SetDumpSnapshotFn([this](const std::string& target_dir) -> std::string {
             try {
@@ -5528,6 +5537,12 @@ public:
     // typed archive record unavailable until an exact transition/rebuild.
     std::atomic<bool> miner_archive_ready_{false};
     std::atomic<uint64_t> miner_archive_revision_{0};
+    // Display-only canonical per-address history. Readers are admitted only
+    // while an exact tip marker is open; rebuild/advance/rollback close the
+    // revision first so an overlapping RPC cannot return a mixed page.
+    std::atomic<bool> address_history_ready_{false};
+    std::atomic<uint64_t> address_history_revision_{0};
+    std::atomic<uint32_t> address_history_queries_{0};
 
     mutable std::mutex on_commit_serial_mutex_;
 
@@ -11480,6 +11495,137 @@ private:
         return true;
     }
 
+    void CloseAddressHistory_() {
+        address_history_ready_.store(false, std::memory_order_release);
+        address_history_revision_.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    void OpenAddressHistory_() {
+        address_history_revision_.fetch_add(1, std::memory_order_acq_rel);
+        address_history_ready_.store(true, std::memory_order_release);
+    }
+
+    bool RebuildAddressHistoryIndex_() {
+        CloseAddressHistory_();
+        try {
+            std::optional<std::pair<uint64_t, Hash256>> tip;
+            if (!chain_.IsEmpty())
+                tip = std::make_pair(chain_.Height(),
+                                     chain_.TipCopy().GetHash());
+            const bool ok = address_history::Rebuild(
+                db_.GetIndexDB(), tip,
+                [this](uint64_t height) { return chain_.GetBlock(height); },
+                [this](uint64_t height, const Hash256& hash) {
+                    return !chain_.IsEmpty() && chain_.Height() == height &&
+                           chain_.TipCopy().GetHash() == hash;
+                });
+            if (ok) OpenAddressHistory_();
+            return ok;
+        } catch (...) {
+            address_history_ready_.store(false, std::memory_order_release);
+            return false;
+        }
+    }
+
+    bool AdvanceAddressHistoryIndex_(const Block& block) {
+        const bool was_ready =
+            address_history_ready_.load(std::memory_order_acquire);
+        CloseAddressHistory_();
+        try {
+            if (!was_ready) return RebuildAddressHistoryIndex_();
+            const bool ok = address_history::Advance(
+                db_.GetIndexDB(), block);
+            if (ok) OpenAddressHistory_();
+            return ok;
+        } catch (...) {
+            address_history_ready_.store(false, std::memory_order_release);
+            return false;
+        }
+    }
+
+    bool RollbackAddressHistoryIndex_(const Block& popped) {
+        if (!address_history_ready_.load(std::memory_order_acquire))
+            return false;
+        CloseAddressHistory_();
+        try {
+            const bool ok = address_history::Rollback(
+                db_.GetIndexDB(), popped);
+            if (ok) OpenAddressHistory_();
+            return ok;
+        } catch (...) {
+            address_history_ready_.store(false, std::memory_order_release);
+            return false;
+        }
+    }
+
+    std::string AddressHistoryPageJson_(const std::string& address,
+                                        size_t limit,
+                                        const std::string& cursor) {
+        if (!address_history_ready_.load(std::memory_order_acquire))
+            throw std::runtime_error(
+                "address history index is rebuilding; retry shortly");
+        uint32_t active = address_history_queries_.load(
+            std::memory_order_relaxed);
+        do {
+            if (active >= 4)
+                throw std::runtime_error(
+                    "address history is busy; retry shortly");
+        } while (!address_history_queries_.compare_exchange_weak(
+            active, active + 1, std::memory_order_acq_rel,
+            std::memory_order_relaxed));
+        struct QueryGuard {
+            std::atomic<uint32_t>& count;
+            ~QueryGuard() {
+                count.fetch_sub(1, std::memory_order_release);
+            }
+        } guard{address_history_queries_};
+        const std::vector<uint8_t> script = AddressToScript(address);
+        if (!address_history::IsCanonicalAddressScript(script))
+            throw std::invalid_argument("invalid mainnet Veld address");
+        if (chain_.IsEmpty())
+            throw std::runtime_error("address history has no canonical tip");
+        const Block canonical_tip = chain_.TipCopy();
+        if (!address_history::MarkersMatch(
+                db_.GetIndexDB(), canonical_tip.height,
+                canonical_tip.GetHash())) {
+            CloseAddressHistory_();
+            throw std::runtime_error(
+                "address history index is stale; rebuild required");
+        }
+        const uint64_t revision =
+            address_history_revision_.load(std::memory_order_acquire);
+        const auto page = address_history::ReadPage(
+            db_.GetIndexDB(), script, limit, cursor);
+        if (!page ||
+            !address_history_ready_.load(std::memory_order_acquire) ||
+            address_history_revision_.load(std::memory_order_acquire) !=
+                revision ||
+            !address_history::MarkersMatch(
+                db_.GetIndexDB(), canonical_tip.height,
+                canonical_tip.GetHash()))
+            throw std::runtime_error(
+                "address history changed while reading; retry shortly");
+
+        std::vector<std::string> rows;
+        rows.reserve(page->entries.size());
+        for (const auto& entry : page->entries) {
+            rows.push_back(JsonBuilder::Object({
+                {"txid", JsonBuilder::String(entry.txid)},
+                {"block_height", JsonBuilder::Number(entry.block_height)},
+                {"net_veld", JsonBuilder::Float(
+                    static_cast<double>(entry.net_units) / VELD_UNITS, 8)},
+                {"fee_veld", JsonBuilder::Float(
+                    static_cast<double>(entry.fee_units) / VELD_UNITS, 8)},
+                {"type", JsonBuilder::String(entry.type)},
+            }));
+        }
+        return JsonBuilder::Object({
+            {"entries", JsonBuilder::Array(rows)},
+            {"has_more", JsonBuilder::Bool(page->has_more)},
+            {"next_cursor", JsonBuilder::String(page->next_cursor)},
+        });
+    }
+
     static constexpr const char* MINER_ARCHIVE_COUNT_PREFIX_ =
         "miner:count:";
     static constexpr const char* MINER_ARCHIVE_LAST_PREFIX_ =
@@ -12479,6 +12625,13 @@ private:
                              "closed until canonical rebuild\n";
                 std::cerr.flush();
             }
+            if (!RollbackAddressHistoryIndex_(popped)) {
+                address_history_ready_.store(false,
+                                             std::memory_order_release);
+                std::cerr << "  [address-history] rollback deferred; index "
+                             "closed until canonical rebuild\n";
+                std::cerr.flush();
+            }
 
             try {
                 InvalidateReorgedPendingBroadcasts_Deferred();
@@ -13226,6 +13379,25 @@ private:
                 std::cerr.flush();
             }
 
+            // This is a display-only, rebuildable index. Linear commits add
+            // one atomic set of rows. A completed reorg rebuilds once from
+            // the new canonical chain, with reads closed throughout.
+            if (from_reorg)
+                address_history_ready_.store(false,
+                                             std::memory_order_release);
+            const bool history_ok = from_reorg
+                ? (block.height == chain_.Height()
+                       ? RebuildAddressHistoryIndex_() : true)
+                : AdvanceAddressHistoryIndex_(block);
+            if (!history_ok) {
+                address_history_ready_.store(false,
+                                             std::memory_order_release);
+                std::cerr << "  [address-history] index unavailable at h="
+                          << block.height
+                          << "; bounded history disabled until rebuild\n";
+                std::cerr.flush();
+            }
+
             if (publishes_final_frame && ibd_complete_.load() &&
                 block.height > 0 &&
                 (block.height % COMINE_WINDOW_BLOCKS) == 0) {
@@ -13767,6 +13939,11 @@ private:
         if (!RebuildMinerArchiveIndex_()) {
             std::cerr << "  [miner-archive] rebuild failed after replay; "
                          "count/last display remains unavailable\n";
+            std::cerr.flush();
+        }
+        if (!RebuildAddressHistoryIndex_()) {
+            std::cerr << "  [address-history] rebuild failed after replay; "
+                         "bounded history remains unavailable\n";
             std::cerr.flush();
         }
         governance_.PersistAll();

@@ -72,9 +72,10 @@ features:
 - Snapshot bootstrap, snapshot download/import/promotion, and snapshot RPCs
   are unavailable. Public nodes perform ordinary full validation, and startup
   refuses datadirs marked as snapshot-imported or snapshot-revoked.
-- Transaction-history scanning RPCs, including `gettxhistory` and
-  `getearnings`, are unavailable. Desktop history and earnings views report
-  that the feature is unavailable and do not retry an unbounded public scan.
+- Legacy block-range scanners, including `gettxhistory` and `getearnings`,
+  remain unavailable. The desktop wallet and explorer use the bounded
+  `getaddresshistory` index instead: at most 50 rows per cursor page, with no
+  block-body scan during a request.
 - Seed material is never accepted in command-line arguments. Key import uses
   hidden terminal input or an explicitly inherited protected pipe/handle.
 - UPnP is not compiled into public-mainnet artifacts, and `--upnp` is refused.
