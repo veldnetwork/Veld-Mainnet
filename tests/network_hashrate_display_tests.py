@@ -29,13 +29,33 @@ require(
     "dashboard must not retain the retired timing-sample estimator",
 )
 require(
-    "hashrate_hps = difficulty * 4294967296.0 / (double)TARGET_BLOCK_TIME;"
-    in EXPLORER,
-    "public Explorer must publish the difficulty-implied network rate",
+    "difficulty * 4294967296.0" not in EXPLORER,
+    "public Explorer must not use Bitcoin's difficulty-one work constant",
+)
+require(
+    "std::ldexp(1.0, shift_exp)" in EXPLORER
+    and "static_cast<double>(mantissa)" in EXPLORER
+    and "static_cast<double>(TARGET_BLOCK_TIME)" in EXPLORER,
+    "public Explorer must derive network rate from the Veld compact target",
 )
 require(
     '<div class="tile"><div class="l">Hashrate</div>' in EXPLORER,
     "public Explorer hashrate tile must retain its concise label",
 )
+require(
+    "fmtHashrate(d.hashrate)" in EXPLORER
+    and "fmt(hr/1000,1)" not in EXPLORER,
+    "public Explorer must scale H/s units instead of forcing KH/s",
+)
 
-print("PASS network_hashrate_display_tests checks=5")
+bits = 0x1E106D4F
+exponent = bits >> 24
+mantissa = bits & 0x007FFFFF
+expected_hashes = 2 ** (256 - 8 * (exponent - 3)) / mantissa
+network_hps = expected_hashes / 180
+require(
+    abs(network_hps - 5674.002016) < 0.001,
+    "known compact-target vector must resolve to the expected VeldHash rate",
+)
+
+print("PASS network_hashrate_display_tests checks=8")

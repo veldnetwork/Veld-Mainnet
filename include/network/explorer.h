@@ -4549,7 +4549,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
   <div class="tile gold"><div class="l">Total supply</div><div class="v" id="s-supply">)HTML";
         page << std::fixed << std::setprecision(0) << supply;
         page << R"HTML(<span class="u">VELD</span></div></div>
-  <div class="tile"><div class="l">Hashrate</div><div class="v" id="s-hashrate">&mdash;<span class="u">KH/s</span></div></div>
+  <div class="tile"><div class="l">Hashrate</div><div class="v" id="s-hashrate">&mdash;<span class="u">H/s</span></div></div>
   <div class="tile span2"><div class="l">Mempool</div><div class="v"><span id="s-mempool">&mdash;</span><span class="u">tx &middot; <span id="s-mempool-kb">&mdash;</span> KB &middot; <span id="s-peers">&mdash;</span> network nodes</span></div></div>
 </div>
 
@@ -4583,6 +4583,14 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
         page << R"HTML(<script nonce="__CSP_NONCE__">
 function fmt(n,d){return parseFloat(n||0).toFixed(d!==undefined?d:2);}
 function fmtInt(n){return Math.floor(parseFloat(n||0)).toLocaleString();}
+function fmtHashrate(h){
+  var n=Math.max(0,parseFloat(h)||0),unit='H/s';
+  if(n>=1e12){n/=1e12;unit='TH/s';}
+  else if(n>=1e9){n/=1e9;unit='GH/s';}
+  else if(n>=1e6){n/=1e6;unit='MH/s';}
+  else if(n>=1e3){n/=1e3;unit='KH/s';}
+  return fmt(n,1)+'<span class="u">'+unit+'</span>';
+}
 function shortHash(h){return h?h.slice(0,8)+'…'+h.slice(-6):'—';}
 function shortAddr(a){return a?a.slice(0,6)+'…'+a.slice(-4):'—';}
 function ago(t){var s=Math.floor(Date.now()/1000)-(t||0);if(s<0)s=0;if(s<60)return s+' s';if(s<3600)return Math.floor(s/60)+' m';if(s<86400)return Math.floor(s/3600)+' h';return Math.floor(s/86400)+' d';}
@@ -4607,8 +4615,7 @@ function loadStats(){
     var mempoolKb=document.getElementById('s-mempool-kb');if(mempoolKb)mempoolKb.textContent=Math.round((d.mempool_bytes||0)/1024*10)/10;
     document.getElementById('s-supply').innerHTML=fmtInt(sup)+'<span class="u">VELD</span>';
     var pe=document.getElementById('s-peers');if(pe)fetch('/api/v1/topology',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('topology unavailable');return r.json();}).then(function(t){var nodes=Array.isArray(t.nodes)?t.nodes:[];pe.textContent=new Set(nodes.map(function(node){return String(node.id);})).size||'—';}).catch(function(){pe.textContent='—';});
-    var hr=parseFloat(d.hashrate||0);
-    document.getElementById('s-hashrate').innerHTML=fmt(hr/1000,1)+'<span class="u">KH/s</span>';
+    document.getElementById('s-hashrate').innerHTML=fmtHashrate(d.hashrate);
     var pct=Math.max(0,Math.min(100,sup/21000000*100));
     var bar=document.getElementById('s-supply-bar');if(bar)bar.style.width=pct.toFixed(4)+'%';
     var pctEl=document.getElementById('s-supply-pct');if(pctEl)pctEl.textContent=pct.toFixed(3)+'% mined';
@@ -5788,8 +5795,19 @@ loadStats();
                 difficulty = (double)0x00000808 / (double)mant * pow(256.0, (int)(0x1f - exp));
         }
         double hashrate_hps = 0.0;
-        if (difficulty > 0.0 && TARGET_BLOCK_TIME > 0) {
-            hashrate_hps = difficulty * 4294967296.0 / (double)TARGET_BLOCK_TIME;
+        if (bits != 0 && TARGET_BLOCK_TIME > 0) {
+            const uint32_t exp = bits >> 24;
+            const uint32_t mantissa = bits & 0x007fffff;
+            if (mantissa > 0 && exp >= 3) {
+                const int shift_exp = 256 - 8 * (static_cast<int>(exp) - 3);
+                if (shift_exp >= 0 && shift_exp < 1023) {
+                    const double expected_hashes =
+                        std::ldexp(1.0, shift_exp) /
+                        static_cast<double>(mantissa);
+                    hashrate_hps = expected_hashes /
+                        static_cast<double>(TARGET_BLOCK_TIME);
+                }
+            }
         }
         j << "\"best_block_hash\":\"" << HashToHex(chain_.TipCopy().GetHash()) << "\","
           << "\"difficulty\":" << std::setprecision(4) << difficulty << ","
