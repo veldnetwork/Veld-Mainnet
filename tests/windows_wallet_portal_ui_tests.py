@@ -9,6 +9,9 @@ GUI = (ROOT / "src" / "veld-node-gui.cpp").read_text(encoding="utf-8")
 PORTAL = (ROOT / "src" / "veld-miner-portal.py").read_text(encoding="utf-8")
 WALLET = (ROOT / "include" / "network" / "ui_desktop.h").read_text(encoding="utf-8")
 EXPLORER = (ROOT / "include" / "network" / "explorer.h").read_text(encoding="utf-8")
+COVENANT = (ROOT / "include" / "network" / "covenant_client_js.h").read_text(
+    encoding="utf-8"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -69,6 +72,7 @@ for surface_name, surface in (
     ("wallet", WALLET),
     ("explorer", EXPLORER),
     ("portal", PORTAL),
+    ("wallet covenant client", COVENANT),
 ):
     for forbidden in ("testnet", "regtest"):
         require(
@@ -113,4 +117,4 @@ require(
     "staking lock must use the live consensus supply and threshold",
 )
 
-print("PASS windows_wallet_portal_ui_tests checks=32")
+print("PASS windows_wallet_portal_ui_tests checks=34")

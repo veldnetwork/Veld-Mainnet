@@ -72,7 +72,7 @@ inline const std::string& GetCovenantClientJS() {
     for (var q = digits.length - 1; q >= 0; q--) s += _B58[digits[q]];
     return s;
   }
-  // version: P2SH (0x05 mainnet / 0xC4 testnet). payload: 20-byte hash160.
+  // version: P2SH (0x05 on the public mainnet). payload: 20-byte hash160.
   // sha256d: function(byteArray)->32-byte array.
   function base58CheckEncode(version, payload, sha256d) {
     var data = [version & 0xFF];
