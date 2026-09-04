@@ -94,6 +94,20 @@ not in a public issue. General contributions are described in
 Operators should also review [LIVE_MAINNET_CHECKS.md](LIVE_MAINNET_CHECKS.md)
 before running an Internet-facing node.
 
+## Repository layout
+
+- `src/` contains the production program entry points.
+- `include/core/` contains chain, transaction, script, mempool, and storage
+  implementation.
+- `include/consensus/` contains staking, finality, governance, validator, and
+  btcVELD transition rules.
+- `include/network/` contains P2P, RPC, Explorer, and browser-facing resources.
+- `include/wallet/` contains key, wallet, signing, and secure-file boundaries.
+- `build/` contains the attested production-role build controllers.
+- `tests/` contains neutral, boundary-oriented regression and process tests.
+- `vendor/pqc/` contains provenance-pinned third-party cryptographic source and
+  must not be reformatted as maintained Veld code.
+
 ## License
 
 Veld-authored source is licensed under the GNU Affero General Public License,

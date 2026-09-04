@@ -28,6 +28,18 @@ Consensus changes should cover the value immediately below a boundary, the
 boundary itself, and the value immediately above it. Security regressions
 should demonstrate both the accepted path and fail-closed rejection.
 
+Before opening a pull request, run:
+
+```text
+python scripts/check-public-source-hygiene.py
+python scripts/format-maintained-source.py --check
+python scripts/verify-pqc-provenance.py --root .
+```
+
+Use `python scripts/format-maintained-source.py --write` to format maintained
+C and C++ code. Vendored and generated cryptographic artifacts are excluded;
+their exact byte identity is enforced by the provenance gate.
+
 ## Change discipline
 
 Keep commits small and describe the user-visible or security-relevant outcome.

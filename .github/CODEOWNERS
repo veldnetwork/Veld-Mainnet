@@ -1,0 +1,21 @@
+# Default ownership keeps every change reviewable in the current
+# single-maintainer repository.
+* @veldnetwork
+
+# Security-sensitive boundaries are listed explicitly so future teams can be
+# assigned without changing the protected surface.
+/include/consensus/ @veldnetwork
+/include/core/ @veldnetwork
+/include/crypto/ @veldnetwork
+/include/network/ @veldnetwork
+/include/node/ @veldnetwork
+/include/wallet/ @veldnetwork
+/src/ @veldnetwork
+/build/ @veldnetwork
+/pkg/ @veldnetwork
+/scripts/ @veldnetwork
+/vendor/pqc/ @veldnetwork
+/.github/workflows/ @veldnetwork
+/SECURITY.md @veldnetwork
+/THREAT_MODEL.md @veldnetwork
+/SOURCE_IDENTITY.md @veldnetwork
