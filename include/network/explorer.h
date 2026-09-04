@@ -1333,13 +1333,8 @@ public:
         if (parts.size() == 1 && parts[0] == "sw.js") {
             static const std::string sw = R"VLDSW(
 const CACHE_PREFIX = 'veld-explorer-shell-';
-const CACHE = 'veld-explorer-shell-ui-20260904-nav-scroll-seam';
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE)
-      .then(cache => cache.addAll(['/', '/blocks']))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(
@@ -1350,28 +1345,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   if (event.request.mode === 'navigate' || event.request.destination === 'document') {
-    event.respondWith((async () => {
-      const cache = await caches.open(CACHE);
-      const url = new URL(event.request.url);
-      const canonical = new Request(url.origin + url.pathname, {
-        method: 'GET', credentials: 'same-origin'
-      });
-      try {
-        const response = await fetch(event.request, {cache:'no-store'});
-        if (response.ok) {
-          await cache.put(canonical, response.clone());
-          return response;
-        }
-        const saved = await cache.match(canonical)
-          || (url.pathname === '/blocks' ? await cache.match('/blocks') : null)
-          || await cache.match('/');
-        return saved || response;
-      } catch (_) {
-        return await cache.match(canonical)
-          || (url.pathname === '/blocks' ? await cache.match('/blocks') : null)
-          || await cache.match('/');
-      }
-    })());
+    event.respondWith(fetch(event.request, {cache:'no-store'}));
   }
 });
 )VLDSW";
@@ -4459,7 +4433,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
   if(sheet)sheet.addEventListener('click',function(event){if(event.target===sheet)closeSheet();});
   document.addEventListener('keydown',function(event){if(event.key==='Escape')closeSheet();});
   if(isIOS&&!standalone)setTimeout(show,1200);
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js?ui=20260904-nav-scroll-seam',{scope:'/',updateViaCache:'none'}).catch(function(){});}
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js?ui=20260904-network-only-v2',{scope:'/',updateViaCache:'none'}).catch(function(){});}
 
   var txPath=/^\/tx\/[0-9a-f]{64}$/i;
   function markMempoolContext(){

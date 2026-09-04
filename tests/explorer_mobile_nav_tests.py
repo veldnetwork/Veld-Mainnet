@@ -34,13 +34,18 @@ require(
     "light theme has an opaque overlap above the navigation bar",
 )
 
-cache = re.search(r"const CACHE = 'veld-explorer-shell-ui-([^']+)';", EXPLORER)
 registration = re.search(r"serviceWorker\.register\('/sw\.js\?ui=([^']+)'", EXPLORER)
-if not cache or not registration:
-    raise AssertionError("Explorer service-worker cache identifiers are present")
-if cache.group(1) != registration.group(1):
-    raise AssertionError("Explorer shell and registration cache identifiers match")
-if cache.group(1) != "20260904-nav-scroll-seam":
-    raise AssertionError("Explorer PWA shell uses the navbar seam revision")
+if not registration:
+    raise AssertionError("Explorer service-worker registration identifier is present")
+if registration.group(1) != "20260904-network-only-v2":
+    raise AssertionError("Explorer PWA registers the network-only worker revision")
+require("event.waitUntil(self.skipWaiting());",
+        "updated service worker activates immediately")
+require(".map(key => caches.delete(key))",
+        "updated service worker removes stale Explorer shell caches")
+require("event.respondWith(fetch(event.request, {cache:'no-store'}));",
+        "document navigation always uses a fresh network response")
+if "cache.addAll" in EXPLORER or "cache.put" in EXPLORER:
+    raise AssertionError("service worker must not persist Explorer document shells")
 
-print("PASS explorer_mobile_nav_tests checks=7")
+print("PASS explorer_mobile_nav_tests checks=10")
