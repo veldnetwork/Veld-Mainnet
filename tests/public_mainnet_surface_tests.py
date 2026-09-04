@@ -12,6 +12,8 @@ SW = (ROOT / "resources/explorer-sw-v2.js").read_text(encoding="utf-8")
 ROUTE = (ROOT / "resources/explorer-route-context-v1.js").read_text(encoding="utf-8")
 NODE = (ROOT / "src/veld-node.cpp").read_text(encoding="utf-8")
 CLI = (ROOT / "include/wallet/cli.h").read_text(encoding="utf-8")
+PORTAL = (ROOT / "src/veld-miner-portal.py").read_text(encoding="utf-8")
+PROXY = (ROOT / "pkg/reverse-proxy/veld-public-services.nginx.conf.template").read_text(encoding="utf-8")
 
 
 def require(condition: bool, message: str) -> None:
@@ -80,5 +82,8 @@ require("Veld 3.0.0 public release" not in NODE and
         "stale launch-version wording returned to current user-facing output")
 require("https://explorer.veld.network" in CLI,
         "command-line wallet history guidance lacks the public explorer link")
+require(all("testnet" not in surface.lower() and "test net" not in surface.lower()
+            for surface in (EXPLORER, WALLET, HOME, ROUTE, SW, PORTAL, PROXY)),
+        "a production public surface exposes a test-network reference")
 
-print("public mainnet surface checks: PASS (29 assertions)")
+print("public mainnet surface checks: PASS (30 assertions)")

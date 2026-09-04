@@ -1,4 +1,4 @@
-# Veld 3.0.0 production reverse-proxy template.
+# Veld public-mainnet production reverse-proxy template.
 #
 # Provision independent random 32-byte tokens as 64 lowercase hex characters.
 # Each backend copy must be an owner-only, regular file:
