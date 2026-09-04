@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EXPLORER = (ROOT / "include" / "network" / "explorer.h").read_text(encoding="utf-8")
 LIQUIDITY = (ROOT / "resources" / "explorer-liquidity.html").read_text(encoding="utf-8")
+SERVICE_WORKER = (ROOT / "resources" / "explorer-sw-v2.js").read_text(encoding="utf-8")
 
 
 def require(fragment: str, label: str) -> None:
@@ -52,6 +53,10 @@ require("event.respondWith(fetch(event.request, {cache:'no-store'}));",
         "document navigation always uses a fresh network response")
 if "cache.addAll" in EXPLORER or "cache.put" in EXPLORER:
     raise AssertionError("service worker must not persist Explorer document shells")
+if "20260904-liquidity-shell-refresh" not in EXPLORER or "20260904-liquidity-shell-refresh" not in SERVICE_WORKER:
+    raise AssertionError("Explorer worker revision does not force installed clients onto the Liquidity shell fix")
+if "client.navigate(client.url)" not in SERVICE_WORKER or "cache.addAll" in SERVICE_WORKER or "cache.put" in SERVICE_WORKER:
+    raise AssertionError("deployed Explorer worker must purge legacy caches and reload open clients without caching pages")
 
 if "flex:1 1 20%;width:20%;min-width:0;max-width:20%" not in LIQUIDITY:
     raise AssertionError("Liquidity gives the More button the same width as the four link tabs")
@@ -80,4 +85,4 @@ if 'width:100vw!important;min-width:100vw!important;max-width:100vw!important' n
 if 'flex:0 0 20%!important;width:20%!important;min-width:0!important;max-width:20%!important' not in ROUTE_CONTEXT:
     raise AssertionError("Liquidity navbar tabs are not constrained to five equal viewport columns")
 
-print("PASS explorer_mobile_nav_tests checks=25")
+print("PASS explorer_mobile_nav_tests checks=27")

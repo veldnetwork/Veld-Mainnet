@@ -1333,6 +1333,7 @@ public:
         if (parts.size() == 1 && parts[0] == "sw.js") {
             static const std::string sw = R"VLDSW(
 const CACHE_PREFIX = 'veld-explorer-shell-';
+const SHELL_REVISION = '20260904-liquidity-shell-refresh';
 self.addEventListener('install', event => {
   event.waitUntil(self.skipWaiting());
 });
