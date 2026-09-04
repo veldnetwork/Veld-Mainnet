@@ -7538,7 +7538,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             page << "</div>";
             page << "<div class=\"rl-val\">";
             page << "<div class=\"rl-v\" style=\"color:var(--em);font-size:16px\">" << std::fixed
-                 << std::setprecision(8) << bal << "</div>";
+                 << std::setprecision(2) << bal << "</div>";
             page << "<div class=\"rl-vs\">VELD</div>";
             page << "</div>";
             page << "</a>";

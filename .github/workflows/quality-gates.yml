@@ -56,6 +56,7 @@ jobs:
       - run: python tests/public_release_reductions_tests.py
       - run: python tests/release_controller_oracle_tests.py
       - run: python tests/explorer_block_navigation_layout_tests.py
+      - run: python tests/explorer_richlist_balance_format_tests.py
       - run: python tests/windows_node_keyfile_interop_tests.py
       - run: python tests/windows_snapshot_update_eligibility_tests.py
       - run: python tests/windows_wallet_portal_ui_tests.py
