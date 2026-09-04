@@ -3,6 +3,25 @@
 All notable public-source changes are recorded here. Signed binary identity is
 recorded separately from source-publication commits.
 
+## Unreleased service hardening
+
+### Fixed
+
+- Locked both wallet staking controls by default and kept them disabled until
+  the live mainnet node reports that canonical issued supply has reached the
+  10,000 VELD staking-activation threshold.
+- Added a fail-closed submission guard so an unavailable or inactive staking
+  status cannot reach transaction preparation from the wallet interface.
+- Removed alternate-chain terminology from the public wallet, Explorer, and
+  portal source surfaces while retaining isolated developer profiles and their
+  production-build exclusion gates.
+
+### Compatibility
+
+- Consensus rules, the 10,000 VELD activation threshold, protocol version,
+  deployment identity, genesis, state digest v8, existing blocks, wallets,
+  addresses, and datadirs are unchanged.
+
 ## 3.0.4 - 2026-09-03
 
 ### Fixed

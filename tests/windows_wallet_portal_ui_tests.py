@@ -7,6 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GUI = (ROOT / "src" / "veld-node-gui.cpp").read_text(encoding="utf-8")
 PORTAL = (ROOT / "src" / "veld-miner-portal.py").read_text(encoding="utf-8")
+WALLET = (ROOT / "include" / "network" / "ui_desktop.h").read_text(encoding="utf-8")
+EXPLORER = (ROOT / "include" / "network" / "explorer.h").read_text(encoding="utf-8")
 
 
 def require(condition: bool, message: str) -> None:
@@ -63,4 +65,52 @@ require('def reset_pairing(self, token: str)' in PORTAL,
 require('path == "/api/v1/device/reset-pairing"' in PORTAL,
         "portal pairing reset route is missing")
 
-print("PASS windows_wallet_portal_ui_tests checks=18")
+for surface_name, surface in (
+    ("wallet", WALLET),
+    ("explorer", EXPLORER),
+    ("portal", PORTAL),
+):
+    for forbidden in ("testnet", "regtest"):
+        require(
+            forbidden not in surface.lower(),
+            f"{surface_name} public source contains {forbidden}",
+        )
+
+require(
+    'class="ar stake" data-act-click="h9c6994df" type="button" disabled '
+    'aria-disabled="true"' in WALLET,
+    "wallet quick stake control must start locked",
+)
+require(
+    'data-act-click="h2e4ed19f" disabled aria-disabled="true"' in WALLET,
+    "wallet stake submission must start locked",
+)
+require(
+    "function setStakingActivationUi(active, supply, threshold, known)" in WALLET,
+    "wallet must centrally apply the live activation state",
+)
+require(
+    "button.disabled = locked" in WALLET,
+    "wallet activation state must control both stake buttons",
+)
+do_stake = WALLET[WALLET.index("function doStake() {"):
+                  WALLET.index("function _doStakeContinue(")]
+require(
+    "if (!_veldStakingActivation.active)" in do_stake,
+    "direct stake submission must fail closed before activation",
+)
+require(
+    do_stake.index("if (!_veldStakingActivation.active)") <
+    do_stake.index("if (!__opLock('stake'"),
+    "activation rejection must precede transaction preparation",
+)
+require(
+    "setStakingActivationUi(false, 0, 10000, false)" in WALLET,
+    "staking controls must remain locked when activation RPC is unavailable",
+)
+require(
+    "d.current_supply_veld" in WALLET and "d.activation_supply_veld" in WALLET,
+    "staking lock must use the live consensus supply and threshold",
+)
+
+print("PASS windows_wallet_portal_ui_tests checks=32")

@@ -6,6 +6,7 @@
 #include "../core/blockchain.h"
 #include "../core/mempool.h"
 #include "../core/constants.h"
+#include "../core/version.h"
 #include "../network/chainparams.h"
 #include "../wallet/wallet.h"
 #include "../compat/secure_string.h"
@@ -439,7 +440,7 @@ inline void RunWalletCLI(const std::string& wallet_path) {
 
             else if (cmd == "h" || cmd == "H") {
                 std::cout << "  Transaction history is unavailable in the "
-                             "Veld 3.0.0 public release.\n\n";
+                          << "Veld " << CLIENT_VERSION << " public release.\n\n";
             }
 
             else if (cmd == "e" || cmd == "E") {

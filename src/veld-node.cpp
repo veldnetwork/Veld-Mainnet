@@ -1796,7 +1796,7 @@ int main(int argc, char* argv[]) {
             arg.rfind("--upnp-", 0) == 0) {
             std::cerr << "veld-node: FATAL: " << arg
                       << " is not supported in the "
-                         "Veld 3.0.0 public release\n";
+                      << "Veld " << CLIENT_VERSION << " public release\n";
             return 2;
         }
 #endif

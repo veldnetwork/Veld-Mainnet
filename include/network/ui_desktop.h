@@ -2640,7 +2640,7 @@ __VELD_DEPLOYMENT_BANNER_HTML__
       <div class="act-round">
         <button class="ar send" data-act-click="hcc27a9f6" type="button"><span class="ic"><svg viewBox="0 0 24 24" width="25" height="25" fill="currentColor" aria-hidden="true" style="display:block"><path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .66.71 1.11 1.39.91z"/></svg></span><span class="lbl">Send</span></button>
         <button class="ar recv" data-act-click="h7841866f" title="Show QR to receive VELD" type="button"><span class="ic">&darr;</span><span class="lbl">Receive</span></button>
-        <button class="ar stake" data-act-click="h9c6994df" type="button"><span class="ic">%</span><span class="lbl">Stake</span></button>
+        <button class="ar stake" data-act-click="h9c6994df" type="button" disabled aria-disabled="true" title="Staking unlocks at 10,000 VELD mined"><span class="ic">%</span><span class="lbl">Stake</span></button>
         <button class="ar swap" data-act-click="hbtcveld_nav" title="Open the btcVELD swap" type="button"><span class="ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3m3 3-3 3M20 16H7l3 3m-3-3 3-3"/></svg></span><span class="lbl">Swap</span></button>
       </div>
     </div>
@@ -3468,7 +3468,7 @@ __VELD_DEPLOYMENT_BANNER_HTML__
       </div>
 
       <div style="display:flex;gap:10px">
-        <button class="btn btn-em" data-act-click="h2e4ed19f">Review &amp; lock &rarr;</button>
+        <button class="btn btn-em" data-act-click="h2e4ed19f" disabled aria-disabled="true" title="Staking unlocks at 10,000 VELD mined">Review &amp; lock &rarr;</button>
         <button class="btn btn-ghost" data-act-click="haa7ba916">Unstake</button>
       </div>
     </div>
@@ -4497,7 +4497,7 @@ function veldApplyExternalValueUiPolicy(){
 setTimeout(veldApplyExternalValueUiPolicy,0);
 // `VELD_NETWORK_BYTE` is the transaction-sighash domain byte (M/T). It is
 // NOT an address prefix. P2PKH addresses use 0x46 on mainnet and 0x6f on
-// testnet, matching wallet.h::PubKeyToAddress and script.h.
+// alternate-network profile, matching wallet.h::PubKeyToAddress and script.h.
 var VELD_NETWORK_BYTE = __VELD_NETWORK_BYTE__;
 var VELD_ADDRESS_VERSION = __VELD_ADDRESS_VERSION__;
 var VELD_MIN_TX_FEE_UNITS = __VELD_MIN_TX_FEE_UNITS__;
@@ -4890,7 +4890,7 @@ function _veldBase58Decode(s) {
 function _veldAddrToHash160Hex(addr) {
   // Returns the 20-byte hash160 of a P2PKH address for THIS build only.
   // Checksum-only decoding is insufficient: accepting an arbitrary version
-  // byte lets a mainnet wallet treat a foreign/testnet payload as one of its
+  // byte lets a mainnet wallet treat a foreign-network payload as one of its
   // own addresses and construct the wrong output/change script.
   if (typeof addr !== 'string' || addr.length < 25 || addr.length > 35) return null;
   var raw = _veldBase58Decode(addr);
@@ -5633,7 +5633,7 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
 
 // btcVELD — on-chain AMM swap + liquidity (VELD ⇄ btcVELD). Backend:
 // getammpool / getammlp / prepareammswap / prepareammadd / prepareammremove
-// (rpc.h), all consensus-verified by the full-node regtest harness. The
+// (rpc.h), all consensus-verified by the isolated full-node harness. The
 // browser only signs its OWN inputs (injectSignatures leaves the sigless
 // pool covenant input untouched) and submits via sendrawtransaction.
 // ═══════════════════════════════════════════════════════════════════
@@ -9229,7 +9229,7 @@ function loadWalletAddr(addr) {
     //   (absent)                  show if balance > threshold
     // Threshold 100 VELD = roughly the value where losing the key
     // becomes "actually losing real money" rather than "lost a small
-    // testnet stake". Re-evaluated on every balance refresh, so the
+    // pre-activation amount". Re-evaluated on every balance refresh, so the
     // banner appears the FIRST time the user crosses the threshold
     // (no need for the wallet to be open at the exact moment).
     try {
@@ -13681,9 +13681,57 @@ function loadStakeHistory() {
   });
 }
 
+var _veldStakingActivation = {
+  active: false,
+  known: false,
+  supply: 0,
+  threshold: 10000
+};
+
+function setStakingActivationUi(active, supply, threshold, known) {
+  var parsedSupply = Number(supply);
+  var parsedThreshold = Number(threshold);
+  _veldStakingActivation.active = active === true;
+  _veldStakingActivation.known = known === true;
+  _veldStakingActivation.supply = isFinite(parsedSupply) && parsedSupply >= 0 ? parsedSupply : 0;
+  _veldStakingActivation.threshold = isFinite(parsedThreshold) && parsedThreshold > 0
+    ? parsedThreshold : 10000;
+  var locked = !_veldStakingActivation.active;
+  var remaining = Math.max(0, _veldStakingActivation.threshold - _veldStakingActivation.supply);
+  var title = _veldStakingActivation.known
+    ? ('Staking unlocks at ' + _veldStakingActivation.threshold.toFixed(0) +
+       ' VELD mined (' + remaining.toFixed(2) + ' VELD remaining)')
+    : 'Checking mainnet staking activation';
+  [
+    document.querySelector('.act-round button.ar.stake'),
+    document.querySelector('#page-staking .btn-em')
+  ].forEach(function(button) {
+    if (!button) return;
+    button.disabled = locked;
+    button.setAttribute('aria-disabled', locked ? 'true' : 'false');
+    button.title = locked ? title : '';
+  });
+}
+
+function stakingActivationErrorText() {
+  if (!_veldStakingActivation.known) {
+    return 'Staking is locked until the wallet verifies mainnet activation.';
+  }
+  var remaining = Math.max(0,
+    _veldStakingActivation.threshold - _veldStakingActivation.supply);
+  return 'Staking is not active yet. It unlocks at ' +
+    _veldStakingActivation.threshold.toFixed(0) + ' VELD mined; ' +
+    remaining.toFixed(2) + ' VELD remains.';
+}
+
 function loadStakingPage() {
   rpc('getstakinginfo').then(function(d) {
     var active = d.staking_active === true || d.staking_active === 'true';
+    setStakingActivationUi(
+      active,
+      d.current_supply_veld,
+      d.activation_supply_veld,
+      true);
     if (d.min_stake_veld) { stakingMinVeld = parseFloat(d.min_stake_veld); }
     if (d.max_stake_veld) { stakingMaxVeld = parseFloat(d.max_stake_veld); }
     var lbl = document.getElementById('sk-amount-label');
@@ -13829,7 +13877,9 @@ function loadStakingPage() {
         }
       } else { posWrap.style.display = 'none'; }
     } else { if (posWrap) posWrap.style.display = 'none'; }
-  }).catch(function(){});
+  }).catch(function(){
+    setStakingActivationUi(false, 0, 10000, false);
+  });
 }
 
 function onStakeAddrChange() {
@@ -13852,10 +13902,11 @@ function onStakeAddrChange() {
     // MAX_STAKE_UNITS aggregate per address and per-record maturity for unstakes.
     // No wallet-side restriction — let users add stakes until they hit the cap.
     var stakeBtn = document.querySelector('#page-staking .btn-em');
-    if (stakeBtn) {
-      stakeBtn.disabled = false;
-      stakeBtn.title = '';
-    }
+    if (stakeBtn) setStakingActivationUi(
+      _veldStakingActivation.active,
+      _veldStakingActivation.supply,
+      _veldStakingActivation.threshold,
+      _veldStakingActivation.known);
     var unlockEl = document.getElementById('sk-unlock-info');
     if (unlockEl) {
       if (staked > 0 && unlockBlocks > 0) {
@@ -13893,6 +13944,16 @@ function doStake() {
   //   helper below; the success path's `setInterval` handles its own
   //   release via __opUnlock when confirmed or at the 90 s cap.
   var stakeBtn = document.querySelector('#page-staking .btn-em');
+  if (!_veldStakingActivation.active) {
+    var lockedMsg = document.getElementById('stake-msg');
+    if (lockedMsg) lockedMsg.innerHTML = '<div class="alert alert-info">' +
+      escHtml(stakingActivationErrorText()) + '</div>';
+    setStakingActivationUi(false,
+      _veldStakingActivation.supply,
+      _veldStakingActivation.threshold,
+      _veldStakingActivation.known);
+    return;
+  }
   if (!__opLock('stake', stakeBtn ? [stakeBtn] : [], 'Staking…')) return;
   if (stakeBtn) stakeBtn.disabled = true;
   var skAddrRow = document.getElementById('sk-addr-row');
@@ -13904,7 +13965,11 @@ function doStake() {
   var msgEl = document.getElementById('stake-msg');
   var reenable = function(){
     __opUnlock('stake', stakeBtn ? [stakeBtn] : []);
-    if (stakeBtn) { stakeBtn.disabled = false; stakeBtn.title = ''; }
+    if (stakeBtn) setStakingActivationUi(
+      _veldStakingActivation.active,
+      _veldStakingActivation.supply,
+      _veldStakingActivation.threshold,
+      _veldStakingActivation.known);
   };
   if (!addr) { msgEl.innerHTML = '<div class="alert alert-err">No address. Unlock your keystore above.</div>'; reenable(); return; }
   if (!keyHex || keyHex.length !== 64) { msgEl.innerHTML = '<div class="alert alert-err">Unlock your keystore above to sign transactions.</div>'; reenable(); return; }
@@ -14009,7 +14074,11 @@ function _doStakeContinue(addr, keyHex, amount, amountUnitsStr, msgEl) {
           window._lastConfirmedStake = nowStaked;
           var sb = document.querySelector('#page-staking .btn-em');
           __opUnlock('stake', sb ? [sb] : []);
-          if (sb) { sb.disabled = false; sb.title = ''; }
+          if (sb) setStakingActivationUi(
+            _veldStakingActivation.active,
+            _veldStakingActivation.supply,
+            _veldStakingActivation.threshold,
+            _veldStakingActivation.known);
           var ub = document.querySelector('button[data-act-click="haa7ba916"]');
           if (ub) { ub.disabled = false; ub.title = ''; }
           onStakeAddrChange();
@@ -14021,7 +14090,11 @@ function _doStakeContinue(addr, keyHex, amount, amountUnitsStr, msgEl) {
     onStakeAddrChange();
   }).catch(function(e) {
     __opUnlock('stake', stakeBtn ? [stakeBtn] : []);
-    if (stakeBtn) stakeBtn.disabled = false;
+    if (stakeBtn) setStakingActivationUi(
+      _veldStakingActivation.active,
+      _veldStakingActivation.supply,
+      _veldStakingActivation.threshold,
+      _veldStakingActivation.known);
     // Re-enable unstake on staking failure
     window._pendingStakeAddr = null;
     if (unstakeBtn) { unstakeBtn.disabled = false; unstakeBtn.title = ''; }
@@ -15188,6 +15261,11 @@ function loadDashboardAdaptive() {
     document.getElementById('d-staking-status').innerHTML = d.staking_active
       ? '<span class="badge badge-em">ACTIVE</span>'
       : '<span class="badge badge-muted">INACTIVE</span>';
+    setStakingActivationUi(
+      d.staking_active === true || d.staking_active === 'true',
+      sup,
+      d.staking_activation_supply || 10000,
+      true);
     document.getElementById('dot').className = 'dot online';
     document.getElementById('status-txt').textContent = 'h=' + h;
     loadDashBlocks(h);
@@ -16359,7 +16437,7 @@ if ('serviceWorker' in navigator) {
     swControllerChanged = true;
     window.location.reload();
   });
-  navigator.serviceWorker.register('/sw.js?ui=wallet-20260813-tiers', {updateViaCache:'none'})
+  navigator.serviceWorker.register('/sw.js?ui=wallet-mainnet-staking-lock-20260904', {updateViaCache:'none'})
     .then(function(registration) { return registration.update(); })
     .catch(function(){});
 }

@@ -1,8 +1,9 @@
 # Veld
 
 Veld is a CPU-mined blockchain with a fixed 21,000,000 VELD maximum supply,
-post-quantum transaction signatures, staking, and a seven-validator finality
-layer. This is the public source release for Veld 3.0.0 BUILD-02 on the live
+staking, and a seven-validator finality layer. Native VELD transaction and
+finality signatures use ML-DSA-65. This repository preserves the Veld 3.0.0
+BUILD-02 launch identity and contains forward maintenance for the live
 `veld-public-mainnet-v2` network.
 
 The signed Windows client and its verification hashes are published at
@@ -13,14 +14,14 @@ and the documentation-only publication boundary.
 
 ## Mainnet profile
 
-- Client version: `3.0.0`
+- Current maintenance client: `3.0.4`
 - Deployment identity: `veld-public-mainnet-v2`
 - State digest: `VELD_STATE_DIGEST_v8`
 - Reserve wire formats: `RTP1` and `RVS1`
 - Protocol version: `2`
 - Genesis fingerprint:
   `880a0057852ffcfa35119a83e556802848ed5cb469b260fb9fbd20e8b97ae77b`
-- Release ID: `VELD-3.0.0-BUILD-02-03388b12-c540616f`
+- Launch release ID: `VELD-3.0.0-BUILD-02-03388b12-c540616f`
 
 The 21,000,000 VELD cap has no premine or treasury allocation. VELD enters
 circulation through coinbase issuance under the deterministic reward-routing
@@ -66,12 +67,12 @@ signatures.
 
 ## Public-release security reductions
 
-Veld 3.0.0 public mainnet deliberately omits several optional convenience
-features:
+The public-mainnet build deliberately constrains several convenience features:
 
-- Snapshot bootstrap, snapshot download/import/promotion, and snapshot RPCs
-  are unavailable. Public nodes perform ordinary full validation, and startup
-  refuses datadirs marked as snapshot-imported or snapshot-revoked.
+- Snapshot bootstrap accepts only an official signed manifest bound to the
+  exact deployment, genesis, launch-chain anchor, height, tip, and state
+  schema. Imported state remains quarantined while an independent validation
+  from genesis runs in the background; ordinary IBD is the safe fallback.
 - Legacy block-range scanners, including `gettxhistory` and `getearnings`,
   remain unavailable. The desktop wallet and explorer use the bounded
   `getaddresshistory` index instead: at most 50 rows per cursor page, with no

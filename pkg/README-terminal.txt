@@ -2,7 +2,7 @@ VELD TERMINAL CLIENT - RELEASE INTEGRITY
 ========================================
 
 This separately signed archive preserves the original command-line mining and
-validator workflow. It uses the same Veld 3.0.0 client code as Veld Node,
+validator workflow. It uses the same Veld 3.0.4 client code as Veld Node,
 but has its own signed manifest and authenticated update feed.
 
 Start Mining.bat uses Tor-only networking. Start Mining (Clearnet).bat uses a
