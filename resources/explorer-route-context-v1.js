@@ -127,7 +127,21 @@
           if (!(elapsed > 0) || !(expected > 0)) return;
           var rate = expected / (elapsed / sample);
           var value = document.getElementById('s-hashrate');
-          if (value) value.innerHTML = (rate / 1000).toFixed(1) + '<span class="u">KH/s</span>';
+          if (value) {
+            window.__veldObservedHashrateHtml =
+              (rate / 1000).toFixed(1) + '<span class="u">KH/s</span>';
+            value.innerHTML = window.__veldObservedHashrateHtml;
+            if (!value.__veldObservedHashrateGuard && window.MutationObserver) {
+              value.__veldObservedHashrateGuard = new MutationObserver(function () {
+                if (window.__veldObservedHashrateHtml &&
+                    value.innerHTML !== window.__veldObservedHashrateHtml) {
+                  value.innerHTML = window.__veldObservedHashrateHtml;
+                }
+              });
+              value.__veldObservedHashrateGuard.observe(
+                value, {childList: true, characterData: true, subtree: true});
+            }
+          }
           var tile = value && value.closest('.tile');
           var label = tile && tile.querySelector('.l');
           if (label) label.textContent = 'Hashrate (10-block estimate)';
