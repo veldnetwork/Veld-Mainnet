@@ -46,6 +46,11 @@ with tempfile.TemporaryDirectory(prefix="veld-source-hygiene-") as temporary:
     check(bool(CHECKER.scan(root, [PurePosixPath(branded_content.name)])),
           "internal branding in tracked text was accepted")
 
+    ambiguous_ui_class = root / "ui.css"
+    ambiguous_ui_class.write_text("." + "ai-status{}\n", encoding="utf-8")
+    check(bool(CHECKER.scan(root, [PurePosixPath(ambiguous_ui_class.name)])),
+          "ambiguous public UI class was accepted")
+
     historical = root / "LAUNCH_EQUIVALENCE.tsv"
     historical.write_text(f"tests/{prohibited}_legacy.cpp\n", encoding="utf-8")
     check(not CHECKER.scan(root, [PurePosixPath(historical.name)]),

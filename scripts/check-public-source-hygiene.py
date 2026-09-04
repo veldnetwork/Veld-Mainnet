@@ -20,6 +20,7 @@ PROHIBITED = (
     "coding " + "agent",
     "ai-" + "generated",
     "assistant-" + "generated",
+    "." + "ai-",
 )
 
 # These byte-for-byte records authenticate the Veld 3.0.0 launch source. They

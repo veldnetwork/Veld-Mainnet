@@ -559,10 +559,10 @@ body.gyro-active .prism-sub{animation:none}
 .activity-item{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid rgba(50,240,110,.03);font-size:14px}
 .activity-item:last-child{border-bottom:none}
 .activity-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
-.ai-block{background:rgba(50,240,110,.05);color:var(--em);}
-.ai-send{background:rgba(255,76,76,.05);color:var(--red);box-shadow:inset 0 0 8px rgba(255,76,76,.03)}
-.ai-recv{background:rgba(50,240,110,.05);color:var(--em);}
-.ai-dist{background:rgba(255,216,74,.05);color:var(--gold);box-shadow:inset 0 0 8px rgba(255,216,74,.03)}
+.activity-block{background:rgba(50,240,110,.05);color:var(--em);}
+.activity-send{background:rgba(255,76,76,.05);color:var(--red);box-shadow:inset 0 0 8px rgba(255,76,76,.03)}
+.activity-recv{background:rgba(50,240,110,.05);color:var(--em);}
+.activity-dist{background:rgba(255,216,74,.05);color:var(--gold);box-shadow:inset 0 0 8px rgba(255,216,74,.03)}
 .copy-btn{padding:5px 12px;font-size:12px;border:1px solid rgba(50,240,110,.12);background:var(--s2);color:var(--muted);border-radius:6px;cursor:pointer;font-family:var(--sans);transition:all .12s}
 .copy-btn:hover{border-color:rgba(50,240,110,.3);color:var(--em)}
 .qr-placeholder{width:110px;height:110px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);text-align:center;flex-shrink:0}
@@ -1462,8 +1462,8 @@ html[data-theme="light"] #height-mob{color:#121514!important;background:#FAFAFA!
 .countdown,.apy-value{color:var(--cob-3)!important}
 
 /* Activity icons */
-.ai-block,.ai-recv{color:var(--cob-3)!important}
-.ai-dist{color:var(--cob-4)!important}
+.activity-block,.activity-recv{color:var(--cob-3)!important}
+.activity-dist{color:var(--cob-4)!important}
 
 /* In-page tab buttons */
 .tab-btn.active{color:var(--cob-1)!important;border-bottom-color:var(--cob-1)!important}
@@ -2026,7 +2026,7 @@ html:not([data-theme="light"]) #mobile-more-menu{background:rgba(9,14,11,.98)!im
 html:not([data-theme="light"]) .mob-more-btn{background:#0e1410!important;color:#839088!important;border:1px solid #28332b!important;border-radius:8px!important}
 html:not([data-theme="light"]) .mob-more-btn:active{background:rgba(126,217,73,.12)!important;color:#edf4ee!important;border-color:rgba(126,217,73,.30)!important}
 html:not([data-theme="light"]) .theme-tog{background:#151d17!important;color:#cbd4cd!important;border:1px solid #334239!important;border-radius:8px!important}
-html:not([data-theme="light"]) .activity-icon.ai-block,html:not([data-theme="light"]) .activity-icon.ai-recv{background:rgba(126,217,73,.05)!important}
+html:not([data-theme="light"]) .activity-icon.activity-block,html:not([data-theme="light"]) .activity-icon.activity-recv{background:rgba(126,217,73,.05)!important}
 html:not([data-theme="light"]) #d-dist-countdown,html:not([data-theme="light"]) #sk-apy,html:not([data-theme="light"]) #earn-30d,html:not([data-theme="light"]) .val.em{text-shadow:0 0 14px rgba(126,217,73,.30)!important}
 html:not([data-theme="light"]) .spark,html:not([data-theme="light"]) .spark *{stroke:#7ED949!important}
 html:not([data-theme="light"]) #send-disclaimer,html:not([data-theme="light"]) #stake-disclaimer,html:not([data-theme="light"]) #val-reg-disclaimer{background:rgba(126,217,73,.04)!important}
@@ -9080,7 +9080,7 @@ function loadActivityFeed() {
       var displayValue = isNetworkFee ? -feeValue : netValue;
       var pos = displayValue >= 0;
       var isCb = t.type === 'coinbase';
-      var icon = isCb ? 'ai-block' : (pos ? 'ai-recv' : 'ai-send');
+      var icon = isCb ? 'activity-block' : (pos ? 'activity-recv' : 'activity-send');
       var sym = isCb ? '⛏' : (pos ? '↙' : '↗');
       html += '<div class="activity-item">' +
         '<div class="activity-icon ' + icon + '">' + sym + '</div>' +
