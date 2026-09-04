@@ -9,6 +9,9 @@ UI = (ROOT / "include" / "network" / "ui_desktop.h").read_text(encoding="utf-8")
 EXPLORER = (ROOT / "include" / "network" / "explorer.h").read_text(
     encoding="utf-8"
 )
+ROUTE_CONTEXT = (
+    ROOT / "resources" / "explorer-route-context-v1.js"
+).read_text(encoding="utf-8")
 
 
 def require(condition: bool, message: str) -> None:
@@ -57,5 +60,10 @@ require(
     abs(network_hps - 5674.002016) < 0.001,
     "known compact-target vector must resolve to the expected VeldHash rate",
 )
+require(
+    "10-block estimate" not in ROUTE_CONTEXT
+    and "refreshObservedHashrate" not in ROUTE_CONTEXT,
+    "deployed Explorer route context must not overwrite the canonical rate",
+)
 
-print("PASS network_hashrate_display_tests checks=8")
+print("PASS network_hashrate_display_tests checks=9")
