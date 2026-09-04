@@ -43,9 +43,13 @@ require("event.waitUntil(self.skipWaiting());",
         "updated service worker activates immediately")
 require(".map(key => caches.delete(key))",
         "updated service worker removes stale Explorer shell caches")
+require("self.clients.matchAll({",
+        "updated service worker enumerates already-open PWA windows")
+require("client.navigate(client.url)",
+        "updated service worker refreshes already-open PWA windows once")
 require("event.respondWith(fetch(event.request, {cache:'no-store'}));",
         "document navigation always uses a fresh network response")
 if "cache.addAll" in EXPLORER or "cache.put" in EXPLORER:
     raise AssertionError("service worker must not persist Explorer document shells")
 
-print("PASS explorer_mobile_nav_tests checks=10")
+print("PASS explorer_mobile_nav_tests checks=12")
