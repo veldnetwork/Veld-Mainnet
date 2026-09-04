@@ -57,11 +57,13 @@ if "flex:1 1 20%;width:20%;min-width:0;max-width:20%" not in LIQUIDITY:
     raise AssertionError("Liquidity gives the More button the same width as the four link tabs")
 if "-webkit-appearance:none;appearance:none" not in LIQUIDITY:
     raise AssertionError("Liquidity removes platform-specific button geometry")
-if "setMoreOpen(pane,more,pane.getAttribute('data-open')!=='1')" not in LIQUIDITY:
-    raise AssertionError("Liquidity uses one explicit More-menu state transition")
-if "e.preventDefault();\n    e.stopPropagation();" not in LIQUIDITY:
-    raise AssertionError("Liquidity owns the More-button tap before other document handlers")
-if "},true);" not in LIQUIDITY:
-    raise AssertionError("Liquidity delegates the More-button tap in capture phase")
+if '<input class="nav-more-toggle" id="nav-more-toggle" type="checkbox"' not in LIQUIDITY:
+    raise AssertionError("Liquidity More menu has a native state control")
+if '<label for="nav-more-toggle" class="nb-tab nb-more-btn active"' not in LIQUIDITY:
+    raise AssertionError("Liquidity More tab uses link-equivalent flex geometry")
+if ".nav-more-toggle:checked~.nav-more{display:block}" not in LIQUIDITY:
+    raise AssertionError("Liquidity More menu opens without a JavaScript click dependency")
+if '<button type="button" class="nb-tab nb-more-btn' in LIQUIDITY:
+    raise AssertionError("Liquidity must not reintroduce its route-specific More button")
 
-print("PASS explorer_mobile_nav_tests checks=17")
+print("PASS explorer_mobile_nav_tests checks=18")
