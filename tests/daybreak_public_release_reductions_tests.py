@@ -140,7 +140,7 @@ check("TryUpnp(localip" in nat and
       "worker can still call UPnP without the opt-in profile")
 check('arg == "--upnp"' in node_main and
       '<< " is not supported in the "' in node_main and
-      "Veld 3.0.0 public release" in node_main,
+      '<< "Veld " << CLIENT_VERSION << " public release' in node_main,
       "public CLI does not explicitly reject --upnp")
 check("NAT-PMP/PCP" in node_main and "NAT-PMP/PCP/UPnP" not in node_main,
       "public help still advertises UPnP")

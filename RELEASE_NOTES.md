@@ -1,7 +1,24 @@
-# Veld 3.0.4 release notes
+# Veld 3.0.5 release notes
 
 Release date: pending
 Status: Windows client maintenance candidate
+
+## 3.0.5 maintenance scope
+
+Veld 3.0.5 makes the wallet's visible staking actions fail closed until the
+live public-mainnet node reports that canonical issued supply has reached the
+existing 10,000 VELD activation threshold. The transaction-preparation RPC and
+consensus transition retain their existing independent activation checks.
+
+The public wallet, Explorer, portal, production node configuration, and signed
+snapshot identity are checked for public-mainnet-v2 wiring. Developer-only
+alternate-chain profiles remain isolated from production builds and are not
+served by the public sites.
+
+This maintenance release does not change consensus, protocol version,
+deployment identity, genesis, state-digest format, or existing chain data.
+
+## Veld 3.0.4 release notes
 
 ## 3.0.4 maintenance scope
 
