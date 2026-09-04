@@ -12299,8 +12299,8 @@ function loadHistory() {
   document.getElementById('h-list').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">Loading available indexed activity...</div>';
   var _txh = parseInt((document.getElementById('d-height')?.textContent||'0').replace(/,/g,''))||0;
   var _txfrom = Math.max(0, _txh - 5000);
-  // Public VELD transaction history is unavailable. The separate indexed
-  // btcVELD token ledger remains best-effort for peg wrap/redeem activity.
+  // Public VELD activity uses the bounded indexed getaddresshistory path.
+  // btcVELD keeps a separate indexed ledger for peg wrap/redeem activity.
   window._histScanFrom = _txfrom;
   Promise.all([
     publicAddressHistory(addr, 50).catch(function(){ return []; }),
