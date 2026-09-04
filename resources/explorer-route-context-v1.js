@@ -5,6 +5,20 @@
   var touchLayout = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
   document.documentElement.dataset.deviceLayout = compactLayout || touchLayout ? 'mobile' : 'desktop';
 
+  if (window.location.pathname === '/liquidity') {
+    var containmentStyle = document.createElement('style');
+    containmentStyle.id = 'veld-liquidity-viewport-containment';
+    containmentStyle.textContent =
+      'html,html[data-device-layout]{width:100%!important;max-width:100vw!important;overflow-x:hidden!important}' +
+      'html[data-device-layout] body.liquidity-page{width:100%!important;max-width:100vw!important;min-width:0!important;overflow-x:hidden!important}' +
+      'html[data-device-layout] body.liquidity-page .liquidity-wrap{width:100%!important;max-width:100vw!important;min-width:0!important;overflow-x:hidden!important}' +
+      'html[data-device-layout] body.liquidity-page .liquidity-wrap>*,html[data-device-layout] body.liquidity-page .liq-card,html[data-device-layout] body.liquidity-page .liq-card-head,html[data-device-layout] body.liquidity-page .liq-grid,html[data-device-layout] body.liquidity-page .earn-flow,html[data-device-layout] body.liquidity-page .earn-summary{max-width:100%!important;min-width:0!important}' +
+      'html[data-device-layout] body.liquidity-page .nav-bar,html[data-device-layout] body.liquidity-page .nav-bar.is-sticky{width:100vw!important;min-width:100vw!important;max-width:100vw!important}' +
+      'html[data-device-layout] body.liquidity-page .nav-bar .nb-tab{flex:0 0 20%!important;width:20%!important;min-width:0!important;max-width:20%!important}' +
+      'html[data-device-layout] body.liquidity-page .nav-more{width:100vw!important;max-width:100vw!important;overflow-x:hidden!important}';
+    document.head.appendChild(containmentStyle);
+  }
+
   var txPath = /^\/tx\/[0-9a-f]{64}$/i;
 
   function removeLegacyMiningGuide() {

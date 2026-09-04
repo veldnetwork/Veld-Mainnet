@@ -63,9 +63,19 @@ if ".nav-more:target{display:block!important}" not in LIQUIDITY:
     raise AssertionError("Liquidity More menu opens through native fragment navigation")
 if 'nav-more-toggle' in LIQUIDITY or '<button type="button" class="nb-tab nb-more-btn' in LIQUIDITY:
     raise AssertionError("Liquidity must not reintroduce a route-specific More control")
+if 'max-width:100vw' not in LIQUIDITY or 'overflow-x:hidden' not in LIQUIDITY:
+    raise AssertionError("Liquidity document is not constrained to the viewport")
 
 ROUTE_CONTEXT = (ROOT / "resources" / "explorer-route-context-v1.js").read_text(encoding="utf-8")
 if "document.documentElement.dataset.deviceLayout = compactLayout || touchLayout ? 'mobile' : 'desktop';" not in ROUTE_CONTEXT:
     raise AssertionError("Explorer selects its mobile shell before the first body paint")
+if "window.location.pathname === '/liquidity'" not in ROUTE_CONTEXT:
+    raise AssertionError("route context does not install the Liquidity-only viewport boundary")
+if 'veld-liquidity-viewport-containment' not in ROUTE_CONTEXT:
+    raise AssertionError("route context is missing the Liquidity containment style")
+if 'width:100vw!important;min-width:100vw!important;max-width:100vw!important' not in ROUTE_CONTEXT:
+    raise AssertionError("Liquidity navbar is not locked to the visible viewport width")
+if 'flex:0 0 20%!important;width:20%!important;min-width:0!important;max-width:20%!important' not in ROUTE_CONTEXT:
+    raise AssertionError("Liquidity navbar tabs are not constrained to five equal viewport columns")
 
-print("PASS explorer_mobile_nav_tests checks=18")
+print("PASS explorer_mobile_nav_tests checks=23")
