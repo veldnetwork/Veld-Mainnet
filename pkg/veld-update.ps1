@@ -65,7 +65,24 @@ function Abort-Update([string]$Message) {
     exit 1
 }
 
-function Fetch([string]$Name, [string]$Destination) {
+function New-DownloadUri([string]$Name, [string]$ReleaseCacheKey = '') {
+    $uriText = $Base + '/' + $Name
+    if ($ReleaseCacheKey.Length -ne 0) {
+        if ($ReleaseCacheKey -cnotmatch
+            '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+            throw 'release cache key is not a canonical release version'
+        }
+        $uriText += '?release=' + [Uri]::EscapeDataString($ReleaseCacheKey)
+    }
+    $uri = [Uri]::new($uriText)
+    if ($uri.Scheme -cne 'https' -or -not $uri.IsAbsoluteUri) {
+        throw 'release downloads require an absolute HTTPS URI'
+    }
+    return $uri
+}
+
+function Fetch([string]$Name, [string]$Destination,
+               [string]$ReleaseCacheKey = '') {
     $maximum = switch -CaseSensitive ($Name) {
         $RemoteManifestName { $MaxManifestDownloadBytes; break }
         $RemoteSignatureName { $MaxSignatureDownloadBytes; break }
@@ -94,10 +111,7 @@ function Fetch([string]$Name, [string]$Destination) {
         $client = [Net.Http.HttpClient]::new($handler, $true)
         $client.Timeout = [Threading.Timeout]::InfiniteTimeSpan
         $deadline = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(30))
-        $uri = [Uri]::new($Base + '/' + $Name)
-        if ($uri.Scheme -cne 'https' -or -not $uri.IsAbsoluteUri) {
-            throw 'release downloads require an absolute HTTPS URI'
-        }
+        $uri = New-DownloadUri $Name $ReleaseCacheKey
         $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, $uri)
         $response = $client.SendAsync(
             $request, [Net.Http.HttpCompletionOption]::ResponseHeadersRead,
@@ -1072,8 +1086,8 @@ try {
     $zip = Join-Path $TempRoot $RemoteZipName
     $zipSha = Join-Path $TempRoot $RemoteZipShaName
     $zipShaSignature = Join-Path $TempRoot $RemoteZipShaSignatureName
-    Fetch $RemoteZipShaName $zipSha
-    Fetch $RemoteZipShaSignatureName $zipShaSignature
+    Fetch $RemoteZipShaName $zipSha $remoteVersion.Text
+    Fetch $RemoteZipShaSignatureName $zipShaSignature $remoteVersion.Text
     if (-not (Verify-ReleaseSignature $zipSha $zipShaSignature)) {
         throw 'zip checksum is unsigned or invalid against the pinned release key'
     }
@@ -1081,7 +1095,7 @@ try {
     # The checksum has been authenticated before the untrusted archive is even
     # downloaded. The bounded streaming extractor below independently enforces
     # entry, per-file, total expansion, link, duplicate, and traversal limits.
-    Fetch $RemoteZipName $zip
+    Fetch $RemoteZipName $zip $remoteVersion.Text
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
     if ($actual -ne $declared) { throw 'zip checksum mismatch' }
 

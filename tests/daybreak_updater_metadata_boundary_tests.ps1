@@ -9,8 +9,8 @@ $ast = [Management.Automation.Language.Parser]::ParseFile(
 if ($errors.Count -ne 0) { throw 'updater failed PowerShell parsing' }
 
 $functionNames = @(
-    'Read-CanonicalLines', 'Read-Manifest', 'Read-ReleaseVersion',
-    'Read-ZipChecksum'
+    'New-DownloadUri', 'Read-CanonicalLines', 'Read-Manifest',
+    'Read-ReleaseVersion', 'Read-ZipChecksum'
 )
 foreach ($name in $functionNames) {
     $functionAst = $ast.Find({
@@ -42,7 +42,14 @@ $checksumAst = $ast.Find({
     $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
         $node.Name -ceq 'Read-ZipChecksum'
 }, $true).Extent.Text
+$fetchAst = $ast.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -ceq 'Fetch'
+}, $true).Extent.Text
+$updaterText = [IO.File]::ReadAllText($Updater)
 
+$Base = 'https://veld.network/downloads'
 $MaxManifestDownloadBytes = 8MB
 $MaxChecksumDownloadBytes = 16KB
 $RemoteZipName = 'VeldClient-Windows-x64.zip'
@@ -72,6 +79,27 @@ Check ($manifestAst -match 'MaxManifestDownloadBytes' -and
     'manifest readers are not bound to the 8 MiB route ceiling'
 Check ($checksumAst -match 'MaxChecksumDownloadBytes') `
     'checksum reader is not bound to the 16 KiB route ceiling'
+Check ($fetchAst -match 'New-DownloadUri.*ReleaseCacheKey') `
+    'release downloader does not pass its cache key to URI construction'
+Check ($updaterText.Contains(
+       'Fetch $RemoteZipShaName $zipSha $remoteVersion.Text') -and
+       $updaterText.Contains(
+       'Fetch $RemoteZipShaSignatureName $zipShaSignature $remoteVersion.Text') -and
+       $updaterText.Contains(
+       'Fetch $RemoteZipName $zip $remoteVersion.Text')) `
+    'mutable release archive downloads are not keyed by signed version'
+
+$unkeyedUri = New-DownloadUri 'SHA256SUMS.txt'
+Check ($unkeyedUri.AbsoluteUri -ceq
+       'https://veld.network/downloads/SHA256SUMS.txt') `
+    'unkeyed manifest URI changed'
+$keyedUri = New-DownloadUri 'VeldClient-Windows-x64.zip' '3.0.4'
+Check ($keyedUri.AbsoluteUri -ceq
+       'https://veld.network/downloads/VeldClient-Windows-x64.zip?release=3.0.4') `
+    'release archive URI is not deterministically keyed by signed version'
+Expect-Rejected {
+    New-DownloadUri 'VeldClient-Windows-x64.zip' '3.0.4&stale=1'
+} 'non-canonical release cache key'
 
 $TempRoot = Join-Path ([IO.Path]::GetTempPath()) `
     ('veld-updater-metadata-' + [guid]::NewGuid().ToString('N'))
