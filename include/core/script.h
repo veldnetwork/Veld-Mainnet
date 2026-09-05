@@ -8,6 +8,7 @@
 #include <stack>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 #include "hash.h"
 
@@ -309,6 +310,54 @@ inline std::string ScriptToAddress(const std::vector<uint8_t>& script, bool test
     return addr;
 }
 
+// Scope this object to one immutable transaction validation. It caches only
+// transaction-derived bytes; block height, UTXOs and script results are never
+// cached, so a new parent always receives fresh contextual validation.
+class TransactionScriptHashes {
+public:
+    explicit TransactionScriptHashes(const Transaction& tx) : tx_(tx) {}
+    TransactionScriptHashes(const TransactionScriptHashes&) = delete;
+    TransactionScriptHashes& operator=(const TransactionScriptHashes&) = delete;
+    bool Matches(const Transaction& tx) const { return &tx_ == &tx; }
+
+    const Hash256& TemplateHash(uint32_t input_index) {
+        if (input_index >= tx_.inputs.size()) throw std::out_of_range("template input index");
+        const auto cached = templates_.find(input_index);
+        if (cached != templates_.end()) return cached->second;
+        if (prefix_.empty()) BuildPrefix();
+        auto preimage = prefix_;
+        for (int i = 0; i < 4; ++i) preimage.push_back((input_index >> (i * 8)) & 0xff);
+        return templates_.emplace(input_index, Hash256d(preimage)).first->second;
+    }
+private:
+    const Transaction& tx_;
+    std::vector<uint8_t> prefix_;
+    std::unordered_map<uint32_t, Hash256> templates_;
+    void BuildPrefix() {
+        const Transaction& tx = tx_;
+        auto le32 = [](std::vector<uint8_t>& o, uint32_t v) {
+            o.push_back(v & 0xFF); o.push_back((v>>8)&0xFF);
+            o.push_back((v>>16)&0xFF); o.push_back((v>>24)&0xFF);
+        };
+        std::vector<uint8_t> seqs, outs;
+        for (const auto& in : tx.inputs) le32(seqs, in.sequence);
+        for (const auto& o : tx.outputs) {
+            for (int i = 0; i < 8; ++i) outs.push_back((o.value >> (i*8)) & 0xFF);
+            Transaction::put_varint(outs, (uint64_t)o.script_pubkey.size());
+            outs.insert(outs.end(), o.script_pubkey.begin(), o.script_pubkey.end());
+        }
+        Hash256 seq_h = Hash256d(seqs);
+        Hash256 out_h = Hash256d(outs);
+        auto& pre = prefix_;
+        le32(pre, tx.version);
+        le32(pre, tx.locktime);
+        le32(pre, (uint32_t)tx.inputs.size());
+        pre.insert(pre.end(), seq_h.begin(), seq_h.end());
+        le32(pre, (uint32_t)tx.outputs.size());
+        pre.insert(pre.end(), out_h.begin(), out_h.end());
+    }
+};
+
 class ScriptInterpreter {
 public:
     // Legacy entry point (no covenant context). Behaviour is byte-identical to
@@ -331,8 +380,12 @@ public:
         const std::vector<uint8_t>& script_pubkey,
         const Transaction& tx,
         uint32_t input_index,
-        const ScriptContext& ctx
+        const ScriptContext& ctx,
+        TransactionScriptHashes* shared_hashes = nullptr
     ) {
+        TransactionScriptHashes local_hashes(tx);
+        auto& hashes = shared_hashes ? *shared_hashes : local_hashes;
+        if (!hashes.Matches(tx)) return false;
         std::vector<StackItem> stack, alt;
 
         // P2SH: scriptPubKey == OP_HASH160 <20> OP_EQUAL (A9 14 .. 87).
@@ -344,16 +397,16 @@ public:
         if (is_p2sh) {
             if (!IsPushOnly(script_sig)) return false;   // BIP16 + canonical pushes
             current_subscript_ = script_pubkey;
-            if (!RunScript(script_sig, stack, alt, tx, input_index, ctx)) return false;
+            if (!RunScript(script_sig, stack, alt, tx, input_index, ctx, hashes)) return false;
             if (stack.empty()) return false;
             StackItem redeem = stack.back();             // top push = redeemScript
             // Run the P2SH template; OP_HASH160 consumes the redeemScript push and
             // OP_EQUAL leaves the hash-match bool on top.
-            if (!RunScript(script_pubkey, stack, alt, tx, input_index, ctx)) return false;
+            if (!RunScript(script_pubkey, stack, alt, tx, input_index, ctx, hashes)) return false;
             if (stack.empty() || !IsTrue(stack.back())) return false;
             stack.pop_back();                            // discard the EQUAL bool
             current_subscript_ = redeem;                 // sighash subscript = redeemScript
-            if (!RunScript(redeem, stack, alt, tx, input_index, ctx)) return false;
+            if (!RunScript(redeem, stack, alt, tx, input_index, ctx, hashes)) return false;
             // Enforce CLEANSTACK for P2SH so ignored pushes cannot alter a
             // signed transaction ID while preserving script validity. Every
             // supported covenant builder leaves exactly one Boolean result.
@@ -361,8 +414,8 @@ public:
         }
 
         current_subscript_ = script_pubkey;
-        if (!RunScript(script_sig, stack, alt, tx, input_index, ctx)) return false;
-        if (!RunScript(script_pubkey, stack, alt, tx, input_index, ctx)) return false;
+        if (!RunScript(script_sig, stack, alt, tx, input_index, ctx, hashes)) return false;
+        if (!RunScript(script_pubkey, stack, alt, tx, input_index, ctx, hashes)) return false;
         return !stack.empty() && IsTrue(stack.back());
     }
 
@@ -416,42 +469,14 @@ private:
         return true;
     }
 
-    // BIP119-style template hash: pins the spend's structure (version, locktime,
-    // input count, all sequences, output count, all outputs, this input index).
-    // Deterministic and independent of the sighash, so it constrains WHERE funds
-    // may go next without touching signatures.
-    Hash256 ComputeTemplateHash(const Transaction& tx, uint32_t input_index) const {
-        auto le32 = [](std::vector<uint8_t>& o, uint32_t v) {
-            o.push_back(v & 0xFF); o.push_back((v>>8)&0xFF);
-            o.push_back((v>>16)&0xFF); o.push_back((v>>24)&0xFF);
-        };
-        std::vector<uint8_t> seqs, outs;
-        for (const auto& in : tx.inputs) le32(seqs, in.sequence);
-        for (const auto& o : tx.outputs) {
-            for (int i = 0; i < 8; ++i) outs.push_back((o.value >> (i*8)) & 0xFF);
-            Transaction::put_varint(outs, (uint64_t)o.script_pubkey.size());
-            outs.insert(outs.end(), o.script_pubkey.begin(), o.script_pubkey.end());
-        }
-        Hash256 seq_h = Hash256d(seqs);
-        Hash256 out_h = Hash256d(outs);
-        std::vector<uint8_t> pre;
-        le32(pre, tx.version);
-        le32(pre, tx.locktime);
-        le32(pre, (uint32_t)tx.inputs.size());
-        pre.insert(pre.end(), seq_h.begin(), seq_h.end());
-        le32(pre, (uint32_t)tx.outputs.size());
-        pre.insert(pre.end(), out_h.begin(), out_h.end());
-        le32(pre, input_index);
-        return Hash256d(pre);
-    }
-
     bool RunScript(
         const std::vector<uint8_t>& script,
         std::vector<StackItem>& stack,
         std::vector<StackItem>& alt,
         const Transaction& tx,
         uint32_t input_index,
-        const ScriptContext& ctx
+        const ScriptContext& ctx,
+        TransactionScriptHashes& hashes
     ) {
         size_t pc = 0;
         int op_count = 0;
@@ -692,7 +717,8 @@ private:
                 if (!cov || stack.empty()) return false;
                 const auto& commit = stack.back();
                 if (commit.size() != 32) return false;   // fail closed on a malformed (non-32-byte) commitment
-                Hash256 actual = ComputeTemplateHash(tx, input_index);
+                if (input_index >= tx.inputs.size()) return false;
+                const Hash256& actual = hashes.TemplateHash(input_index);
                 if (!std::equal(actual.begin(), actual.end(), commit.begin())) return false;
                 break;
             }

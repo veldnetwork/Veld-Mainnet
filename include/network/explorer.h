@@ -16,6 +16,8 @@
 #include "../network/chainparams.h"
 #include "../network/trusted_proxy.h"
 #include "explorer_icons.h"
+#include "explorer_prevouts.h"
+#include "receipt_source_slots.h"
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -44,6 +46,7 @@ namespace explorer {
 
 using SocketHandle = veld::compat::SocketHandle;
 inline constexpr size_t EXPLORER_MAX_RESPONSE_BODY = 4U * 1024U * 1024U;
+inline constexpr size_t EXPLORER_BLOCK_PAGE_BODY_BUDGET = 1024U * 1024U;
 
 struct HttpRequest {
     std::string method;
@@ -1248,6 +1251,18 @@ public:
 #endif
             VELD_CLOSE_SOCKET(fd_);
         }
+        {
+            // Workers remove and close sockets under this same mutex. Holding
+            // it through shutdown prevents touching a reused descriptor.
+            std::lock_guard<std::mutex> lk(request_workers_mutex_);
+            for (const auto& [client, source] : request_sockets_) {
+#ifdef _WIN32
+                ::shutdown(client, SD_BOTH);
+#else
+                ::shutdown(client, SHUT_RDWR);
+#endif
+            }
+        }
         if (server_thread_.joinable()) server_thread_.join();
         fd_ = veld::compat::kInvalidSocket;
         JoinRequestWorkers();
@@ -2326,6 +2341,8 @@ private:
     };
     std::mutex request_workers_mutex_;
     std::vector<RequestWorker> request_workers_;
+    std::unordered_map<SocketHandle, std::string> request_sockets_;
+    ReceiptSourceSlots receipt_source_slots_;
     std::mutex prewarm_thread_mu_;
     std::thread prewarm_thread_;
     OnChainTokenLedger* tokens_;
@@ -3229,6 +3246,40 @@ setInterval(loadProposals, 30000);
         return true;
     }
 
+    void CloseRequestSocket_(SocketHandle fd) {
+        std::lock_guard<std::mutex> lk(request_workers_mutex_);
+        const auto it = request_sockets_.find(fd);
+        if (it != request_sockets_.end()) {
+            receipt_source_slots_.Release(it->second);
+            request_sockets_.erase(it);
+            VELD_CLOSE_SOCKET(fd);
+        }
+    }
+
+    static bool SetReceiveDeadline_(
+            SocketHandle fd, std::chrono::steady_clock::time_point deadline) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline) return false;
+#ifdef _WIN32
+        const auto remaining = std::chrono::duration_cast<
+            std::chrono::milliseconds>(deadline - now).count() + 1;
+        // Winsock shutdown need not wake a synchronous recv immediately.
+        // Poll running_ within the absolute receipt deadline on both platforms.
+        const DWORD timeout = static_cast<DWORD>(std::min<int64_t>(remaining, 250));
+        return ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
+            reinterpret_cast<const char*>(&timeout), sizeof(timeout)) == 0;
+#else
+        const auto remaining = std::chrono::duration_cast<
+            std::chrono::microseconds>(deadline - now).count() + 1;
+        const auto poll_remaining = std::min<int64_t>(remaining, 250000);
+        timeval timeout{};
+        timeout.tv_sec = static_cast<decltype(timeout.tv_sec)>(poll_remaining / 1000000);
+        timeout.tv_usec = static_cast<decltype(timeout.tv_usec)>(poll_remaining % 1000000);
+        return ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
+                           &timeout, sizeof(timeout)) == 0;
+#endif
+    }
+
     void ReapRequestWorkers() {
         std::vector<std::thread> finished;
         {
@@ -3304,6 +3355,21 @@ setInterval(loadProposals, 30000);
 
 #ifdef VELD_TEST_HOOKS
 public:
+    static bool TestSetReceiveDeadline(SocketHandle fd,
+            std::chrono::steady_clock::time_point deadline) {
+        return SetReceiveDeadline_(fd, deadline);
+    }
+    void TestTrackReceiptSocket(SocketHandle fd, const std::string& source) {
+        std::lock_guard<std::mutex> lock(request_workers_mutex_);
+        if (!receipt_source_slots_.Take(source)) throw std::runtime_error("fixture source full");
+        request_sockets_.emplace(fd, source);
+    }
+    void TestCloseReceiptSocket(SocketHandle fd) { CloseRequestSocket_(fd); }
+    void TestHandleReceipt(SocketHandle fd, std::chrono::steady_clock::time_point deadline) {
+        running_.store(true, std::memory_order_release);
+        HandleRequest(fd, "127.0.0.1", deadline);
+    }
+
     struct TestExplorerRateSlotState {
         bool present = false;
         uint64_t window_start = 0;
@@ -3438,7 +3504,11 @@ private:
         const bool history = route == "history" || route == "address-page";
         const bool heavy = history || route == "utxos" || route == "address-api"
                         || route == "rich" || route == "block" || route == "tx";
-        const uint32_t memory_units = history ? 16 : (heavy ? 8 : 4);
+        // A block page owns two decoded bodies plus cold-loader temporaries.
+        // Reserve the whole Explorer memory pool for either block URL alias;
+        // see docs/security/3.0.5-explorer-memory-accounting.md.
+        const uint32_t memory_units = route == "block" ? EXPLORER_MEMORY_UNITS_MAX
+            : (history ? 16 : (heavy ? 8 : 4));
         const uint32_t work_units = history ? 16 : (heavy ? 8 : 1);
         const uint64_t route_cap = history ? 60 : (heavy ? 600 : 1200);
         std::vector<ExplorerCharge> charges = {
@@ -3497,6 +3567,8 @@ private:
             socklen_t len = sizeof(client);
             SocketHandle client_fd = ::accept(fd_, (struct sockaddr*)&client, &len);
             if (!veld::compat::IsValidSocket(client_fd)) { if (running_) std::this_thread::sleep_for(std::chrono::milliseconds(10)); continue; }
+            const auto receipt_deadline = std::chrono::steady_clock::now()
+                + std::chrono::seconds(EXPLORER_RECV_TIMEOUT_S);
 
             char ip_buf[INET_ADDRSTRLEN] = {0};
             ::inet_ntop(AF_INET, &client.sin_addr, ip_buf, sizeof(ip_buf));
@@ -3540,9 +3612,27 @@ private:
             }
 
             bool worker_started = false;
+            bool socket_registered = false;
             try {
                 auto done = std::make_shared<std::atomic<bool>>(false);
-                std::thread worker([this, client_fd, done, socket_peer]() {
+                {
+                    std::lock_guard<std::mutex> lk(request_workers_mutex_);
+                    if (!running_.load(std::memory_order_acquire)) {
+                        active_requests_.fetch_sub(1, std::memory_order_acq_rel);
+                        VELD_CLOSE_SOCKET(client_fd);
+                        break;
+                    }
+                    if (!receipt_source_slots_.Take(socket_peer)) {
+                        active_requests_.fetch_sub(1, std::memory_order_acq_rel);
+                        VELD_CLOSE_SOCKET(client_fd);
+                        continue;
+                    }
+                    try { request_sockets_.emplace(client_fd, socket_peer); }
+                    catch (...) { receipt_source_slots_.Release(socket_peer); throw; }
+                    socket_registered = true;
+                }
+                std::thread worker([this, client_fd, done, socket_peer,
+                                    receipt_deadline]() {
                     struct Guard {
                         std::atomic<uint64_t>* active;
                         std::atomic<bool>* done;
@@ -3551,9 +3641,9 @@ private:
                             done->store(true, std::memory_order_release);
                         }
                     } guard{&active_requests_, done.get()};
-                    try { HandleRequest(client_fd, socket_peer); }
+                    try { HandleRequest(client_fd, socket_peer, receipt_deadline); }
                     catch (...) {  }
-                    VELD_CLOSE_SOCKET(client_fd);
+                    CloseRequestSocket_(client_fd);
                 });
                 worker_started = true;
                 try {
@@ -3570,20 +3660,27 @@ private:
                 std::cerr << "  [explorer] thread spawn failed (" << e.what()
                           << ") — dropping request fd=" << client_fd << "\n";
                 std::cerr.flush();
-                if (!worker_started) VELD_CLOSE_SOCKET(client_fd);
+                if (!worker_started) {
+                    if (socket_registered) CloseRequestSocket_(client_fd);
+                    else VELD_CLOSE_SOCKET(client_fd);
+                }
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
             } catch (const std::exception& e) {
                 if (!worker_started)
                     active_requests_.fetch_sub(1, std::memory_order_acq_rel);
                 std::cerr << "  [explorer] unexpected thread-spawn error: " << e.what() << "\n";
                 std::cerr.flush();
-                if (!worker_started) VELD_CLOSE_SOCKET(client_fd);
+                if (!worker_started) {
+                    if (socket_registered) CloseRequestSocket_(client_fd);
+                    else VELD_CLOSE_SOCKET(client_fd);
+                }
             }
         }
         ReapRequestWorkers();
     }
 
-    void HandleRequest(SocketHandle client_fd, const std::string& socket_peer) {
+    void HandleRequest(SocketHandle client_fd, const std::string& socket_peer,
+                       std::chrono::steady_clock::time_point receipt_deadline) {
         std::string buf;
         buf.reserve(8192);
         char chunk[8192];
@@ -3591,7 +3688,22 @@ private:
         size_t expected_body = 0;
         size_t headers_end = 0;
         while (buf.size() < EXPLORER_MAX_BODY) {
-            int n = ::recv(client_fd, chunk, sizeof(chunk), 0);
+            if (!running_.load(std::memory_order_acquire) ||
+                !SetReceiveDeadline_(client_fd, receipt_deadline)) return;
+            const size_t room = std::min(sizeof(chunk),
+                                        EXPLORER_MAX_BODY - buf.size());
+            int n = ::recv(client_fd, chunk, static_cast<int>(room), 0);
+            if (std::chrono::steady_clock::now() >= receipt_deadline) return;
+            if (n < 0) {
+#ifdef _WIN32
+                const int error = ::WSAGetLastError();
+                if (error == WSAETIMEDOUT || error == WSAEWOULDBLOCK || error == WSAEINTR)
+                    continue;
+#else
+                if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+                    continue;
+#endif
+            }
             if (n <= 0) break;
             buf.append(chunk, (size_t)n);
             if (!have_full_headers) {
@@ -4705,6 +4817,14 @@ loadStats();
     }
 
     HttpResponse ServeBlock(const std::string& hash_hex) {
+        const auto page_budget_exceeded = [] {
+            HttpResponse response;
+            response.status_code = 503;
+            response.status_text = "Service Unavailable";
+            response.content_type = "text/plain";
+            response.body = "Block page exceeds the rendering budget; use the block RPC.";
+            return response;
+        };
         if (!IsStrictLowerHex64(hash_hex)) {
             std::ostringstream err;
             err << "<div class=\"container\" style=\"padding:40px;text-align:center\">"
@@ -4714,7 +4834,9 @@ loadStats();
             return HttpResponse::HTML(HtmlWrapArcade("Invalid Block", err.str(), "blocks"));
         }
         Hash256 hash = HexToHash(hash_hex);
-        auto block = chain_.GetBlockByHash(hash);
+        std::optional<Block> block;
+        try { block = chain_.GetBlockByHash(hash, EXPLORER_BLOCK_PAGE_BODY_BUDGET); }
+        catch (const std::length_error&) { return page_budget_exceeded(); }
         if (!block) return HttpResponse::NotFound("block " + hash_hex);
 
         std::ostringstream c;
@@ -4876,15 +4998,19 @@ loadStats();
         }
 
         c << "<div class=\"card\"><div class=\"card-title\">Transactions</div>";
-        std::unordered_map<std::string, const Transaction*> prev_tx_index;
-        std::vector<Block> prev_blocks;
-        uint64_t scan_start = block->height > 150 ? block->height - 150 : 0;
-        for (uint64_t h = scan_start; h <= block->height; ++h) {
-            try { prev_blocks.push_back(chain_.GetBlock(h)); } catch (...) { break; }
+        PrevoutProjection prevouts;
+        for (const auto& tx : block->transactions)
+            if (!prevouts.AddInputs(tx)) return page_budget_exceeded();
+        // Same-block spends use the body already loaded for this page.
+        for (const auto& tx : block->transactions) prevouts.Observe(tx);
+        const uint64_t scan_start = block->height > 150 ? block->height - 150 : 0;
+        for (uint64_t h = block->height; h > scan_start && prevouts.Remaining();) {
+            --h;
+            try {
+                const Block previous = chain_.GetBlock(h, EXPLORER_BLOCK_PAGE_BODY_BUDGET);
+                for (const auto& tx : previous.transactions) prevouts.Observe(tx);
+            } catch (...) { break; }
         }
-        for (const auto& pb : prev_blocks)
-            for (const auto& ptx : pb.transactions)
-                prev_tx_index[HashToHex(ptx.GetTxID())] = &ptx;
         c << "<div class=\"tbl-scroll\"><table class=\"tbl\"><thead><tr><th>TXID</th><th>Type</th><th>Flow</th><th>Total</th><th>Fee</th></tr></thead><tbody>";
         for (const auto& tx : block->transactions) {
             std::string txid = HashToHex(tx.GetTxID());
@@ -4931,11 +5057,9 @@ loadStats();
                     sender_addr = ScriptToAddress(sscript);
                 } else {
                     for (const auto& inp : tx.inputs) {
-                        auto it = prev_tx_index.find(HashToHex(inp.prev_tx_hash));
-                        if (it == prev_tx_index.end()) continue;
-                        const Transaction* ptx = it->second;
-                        if (inp.prev_out_index >= ptx->outputs.size()) continue;
-                        sender_addr = ScriptToAddress(ptx->outputs[inp.prev_out_index].script_pubkey);
+                        const auto* previous = prevouts.Find(inp);
+                        if (!previous) continue;
+                        sender_addr = previous->address;
                         if (!sender_addr.empty()) break;
                     }
                 }
@@ -5103,6 +5227,8 @@ loadStats();
                 uint64_t cb_sum = 0;
                 for (const auto& out : tx.outputs) cb_sum += out.value;
                 for (const auto& out : tx.outputs) {
+                    if (flow_html.size() > EXPLORER_MAX_RESPONSE_BODY / 2)
+                        return page_budget_exceeded();
                     std::string addr = ScriptToAddress(out.script_pubkey);
                     bool iv = (addr == VAULT_ADDRESS);
                     bool ip = (addr == POOL_ADDRESS);
@@ -5133,6 +5259,8 @@ loadStats();
                 flow_html += "<div style=\"font-size:10px;color:" + pcolor + ";margin-bottom:2px\">"
                     + std::to_string(tx.inputs.size()) + " " + plabel + " UTXOs \xe2\x86\x92</div>";
                 for (const auto& out : tx.outputs) {
+                    if (flow_html.size() > EXPLORER_MAX_RESPONSE_BODY / 2)
+                        return page_budget_exceeded();
                     std::string addr = ScriptToAddress(out.script_pubkey);
                     if (addr.empty()) continue;
                     std::ostringstream val; val << std::fixed << std::setprecision(2) << (double)out.value/VELD_UNITS;
@@ -5145,6 +5273,8 @@ loadStats();
                 std::string dist_label = (tx_type == "ENDORSE REWARD") ? "Vault \xe2\x86\x92 Validators" : "Vault \xe2\x86\x92 Stakers";
                 flow_html += "<div style=\"font-size:10px;color:" + dist_color + ";margin-bottom:2px\">" + dist_label + "</div>";
                 for (const auto& out : tx.outputs) {
+                    if (flow_html.size() > EXPLORER_MAX_RESPONSE_BODY / 2)
+                        return page_budget_exceeded();
                     std::string addr = ScriptToAddress(out.script_pubkey);
                     if (addr.empty()) continue;
                     if (addr == VAULT_ADDRESS) continue;
@@ -5155,6 +5285,8 @@ loadStats();
                 }
             } else {
                 for (const auto& out : tx.outputs) {
+                    if (flow_html.size() > EXPLORER_MAX_RESPONSE_BODY / 2)
+                        return page_budget_exceeded();
                     std::string addr = ScriptToAddress(out.script_pubkey);
                     if (addr.empty()) {
                         // OP_RETURN. If it's a plain user memo (not a VELD_*
@@ -5224,6 +5356,8 @@ loadStats();
                     || tx_type == "ENDORSE REWARD") {
                 uint64_t recipient_units = 0;
                 for (const auto& out : tx.outputs) {
+                    if (flow_html.size() > EXPLORER_MAX_RESPONSE_BODY / 2)
+                        return page_budget_exceeded();
                     std::string oaddr = ScriptToAddress(out.script_pubkey);
                     if (oaddr.empty()) continue;
                     if (oaddr == VAULT_ADDRESS
@@ -5262,9 +5396,9 @@ loadStats();
                 uint64_t in_total = 0, out_total = tx.TotalOutput();
                 bool all_resolved = true;
                 for (const auto& in : tx.inputs) {
-                    auto it = prev_tx_index.find(HashToHex(in.prev_tx_hash));
-                    if (it != prev_tx_index.end() && in.prev_out_index < it->second->outputs.size()) {
-                        in_total += it->second->outputs[in.prev_out_index].value;
+                    const auto* previous = prevouts.Find(in);
+                    if (previous) {
+                        in_total += previous->units;
                     } else {
                         all_resolved = false;
                         break;
@@ -5291,6 +5425,8 @@ loadStats();
               << "<td style=\"color:" << total_color << ";white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:11px\">" << total_val.str() << "</td>"
               << fee_cell
               << "</tr>";
+            if (c.tellp() > static_cast<std::streamoff>(EXPLORER_MAX_RESPONSE_BODY / 2))
+                return page_budget_exceeded();
         }
         c << "</tbody></table></div>";
 
@@ -5319,8 +5455,9 @@ loadStats();
 
     HttpResponse ServeBlockByHeight(uint64_t height) {
         try {
-            Block block = chain_.GetBlock(height);
-            return ServeBlock(HashToHex(block.GetHash()));
+            const auto hash = chain_.GetBlockHashAtHeight(height);
+            if (hash.empty()) return HttpResponse::NotFound("block at height " + std::to_string(height));
+            return ServeBlock(hash);
         } catch (...) {
             return HttpResponse::NotFound("block at height " + std::to_string(height));
         }
@@ -6501,6 +6638,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
     HttpResponse ServeValidatorsPage() {
         bool sys_active = false;
+        bool existing_operations_active = false;
         double total_staked = 0.0;
         double min_stake = (double)MIN_VALIDATOR_STAKE / VELD_UNITS;
         size_t val_count = 0;
@@ -6510,6 +6648,8 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         if (rpc_delegate_) {
             auto resp = rpc_delegate_->Handle(R"({"jsonrpc":"2.0","id":"1","method":"getvalidators","params":[]})");
             if (resp.find("\"system_active\":true") != std::string::npos) sys_active = true;
+            existing_operations_active = sys_active ||
+                resp.find("\"existing_operations_active\":true") != std::string::npos;
             {   auto p = resp.find("\"total_staked_veld\":");
                 if (p != std::string::npos) { auto s = p + 20; auto e = resp.find_first_of(",}", s); try { total_staked = std::stod(resp.substr(s, e-s)); } catch (...) {} }
             }
@@ -6562,6 +6702,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             }
         } else if (validators_) {
             sys_active = validators_->IsValidatorSystemActive();
+            existing_operations_active = validators_->ExistingValidatorOperationsActive();
             val_count = validators_->GetActiveValidatorCount();
             auto records = validators_->GetValidators();
             for (auto& r : records) {
@@ -6593,9 +6734,11 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
         page << "<div class=\"stat-grid\" style=\"margin-bottom:20px\">";
         page << "<div class=\"stat\"><div class=\"stat-label\">System Status</div><div class=\"stat-value " << (sys_active ? "em" : "") << "\">"
-             << (sys_active ? "Active" : "Locked") << "</div><div class=\"stat-sub\">";
+             << (existing_operations_active ? "Active" : "Locked") << "</div><div class=\"stat-sub\">";
         if (sys_active) {
             page << "Validators are endorsing blocks";
+        } else if (existing_operations_active) {
+            page << "Existing validators remain active; new registration is paused";
         } else {
             page << "Needs " << std::fixed << std::setprecision(0)
                  << ((double)VALIDATOR_UNLOCK_STAKED / (double)VELD_UNITS)

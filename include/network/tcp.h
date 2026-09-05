@@ -999,7 +999,13 @@ private:
     class PeerWorkViewWriteGuard_ {
     public:
         explicit PeerWorkViewWriteGuard_(NodeServer& owner) noexcept
-            : owner_(owner), writer_lock_(owner.peer_work_view_writer_mutex_) {
+            : PeerWorkViewWriteGuard_(
+                  owner, std::unique_lock<std::mutex>(
+                      owner.peer_work_view_writer_mutex_)) {}
+
+        PeerWorkViewWriteGuard_(NodeServer& owner,
+                                std::unique_lock<std::mutex> writer_lock) noexcept
+            : owner_(owner), writer_lock_(std::move(writer_lock)) {
             // Announce close-first intent while the old even generation remains
             // readable to an exact predecessor token/lease. Ordinary work sees
             // write_pending and fails closed; no peer-derived byte has changed.
@@ -2896,9 +2902,11 @@ public:
                 uint64_t connection_id{0};
             };
             std::unordered_map<std::string, SelectedClaim> selected;
-            std::unordered_map<std::string, SelectedClaim> selected_outbound;
             selected.reserve(active_sources.size());
-            selected_outbound.reserve(active_sources.size());
+            const auto sync_work = PeerSyncProjectionLocked_(height_now);
+            outbound_sync_height = sync_work.height;
+            distinct_outbound_sync_ips = sync_work.distinct_ips;
+            earliest_freshness_deadline = sync_work.freshness_deadline;
             for (const auto& live : active_sources) {
                 auto claimed = peer_heights_.find(live.connection_id);
                 if (claimed == peer_heights_.end() ||
@@ -2912,27 +2920,6 @@ public:
                         !VersionHeightHintFresh_(
                             sync_claim->second.updated_at, height_now))
                         continue;
-                    const uint64_t claim_deadline =
-                        sync_claim->second.updated_at >
-                                UINT64_MAX - VERSION_HEIGHT_HINT_TTL_SECONDS - 1
-                            ? UINT64_MAX
-                            : sync_claim->second.updated_at +
-                                  VERSION_HEIGHT_HINT_TTL_SECONDS + 1;
-                    earliest_freshness_deadline = std::min(
-                        earliest_freshness_deadline, claim_deadline);
-                    auto outbound = selected_outbound.find(live.source_ip);
-                    if (outbound == selected_outbound.end() ||
-                        sync_claim->second.updated_at >
-                            outbound->second.updated_at ||
-                        (sync_claim->second.updated_at ==
-                             outbound->second.updated_at &&
-                         live.connection_id >
-                             outbound->second.connection_id)) {
-                        selected_outbound[live.source_ip] = SelectedClaim{
-                            sync_claim->second.height,
-                            sync_claim->second.updated_at,
-                            live.connection_id};
-                    }
                 }
                 if (!VersionHeightHintFresh_(claimed->second.updated_at,
                                              height_now)) continue;
@@ -2949,16 +2936,6 @@ public:
             distinct_version_ips = active_ips.size();
             for (const auto& [_ip, claim] : selected)
                 claims.push_back(claim.height);
-            std::vector<uint64_t> outbound_claims;
-            outbound_claims.reserve(selected_outbound.size());
-            for (const auto& [_ip, claim] : selected_outbound)
-                outbound_claims.push_back(claim.height);
-            distinct_outbound_sync_ips = outbound_claims.size();
-            if (outbound_claims.size() >= 2) {
-                std::sort(outbound_claims.begin(), outbound_claims.end(),
-                          std::greater<uint64_t>());
-                outbound_sync_height = outbound_claims[1];
-            }
             for (const auto& ip : active_ips) {
                 auto accepted = peer_verified_heights_.find(ip);
                 if (accepted != peer_verified_heights_.end())
@@ -3964,6 +3941,9 @@ public:
             }
         }
         if (connected_endpoints.count(host)) return true;
+        // Tor owns hostname resolution. Presence checks must not fall back to
+        // the system resolver when the literal Tor endpoint is absent.
+        if (tor_only_.load()) return false;
 
         // Resolve outside peers_mutex_: DNS may block. This also makes a
         // hostname-configured outbound target match a retained inbound socket,
@@ -4014,6 +3994,7 @@ public:
             // Match the literal dial target first, then resolve hostnames for
             // connections recorded by IP.
             if (connected_endpoints.count(seed)) { ++connected; continue; }
+            if (tor_only_.load()) continue;
             struct addrinfo hints{}, *res = nullptr;
             hints.ai_family   = AF_INET;
             hints.ai_socktype = SOCK_STREAM;
@@ -5476,7 +5457,8 @@ private:
         return slot.bytes < cap;
     }
 
-    bool ReserveGetBlocksBodyWork_(const std::string& ip) {
+    bool ReserveGetBlocksBodyWork_(const std::string& endpoint) {
+        const std::string ip = StripPort_(endpoint);
         static const std::string GLOBAL_KEY = "*";
         // Avoid even one disk/body load after either byte envelope is known to
         // be exhausted.  Exact byte reservation follows serialization and is
@@ -5499,8 +5481,9 @@ private:
                                 60);
     }
 
-    bool ReserveGetBlocksResponseBytes_(const std::string& ip,
+    bool ReserveGetBlocksResponseBytes_(const std::string& endpoint,
                                         uint64_t bytes) {
+        const std::string ip = StripPort_(endpoint);
         static const std::string GLOBAL_KEY = "*";
         if (!TakeIpByteBudget(getblocks_response_bytes_per_ip_, ip, bytes,
                               GETBLOCKS_RESPONSE_BYTES_PER_IP_PER_10M,
@@ -5828,6 +5811,65 @@ private:
                now - updated_at <= VERSION_HEIGHT_HINT_TTL_SECONDS;
     }
 
+    struct PeerSyncProjection {
+        uint64_t height{0};
+        size_t distinct_ips{0};
+        uint64_t freshness_deadline{UINT64_MAX};
+    };
+
+    // Caller holds peer_heights_mutex_. The optional replacement is evaluated
+    // without publishing it, so classification cannot expose unsequenced state.
+    PeerSyncProjection PeerSyncProjectionLocked_(
+            uint64_t now, uint64_t replacement_id = 0,
+            const PeerHeightClaim* replacement = nullptr) const {
+        struct Selected {
+            uint64_t height;
+            uint64_t updated_at;
+            uint64_t connection_id;
+        };
+        PeerSyncProjection result;
+        std::unordered_map<std::string, Selected> selected;
+        for (const auto& [id, source] : peer_work_sources_) {
+            if (!source.version_received || !source.handshake_ready ||
+                source.inbound) continue;
+            const auto version = peer_heights_.find(id);
+            if (version == peer_heights_.end() ||
+                version->second.source_ip != source.source_ip) continue;
+            const auto existing = peer_sync_heights_.find(id);
+            const PeerHeightClaim* claim =
+                replacement && id == replacement_id ? replacement :
+                existing == peer_sync_heights_.end() ? nullptr : &existing->second;
+            if (!claim || claim->source_ip != source.source_ip ||
+                !VersionHeightHintFresh_(claim->updated_at, now)) continue;
+            const uint64_t deadline = claim->updated_at >
+                    UINT64_MAX - VERSION_HEIGHT_HINT_TTL_SECONDS - 1
+                ? UINT64_MAX
+                : claim->updated_at + VERSION_HEIGHT_HINT_TTL_SECONDS + 1;
+            result.freshness_deadline = std::min(
+                result.freshness_deadline, deadline);
+            const auto previous = selected.find(source.source_ip);
+            if (previous == selected.end() ||
+                claim->updated_at > previous->second.updated_at ||
+                (claim->updated_at == previous->second.updated_at &&
+                 id > previous->second.connection_id)) {
+                selected[source.source_ip] = {
+                    claim->height, claim->updated_at, id};
+            }
+        }
+        std::vector<uint64_t> heights;
+        heights.reserve(selected.size());
+        for (const auto& [ip, claim] : selected) {
+            (void)ip;
+            heights.push_back(claim.height);
+        }
+        result.distinct_ips = heights.size();
+        if (heights.size() >= 2) {
+            std::sort(heights.begin(), heights.end(), std::greater<uint64_t>());
+            result.height = heights[1];
+        }
+        return result;
+    }
+
     std::optional<uint64_t> CanonicalPeerEvidence_(
             const Hash256& hash) const {
         if (HashIsZero(hash)) return std::nullopt;
@@ -5839,9 +5881,38 @@ private:
     void RecordVerifiedPeerHeight_(const std::string& peer_ip,
                                    const Hash256& hash) {
         if (peer_ip.empty()) return;
-        PeerWorkViewWriteGuard_ work_view_write(*this);
-        if (!work_view_write.MayPublish()) return;
         auto derived_height = CanonicalPeerEvidence_(hash);
+        if (!derived_height.has_value()) return;
+        std::unique_lock<std::mutex> writer_lock(peer_work_view_writer_mutex_);
+        const uint64_t verified_best = GetPeerHeightView().verified_height;
+        {
+            std::lock_guard<std::mutex> lock(peer_heights_mutex_);
+            const bool active = std::any_of(
+                peer_work_sources_.begin(), peer_work_sources_.end(),
+                [&](const auto& entry) {
+                    return entry.second.version_received &&
+                           entry.second.handshake_ready &&
+                           entry.second.source_ip == peer_ip;
+                });
+            if (!active) return;
+            const auto current = peer_verified_heights_.find(peer_ip);
+            if (current != peer_verified_heights_.end() &&
+                (*derived_height < current->second.height ||
+                 (*derived_height == current->second.height &&
+                  hash == current->second.hash))) return;
+            if (*derived_height <= verified_best) {
+                // Another active source already establishes this aggregate
+                // bound. Readers revalidate every evidence hash canonically;
+                // chain transitions carry their own close-first sequence.
+                peer_verified_heights_[peer_ip] =
+                    VerifiedPeerHeight{hash, *derived_height};
+                return;
+            }
+        }
+        PeerWorkViewWriteGuard_ work_view_write(*this, std::move(writer_lock));
+        if (!work_view_write.MayPublish()) return;
+        // The transition permit now excludes a concurrent canonical change.
+        derived_height = CanonicalPeerEvidence_(hash);
         if (!derived_height.has_value()) return;
         std::lock_guard<std::mutex> lock(peer_heights_mutex_);
         auto& current = peer_verified_heights_[peer_ip];
@@ -5854,7 +5925,29 @@ private:
         std::string peer_ip = conn.RemoteAddr();
         size_t colon = peer_ip.find_last_of(':');
         if (colon != std::string::npos) peer_ip = peer_ip.substr(0, colon);
-        PeerWorkViewWriteGuard_ work_view_write(*this);
+        std::unique_lock<std::mutex> writer_lock(peer_work_view_writer_mutex_);
+        const PeerHeightClaim next{peer_ip, height, PeerHeightNow_()};
+        {
+            std::lock_guard<std::mutex> lock(peer_heights_mutex_);
+            const auto source = peer_work_sources_.find(conn.Identity());
+            if (source == peer_work_sources_.end() ||
+                !source->second.version_received ||
+                !source->second.handshake_ready || source->second.inbound ||
+                source->second.source_ip != peer_ip) return;
+            const auto before = PeerSyncProjectionLocked_(next.updated_at);
+            const auto after = PeerSyncProjectionLocked_(
+                next.updated_at, conn.Identity(), &next);
+            if (before.height == after.height &&
+                before.distinct_ips == after.distinct_ips &&
+                after.freshness_deadline >= before.freshness_deadline) {
+                // A diagnostic-only change or freshness extension cannot
+                // invalidate an existing lease with its earlier expiry.
+                peer_sync_heights_[conn.Identity()] = next;
+                return;
+            }
+        }
+        // Release the height lock before acquiring the node transition permit.
+        PeerWorkViewWriteGuard_ work_view_write(*this, std::move(writer_lock));
         if (!work_view_write.MayPublish()) return;
         std::lock_guard<std::mutex> lock(peer_heights_mutex_);
         const auto source = peer_work_sources_.find(conn.Identity());
@@ -5862,8 +5955,7 @@ private:
             !source->second.handshake_ready ||
             source->second.source_ip != peer_ip)
             return;
-        peer_sync_heights_[conn.Identity()] = PeerHeightClaim{
-            peer_ip, height, PeerHeightNow_()};
+        peer_sync_heights_[conn.Identity()] = next;
     }
 
     void ForgetPeerHeightEvidence_(const std::string& peer_ip) {
@@ -6523,16 +6615,24 @@ private:
                     for (uint64_t offset = 0; offset < n_to_send; ++offset) {
                         if (!conn.CanQueueEventLoopSend(
                                 static_cast<size_t>(MAX_BLOCK_SIZE) + 24u)) break;
+                        if (!ReserveGetBlocksBodyWork_(conn.RemoteAddr())) break;
                         Block blk;
                         try { blk = chain_.GetBlock(send_from + offset); }
                         catch (...) { break; }
                         auto payload = blk.Serialize();
                         if (bytes_sent + payload.size() >
                             MAX_GETBLOCKS_RESPONSE_BYTES) break;
+                        P2PMessage first_inv;
+                        size_t first_inv_bytes = 0;
                         if (!announced_first_body) {
-                            if (!conn.TrySend(pm.BuildInvMessage(
-                                    {InvItem(InvType::BLOCK,
-                                             blk.GetHash())}))) break;
+                            first_inv = pm.BuildInvMessage(
+                                {InvItem(InvType::BLOCK, blk.GetHash())});
+                            first_inv_bytes = first_inv.Serialize().size();
+                        }
+                        if (!ReserveGetBlocksResponseBytes_(conn.RemoteAddr(),
+                                payload.size() + 24u + first_inv_bytes)) break;
+                        if (!announced_first_body) {
+                            if (!conn.TrySend(first_inv)) break;
                             announced_first_body = true;
                         }
                         if (!conn.TrySend(P2PMessage(
@@ -6615,16 +6715,24 @@ private:
                         for (uint64_t offset = 0; offset < n_to_send; ++offset) {
                             if (!conn.CanQueueEventLoopSend(
                                     static_cast<size_t>(MAX_BLOCK_SIZE) + 24u)) break;
+                            if (!ReserveGetBlocksBodyWork_(conn.RemoteAddr())) break;
                             Block blk;
                             try { blk = chain_.GetBlock(send_from + offset); }
                             catch (...) { break; }
                             auto payload = blk.Serialize();
                             if (bytes_sent + payload.size() >
                                 MAX_GETBLOCKS_RESPONSE_BYTES) break;
+                            P2PMessage first_inv;
+                            size_t first_inv_bytes = 0;
                             if (!announced_first_body) {
-                                if (!conn.Send(pm.BuildInvMessage(
-                                        {InvItem(InvType::BLOCK,
-                                                 blk.GetHash())}))) break;
+                                first_inv = pm.BuildInvMessage(
+                                    {InvItem(InvType::BLOCK, blk.GetHash())});
+                                first_inv_bytes = first_inv.Serialize().size();
+                            }
+                            if (!ReserveGetBlocksResponseBytes_(conn.RemoteAddr(),
+                                    payload.size() + 24u + first_inv_bytes)) break;
+                            if (!announced_first_body) {
+                                if (!conn.Send(first_inv)) break;
                                 announced_first_body = true;
                             }
                             if (!conn.Send(P2PMessage(
@@ -7285,6 +7393,10 @@ private:
                 if (itype == InvType::BLOCK) {
                     if (!conn.CanQueueEventLoopSend(
                             static_cast<size_t>(MAX_BLOCK_SIZE) + 24u)) break;
+                    if (!IpByteBudgetHasRoom_(getdata_response_bytes_per_ip_,
+                            StripPort_(conn.RemoteAddr()),
+                            GETDATA_RESPONSE_BUDGET_PER_60S, 60) ||
+                        !ReserveGetBlocksBodyWork_(conn.RemoteAddr())) break;
                     auto blk_opt = chain_.GetBlockByHash(hash);
                     if (blk_opt.has_value()) {
                         auto payload = blk_opt->Serialize();
@@ -7295,8 +7407,10 @@ private:
                         }
                         if (!TakeIpByteBudget(
                                 getdata_response_bytes_per_ip_,
-                                conn.RemoteAddr(), payload.size() + 24u,
+                                StripPort_(conn.RemoteAddr()), payload.size() + 24u,
                                 GETDATA_RESPONSE_BUDGET_PER_60S)) break;
+                        if (!ReserveGetBlocksResponseBytes_(conn.RemoteAddr(),
+                                payload.size() + 24u)) break;
                         if (!conn.Send(P2PMessage(
                                 magic_, MessageType::BLOCK, payload))) break;
                         getdata_response_bytes += payload.size();
@@ -7315,7 +7429,7 @@ private:
                                          GETDATA_RESPONSE_CAP)) break;
                         if (!TakeIpByteBudget(
                                 getdata_response_bytes_per_ip_,
-                                conn.RemoteAddr(), payload.size() + 24u,
+                                StripPort_(conn.RemoteAddr()), payload.size() + 24u,
                                 GETDATA_RESPONSE_BUDGET_PER_60S)) break;
                         if (!conn.Send(P2PMessage(
                                 magic_, MessageType::TX, payload))) break;
@@ -7622,7 +7736,6 @@ private:
             // even checking payload length, letting one empty `tipsig` frame
             // bypass the stuck-handshake reaper indefinitely.
             conn.MarkTipReceived();
-            RecordPeerSyncHeight_(conn, their_height);
 
             std::string tipsig_source_ip = conn.RemoteAddr();
             size_t tipsig_source_colon = tipsig_source_ip.find_last_of(':');
@@ -7646,6 +7759,7 @@ private:
                 RecordViolation(conn.RemoteAddr(), 5, "tipsig_height_mismatch");
                 return StepResult::Handled;
             }
+            RecordPeerSyncHeight_(conn, their_height);
             {
                 std::string ip_only = conn.RemoteAddr();
                 size_t colon = ip_only.find_last_of(':');

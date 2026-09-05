@@ -4730,7 +4730,7 @@ function rpc(method, params) {
     .then(function(t){
       if (!t || !t.trim()) throw new Error('Empty response from node — try again in a moment');
       var r = JSON.parse(t);
-      if (r.error) throw new Error(r.error.message || JSON.stringify(r.error));
+      if (r.error) { var rpcError = new Error(r.error.message || JSON.stringify(r.error)); rpcError.code = r.error.code; throw rpcError; }
       return r.result;
     })
     .catch(function(e){
@@ -5213,14 +5213,15 @@ function _veldUnitsToAmountString(units) {
   return whole.toString() + (frac ? '.' + frac : '');
 }
 // Assert the unsigned tx's OP_RETURN content is EXACTLY what the user typed.
-//   undefined / null → no check (legacy callers: gov/stake build their own OP_RETURN)
+//   undefined / null → refuse: every signing flow must supply its local intent
 //   ''               → assert ZERO OP_RETURN outputs (Send with no memo)
 //   '<hex>'          → assert exactly one OP_RETURN output, script == hex, value 0
 // Closes the data-tamper vector: a compromised local node cannot add or alter
 // the memo the user is about to sign (value redirection is already blocked by
 // the P2PKH allow-list guards).
 function _veldAssertOpReturnExact(prep, expectedOpReturnHex) {
-  if (expectedOpReturnHex === undefined || expectedOpReturnHex === null) return;
+  if (typeof expectedOpReturnHex !== 'string')
+    throw new Error('Refusing to sign: missing local transaction instruction policy.');
   if (!prep || typeof prep.unsigned_tx_hex !== 'string') {
     throw new Error('Tx verification failed: missing unsigned_tx_hex');
   }
@@ -5538,6 +5539,8 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
   return Promise.resolve().then(function() {
     var claimedAddress = (Array.isArray(params) && typeof params[0] === 'string')
       ? params[0].trim() : '';
+    if(prepareMethod === 'prepareconsolidatetx' && expectedOpReturnHex !== '')
+      throw new Error('Refusing to sign: consolidation requires an empty instruction policy.');
     var identity = _veldRequireBoundIdentity(keyHex, null, claimedAddress);
     var ownerHash160 = _veldAddrToHash160Hex(identity.address);
     if (!ownerHash160) throw new Error('Refusing to sign: locally-derived wallet address is invalid.');
@@ -5990,7 +5993,7 @@ function bvProbeNav(){
 }
 function bvRenderPool(){
   var p=bvState.pool; if(!p) return;
-  var price=p.price_veld_per_btcveld||(p.reserve_btcveld>0?Math.floor(p.reserve_veld/p.reserve_btcveld):0);
+  var price=bvDisplayPoolPrice(p);
   var _ppu=(bvState.btcUsd>0&&price>0)?(' · 1 VELD ≈ $'+(bvState.btcUsd/price).toFixed(4)):'';
   if(bvG('bv-pool-price')) bvG('bv-pool-price').textContent=price?price.toLocaleString('en-US')+' VELD / btcVELD'+_ppu:'—';
   if(bvG('bv-pool-veld')) bvG('bv-pool-veld').textContent=bvFmt(p.reserve_veld)+' VELD';
@@ -6085,6 +6088,18 @@ function bvRenderPegBalances(){
   }
   bvRedeemCompute();
 }
+function bvDisplayPoolPrice(pool){
+  if(!pool || typeof pool !== 'object') return 0;
+  var price=pool.price_veld_per_btcveld;
+  if(typeof price === 'number' && Number.isFinite(price) && price > 0)
+    return price;
+  var nativeReserve=pool.reserve_veld, wrappedReserve=pool.reserve_btcveld;
+  if(typeof nativeReserve !== 'number' || !Number.isFinite(nativeReserve) ||
+     nativeReserve < 0 || typeof wrappedReserve !== 'number' ||
+     !Number.isFinite(wrappedReserve) || wrappedReserve <= 0) return 0;
+  var fallback=Math.floor(nativeReserve/wrappedReserve);
+  return Number.isFinite(fallback) && fallback >= 0 ? fallback : 0;
+}
 function bvCompute(){
   var p=bvState.pool; if(!p||!bvActive()) return;
   var amtEl=bvG('bv-pay-amt'), getEl=bvG('bv-get-amt'), rateEl=bvG('bv-rate'), btn=bvG('bv-swap-btn');
@@ -6092,7 +6107,7 @@ function bvCompute(){
   var payV=bvPayIsVeld();
   var rout=payV?p.reserve_btcveld:p.reserve_veld;
   var getSym=payV?'btcVELD':'VELD';
-  var price=p.price_veld_per_btcveld||(p.reserve_btcveld>0?Math.floor(p.reserve_veld/p.reserve_btcveld):0);
+  var price=bvDisplayPoolPrice(p);
   var quote=(inSats>0)?bvQuote(p,payV,inSats):{out:0n,feeOut:0n,feeBps:(p.base_fee_bps||30),band:1,rebalances:false,reject:false};
   var out=quote.out;
   var impactBps=bvPriceImpactBps(p,payV,inSats,out);
@@ -6110,7 +6125,7 @@ function bvCompute(){
     :quote.reject?((quote.rejectCode==='FEE_SCHEDULE_NO_FIXED_POINT')?'deviation-fee band unavailable — adjust the amount':('swap unavailable: '+quote.rejectCode))
     :((quote.feeBps/100).toFixed(2)+'% LP fee in '+getSym
       +(quote.rebalances?' (healing → 0.30% base)':(' (band '+quote.band+' deviation fee)')));
-  var rateHtml='1 btcVELD ≈ <b>'+(price?price.toLocaleString('en-US'):'—')+'</b> VELD · '+_feeTxt
+  var rateHtml='1 btcVELD ≈ <b>'+escHtml(price?price.toLocaleString('en-US'):'—')+'</b> VELD · '+escHtml(_feeTxt)
     +(quote.feeOut>0n?' · <b>'+bvFmt(Number(quote.feeOut))+' '+getSym+'</b> retained for LPs':'')
     +(!quote.reject&&inSats>0?' · deviation '+(quote.preBps/100).toFixed(2)+'% → '+(quote.postBps/100).toFixed(2)+'%':'')
     +' · native transaction fee shown separately at confirmation'
@@ -9940,7 +9955,7 @@ function autoConsolidateRun(keyHex, totalAtStart, thresholdVeld) {
           (sweptInputs ? '<br><span style="font-size:10.5px;opacity:.75">' +
             sweptInputs + ' inputs swept in ' + (batchN-1) + ' prior batches</span>' : '')
         );
-      }
+      }, ''
     ).then(function(r){
       var inputs = r.inputs_consolidated || (r.inputs && r.inputs.length) || 0;
       if (inputs <= 0) return null;          // nothing left
@@ -10128,7 +10143,7 @@ function doConsolidateUtxos() {
         'prepareconsolidatetx',
         [currentAddr, String(PER_BATCH), DUST_THRESHOLD_VELD],
         keyHex,
-        null, guard, allowed
+        null, guard, allowed, null, ''
       ).then(function(r) {
         var inputs = r.inputs_consolidated || (r.inputs && r.inputs.length) || 0;
         var outAmt = (r.total_output != null) ? (parseFloat(r.total_output) / 1e8) : 0;
@@ -10503,15 +10518,12 @@ function loadPendingSends() {
       return {pending: stillPending, confirmed: confirmed, unknown: unknown};
     });
   }).then(function(state) {
-    // Drop confirmed entries (they belong in history now) and any
-    // entry older than 24h that the node has never confirmed AND
-    // is no longer in mempool — at that point the TX is gone for
-    // good and clearing it stops nag-ware accumulation.
+    // Remove only confirmed entries. A busy/incomplete lookup cannot prove
+    // a transaction was dropped, regardless of its age.
     var keptTxids = {};
     state.pending.forEach(function(e) { keptTxids[e.txid] = true; });
     state.unknown.forEach(function(e) {
-      var age = nowSec - (e.ts || 0);
-      if (age < 24 * 3600) keptTxids[e.txid] = true;
+      keptTxids[e.txid] = true;
     });
     var pruned = arr.filter(function(e) {
       // Keep all other wallets' entries untouched
@@ -10522,9 +10534,7 @@ function loadPendingSends() {
       try { localStorage.setItem(key, JSON.stringify(pruned)); } catch(_){}
     }
     // Render
-    var rows = state.pending.concat(state.unknown.filter(function(e) {
-      return (nowSec - (e.ts || 0)) < 24 * 3600;
-    }));
+    var rows = state.pending.concat(state.unknown);
     if (!rows.length) {
       document.getElementById('w-pending-card').style.display = 'none';
       return;
@@ -12748,7 +12758,9 @@ function loadValidatorsPage() {
   rpc('getvalidators').then(function(d) {
     document.getElementById('val-sys').innerHTML = d.system_active
       ? '<span style="color:var(--em)">Active</span>'
-      : '<span style="color:var(--muted)">Locked</span>';
+      : d.existing_operations_active
+        ? '<span style="color:var(--em)">Active; new registration paused</span>'
+        : '<span style="color:var(--muted)">Locked</span>';
     document.getElementById('val-count').textContent = d.validator_count || 0;
 
     // render the LIVE MIN_VALIDATOR_STAKE in
@@ -13291,9 +13303,8 @@ function __opUnlock(key, btnIds) {
 // a height/block_hash hint to close an O(N) chain-walk DoS. At
 // post-broadcast poll time we don't yet know the height — that's
 // exactly what we're polling to discover. `gettransactionrecent` does
-// a capped scan over the last 2016 blocks (~4.2 days at 180 s blocks),
-// which more than covers any reasonable confirmation window (the
-// caller above caps at 5 min by default).
+// an indexed lookup, or advances a shared-budget search of recent blocks.
+// Incomplete/busy replies remain retryable while polling.
 function __waitForTxConfirm(txid, maxSeconds, onConfirmed, onTimeout, onTick) {
   if (!txid) { try { onTimeout && onTimeout(); } catch(_){} return { cancel: function(){} }; }
   var pollEveryMs = 5000;
@@ -14733,6 +14744,30 @@ function govRenderProposals() {
   el.innerHTML = html;
 }
 
+function _veldGovernanceVoteIntent(info, proposal, id, choice) {
+  var height = info && info.blocks;
+  var prefix = info && info.gov_chain_prefix;
+  if (!Number.isSafeInteger(height) || height <= 0 || typeof prefix !== 'string' || !prefix)
+    throw new Error('Cannot fetch the governance signing context.');
+  if (!Number.isSafeInteger(Number(id)) || Number(id) <= 0 ||
+      ['yes', 'no', 'abstain'].indexOf(choice) < 0)
+    throw new Error('Invalid governance vote.');
+  var version = info.gov_vote_version;
+  if (version === undefined) version = 1; // old node before the coordinated upgrade
+  if (version !== 1 && version !== 2) throw new Error('Unsupported governance vote version.');
+  var identity = '';
+  if (version === 2) {
+    if (!proposal || String(proposal.id) !== String(id) ||
+        !/^[0-9a-f]{64}$/.test(proposal.vote_identity || ''))
+      throw new Error('Refresh proposals after activation before voting.');
+    identity = proposal.vote_identity;
+  }
+  return { height: String(height), identity: identity,
+    marker: version === 2 ? 'V2' : 'V',
+    challenge: prefix + (version === 2 ? 'GOV_VOTE_V2:' : 'GOV_VOTE:') +
+      String(id) + ':' + (identity ? identity + ':' : '') + choice + ':@' + String(height) };
+}
+
 function govVote(id, choice) {
   // Ordering:
   //   1. Run every input validation FIRST.
@@ -14780,17 +14815,12 @@ function govVote(id, choice) {
   rpc('getblockchaininfo', []).then(function(info) {
     // getblockchaininfo returns the tip height under "blocks" (Bitcoin-style).
     var tipH = (info && typeof info.blocks === 'number') ? info.blocks : 0;
-    var challenge;
-    var extraParam = null;
-    //  genesis-bind via the node-served gov_chain_prefix.
-    var govPrefix = (info && typeof info.gov_chain_prefix === 'string') ? info.gov_chain_prefix : '';
-    if (tipH > 0) {
-      if (!govPrefix) throw new Error('Node did not return gov_chain_prefix — update veld-node before voting.');
-      challenge = govPrefix + 'GOV_VOTE:' + String(id) + ':' + choice + ':@' + String(tipH);
-      extraParam = String(tipH);
-    } else {
-      challenge = 'GOV_VOTE:' + String(id) + ':' + choice;
-    }
+    var selectedProposal = (govAllProposals || []).find(function(p) {
+      return String(p.id) === String(id);
+    });
+    var voteIntent = _veldGovernanceVoteIntent(info, selectedProposal, id, choice);
+    var challenge = voteIntent.challenge;
+    var extraParam = voteIntent.height;
     var sigHex = veldCrypto.signMessage ? veldCrypto.signMessage(keyHex, challenge) : veldCrypto.sign(keyHex, challenge);
     // ON-CHAIN: preparegovvote → sign inputs → sendrawtransaction.
     // signed_height is required (extraParam). If tipH was unavailable, we
@@ -14798,7 +14828,9 @@ function govVote(id, choice) {
     if (extraParam === null) {
       throw new Error('Cannot fetch chain tip; vote requires height binding.');
     }
-    return rpc('preparegovvote', [addr, String(id), choice, pubHex, sigHex, extraParam])
+    var voteParams = [addr, String(id), choice, pubHex, sigHex, extraParam];
+    if (voteIntent.identity) voteParams.push(voteIntent.identity);
+    return rpc('preparegovvote', voteParams)
       .then(function(prep) {
         // gate every P2PKH output to the voter's own
         // hash160. The OP_RETURN payload carries the vote intent, but the
@@ -14808,8 +14840,9 @@ function govVote(id, choice) {
         _veldAssertAllP2PKHOutputsInAllowed(prep, [_veldAddrToHash160Hex(addr)]);
         var voteCode = choice === 'yes' ? 'y' : (choice === 'no' ? 'n' : 'a');
         _veldAssertOpReturnExact(prep, _veldBuildProtocolOpReturnHex(
-          'VELD_GOV|V|' + String(id) + '|' + addr + '|' + voteCode + '|' +
-          String(extraParam) + '|' + pubHex + '|' + sigHex));
+          'VELD_GOV|' + voteIntent.marker + '|' + String(id) + '|' + addr + '|' + voteCode + '|' +
+          String(extraParam) + '|' + pubHex + '|' + sigHex +
+          (voteIntent.identity ? '|' + voteIntent.identity : '')));
         _veldVerifyInputSighashes(prep, [],
           '76a914' + _veldAddrToHash160Hex(addr).toLowerCase() + '88ac');
         // async injectSignatures (yields between signs), after exact fee proof.
@@ -15060,7 +15093,22 @@ function loadCominingHistory() {
 // ═══════════════════════════════════════
 // EXPLORER
 // ═══════════════════════════════════════
+var exSearchGeneration = 0;
+async function _veldRecentSearch(txid, onProgress, isCurrent) {
+  for (var attempt = 0; attempt < 600 && isCurrent(); attempt++) {
+    try { return await rpc('gettransactionrecent', [txid]); }
+    catch (error) {
+      if (error.code !== -32005) throw error;
+      onProgress();
+      await new Promise(function(resolve) { setTimeout(resolve, 2000); });
+    }
+  }
+  var incomplete = new Error('Search is incomplete. Retry to continue, or enable the transaction index.');
+  incomplete.code = -32005;
+  throw incomplete;
+}
 function doExSearch() {
+  var generation = ++exSearchGeneration;
   var q = document.getElementById('ex-search').value.trim();
   if (!q) return;
   var resultEl = document.getElementById('ex-result');
@@ -15069,14 +15117,16 @@ function doExSearch() {
     rpc('getblockbyheight',[q]).then(function(b){ showBlockResult(b, resultEl); }).catch(function(e){ resultEl.innerHTML='<div class="alert alert-err">'+escHtml(e.message)+'</div>'; });
   } else if (/^[0-9a-f]{64}$/i.test(q)) {
     rpc('getblock',[q]).then(function(b){ showBlockResult(b, resultEl); }).catch(function() {
-      // use gettransactionrecent here. The
-      // explorer search is invoked with just a txid (no height context),
-      // so we can't pass a hint to the canonical gettransaction. The
-      // capped-fallback scans the last 2016 blocks, which is the right
-      // shape for an interactive explorer "I just got this txid" lookup.
-      // For older transactions the user can click through from a block
-      // listing (which provides height) instead.
-      rpc('gettransactionrecent',[q]).then(function(t){ showTxResult(t, resultEl); }).catch(function(e){ resultEl.innerHTML='<div class="alert alert-err">Not found: '+escHtml(q)+'</div>'; });
+      var isCurrent = function(){ return generation === exSearchGeneration; };
+      _veldRecentSearch(q.toLowerCase(), function(){
+        if(isCurrent()) resultEl.textContent = 'Searching recent blocks; waiting for available lookup capacity…';
+      }, isCurrent).then(function(t){
+        if(isCurrent()) showTxResult(t, resultEl);
+      }).catch(function(e){
+        if(!isCurrent()) return;
+        resultEl.innerHTML='<div class="alert alert-err">'+
+          escHtml(e.code === -32602 ? 'Not found in recent blocks: '+q : e.message)+'</div>';
+      });
     });
   } else if (q[0] === 'V') {
     rpc('getbalance',[q]).then(function(bal) {
@@ -16807,7 +16857,7 @@ function escHtml(s){
 async function rpc(m,p=[]){
   const r=await fetch(RPC,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:m,params:p})});
   const j=await r.json();
-  if(j.error)throw new Error(j.error.message||JSON.stringify(j.error));
+  if(j.error){var rpcError=new Error(j.error.message||JSON.stringify(j.error));rpcError.code=j.error.code;throw rpcError;}
   return j.result;
 }
 
@@ -17347,7 +17397,7 @@ let walletAddr='', walletKey='', walletPub='';
 async function rpc(m,p=[]){
   const r=await fetch(RPC,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:m,params:p})});
   const j=await r.json();
-  if(j.error)throw new Error(j.error.message||JSON.stringify(j.error));
+  if(j.error){var rpcError=new Error(j.error.message||JSON.stringify(j.error));rpcError.code=j.error.code;throw rpcError;}
   return j.result;
 }
 

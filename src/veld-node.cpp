@@ -2197,7 +2197,7 @@ int main(int argc, char* argv[]) {
                       << "  --reachable          Auto-open the P2P port via NAT-PMP/PCP so peers can dial you (publishes your IP; no-op on a public IP)\n"
                       << "  --tor                Be reachable as a Tor v3 .onion (zero IP exposure; needs a local Tor daemon with ControlPort)\n"
                       << "  --tor-data-dir DIR   Required with --tor; trusted owner-only Tor directory containing control_auth_cookie\n"
-                      << "  --tor-only           Route ALL traffic through Tor (onion-only, real IP never exposed); reads .onion from <datadir>/tor/hs/hostname\n"
+                      << "  --tor-only           Route outbound P2P through Tor; disable ancillary HTTPS downloads; reads .onion from <datadir>/tor/hs/hostname\n"
 #ifndef VELD_PUBLIC_TESTNET
                       << "  --verify-release M S Verify release manifest M against signature S using the pinned release key; exit 0=valid (used by the updater)\n"
 #endif
@@ -2686,6 +2686,46 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "\n";
 
+    std::string tor_only_onion;
+    if (opt_tor_only) {
+        // Tor-only: the launcher already started a fetched+pinned Tor with a
+        // static v3 hidden service. Read our .onion from its hostname file and
+        // route ALL traffic through Tor's SOCKS5 (zero clearnet IP exposure).
+        {
+            std::vector<uint8_t> hostname;
+            std::string hostname_error;
+            if (veld::channel::secure_file::Read(
+                    opt_datadir + "/tor/hs/hostname", hostname,
+                    &hostname_error, 4096,
+                    /*require_private_parent=*/true)
+                == veld::channel::secure_file::ReadResult::Ok) {
+                tor_only_onion.assign(hostname.begin(), hostname.end());
+            }
+            if (tor_only_onion.empty()) {
+                std::cerr << RED
+                          << "  [FATAL] --tor-only requires a readable owner-only "
+                             "datadir/tor/hs/hostname file"
+                          << (hostname_error.empty() ? "" : ": " + hostname_error)
+                          << ".\n  Re-run tor-setup.ps1 and restart; refusing outbound-only "
+                             "Tor mode because this node would not be dialable.\n"
+                          << RESET;
+                return 1;
+            }
+        }
+        while (!tor_only_onion.empty() &&
+               (tor_only_onion.back()=='\n'||tor_only_onion.back()=='\r'||
+                tor_only_onion.back()==' '||tor_only_onion.back()=='\t'))
+            tor_only_onion.pop_back();
+        std::cout << CYAN << "  [tor] --tor-only: reachable as " << tor_only_onion
+                  << " — outbound P2P uses Tor; HTTPS oracle and checkpoint fetches are disabled." << RESET << "\n";
+    }
+
+    if (opt_tor_only && opt_snapshot_bootstrap) {
+        opt_snapshot_bootstrap = false;
+        std::cout << "  [snapshot] Tor-only routing disables HTTPS downloads; "
+                     "synchronization uses Tor peers.\n";
+    }
+
 #if defined(VELD_PUBLIC_MAINNET) && \
     defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     // Acquire and validate a snapshot before constructing the live node, while
@@ -2985,6 +3025,7 @@ int main(int argc, char* argv[]) {
         opt_full_ibd = true;
 #endif
         node.SetFullIbd(opt_full_ibd);
+        if (opt_tor_only) node.ConfigureTorOnly(tor_only_onion);
 
         node.Start();
     }
@@ -3021,40 +3062,7 @@ int main(int argc, char* argv[]) {
         node.GetTCPServer()->EnablePortMapping();
         node.GetTCPServer()->EnableHolePunch();   // fallback if the router declines port-mapping
     }
-    std::string tor_only_onion;
-    if (opt_tor_only && node.GetTCPServer()) {
-        // Tor-only: the launcher already started a fetched+pinned Tor with a
-        // static v3 hidden service. Read our .onion from its hostname file and
-        // route ALL traffic through Tor's SOCKS5 (zero clearnet IP exposure).
-        {
-            std::vector<uint8_t> hostname;
-            std::string hostname_error;
-            if (veld::channel::secure_file::Read(
-                    opt_datadir + "/tor/hs/hostname", hostname,
-                    &hostname_error, 4096,
-                    /*require_private_parent=*/true)
-                == veld::channel::secure_file::ReadResult::Ok) {
-                tor_only_onion.assign(hostname.begin(), hostname.end());
-            }
-            if (tor_only_onion.empty()) {
-                std::cerr << RED
-                          << "  [FATAL] --tor-only requires a readable owner-only "
-                             "datadir/tor/hs/hostname file"
-                          << (hostname_error.empty() ? "" : ": " + hostname_error)
-                          << ".\n  Re-run tor-setup.ps1 and restart; refusing outbound-only "
-                             "Tor mode because this node would not be dialable.\n"
-                          << RESET;
-                return 1;
-            }
-        }
-        while (!tor_only_onion.empty() &&
-               (tor_only_onion.back()=='\n'||tor_only_onion.back()=='\r'||
-                tor_only_onion.back()==' '||tor_only_onion.back()=='\t'))
-            tor_only_onion.pop_back();
-        node.GetTCPServer()->EnableTorOnly(tor_only_onion);   // all dials via SOCKS regardless
-        std::cout << CYAN << "  [tor] --tor-only: reachable as " << tor_only_onion
-                  << " — all traffic via Tor, zero IP exposure." << RESET << "\n";
-    } else if (opt_tor && node.GetTCPServer()) {
+    if (opt_tor && node.GetTCPServer()) {
         std::cout << CYAN << "  [tor] --tor: publishing a v3 .onion hidden service "
                      "(needs a local Tor daemon w/ ControlPort; zero IP exposure)."
                   << RESET << "\n";
@@ -3181,14 +3189,11 @@ int main(int argc, char* argv[]) {
             std::cout << "  [background-ibd] opening independent validation "
                          "state; verified restart progress will be reused.\n";
             std::cout.flush();
+            if (opt_tor_only)
+                background_chainstate->ConfigureTorOnly(tor_only_onion);
             background_chainstate->Start();
             node.SetIndependentValidationProgress(
                 background_chainstate->GetChain().Height());
-
-            if (opt_tor_only && background_chainstate->GetTCPServer()) {
-                background_chainstate->GetTCPServer()->EnableTorOnly(
-                    tor_only_onion);
-            }
 
             if (!opt_connect.empty()) {
                 background_validation_peers = opt_connect;

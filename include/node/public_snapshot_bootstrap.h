@@ -16,6 +16,7 @@
 #include "../core/constants.h"
 #include "../core/hash.h"
 #include "../core/version.h"
+#include "../network/network_identity.h"
 #include "../wallet/secure_channel_file.h"
 
 #include <algorithm>
@@ -355,6 +356,27 @@ inline std::optional<std::filesystem::path> CreateExclusiveScratchRoot(
     return root;
 }
 
+// Only for an exclusive snapshot staging tree after the caller has authenticated
+// the signed manifest, compiled chain identity, and exact archive digest. Layout
+// validation alone is not authentication. The archive remains database-only;
+// this marker comes from the local binary and conveys no consensus authority.
+inline bool InitializeAuthenticatedSnapshotIdentity(
+        const std::filesystem::path& extracted,
+        std::string* error = nullptr) {
+    if (!ValidateExtractedLevelDbTree(extracted, error) ||
+        !channel::secure_file::EnsurePrivateDirectory(extracted.string(), error))
+        return false;
+    const std::string identity = CompiledPublicNetworkIdentityText();
+    const std::vector<uint8_t> bytes(identity.begin(), identity.end());
+    if (!channel::secure_file::AtomicWriteNew(
+            (extracted / "network.identity").string(), bytes, error,
+            /*require_private_parent=*/true))
+        return false;
+    // Retain the ordinary secure, byte-exact public identity check. Never
+    // overwrite an archive-supplied or pre-existing marker to make it match.
+    return ValidateOrCreatePublicNetworkIdentity(extracted.string(), error);
+}
+
 inline bool DownloadFixedHttpsObject(const std::string& url,
                                      const std::filesystem::path& destination,
                                      uint64_t maximum_bytes,
@@ -463,6 +485,9 @@ inline bool PreparePublicSnapshot(const std::filesystem::path& data_dir,
         Sha256File(out.archive_path, PUBLIC_SNAPSHOT_MAX_ARCHIVE_BYTES);
     if (!final_archive_hash || *final_archive_hash != out.manifest.sha256)
         return fail("snapshot archive changed during extraction");
+    if (!InitializeAuthenticatedSnapshotIdentity(extract, error))
+        return fail(error && !error->empty() ? *error :
+                    "cannot initialize authenticated snapshot identity");
     return true;
 }
 
@@ -507,12 +532,13 @@ inline bool CommitPreparedPublicSnapshot(
         if (error) *error = "cannot create staged snapshot handoff directory";
         return false;
     }
-#ifndef _WIN32
-    if (::chmod(handoff.c_str(), 0700) != 0) {
+    // Secure handoff files require a private parent on both platforms. Windows
+    // inherited permissions alone do not establish the protected owner-only DACL
+    // required by AtomicWriteNew.
+    if (!channel::secure_file::EnsurePrivateDirectory(handoff.string(), error)) {
         if (error) *error = "cannot make staged snapshot handoff private";
         return false;
     }
-#endif
     const auto manifest_bytes = ReadBoundedPlainFile(
         prepared.manifest_path, 64U * 1024U);
     const auto signature_bytes = ReadBoundedPlainFile(

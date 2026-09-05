@@ -1654,72 +1654,56 @@ int main(int argc, char** argv) {
             std::cerr << "error: VELD_OLD_PASSPHRASE and VELD_NEW_PASSPHRASE must both be set\n";
             return 2;
         }
-        std::string old_pass(old_e), new_pass(new_e);
+        SensitiveString old_pass{std::string(old_e)};
+        SensitiveString new_pass{std::string(new_e)};
         veld::compat::UnsetEnv("VELD_OLD_PASSPHRASE");
         veld::compat::UnsetEnv("VELD_NEW_PASSPHRASE");
         std::string policy_error;
         if (!veld::wallet_crypto::ValidateNewPassphrase(
-                new_pass, &policy_error)) {
-            veld::compat::SecureZero(old_pass.data(), old_pass.size());
-            veld::compat::SecureZero(new_pass.data(), new_pass.size());
+                new_pass.value, &policy_error)) {
             std::cerr << "error: " << policy_error << "\n";
             return 2;
         }
-        if (!fs::exists(path)) {
-            std::cerr << "error: no such file: " << path << "\n";
-            return 2;
-        }
-        std::ifstream f(path, std::ios::binary);
-        if (!f.good()) { std::cerr << "error: cannot read: " << path << "\n"; return 1; }
-        std::vector<uint8_t> data((std::istreambuf_iterator<char>(f)),
-                                   std::istreambuf_iterator<char>());
-        f.close();
-        std::string plaintext;
+        std::vector<uint8_t> data;
+        if (!ReadPrivateFile(path, 1024u * 1024u, data, "encrypted key"))
+            return 1;
+        SensitiveString plaintext;
         try {
-            plaintext = veld::wallet_crypto::DecryptWallet(data, old_pass);
+            plaintext.value = veld::wallet_crypto::DecryptWallet(
+                data, old_pass.value);
         } catch (const std::exception& e) {
-            veld::compat::SecureZero(old_pass.data(), old_pass.size());
-            veld::compat::SecureZero(new_pass.data(), new_pass.size());
             std::cerr << "error: decrypt failed (wrong VELD_OLD_PASSPHRASE?): "
                       << e.what() << "\n";
             return 1;
         }
-        veld::compat::SecureZero(old_pass.data(), old_pass.size());
+        old_pass.Clear();
         std::vector<uint8_t> blob;
         try {
-            blob = veld::wallet_crypto::EncryptWallet(plaintext, new_pass);
+            blob = veld::wallet_crypto::EncryptWallet(
+                plaintext.value, new_pass.value);
         } catch (const std::exception& e) {
-            veld::compat::SecureZero(plaintext.data(), plaintext.size());
-            veld::compat::SecureZero(new_pass.data(), new_pass.size());
             std::cerr << "error: re-encrypt failed: " << e.what() << "\n";
             return 1;
         }
-        veld::compat::SecureZero(new_pass.data(), new_pass.size());
-        std::istringstream ss(plaintext);
-        std::string seed_hex, pub_hex, addr;
-        std::getline(ss, seed_hex);
-        std::getline(ss, pub_hex);
-        std::getline(ss, addr);
-        veld::compat::SecureZero(plaintext.data(), plaintext.size());
-        std::string tmp_path = path + ".tmp";
-        {
-            std::ofstream out(tmp_path, std::ios::binary | std::ios::trunc);
-            if (!out.good()) {
-                std::cerr << "error: cannot open " << tmp_path << " for write\n";
-                return 1;
-            }
-            out.write(reinterpret_cast<const char*>(blob.data()), (std::streamsize)blob.size());
-            out.flush();
-            if (!out.good()) {
-                std::cerr << "error: write failed on " << tmp_path << "\n";
-                return 1;
-            }
+        new_pass.Clear();
+        // Copy only the public address for reporting, not the seed or the
+        // complete plaintext through a second stream buffer.
+        std::string addr;
+        const size_t first = plaintext.value.find('\n');
+        const size_t second = first == std::string::npos
+            ? std::string::npos : plaintext.value.find('\n', first + 1);
+        if (second != std::string::npos) {
+            const size_t end = plaintext.value.find('\n', second + 1);
+            addr = plaintext.value.substr(second + 1,
+                end == std::string::npos ? std::string::npos : end - second - 1);
         }
-        std::error_code ec;
-        fs::rename(tmp_path, path, ec);
-        if (ec) {
-            std::cerr << "error: rename " << tmp_path << " -> " << path << ": "
-                      << ec.message() << "\n";
+        plaintext.Clear();
+        std::string write_error;
+        if (!secure_file::AtomicWrite(
+                path, blob, &write_error, /*require_private_parent=*/true)) {
+            std::cerr << "error: secure rotation failed: " << write_error
+                      << ". Replacement may already have occurred; verify which "
+                         "passphrase opens the file before retrying.\n";
             return 1;
         }
         std::cout << "rotated: " << path << "\n";

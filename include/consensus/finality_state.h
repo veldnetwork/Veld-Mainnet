@@ -5,6 +5,7 @@
 // flags, or orphan caches.
 
 #include "finality_qc.h"
+#include "security_upgrade.h"
 #include "finality_snapshot.h"
 #include "finality_votes.h"
 #include "state_digest.h"
@@ -47,7 +48,43 @@ public:
 
     // ---- retained artifacts ---------------------------------------------
     std::map<uint64_t, EpochSnapshot> snapshots;   // epoch_id -> frozen set
-    FinalizedRecord                   record;      // retained finality mark
+    FinalizedRecord                   record;      // latest canonical certificate
+    FinalizedRecord                   certified_carrier_record;
+    bool security_upgrade_active = false;
+
+    void OnBlockHeight(uint64_t height) {
+        if (ConsensusSecurityUpgradeActive(height) && !security_upgrade_active) {
+            // Grandfather the selected pre-upgrade history. Existing durable
+            // floors remain exact pins; migration cannot reconcile an old split.
+            certified_carrier_record = record;
+            security_upgrade_active = true;
+        }
+    }
+
+    const FinalizedRecord& AnchorAuthorizationRecord() const {
+        return security_upgrade_active ? certified_carrier_record : record;
+    }
+
+    uint64_t RequiredReorgAncestor() const {
+        if (record.IsNull()) return 0;
+        return ConsensusSecurityUpgradeActive(record.carrier.height)
+            ? record.target.height : record.carrier.height;
+    }
+
+    // Called only after the candidate suffix has passed complete canonical
+    // module/signature validation. This is a retention postcondition, never a
+    // substitute for validating candidate certificates.
+    bool CandidateRetainsFinality(const FinalityState& candidate,
+            const std::function<bool(uint64_t, const Hash256&)>& branch_has) const {
+        if (record.IsNull()) return true;
+        if (!branch_has(record.target.height, record.target.hash)) return false;
+        if (!ConsensusSecurityUpgradeActive(record.carrier.height))
+            return branch_has(record.carrier.height, record.carrier.hash);
+        return !candidate.record.IsNull() &&
+            candidate.record.target.height >= record.target.height &&
+            (candidate.record.target.height != record.target.height ||
+             candidate.record.target.hash == record.target.hash);
+    }
 
     // Observe an epoch boundary. `snap` must have been built from canonical
     // state at epoch_start-1 (see finality_snapshot.h on why it cannot be
@@ -120,6 +157,11 @@ public:
         if (!candidate)                 return false;
         if (!RecordSupersedes(*candidate, record)) return false;
 
+        // A new QC may certify the previous carrier as part of its exact
+        // target prefix. Only such a record can authorize a new durable anchor.
+        if (security_upgrade_active && !record.IsNull() &&
+            candidate->target.height >= record.carrier.height)
+            certified_carrier_record = record;
         record = *candidate;
         return true;
     }
@@ -137,7 +179,12 @@ public:
     bool ReorgPermitted(uint64_t common_ancestor_height,
                         const std::function<bool(uint64_t, const Hash256&)>& branch_has) const {
         if (record.IsNull()) return true;
-        return ReorgAllowed(record, common_ancestor_height, branch_has);
+        if (!ConsensusSecurityUpgradeActive(record.carrier.height))
+            return ReorgAllowed(record, common_ancestor_height, branch_has);
+        // Necessary early gate only. CandidateRetainsFinality is mandatory at
+        // the fully validated overlay boundary before any durable publication.
+        return common_ancestor_height >= record.target.height &&
+               branch_has(record.target.height, record.target.hash);
     }
 
     // Additive finality+Bitcoin security milestone. Peg launch permission uses
@@ -163,7 +210,7 @@ public:
     Hash256 Digest() const {
         namespace sd = ::veld::state_digest;
         std::vector<uint8_t> body;
-        sd::put_u32_le(body, 1);                       // encoding version
+        sd::put_u32_le(body, security_upgrade_active ? 2 : 1);
         sd::put_u32_le(body, consecutive_qualified_epochs);
         sd::put_u8(body, finality_ever_active ? 1 : 0);
         sd::put_u8(body, ever_promoted_anchor ? 1 : 0);
@@ -183,6 +230,11 @@ public:
         if (!record.IsNull()) {
             sd::put_bytes(body, RecordDigest(record).data(), 32);
         }
+        if (security_upgrade_active) {
+            sd::put_u8(body, certified_carrier_record.IsNull() ? 0 : 1);
+            if (!certified_carrier_record.IsNull())
+                sd::put_bytes(body, RecordDigest(certified_carrier_record).data(), 32);
+        }
         return sd::sha256_domain(DOMAIN_STATE, body);
     }
 
@@ -195,6 +247,8 @@ public:
         ever_promoted_anchor = false;
         snapshots.clear();
         record = FinalizedRecord{};
+        certified_carrier_record = FinalizedRecord{};
+        security_upgrade_active = false;
     }
 };
 

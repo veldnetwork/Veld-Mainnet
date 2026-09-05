@@ -1471,6 +1471,13 @@ public:
     // diagnostics, validation failures, and listener refusals remain visible.
     bool quiet_boot_ = false;
     void SetQuietBoot(bool q) { quiet_boot_ = q; }
+    void ConfigureTorOnly(const std::string& onion_hostname) {
+        if (running_.load(std::memory_order_acquire) || tcp_server_)
+            throw std::logic_error("Tor-only routing must be selected before Start");
+        if (onion_hostname.empty())
+            throw std::invalid_argument("Tor-only routing requires an onion hostname");
+        tor_only_onion_ = onion_hostname;
+    }
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     void SetBackgroundValidationOnly(bool enabled) {
         if (running_.load(std::memory_order_acquire) || tcp_server_)
@@ -2567,6 +2574,8 @@ public:
 
         tcp_server_ = std::make_unique<net::NodeServer>(
             p2p_port_ ? p2p_port_ : config_.port, config_.magic, chain_, mempool_);
+        if (!tor_only_onion_.empty())
+            tcp_server_->EnableTorOnly(tor_only_onion_);
         tcp_server_->SetPeerWorkViewTransitionFn([this]()
                 -> net::NodeServer::PeerWorkViewTransitionPermit {
             // Writer-first immediately closes every new local/remote grant.
@@ -3134,26 +3143,22 @@ public:
         });
 
         rpc_.SetTxIndexLookupFn(
-            [this](const std::string& txid_hex) -> std::optional<uint64_t> {
-                if (!txindex_enabled_ || !txindex_operational_.load())
-                    return std::nullopt;
-                try {
-                    auto v = db_.GetIndexDB().Get("txi:" + txid_hex);
-                    if (!v || v->empty()) return std::nullopt;
-                    uint64_t height = 0;
-                    if (!ParseMinerArchiveUint64_(*v, height) ||
-                        height > chain_.Height())
-                        return std::nullopt;
-                    const Block canonical = chain_.GetBlock(height);
-                    const bool exact = std::any_of(
-                        canonical.transactions.begin(),
-                        canonical.transactions.end(),
-                        [&txid_hex](const Transaction& tx) {
-                            return HashToHex(tx.GetTxID()) == txid_hex;
-                        });
-                    return exact ? std::optional<uint64_t>(height)
-                                 : std::nullopt;
-                } catch (...) { return std::nullopt; }
+            [this](const std::string& txid_hex, uint64_t tip,
+                   const std::string& tip_hash) -> RpcServer::TxIndexLookup {
+                if (!txindex_enabled_ || !txindex_operational_.load()) return {};
+                // Bind absence to the completed canonical index under the same
+                // sequencer that publishes connect/reorg derived-index batches.
+                auto guard = chain_.AcquireConsensusTransitionGuard();
+                if (!txindex_operational_.load() || chain_.Height() != tip ||
+                    chain_.GetBlockHashAtHeight(tip) != tip_hash) return {};
+                const auto marker = db_.GetIndexDB().Get("txi:_complete_v3");
+                if (!marker || *marker != std::to_string(tip) + ":" + tip_hash) return {};
+                auto value = db_.GetIndexDB().Get("txi:" + txid_hex);
+                if (!value) return {true, std::nullopt};
+                uint64_t height = 0;
+                if (!ParseMinerArchiveUint64_(*value, height) || height > tip)
+                    throw std::runtime_error("txindex row is inconsistent");
+                return {true, height};
             });
 
         auto address_history_page =
@@ -6193,6 +6198,9 @@ public:
     //  Cost: one HTTP request every 5 min. ~2 KB response. Negligible.
     // ──────────────────────────────────────────────────────────────────
     void OracleSyncCheck() {
+        // This optional HTTPS check has no Tor transport. Routing policy is
+        // immutable before Start, so it also covers background chainstates.
+        if (!tor_only_onion_.empty()) return;
 #ifdef VELD_PUBLIC_TESTNET
         // The final-mainnet explorer is not an oracle for a disposable chain.
         // Testnet liveness comes from its isolated peers and signed lifecycle
@@ -7533,6 +7541,7 @@ public:
     }
 
     size_t LoadCheckpointsFromUrl() {
+        if (!tor_only_onion_.empty()) return 0;
 #ifdef VELD_PUBLIC_TESTNET
         // Testnet has no final-mainnet checkpoint control plane. V1 is
         // retained only for replay compatibility with already-issued local
@@ -7953,6 +7962,7 @@ private:
     std::vector<PendingSolution> pending_solutions_;
     std::mutex                   solution_mutex_;
     std::unique_ptr<net::NodeServer> tcp_server_;
+    std::string tor_only_onion_;
     std::atomic<uint64_t> advertised_services_{MessageType::NODE_FULL};
 
     std::atomic<bool>   running_;
@@ -9442,6 +9452,7 @@ private:
         // A proof staged while admission was healthy must not be stranded just
         // because the QC which later covers its carrier shares an epoch-boundary
         // block with a sub-floor snapshot.
+        finality_state.OnBlockHeight(b.height);
         aset.AdvanceHeight(b.height);
         if (!finality_state.AnchorWarmupComplete() ||
             finality_state.record.IsNull() ||
@@ -9510,16 +9521,17 @@ private:
             ::veld::finality::qc::FinalityState& finality_state,
             const std::function<bool(uint64_t, Hash256&)>&
                 resolve_applied_ancestor) {
-        if (finality_state.record.IsNull() ||
-            !BtcVeldAnchorActive(finality_state.FinalizedHeight()))
+        const auto& authorization = finality_state.AnchorAuthorizationRecord();
+        if (authorization.IsNull() ||
+            !BtcVeldAnchorActive(authorization.target.height))
             return true;
         const auto promotion = aset.PromoteFinalized(
-            finality_state.FinalizedHeight(), resolve_applied_ancestor,
+            authorization.target.height, resolve_applied_ancestor,
             [&btc](const btcspv::H256& btc_block_hash) {
                 return btc.IsFinal(btc_block_hash,
                                    BTCVELD_ANCHOR_BTC_CONFS);
             },
-            finality_state.record);
+            authorization);
         if (!promotion.ok) return false;
         if (promotion.promoted != 0) {
             const auto permanent = aset.Permanent();
@@ -12743,15 +12755,21 @@ private:
                        anchors_.PermanentReorgPermitted(
                            common_ancestor_height);
             };
-        // Preserve the canonical certificate carrier across reorganization.
-        // A carrier cannot precede its target, so requiring the common ancestor
-        // to include the carrier also preserves the finalized target. With no
-        // finalized record, this gate imposes no additional restriction.
+        // Historical carriers remain pinned. New-format carriers may be
+        // replaced only above their target and only if the complete candidate
+        // overlay reconstructs at least that authenticated finality.
         chain_.finality_reorg_gate_ =
             [this](uint64_t common_ancestor_height) -> bool {
-                if (fin_state_.record.IsNull()) return true;
-                return common_ancestor_height >= fin_state_.record.carrier.height;
+                return common_ancestor_height >= fin_state_.RequiredReorgAncestor();
             };
+        chain_.finality_reorg_retention_gate_ = [this]() -> bool {
+            if (!fin_state_alt_) return false;
+            return fin_state_.CandidateRetainsFinality(
+                *fin_state_alt_, [this](uint64_t h, const Hash256& expected) {
+                    Hash256 actual{};
+                    return ResolveAltHash_(h, actual) && actual == expected;
+                });
+        };
 
         chain_.SetOnCommit([this](
             const Block& block,
