@@ -1106,11 +1106,6 @@ public:
         return result == Mempool::AddResult::INVALID ? 10u : 0u;
     }
 
-    static bool PreferInboundForDuplicate(uint64_t local_nonce,
-                                          uint64_t peer_nonce) {
-        return local_nonce > peer_nonce;
-    }
-
     static bool MarkMempoolInventoryRequestIfDue(
             PeerState& ps, PeerState::tp_t now) {
         static constexpr auto MIN_INTERVAL = std::chrono::seconds(30);
@@ -1710,6 +1705,7 @@ public:
         {
             std::lock_guard<std::mutex> lock(peers_mutex_);
             peer_connections_.clear();
+            outbound_connections_.clear();
             peer_states_.clear();
             // Every accept/worker/legacy handler and producer is joined above.
             // Reset exact registry-derived counters so a Stop()/Start() cycle
@@ -2109,8 +2105,8 @@ public:
                 // Closing it here makes simultaneous cross-dials symmetric in
                 // exactly the wrong way: each node closes the socket its peer
                 // just dialled and both surviving outbound legs then die.  The
-                // nonce-based resolver below chooses one direction after the
-                // peer identity is known.  Only reap dead map entries here.
+                // duplicate resolver below retains one admitted leg in each
+                // direction. Only reap dead map entries here.
                 if (c && !c->IsConnected() && c->RemoteAddr() == host)
                     to_close.push_back(k);
             }
@@ -3393,6 +3389,7 @@ public:
         if (c->IsInbound()) {
             if (inbound_count_.load() > 0) --inbound_count_;
         } else {
+            outbound_connections_.erase(c->Identity());
             if (outbound_count_.load() > 0) --outbound_count_;
         }
     }
@@ -3400,7 +3397,10 @@ public:
     void IncrConnCount_(const std::shared_ptr<Connection>& c) {
         if (!c) return;
         if (c->IsInbound()) ++inbound_count_;
-        else ++outbound_count_;
+        else {
+            ++outbound_count_;
+            outbound_connections_[c->Identity()] = c;
+        }
     }
 
     // peers_mutex_ must be held.  The map entry and its direction counter are
@@ -3533,19 +3533,17 @@ public:
         return removed;
     }
 
-    // Collapse simultaneous cross-dials/re-dials from the same IP and startup
-    // nonce.  The direction rule is symmetric: the lower startup nonce keeps
-    // its outbound leg while the higher nonce keeps that same socket inbound,
-    // so both ends choose one physical connection.  The IP equality guard is
-    // essential because VERSION nonces are not authenticated identities.
+    // Retain one admitted connection per direction for the same IP and startup
+    // nonce. Each node needs its own actual outbound sources for sync admission;
+    // collapsing a cross-dial to one direction can remove that evidence forever.
+    // Same-direction reconnects still replace their predecessor. Existing
+    // connection and per-source limits apply before this duplicate check.
     bool CurrentLosesDuplicateNonce_(const std::string& key,
                                      Connection& conn,
                                      uint64_t peer_nonce) {
         if (peer_nonce == 0 || peer_nonce == self_nonce_) return false;
         conn.MarkPeerNonce(peer_nonce);
 
-        const bool desired_inbound =
-            PreferInboundForDuplicate(self_nonce_, peer_nonce);
         std::vector<std::pair<std::string, std::shared_ptr<Connection>>>
             superseded;
         bool current_loses = false;
@@ -3555,13 +3553,10 @@ public:
                 if (!other || other.get() == &conn || !other->IsConnected()) continue;
                 if (other->RemoteAddr() != conn.RemoteAddr()) continue;
                 if (other->PeerNonce() != peer_nonce) continue;
+                if (other->IsInbound() != conn.IsInbound()) continue;
 
-                const bool current_preferred = conn.IsInbound() == desired_inbound;
-                const bool other_preferred   = other->IsInbound() == desired_inbound;
                 bool other_wins = false;
-                if (other_preferred != current_preferred) {
-                    other_wins = other_preferred;
-                } else if (other->AcceptedAt() != conn.AcceptedAt()) {
+                if (other->AcceptedAt() != conn.AcceptedAt()) {
                     // Same direction means a reconnect.  The newer leg is the
                     // one still mapped by the dialer; retire its stale predecessor.
                     other_wins = other->AcceptedAt() > conn.AcceptedAt();
@@ -3577,7 +3572,8 @@ public:
                 for (const auto& [other_key, other] : peer_connections_) {
                     if (!other || other.get() == &conn || !other->IsConnected()) continue;
                     if (other->RemoteAddr() == conn.RemoteAddr() &&
-                        other->PeerNonce() == peer_nonce) {
+                        other->PeerNonce() == peer_nonce &&
+                        other->IsInbound() == conn.IsInbound()) {
                         superseded.push_back({other_key, other});
                     }
                 }
@@ -3608,6 +3604,34 @@ public:
             std::cerr.flush();
         }
         return false;
+    }
+
+    // The peer broadcasts its tip on both retained legs. Only its actual
+    // outbound leg may refresh our outbound sync evidence. Let that leg own the
+    // shared per-IP TIPSIG work budget, without copying an inbound claim or
+    // changing any source's direction, readiness, generation, or freshness.
+    bool PreferActualOutboundTipCopy_(const Connection& conn) const {
+        if (!conn.IsInbound() || conn.PeerNonce() == 0) return false;
+        std::lock_guard<std::mutex> lock(peers_mutex_);
+        // This index contains only admitted outbound generations (at most
+        // MAX_OUTBOUND_CONNECTIONS), so pre-cooldown copy selection never
+        // scans the potentially large inbound registry.
+        for (const auto& [identity, weak] : outbound_connections_) {
+            const auto other = weak.lock();
+            if (!other || other.get() == &conn || !other->IsConnected() ||
+                other->IsInbound() || !other->HandshakeReady()) continue;
+            if (other->RemoteAddr() == conn.RemoteAddr() &&
+                other->PeerNonce() == conn.PeerNonce()) return true;
+        }
+        return false;
+    }
+
+    bool AdmitTipCopyWork_(const Connection& conn) {
+        if (PreferActualOutboundTipCopy_(conn)) return false;
+        std::string source_ip = conn.RemoteAddr();
+        const size_t colon = source_ip.find_last_of(':');
+        if (colon != std::string::npos) source_ip = source_ip.substr(0, colon);
+        return TakeKeyCooldown(tipsig_processed_at_, source_ip, 5, 600, 4096);
     }
 
     void ReapIdlePeers(uint32_t idle_threshold_secs = 90) {
@@ -3922,11 +3946,11 @@ public:
         return distinct_ips.size();
     }
 
-    // Endpoint-aware presence check used by the directed-peer and seed
-    // watchdogs. Simultaneous cross-dials legitimately retain either the
-    // inbound or outbound socket, so direction must not decide whether an
-    // endpoint is already represented in the live mesh.
-    bool IsPeerConnected(const std::string& key) const {
+    // General mesh presence accepts either direction. Sync-source watchdogs
+    // explicitly require an actual outbound socket; inbound presence alone
+    // must not prevent maintenance of a locally selected outbound source.
+    bool IsPeerConnected(const std::string& key,
+                         bool require_outbound = false) const {
         const auto colon = key.rfind(':');
         const std::string host =
             (colon == std::string::npos) ? key : key.substr(0, colon);
@@ -3936,6 +3960,7 @@ public:
             connected_endpoints.reserve(peer_connections_.size());
             for (const auto& [stored_key, conn] : peer_connections_) {
                 if (!conn || !conn->IsConnected()) continue;
+                if (require_outbound && conn->IsInbound()) continue;
                 if (stored_key == key) return true;
                 connected_endpoints.insert(conn->RemoteAddr());
             }
@@ -4444,6 +4469,21 @@ public:
             const std::string& key,
             const std::shared_ptr<Connection>& expected) {
         return FinalizePeerConnection_(key, expected);
+    }
+
+    bool TestResolveDuplicateDirection(const std::string& key,
+                                      Connection& conn, uint64_t nonce) {
+        return CurrentLosesDuplicateNonce_(key, conn, nonce);
+    }
+    bool TestPreferActualOutboundTipCopy(const Connection& conn) const {
+        return PreferActualOutboundTipCopy_(conn);
+    }
+    bool TestAdmitTipCopyWork(const Connection& conn) {
+        return AdmitTipCopyWork_(conn);
+    }
+    size_t TestOutboundCopyIndexSize() const {
+        std::lock_guard<std::mutex> lock(peers_mutex_);
+        return outbound_connections_.size();
     }
 
     bool TestMappedConnectionIs(
@@ -5076,6 +5116,9 @@ private:
 
     mutable std::mutex  peers_mutex_;
     std::unordered_map<std::string, std::shared_ptr<Connection>> peer_connections_;
+    // A bounded, non-owning index maintained with the registry/counters under
+    // peers_mutex_. Retirement erases the exact generation before detaching it.
+    std::unordered_map<uint64_t, std::weak_ptr<Connection>> outbound_connections_;
 
     struct PeerThreadSlot {
         std::thread                           t;
@@ -7737,13 +7780,7 @@ private:
             // bypass the stuck-handshake reaper indefinitely.
             conn.MarkTipReceived();
 
-            std::string tipsig_source_ip = conn.RemoteAddr();
-            size_t tipsig_source_colon = tipsig_source_ip.find_last_of(':');
-            if (tipsig_source_colon != std::string::npos)
-                tipsig_source_ip = tipsig_source_ip.substr(0,
-                                                           tipsig_source_colon);
-            if (!TakeKeyCooldown(tipsig_processed_at_, tipsig_source_ip,
-                                 5, 600, 4096)) {
+            if (!AdmitTipCopyWork_(conn)) {
                 return StepResult::Handled;
             }
 
@@ -9459,6 +9496,7 @@ private:
         {
             std::lock_guard<std::mutex> peers_lock(peers_mutex_);
             peer_connections_.clear();
+            outbound_connections_.clear();
             peer_states_.clear();
             inbound_count_.store(0, std::memory_order_release);
             outbound_count_.store(0, std::memory_order_release);

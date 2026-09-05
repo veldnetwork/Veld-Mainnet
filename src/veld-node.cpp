@@ -3738,6 +3738,7 @@ int main(int argc, char* argv[]) {
     uint64_t stable_ticks         = 0;
     int      tick                 = 0;
     int64_t  last_seed_redial_ms  = 0;
+    int64_t  last_directed_redial_ms = 0;
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     uint64_t background_last_reported_height = UINT64_MAX;
 #endif
@@ -4077,17 +4078,24 @@ int main(int argc, char* argv[]) {
         }
 
         if (!opt_connect.empty()) {
-            for (const auto& peer : opt_connect) {
-                auto colon = peer.rfind(':');
-                std::string host = (colon != std::string::npos) ? peer.substr(0, colon) : peer;
-                uint16_t port = config.port;
-                if (colon != std::string::npos) {
-                    try { port = (uint16_t)std::stoi(peer.substr(colon+1)); }
-                    catch (...) { port = config.port; }
+            const int64_t now_ms = (int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            // Old peers may still collapse a cross-dial. Bound retries while
+            // counterparts are being upgraded; an inbound leg is not a sync source.
+            if (now_ms - last_directed_redial_ms >= 30000) {
+                last_directed_redial_ms = now_ms;
+                for (const auto& peer : opt_connect) {
+                    auto colon = peer.rfind(':');
+                    std::string host = (colon != std::string::npos) ? peer.substr(0, colon) : peer;
+                    uint16_t port = config.port;
+                    if (colon != std::string::npos) {
+                        try { port = (uint16_t)std::stoi(peer.substr(colon+1)); }
+                        catch (...) { port = config.port; }
+                    }
+                    std::string key = host + ":" + std::to_string(port);
+                    bool need_connect = !node.IsPeerConnected(key, true);
+                    if (need_connect) node.ConnectTo(host, port);
                 }
-                std::string key = host + ":" + std::to_string(port);
-                bool need_connect = !node.IsPeerConnected(key);
-                if (need_connect) node.ConnectTo(host, port);
             }
         }
 
@@ -4122,7 +4130,7 @@ int main(int argc, char* argv[]) {
                 for (const auto& seed : seeds) {
                     const std::string key =
                         seed + ":" + std::to_string(config.port);
-                    if (!node.IsPeerConnected(key))
+                    if (!node.IsPeerConnected(key, true))
                         node.ConnectTo(seed, config.port);
                 }
             }

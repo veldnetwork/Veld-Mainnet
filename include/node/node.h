@@ -5482,9 +5482,10 @@ public:
         return tcp_server_ ? tcp_server_->ClearOrphanPool() : 0;
     }
 
-    bool IsPeerConnected(const std::string& key) const {
+    bool IsPeerConnected(const std::string& key,
+                         bool require_outbound = false) const {
         if (!tcp_server_) return false;
-        return tcp_server_->IsPeerConnected(key);
+        return tcp_server_->IsPeerConnected(key, require_outbound);
     }
 
     size_t ConnectedPeers() const {
