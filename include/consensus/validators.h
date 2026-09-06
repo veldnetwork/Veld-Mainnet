@@ -6,6 +6,7 @@
 #include "../core/script.h"
 #include "../core/op_authorization.h"
 #include "../core/canonical_numeric.h"
+#include "security_upgrade.h"
 #include "finality_qc.h"   // finality vote preimage (SLASH_EQUIV evidence)
 #include "../core/pqc_script.h"
 #include "../crypto/ripemd160.h"
@@ -50,6 +51,7 @@ struct ValidatorRecord {
     uint64_t    bond_units{0};
     uint64_t    deregistered_at_height{0};
     uint64_t    last_finality_vote_height{0};
+    uint64_t    principal_settled_at{0}; // v8: terminal, including migrated payouts
 };
 
 struct EndorsementRecord {
@@ -160,11 +162,19 @@ public:
           evidence_per_pubkey_(src.evidence_per_pubkey_),
           slashed_pubkeys_(src.slashed_pubkeys_),
           finality_membership_(src.finality_membership_),
-          finality_equivocations_(src.finality_equivocations_)
+          finality_equivocations_(src.finality_equivocations_),
+          security_upgrade_active_(src.security_upgrade_active_)
     {}
     ValidatorRegistry& operator=(const ValidatorRegistry&) = delete;
 
     static constexpr const char* VAL_PREFIX = "VELD_VALIDATOR|";
+
+    static bool RegistrationFloorPermits(bool below_floor,
+                                        const std::string& action,
+                                        uint64_t inclusion_height) {
+        return !below_floor || (ConsensusSecurityUpgradeActive(inclusion_height) &&
+                                action != "REGISTER");
+    }
 
     void SetTotalStaked(uint64_t units) noexcept {
         total_staked_units_.store(units, std::memory_order_relaxed);
@@ -207,6 +217,13 @@ public:
         // flags (see VALIDATOR_SYSTEM_ALWAYS_ACTIVE in constants.h).
         if (VALIDATOR_SYSTEM_ALWAYS_ACTIVE) return true;
         return total_staked_units_.load(std::memory_order_relaxed) >= VALIDATOR_UNLOCK_STAKED;
+    }
+
+    // The legacy system_active API remains the registration-floor indicator.
+    // Existing validators must keep operating after the coordinated migration.
+    bool ExistingValidatorOperationsActive() const {
+        std::lock_guard<std::mutex> lk(mutex_);
+        return security_upgrade_active_ || IsValidatorSystemActive();
     }
 
     // Σ of active, custodial, non-slashed validators' bonds, each counted UP TO
@@ -345,6 +362,22 @@ public:
         // ENDORSE op is applied.  The detector consumes only the prior tracked
         // endorsement-pool outpoint set and this block's bytes; no LevelDB/RPC/
         // IBD cursor can advance it.
+        // The parent schedule was already validated by the block validator.
+        // Consume it before current-block evidence can change its class.
+        if (ConsensusSecurityUpgradeActive(block.height)) {
+            for (auto& [pk, rec] : validators_) {
+                if (rec.principal_settled_at != 0) continue;
+                const auto legacy = LegacyPrincipalBoundary(rec);
+                if (legacy != 0 && legacy < CONSENSUS_SECURITY_UPGRADE_HEIGHT) {
+                    rec.principal_settled_at = legacy;
+                    continue;
+                }
+                const auto due = PrincipalSettlementBoundaryLocked(rec, block.height);
+                if (due != 0 && due == block.height)
+                    rec.principal_settled_at = block.height;
+            }
+            security_upgrade_active_ = true;
+        }
         ProcessEndorsementPoolStateLocked(block);
 
         if (bond_yield_boundary) {
@@ -605,10 +638,11 @@ public:
         uint64_t deregistered_at_height{0};
         uint64_t return_boundary{0};
         uint64_t settlement_boundary{0};
+        bool     principal_held{false};
     };
 
     BondLifecycleStatus GetBondLifecycleStatus(
-            const std::string& pubkey_hex) const {
+            const std::string& pubkey_hex, uint64_t view_height = 0) const {
         std::lock_guard<std::mutex> lk(mutex_);
         BondLifecycleStatus out;
         auto it = validators_.find(pubkey_hex);
@@ -622,6 +656,14 @@ public:
         out.registered_height        = rec.registered_height;
         out.slashed_at_height        = rec.slashed_at_height;
         out.deregistered_at_height   = rec.deregistered_at_height;
+        if (security_upgrade_active_) {
+            out.settlement_boundary = PrincipalSettlementBoundaryLocked(
+                rec, CONSENSUS_SECURITY_UPGRADE_HEIGHT);
+            if (!rec.slashed) out.return_boundary = out.settlement_boundary;
+            out.principal_held = rec.bond_custodial && rec.bond_units > 0 &&
+                !PrincipalAlreadyPaidLocked(rec, CONSENSUS_SECURITY_UPGRADE_HEIGHT);
+            return out;
+        }
         if (rec.bond_custodial && !rec.slashed && rec.bond_units > 0 &&
             rec.deregistered_at_height > 0) {
             out.return_boundary = DeregReturnBoundary(
@@ -633,6 +675,8 @@ public:
             out.settlement_boundary = SlashSettlementBoundary(
                 rec.slashed_at_height);
         }
+        out.principal_held = rec.active ||
+            (out.settlement_boundary > 0 && view_height < out.settlement_boundary);
         return out;
     }
 
@@ -665,12 +709,15 @@ public:
             (boundary_height % BOND_SETTLEMENT_INTERVAL) != 0) return out;
         for (const auto& [pk, rec] : validators_) {
             if (!rec.bond_custodial || rec.bond_units == 0) continue;
+            if (ConsensusSecurityUpgradeActive(boundary_height) &&
+                PrincipalSettlementBoundaryLocked(rec, boundary_height) != boundary_height)
+                continue;
             BondSettlement bs;
             bs.address    = rec.address;
             bs.bond_units = rec.bond_units;
             if (rec.slashed && rec.slashed_at_height > 0) {
-                if (SlashSettlementBoundary(rec.slashed_at_height)
-                        != boundary_height)
+                if (!ConsensusSecurityUpgradeActive(boundary_height) &&
+                    SlashSettlementBoundary(rec.slashed_at_height) != boundary_height)
                     continue;
                 bs.kind = rec.slashed_equivocation
                     ? BondSettlement::SLASH_EQUIVOCATION
@@ -679,9 +726,9 @@ public:
             } else if (rec.deregistered_at_height > 0 && !rec.slashed) {
                 // Single-source boundary (see DeregReturnBoundary) — keeps this
                 // return and the REGISTER fail-closed gate in lockstep.
-                if (DeregReturnBoundary(rec.deregistered_at_height,
-                                        rec.last_finality_vote_height)
-                        != boundary_height)
+                if (!ConsensusSecurityUpgradeActive(boundary_height) &&
+                    DeregReturnBoundary(rec.deregistered_at_height,
+                                        rec.last_finality_vote_height) != boundary_height)
                     continue;
                 bs.kind = BondSettlement::DEREGISTER_RETURN;
             } else {
@@ -1001,7 +1048,10 @@ public:
             validator->second.slashed_equivocation ||
             target_height < validator->second.registered_height)
             return false;
-        if (validator->second.deregistered_at_height > 0 &&
+        if (ConsensusSecurityUpgradeActive(inclusion_height)) {
+            if (!PrincipalEvidenceOpenLocked(validator->second, inclusion_height))
+                return false;
+        } else if (validator->second.deregistered_at_height > 0 &&
             !validator->second.slashed &&
             inclusion_height >= DeregReturnBoundary(
                 validator->second.deregistered_at_height,
@@ -1055,7 +1105,7 @@ public:
         // public-key/signature commitments and the deterministically pruned
         // retention window rather than duplicating multi-kilobyte PQ material
         // in every live record.
-        sd::put_u32_le(body, 7);  // encoding version
+        sd::put_u32_le(body, security_upgrade_active_ ? 8 : 7);
         // This mutable instance rule directly controls REGISTER and ENDORSE
         // admission.  It is configuration rather than rollback state, but two
         // same-chain instances with different values must not report the same
@@ -1081,6 +1131,8 @@ public:
             sd::put_u64_le(body, rec.bond_units);
             sd::put_u64_le(body, rec.deregistered_at_height);
             sd::put_u64_le(body, rec.last_finality_vote_height);
+            if (security_upgrade_active_)
+                sd::put_u64_le(body, rec.principal_settled_at);
         }
 
         std::vector<std::string> addresses;
@@ -1313,6 +1365,7 @@ public:
         bond_yield_escrow_.clear();
         finality_membership_.clear();
         finality_equivocations_.clear();
+        security_upgrade_active_ = false;
     }
 
     // Atomic block-state snapshot and restore. Captures every
@@ -1340,6 +1393,7 @@ public:
         std::map<uint64_t, FinalityMembershipRecord>                   finality_membership;
         std::map<std::string, FinalityEquivocationRecord>              finality_equivocations;
         uint64_t                                                        total_staked_units = 0;
+        bool security_upgrade_active = false;
     };
     StateSnapshot SnapshotState() const {
         std::lock_guard<std::mutex> lk(mutex_);
@@ -1350,7 +1404,8 @@ public:
                               slashed_evidence_keys_, slashed_pubkeys_,
                               evidence_per_pubkey_, bond_yield_escrow_,
                               finality_membership_, finality_equivocations_,
-                              total_staked_units_.load(std::memory_order_relaxed) };
+                              total_staked_units_.load(std::memory_order_relaxed),
+                              security_upgrade_active_ };
     }
     void RestoreState(const StateSnapshot& s) {
         std::lock_guard<std::mutex> lk(mutex_);
@@ -1369,6 +1424,7 @@ public:
         bond_yield_escrow_     = s.bond_yield_escrow;
         finality_membership_   = s.finality_membership;
         finality_equivocations_= s.finality_equivocations;
+        security_upgrade_active_ = s.security_upgrade_active;
         total_staked_units_.store(s.total_staked_units,
                                   std::memory_order_relaxed);
     }
@@ -2033,6 +2089,10 @@ private:
                 !yield_it->second.empty()) {
                 should_evict = false;
             }
+            if (ConsensusSecurityUpgradeActive(current_height) &&
+                it->second.bond_custodial && it->second.bond_units > 0 &&
+                !PrincipalAlreadyPaidLocked(it->second, current_height))
+                should_evict = false;
             if (should_evict) {
                 last_op_height_.erase(it->second.address);
                 address_to_pubkey_.erase(it->second.address);
@@ -2057,8 +2117,15 @@ private:
         }
     }
 
-    static bool DeregisteredBondPendingAtLocked(const ValidatorRecord& rec,
-                                                uint64_t inclusion_height) {
+    bool DeregisteredBondPendingAtLocked(const ValidatorRecord& rec,
+                                        uint64_t inclusion_height) const {
+        if (ConsensusSecurityUpgradeActive(inclusion_height)) {
+            if (!rec.bond_custodial || rec.slashed || rec.bond_units == 0 ||
+                rec.deregistered_at_height == 0) return false;
+            if (rec.principal_settled_at != 0)
+                return inclusion_height <= rec.principal_settled_at;
+            return !PrincipalAlreadyPaidLocked(rec, inclusion_height);
+        }
         return rec.bond_custodial && !rec.slashed && rec.bond_units > 0 &&
                rec.deregistered_at_height > 0 &&
                DeregReturnBoundary(rec.deregistered_at_height,
@@ -2076,9 +2143,12 @@ private:
         }
         auto vit = validators_.find(pubkey_hex);
         if (vit == validators_.end()) return false;
+        if (ConsensusSecurityUpgradeActive(inclusion_height) &&
+            !PrincipalEvidenceOpenLocked(vit->second, inclusion_height)) return false;
         if (inclusion_height >= BATCH2_HARDENING_HEIGHT) {
             const ValidatorRecord& rec = vit->second;
-            if (rec.deregistered_at_height > 0 && !rec.slashed &&
+            if (!ConsensusSecurityUpgradeActive(inclusion_height) &&
+                rec.deregistered_at_height > 0 && !rec.slashed &&
                 inclusion_height >=
                     DeregReturnBoundary(rec.deregistered_at_height,
                                         rec.last_finality_vote_height)) {
@@ -2087,6 +2157,63 @@ private:
             if (sig_height < rec.registered_height) return false;
         }
         return true;
+    }
+
+    bool security_upgrade_active_{false};
+
+    static uint64_t LegacyPrincipalBoundary(const ValidatorRecord& rec) {
+        if (!rec.bond_custodial || rec.bond_units == 0) return 0;
+        if (rec.slashed && rec.slashed_at_height != 0)
+            return SlashSettlementBoundary(rec.slashed_at_height);
+        if (!rec.slashed && rec.deregistered_at_height != 0)
+            return DeregReturnBoundary(rec.deregistered_at_height,
+                                       rec.last_finality_vote_height);
+        return 0;
+    }
+
+    bool PrincipalAlreadyPaidLocked(const ValidatorRecord& rec,
+                                     uint64_t height) const {
+        if (rec.principal_settled_at != 0) return true;
+        const auto legacy = LegacyPrincipalBoundary(rec);
+        return ConsensusSecurityUpgradeActive(height) && legacy != 0 &&
+               legacy < CONSENSUS_SECURITY_UPGRADE_HEIGHT;
+    }
+
+    uint64_t PrincipalSettlementBoundaryLocked(const ValidatorRecord& rec,
+                                               uint64_t height) const {
+        const auto legacy = LegacyPrincipalBoundary(rec);
+        if (!ConsensusSecurityUpgradeActive(height)) return legacy;
+        if (legacy == 0 || PrincipalAlreadyPaidLocked(rec, height)) return 0;
+        namespace fq = ::veld::finality::qc;
+        __uint128_t end = rec.slashed
+            ? (__uint128_t)rec.slashed_at_height + SLASH_EVIDENCE_WINDOW
+            : (__uint128_t)rec.deregistered_at_height +
+                DeregEvidenceCooldown(rec.deregistered_at_height);
+        if (rec.last_finality_vote_height != 0)
+            end = std::max(end, (__uint128_t)rec.last_finality_vote_height +
+                                  fq::FINALITY_EQUIV_EVIDENCE_WINDOW);
+        const auto commit = fq::PubkeyCommit(rec.pubkey_hex);
+        for (const auto& [epoch, membership] : finality_membership_) {
+            if (!std::binary_search(membership.members.begin(),
+                                    membership.members.end(), commit)) continue;
+            // Include every scheduled target in the frozen epoch, including
+            // signatures that never appeared in a canonical certificate.
+            const __uint128_t epoch_end =
+                ((__uint128_t)epoch + 1) * fq::EPOCH_BLOCKS - 1;
+            if (epoch_end < rec.registered_height) continue;
+            end = std::max(end, epoch_end + fq::FINALITY_EQUIV_EVIDENCE_WINDOW);
+        }
+        const __uint128_t due =
+            (end / BOND_SETTLEMENT_INTERVAL + 1) * BOND_SETTLEMENT_INTERVAL;
+        return due > UINT64_MAX ? UINT64_MAX : (uint64_t)due;
+    }
+
+    bool PrincipalEvidenceOpenLocked(const ValidatorRecord& rec,
+                                      uint64_t height) const {
+        if (!rec.bond_custodial || rec.bond_units == 0) return true;
+        if (PrincipalAlreadyPaidLocked(rec, height)) return false;
+        const auto due = PrincipalSettlementBoundaryLocked(rec, height);
+        return due == 0 || height < due;
     }
 
     std::string CanonicalSlasherForPubkeyLocked(
@@ -2118,15 +2245,14 @@ private:
                        staking_apply_slash_lockup = nullptr) {
         // Validator activation is a pure function of the build profile and
         // chain-derived total stake.
-        if (!VALIDATOR_SYSTEM_ALWAYS_ACTIVE &&
-            total_staked_units_.load(std::memory_order_relaxed) < VALIDATOR_UNLOCK_STAKED)
-            return;
-
+        const bool below_registration_floor = !VALIDATOR_SYSTEM_ALWAYS_ACTIVE &&
+            total_staked_units_.load(std::memory_order_relaxed) < VALIDATOR_UNLOCK_STAKED;
         std::string rest = data.substr(std::string(VAL_PREFIX).size());
         std::vector<std::string> parts = Split(rest, '|');
         if (parts.empty()) return;
 
         const std::string& action = parts[0];
+        if (!RegistrationFloorPermits(below_registration_floor, action, block.height)) return;
 
         if (action == "REGISTER" && parts.size() == 2 &&
             std::count(rest.begin(), rest.end(), '|') == 1) {
@@ -2441,7 +2567,10 @@ private:
             // mandatory on DeregReturnBoundary. Evidence in that same block
             // must not reclassify a bond whose canonical return transaction has
             // already paid it, nor may later evidence attach to a fresh term.
-            if (vit->second.deregistered_at_height > 0 &&
+            if (ConsensusSecurityUpgradeActive(block.height) &&
+                !PrincipalEvidenceOpenLocked(vit->second, block.height)) return;
+            if (!ConsensusSecurityUpgradeActive(block.height) &&
+                vit->second.deregistered_at_height > 0 &&
                 !vit->second.slashed &&
                 block.height >= DeregReturnBoundary(
                     vit->second.deregistered_at_height,

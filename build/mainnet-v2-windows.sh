@@ -327,6 +327,9 @@ if [[ $role == gui ]]; then
   [[ $(sha256sum "$output/bin/veld-node.exe" | awk '{print $1}') == "$trusted_node_hash" ]]
   [[ $(sha256sum "$output/bin/veld-wallet.exe" | awk '{print $1}') == "$trusted_wallet_hash" ]]
   cp "$artifact" "$output/Veld Node.exe"
+  cp "$src/pkg/Start Veld Node.bat" "$output/Start Veld Node.bat"
+  cp "$src/pkg/veld-update.ps1" "$output/veld-update.ps1"
+  cp "$src/pkg/tor-setup.ps1" "$output/tor-setup.ps1"
   cmp "$artifact" "$output/Veld Node.exe"
   sha256sum "$output/bin/veld-node.exe" "$artifact" \
     "$output/bin/veld-wallet.exe" "$output/Veld Node.exe" \

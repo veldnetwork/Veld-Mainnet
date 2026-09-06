@@ -7,6 +7,7 @@
 #include "../core/storage.h"
 #include "../core/leveldb.h"
 #include "../core/miner_archive.h"
+#include "../core/address_history.h"
 #include "../core/script.h"
 #include "../core/pqc_script.h"
 #include "../core/onchain_tokens.h"
@@ -1400,7 +1401,8 @@ public:
             [this](const Hash256& evidence_id) {
                 return PrepareFinalityEquivocationSlash(evidence_id);
             });
-        if (config_.validator_system_always_active)
+        // Relay stake accounting requires the ledger on every network,
+        // independently of validator activation policy.
         chain_.SetStakedForAddrFn([this](const std::string& addr) -> uint64_t {
             const auto* overlay = Blockchain::alt_engine_overlay_;
             const StakingLedger& staking =
@@ -1470,6 +1472,13 @@ public:
     // diagnostics, validation failures, and listener refusals remain visible.
     bool quiet_boot_ = false;
     void SetQuietBoot(bool q) { quiet_boot_ = q; }
+    void ConfigureTorOnly(const std::string& onion_hostname) {
+        if (running_.load(std::memory_order_acquire) || tcp_server_)
+            throw std::logic_error("Tor-only routing must be selected before Start");
+        if (onion_hostname.empty())
+            throw std::invalid_argument("Tor-only routing requires an onion hostname");
+        tor_only_onion_ = onion_hostname;
+    }
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     void SetBackgroundValidationOnly(bool enabled) {
         if (running_.load(std::memory_order_acquire) || tcp_server_)
@@ -2566,6 +2575,8 @@ public:
 
         tcp_server_ = std::make_unique<net::NodeServer>(
             p2p_port_ ? p2p_port_ : config_.port, config_.magic, chain_, mempool_);
+        if (!tor_only_onion_.empty())
+            tcp_server_->EnableTorOnly(tor_only_onion_);
         tcp_server_->SetPeerWorkViewTransitionFn([this]()
                 -> net::NodeServer::PeerWorkViewTransitionPermit {
             // Writer-first immediately closes every new local/remote grant.
@@ -3133,27 +3144,31 @@ public:
         });
 
         rpc_.SetTxIndexLookupFn(
-            [this](const std::string& txid_hex) -> std::optional<uint64_t> {
-                if (!txindex_enabled_ || !txindex_operational_.load())
-                    return std::nullopt;
-                try {
-                    auto v = db_.GetIndexDB().Get("txi:" + txid_hex);
-                    if (!v || v->empty()) return std::nullopt;
-                    uint64_t height = 0;
-                    if (!ParseMinerArchiveUint64_(*v, height) ||
-                        height > chain_.Height())
-                        return std::nullopt;
-                    const Block canonical = chain_.GetBlock(height);
-                    const bool exact = std::any_of(
-                        canonical.transactions.begin(),
-                        canonical.transactions.end(),
-                        [&txid_hex](const Transaction& tx) {
-                            return HashToHex(tx.GetTxID()) == txid_hex;
-                        });
-                    return exact ? std::optional<uint64_t>(height)
-                                 : std::nullopt;
-                } catch (...) { return std::nullopt; }
+            [this](const std::string& txid_hex, uint64_t tip,
+                   const std::string& tip_hash) -> RpcServer::TxIndexLookup {
+                if (!txindex_enabled_ || !txindex_operational_.load()) return {};
+                // Bind absence to the completed canonical index under the same
+                // sequencer that publishes connect/reorg derived-index batches.
+                auto guard = chain_.AcquireConsensusTransitionGuard();
+                if (!txindex_operational_.load() || chain_.Height() != tip ||
+                    chain_.GetBlockHashAtHeight(tip) != tip_hash) return {};
+                const auto marker = db_.GetIndexDB().Get("txi:_complete_v3");
+                if (!marker || *marker != std::to_string(tip) + ":" + tip_hash) return {};
+                auto value = db_.GetIndexDB().Get("txi:" + txid_hex);
+                if (!value) return {true, std::nullopt};
+                uint64_t height = 0;
+                if (!ParseMinerArchiveUint64_(*value, height) || height > tip)
+                    throw std::runtime_error("txindex row is inconsistent");
+                return {true, height};
             });
+
+        auto address_history_page =
+            [this](const std::string& address, size_t limit,
+                   const std::string& cursor) {
+                return AddressHistoryPageJson_(address, limit, cursor);
+            };
+        rpc_.SetAddressHistoryFn(address_history_page);
+        explorer_.SetAddressHistoryFn(address_history_page);
 
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         rpc_.SetDumpSnapshotFn([this](const std::string& target_dir) -> std::string {
@@ -5468,9 +5483,10 @@ public:
         return tcp_server_ ? tcp_server_->ClearOrphanPool() : 0;
     }
 
-    bool IsPeerConnected(const std::string& key) const {
+    bool IsPeerConnected(const std::string& key,
+                         bool require_outbound = false) const {
         if (!tcp_server_) return false;
-        return tcp_server_->IsPeerConnected(key);
+        return tcp_server_->IsPeerConnected(key, require_outbound);
     }
 
     size_t ConnectedPeers() const {
@@ -5528,6 +5544,12 @@ public:
     // typed archive record unavailable until an exact transition/rebuild.
     std::atomic<bool> miner_archive_ready_{false};
     std::atomic<uint64_t> miner_archive_revision_{0};
+    // Display-only canonical per-address history. Readers are admitted only
+    // while an exact tip marker is open; rebuild/advance/rollback close the
+    // revision first so an overlapping RPC cannot return a mixed page.
+    std::atomic<bool> address_history_ready_{false};
+    std::atomic<uint64_t> address_history_revision_{0};
+    std::atomic<uint32_t> address_history_queries_{0};
 
     mutable std::mutex on_commit_serial_mutex_;
 
@@ -6178,6 +6200,9 @@ public:
     //  Cost: one HTTP request every 5 min. ~2 KB response. Negligible.
     // ──────────────────────────────────────────────────────────────────
     void OracleSyncCheck() {
+        // This optional HTTPS check has no Tor transport. Routing policy is
+        // immutable before Start, so it also covers background chainstates.
+        if (!tor_only_onion_.empty()) return;
 #ifdef VELD_PUBLIC_TESTNET
         // The final-mainnet explorer is not an oracle for a disposable chain.
         // Testnet liveness comes from its isolated peers and signed lifecycle
@@ -7518,6 +7543,7 @@ public:
     }
 
     size_t LoadCheckpointsFromUrl() {
+        if (!tor_only_onion_.empty()) return 0;
 #ifdef VELD_PUBLIC_TESTNET
         // Testnet has no final-mainnet checkpoint control plane. V1 is
         // retained only for replay compatibility with already-issued local
@@ -7938,6 +7964,7 @@ private:
     std::vector<PendingSolution> pending_solutions_;
     std::mutex                   solution_mutex_;
     std::unique_ptr<net::NodeServer> tcp_server_;
+    std::string tor_only_onion_;
     std::atomic<uint64_t> advertised_services_{MessageType::NODE_FULL};
 
     std::atomic<bool>   running_;
@@ -9427,6 +9454,7 @@ private:
         // A proof staged while admission was healthy must not be stranded just
         // because the QC which later covers its carrier shares an epoch-boundary
         // block with a sub-floor snapshot.
+        finality_state.OnBlockHeight(b.height);
         aset.AdvanceHeight(b.height);
         if (!finality_state.AnchorWarmupComplete() ||
             finality_state.record.IsNull() ||
@@ -9495,16 +9523,17 @@ private:
             ::veld::finality::qc::FinalityState& finality_state,
             const std::function<bool(uint64_t, Hash256&)>&
                 resolve_applied_ancestor) {
-        if (finality_state.record.IsNull() ||
-            !BtcVeldAnchorActive(finality_state.FinalizedHeight()))
+        const auto& authorization = finality_state.AnchorAuthorizationRecord();
+        if (authorization.IsNull() ||
+            !BtcVeldAnchorActive(authorization.target.height))
             return true;
         const auto promotion = aset.PromoteFinalized(
-            finality_state.FinalizedHeight(), resolve_applied_ancestor,
+            authorization.target.height, resolve_applied_ancestor,
             [&btc](const btcspv::H256& btc_block_hash) {
                 return btc.IsFinal(btc_block_hash,
                                    BTCVELD_ANCHOR_BTC_CONFS);
             },
-            finality_state.record);
+            authorization);
         if (!promotion.ok) return false;
         if (promotion.promoted != 0) {
             const auto permanent = aset.Permanent();
@@ -11480,6 +11509,137 @@ private:
         return true;
     }
 
+    void CloseAddressHistory_() {
+        address_history_ready_.store(false, std::memory_order_release);
+        address_history_revision_.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    void OpenAddressHistory_() {
+        address_history_revision_.fetch_add(1, std::memory_order_acq_rel);
+        address_history_ready_.store(true, std::memory_order_release);
+    }
+
+    bool RebuildAddressHistoryIndex_() {
+        CloseAddressHistory_();
+        try {
+            std::optional<std::pair<uint64_t, Hash256>> tip;
+            if (!chain_.IsEmpty())
+                tip = std::make_pair(chain_.Height(),
+                                     chain_.TipCopy().GetHash());
+            const bool ok = address_history::Rebuild(
+                db_.GetIndexDB(), tip,
+                [this](uint64_t height) { return chain_.GetBlock(height); },
+                [this](uint64_t height, const Hash256& hash) {
+                    return !chain_.IsEmpty() && chain_.Height() == height &&
+                           chain_.TipCopy().GetHash() == hash;
+                });
+            if (ok) OpenAddressHistory_();
+            return ok;
+        } catch (...) {
+            address_history_ready_.store(false, std::memory_order_release);
+            return false;
+        }
+    }
+
+    bool AdvanceAddressHistoryIndex_(const Block& block) {
+        const bool was_ready =
+            address_history_ready_.load(std::memory_order_acquire);
+        CloseAddressHistory_();
+        try {
+            if (!was_ready) return RebuildAddressHistoryIndex_();
+            const bool ok = address_history::Advance(
+                db_.GetIndexDB(), block);
+            if (ok) OpenAddressHistory_();
+            return ok;
+        } catch (...) {
+            address_history_ready_.store(false, std::memory_order_release);
+            return false;
+        }
+    }
+
+    bool RollbackAddressHistoryIndex_(const Block& popped) {
+        if (!address_history_ready_.load(std::memory_order_acquire))
+            return false;
+        CloseAddressHistory_();
+        try {
+            const bool ok = address_history::Rollback(
+                db_.GetIndexDB(), popped);
+            if (ok) OpenAddressHistory_();
+            return ok;
+        } catch (...) {
+            address_history_ready_.store(false, std::memory_order_release);
+            return false;
+        }
+    }
+
+    std::string AddressHistoryPageJson_(const std::string& address,
+                                        size_t limit,
+                                        const std::string& cursor) {
+        if (!address_history_ready_.load(std::memory_order_acquire))
+            throw std::runtime_error(
+                "address history index is rebuilding; retry shortly");
+        uint32_t active = address_history_queries_.load(
+            std::memory_order_relaxed);
+        do {
+            if (active >= 4)
+                throw std::runtime_error(
+                    "address history is busy; retry shortly");
+        } while (!address_history_queries_.compare_exchange_weak(
+            active, active + 1, std::memory_order_acq_rel,
+            std::memory_order_relaxed));
+        struct QueryGuard {
+            std::atomic<uint32_t>& count;
+            ~QueryGuard() {
+                count.fetch_sub(1, std::memory_order_release);
+            }
+        } guard{address_history_queries_};
+        const std::vector<uint8_t> script = AddressToScript(address);
+        if (!address_history::IsCanonicalAddressScript(script))
+            throw std::invalid_argument("invalid mainnet Veld address");
+        if (chain_.IsEmpty())
+            throw std::runtime_error("address history has no canonical tip");
+        const Block canonical_tip = chain_.TipCopy();
+        if (!address_history::MarkersMatch(
+                db_.GetIndexDB(), canonical_tip.height,
+                canonical_tip.GetHash())) {
+            CloseAddressHistory_();
+            throw std::runtime_error(
+                "address history index is stale; rebuild required");
+        }
+        const uint64_t revision =
+            address_history_revision_.load(std::memory_order_acquire);
+        const auto page = address_history::ReadPage(
+            db_.GetIndexDB(), script, limit, cursor);
+        if (!page ||
+            !address_history_ready_.load(std::memory_order_acquire) ||
+            address_history_revision_.load(std::memory_order_acquire) !=
+                revision ||
+            !address_history::MarkersMatch(
+                db_.GetIndexDB(), canonical_tip.height,
+                canonical_tip.GetHash()))
+            throw std::runtime_error(
+                "address history changed while reading; retry shortly");
+
+        std::vector<std::string> rows;
+        rows.reserve(page->entries.size());
+        for (const auto& entry : page->entries) {
+            rows.push_back(JsonBuilder::Object({
+                {"txid", JsonBuilder::String(entry.txid)},
+                {"block_height", JsonBuilder::Number(entry.block_height)},
+                {"net_veld", JsonBuilder::Float(
+                    static_cast<double>(entry.net_units) / VELD_UNITS, 8)},
+                {"fee_veld", JsonBuilder::Float(
+                    static_cast<double>(entry.fee_units) / VELD_UNITS, 8)},
+                {"type", JsonBuilder::String(entry.type)},
+            }));
+        }
+        return JsonBuilder::Object({
+            {"entries", JsonBuilder::Array(rows)},
+            {"has_more", JsonBuilder::Bool(page->has_more)},
+            {"next_cursor", JsonBuilder::String(page->next_cursor)},
+        });
+    }
+
     static constexpr const char* MINER_ARCHIVE_COUNT_PREFIX_ =
         "miner:count:";
     static constexpr const char* MINER_ARCHIVE_LAST_PREFIX_ =
@@ -12479,6 +12639,13 @@ private:
                              "closed until canonical rebuild\n";
                 std::cerr.flush();
             }
+            if (!RollbackAddressHistoryIndex_(popped)) {
+                address_history_ready_.store(false,
+                                             std::memory_order_release);
+                std::cerr << "  [address-history] rollback deferred; index "
+                             "closed until canonical rebuild\n";
+                std::cerr.flush();
+            }
 
             try {
                 InvalidateReorgedPendingBroadcasts_Deferred();
@@ -12590,15 +12757,21 @@ private:
                        anchors_.PermanentReorgPermitted(
                            common_ancestor_height);
             };
-        // Preserve the canonical certificate carrier across reorganization.
-        // A carrier cannot precede its target, so requiring the common ancestor
-        // to include the carrier also preserves the finalized target. With no
-        // finalized record, this gate imposes no additional restriction.
+        // Historical carriers remain pinned. New-format carriers may be
+        // replaced only above their target and only if the complete candidate
+        // overlay reconstructs at least that authenticated finality.
         chain_.finality_reorg_gate_ =
             [this](uint64_t common_ancestor_height) -> bool {
-                if (fin_state_.record.IsNull()) return true;
-                return common_ancestor_height >= fin_state_.record.carrier.height;
+                return common_ancestor_height >= fin_state_.RequiredReorgAncestor();
             };
+        chain_.finality_reorg_retention_gate_ = [this]() -> bool {
+            if (!fin_state_alt_) return false;
+            return fin_state_.CandidateRetainsFinality(
+                *fin_state_alt_, [this](uint64_t h, const Hash256& expected) {
+                    Hash256 actual{};
+                    return ResolveAltHash_(h, actual) && actual == expected;
+                });
+        };
 
         chain_.SetOnCommit([this](
             const Block& block,
@@ -13226,6 +13399,25 @@ private:
                 std::cerr.flush();
             }
 
+            // This is a display-only, rebuildable index. Linear commits add
+            // one atomic set of rows. A completed reorg rebuilds once from
+            // the new canonical chain, with reads closed throughout.
+            if (from_reorg)
+                address_history_ready_.store(false,
+                                             std::memory_order_release);
+            const bool history_ok = from_reorg
+                ? (block.height == chain_.Height()
+                       ? RebuildAddressHistoryIndex_() : true)
+                : AdvanceAddressHistoryIndex_(block);
+            if (!history_ok) {
+                address_history_ready_.store(false,
+                                             std::memory_order_release);
+                std::cerr << "  [address-history] index unavailable at h="
+                          << block.height
+                          << "; bounded history disabled until rebuild\n";
+                std::cerr.flush();
+            }
+
             if (publishes_final_frame && ibd_complete_.load() &&
                 block.height > 0 &&
                 (block.height % COMINE_WINDOW_BLOCKS) == 0) {
@@ -13315,6 +13507,21 @@ private:
 
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         const auto snapshot_requirement = ReadSnapshotReplayRequirement_();
+        const auto prior_snapshot_base = ReadIndependentValidationRequirement_();
+        std::optional<SnapshotValidationBase> replayed_snapshot_base;
+        if (snapshot_requirement) {
+            if (snapshot_requirement->first > target_height) {
+                throw std::runtime_error(
+                    "ReplayChain: stored tip is below the signed snapshot handoff");
+            }
+            if (prior_snapshot_base &&
+                (prior_snapshot_base->height != snapshot_requirement->first ||
+                 HashToHex(prior_snapshot_base->tip_hash) !=
+                     snapshot_requirement->second)) {
+                throw std::runtime_error(
+                    "ReplayChain: independent validation base conflicts with the signed snapshot handoff");
+            }
+        }
         const bool local_pow_cache_permitted =
             !snapshot_requirement &&
             (snapshot_fast_start_eligible_ ||
@@ -13334,7 +13541,14 @@ private:
         }
         const bool independent_snapshot_validation =
             snapshot_requirement.has_value() && !verify_historical_pow;
+        // The foreground chain may advance while independent IBD is pending.
+        // Only the original signed prefix may defer its historical PoW; every
+        // later block must receive the ordinary full startup checks.
+        const uint64_t deferred_pow_through = verify_historical_pow ? 0 :
+            (snapshot_requirement ? snapshot_requirement->first : target_height);
 #else
+        const uint64_t deferred_pow_through =
+            verify_historical_pow ? 0 : target_height;
         if (trusted_pow_through != 0) {
             throw std::runtime_error(
                 "ReplayChain: local PoW cache is not valid for this replay mode");
@@ -13585,7 +13799,7 @@ private:
             if (!chain_.AddBlockDirect(
                     blk, /*skip_pow=*/false, /*skip_scripts=*/false,
                     /*skip_pow_hash_only=*/
-                        !verify_historical_pow || h <= trusted_pow_through,
+                        h <= deferred_pow_through || h <= trusted_pow_through,
                     mining::PowAdmissionContext::Internal())) {
                 throw std::runtime_error(
                     "ReplayChain: full consensus validation rejected block at height " +
@@ -13648,6 +13862,24 @@ private:
             CaptureModuleCheckpoint_(h, hash, running_supply);
             last_token_height_ = h;
             last_module_supply_ = running_supply;
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+            if (snapshot_requirement && h == snapshot_requirement->first) {
+                if (HashToHex(hash) != snapshot_requirement->second) {
+                    throw std::runtime_error(
+                        "ReplayChain: canonical snapshot base does not match the signed snapshot handoff");
+                }
+                SnapshotValidationBase base;
+                base.height = h;
+                base.tip_hash = hash;
+                base.state_digest = ConsensusStateDigest();
+                if (prior_snapshot_base &&
+                    prior_snapshot_base->state_digest != base.state_digest) {
+                    throw std::runtime_error(
+                        "ReplayChain: replayed snapshot state does not match the independent validation base");
+                }
+                replayed_snapshot_base = base;
+            }
+#endif
         }
 
         if (chain_.Height() != target_height ||
@@ -13683,11 +13915,9 @@ private:
             }
         }
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
-        if (snapshot_requirement &&
-            (snapshot_requirement->first != target_height ||
-             snapshot_requirement->second != replayed_tip)) {
+        if (snapshot_requirement && !replayed_snapshot_base) {
             throw std::runtime_error(
-                "ReplayChain: replayed tip does not match the signed snapshot handoff");
+                "ReplayChain: replay did not reach the signed snapshot handoff");
         }
 #endif
         // If replay reached a required C, exact block pins are insufficient on
@@ -13769,6 +13999,11 @@ private:
                          "count/last display remains unavailable\n";
             std::cerr.flush();
         }
+        if (!RebuildAddressHistoryIndex_()) {
+            std::cerr << "  [address-history] rebuild failed after replay; "
+                         "bounded history remains unavailable\n";
+            std::cerr.flush();
+        }
         governance_.PersistAll();
         // Restore durable on-commit wiring only after every block and module
         // transition has passed.  Start() still has not created P2P or RPC.
@@ -13793,11 +14028,12 @@ private:
 
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         if (independent_snapshot_validation) {
-            SnapshotValidationBase base;
-            base.height = target_height;
-            base.tip_hash = replay_target_hash;
-            base.state_digest = ConsensusStateDigest();
-            if (!WriteIndependentValidationRequirement_(base)) {
+            // Preserve the original comparison target and completed background
+            // prefix across restarts instead of moving the target to today's
+            // foreground tip. An existing commitment was re-proved above.
+            const SnapshotValidationBase base = *replayed_snapshot_base;
+            if (!prior_snapshot_base &&
+                !WriteIndependentValidationRequirement_(base)) {
                 throw std::runtime_error(
                     "ReplayChain: cannot persist independent background-validation requirement");
             }

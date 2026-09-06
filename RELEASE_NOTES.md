@@ -1,7 +1,105 @@
-# Veld 3.0.3 release notes
+# Veld 3.0.8 release notes
+
+Version 3.0.8 fixes restarting a snapshot-based node after its foreground
+chain has advanced while independent background validation is unfinished.
+Earlier startup code incorrectly required the current tip to equal the
+original signed snapshot tip and could stop with "replayed tip does not
+match the signed snapshot handoff".
+
+Startup now verifies the original signed snapshot at its original height,
+preserves the independent validation target and state commitment, and fully
+checks every block after that snapshot. Mining and endorsing remain paused
+until independent validation completes. Existing data and validation progress
+are retained; operators should not delete their data or verification markers.
+
+The correction passed offline Windows and Linux lifecycle checks using
+authenticated public snapshots and ordinary historical successor blocks.
+The affected operator's machine still needs a successful update and resumed
+validation to confirm recovery. These checks did not use that machine's disk.
+
+The signed updater requires a strictly newer version, so this correction is
+released as 3.0.8. Consensus security activation remains H2,880; the activation
+height and consensus rules are unchanged. The 3.0.7 Windows batch-launcher
+restart correction and all 3.0.6 consensus corrections are retained.
+
+## Changes inherited from 3.0.7 and 3.0.6
+
+
+Release date: 2026-09-06
+Consensus security activation: block 2,880 on veld-public-mainnet-v2.
+
+Miners and node operators must install this compatible release before block
+2,880. Block arrival varies; use chain height when coordinating the upgrade.
+Publishing the client does not upgrade servers or confirm operator adoption.
+
+At block 2,880 this release activates the qualified consensus corrections for
+certified finality retention, validator principal accountability and evidence
+retention, registration-only stake-floor enforcement, and branch-bound
+governance vote identity. Open or timelocked governance rounds restart under
+the new identity rules; terminal proposals retain their completed status.
+
+It also includes the corrected staking query wiring and directional peer
+connection maintenance. Protocol version 2, the public-mainnet-v2 genesis,
+addresses, and existing datadirs remain the same. Keep wallet backups and
+preserve the existing datadir when updating. Do not use older consensus
+software as a rollback after activation.
+
+The Windows updater now restarts through the signed Start Veld Node.bat
+launcher instead of opening Veld Node.exe through Explorer. The batch launcher
+performs its normal recovery and package checks and supplies the usual node,
+datadir and clearnet arguments. Terminal clients retain Start Mining.bat.
+The complete installed package is verified again before any restart.
+
+Version 3.0.7 is newer than the published 3.0.6, so the ordinary signed updater
+can install it without an equal-version exception. The updater already running
+in an older installation controls that first upgrade's restart; the corrected
+restart code takes effect once 3.0.7 is installed. This change does not guarantee
+that Windows will never display a reputation prompt.
+
+Consensus activation remains H2,880 and its rules are unchanged from 3.0.6.
+
+Qualification: prior bounded populated lifecycle and recovery evidence,
+Linux/Windows activation migration controls, public release builds, compiled
+genesis checks, and isolated peer replay/restart checks. This is not a claim
+of exhaustive security coverage or completed mainnet adoption.
+
+## Earlier release notes
+
+### Veld 3.0.5 release notes
 
 Release date: pending
 Status: Windows client maintenance candidate
+
+## 3.0.5 maintenance scope
+
+Veld 3.0.5 makes the wallet's visible staking actions fail closed until the
+live public-mainnet node reports that canonical issued supply has reached the
+existing 10,000 VELD activation threshold. The transaction-preparation RPC and
+consensus transition retain their existing independent activation checks.
+
+The public wallet, Explorer, portal, production node configuration, and signed
+snapshot identity are checked for public-mainnet-v2 wiring. Developer-only
+alternate-chain profiles remain isolated from production builds and are not
+served by the public sites.
+
+This maintenance release does not change consensus, protocol version,
+deployment identity, genesis, state-digest format, or existing chain data.
+
+## Veld 3.0.4 release notes
+
+## 3.0.4 maintenance scope
+
+Veld 3.0.4 restores bounded indexed address history, keeps the explorer PWA on
+its last successful page during transient web failures, restores the signed
+clearnet batch launcher, exports one portable encrypted mining keyfile after
+sign-in, reports the real snapshot-bootstrap state, preserves snapshot
+eligibility across updates, and lets an operator explicitly request a new
+one-time portal pairing code from Settings.
+
+This maintenance release does not change consensus, protocol version,
+deployment identity, genesis, state-digest format, or existing chain data.
+
+## Veld 3.0.3 release notes
 
 ## 3.0.3 maintenance scope
 

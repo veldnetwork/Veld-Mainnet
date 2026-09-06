@@ -1982,7 +1982,7 @@ html:not([data-theme="light"]) .balance-hero,html:not([data-theme="light"]) .wal
 html:not([data-theme="light"]) .balance-hero::before,html:not([data-theme="light"]) .balance-hero::after,html:not([data-theme="light"]) .wallet-bal-hero::before,html:not([data-theme="light"]) .wallet-bal-hero::after{display:none!important;animation:none!important}
 html:not([data-theme="light"]) .wallet-bal-hero{padding:28px 22px 24px!important}
 html:not([data-theme="light"]) .wallet-bal-hero .balance-amount,html:not([data-theme="light"]) .balance-amount#w-total-bal{background:none!important;-webkit-background-clip:initial!important;background-clip:initial!important;-webkit-text-fill-color:#edf4ee!important;color:#edf4ee!important;font-family:var(--font)!important;font-size:48px!important;font-weight:700!important;letter-spacing:-.055em!important;text-shadow:none!important}
-html:not([data-theme="light"]) .wallet-bal-hero .balance-amount>span{color:#7ED949!important;-webkit-text-fill-color:#7ED949!important;font-size:14px!important;text-shadow:none!important;letter-spacing:0!important}
+html:not([data-theme="light"]) .wallet-bal-hero .balance-amount>span{color:#7ED949!important;-webkit-text-fill-color:#7ED949!important;text-shadow:none!important}
 html:not([data-theme="light"]) .wallet-bal-hero .chg-pill{background:rgba(126,217,73,.12)!important;color:#7ED949!important}
 html:not([data-theme="light"]) .wallet-bal-hero .act-round{gap:8px!important;margin-top:22px!important}
 html:not([data-theme="light"]) .wallet-bal-hero .ar{width:auto!important;min-width:102px!important;flex-direction:row!important;justify-content:center!important;gap:8px!important;padding:10px 14px!important;background:#303832!important;border:1px solid #59645b!important;border-radius:9px!important;box-shadow:inset 0 1px rgba(255,255,255,.05)!important}
@@ -2640,7 +2640,7 @@ __VELD_DEPLOYMENT_BANNER_HTML__
       <div class="act-round">
         <button class="ar send" data-act-click="hcc27a9f6" type="button"><span class="ic"><svg viewBox="0 0 24 24" width="25" height="25" fill="currentColor" aria-hidden="true" style="display:block"><path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .66.71 1.11 1.39.91z"/></svg></span><span class="lbl">Send</span></button>
         <button class="ar recv" data-act-click="h7841866f" title="Show QR to receive VELD" type="button"><span class="ic">&darr;</span><span class="lbl">Receive</span></button>
-        <button class="ar stake" data-act-click="h9c6994df" type="button"><span class="ic">%</span><span class="lbl">Stake</span></button>
+        <button class="ar stake" data-act-click="h9c6994df" type="button" title="Open staking"><span class="ic">%</span><span class="lbl">Stake</span></button>
         <button class="ar swap" data-act-click="hbtcveld_nav" title="Open the btcVELD swap" type="button"><span class="ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3m3 3-3 3M20 16H7l3 3m-3-3 3-3"/></svg></span><span class="lbl">Swap</span></button>
       </div>
     </div>
@@ -2728,12 +2728,12 @@ __VELD_DEPLOYMENT_BANNER_HTML__
  part actually leaving to a counterparty (pending_transfer_out_
  veld, shown as "Pending Out" above). This is YOUR coin briefly
  locked by your own pending stake / consolidation / validator
- endorsement / auto-compound TX; it returns to Spendable when
+ endorsement TX; it returns to Spendable when
  that TX confirms. Without this row the tiles silently failed to
  sum (Spendable+Staked+Maturing+PendingOut ≠ Total) whenever any
  self-transaction was in flight — misleading when money's
  involved. Hidden (zero-collapse) when there's nothing settling. -->
-      <div class="tok-row" id="w-bal-settling-row" style="display:none" title="Your own coin briefly in motion inside one of YOUR pending transactions (a stake, a dust cleanup, a validator endorsement, or auto-compound). It is not going to anyone else — it lands back in Spendable when that transaction confirms (typically around one 3-minute target block when uncongested).">
+      <div class="tok-row" id="w-bal-settling-row" style="display:none" title="Your own coin briefly in motion inside one of YOUR pending transactions (a stake, a dust cleanup, a validator endorsement). It is not going to anyone else — it lands back in Spendable when that transaction confirms (typically around one 3-minute target block when uncongested).">
         <div class="tok-ic ic-mat">~</div>
         <div class="tok-info">
           <div class="tok-name">Settling</div>
@@ -3468,7 +3468,7 @@ __VELD_DEPLOYMENT_BANNER_HTML__
       </div>
 
       <div style="display:flex;gap:10px">
-        <button class="btn btn-em" data-act-click="h2e4ed19f">Review &amp; lock &rarr;</button>
+        <button class="btn btn-em" data-act-click="h2e4ed19f" disabled aria-disabled="true" title="Staking unlocks at 10,000 VELD mined">Review &amp; lock &rarr;</button>
         <button class="btn btn-ghost" data-act-click="haa7ba916">Unstake</button>
       </div>
     </div>
@@ -3499,49 +3499,6 @@ __VELD_DEPLOYMENT_BANNER_HTML__
         <div class="prev-row"><span class="k"><span class="diamond-prismatic">Mining tier &middot; Diamond</span></span><span class="v diamond-prismatic">3.00&times;</span></div>
         <div class="prev-note"><a href="https://explorer.veld.network/rules" target="_blank" rel="noopener noreferrer" style="color:var(--em);text-decoration:none">Full distribution rules &amp; vault caps &rarr;</a></div>
       </div>
-    </div>
-  </div>
-
-  <!-- #12 — Auto-compound staking. Opt-in toggle
- that runs a balance-watch loop while the wallet is open: when
- new VELD lands in the spendable balance (mining reward, vault
- distribution, incoming send) AND ≥ the threshold AND the
- keystore is unlocked, the wallet builds + signs + broadcasts a
- preparestake TX for the delta at the chosen tier. Per-session
- only — no daemon, no key-on-server. -->
-  <div class="card tint-gold" id="sk-autocompound-card" style="margin-bottom:14px;padding:14px 16px">
-    <!-- Auto-compound runs once per vault distribution cycle and sweeps the
-         newly spendable balance.  The status block shows the next sweep
-         height and countdown. -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <span style="font-size:13px;font-weight:600;color:var(--text)">Auto-compound</span>
-      <label class="toggle toggle-gold" style="margin:0" data-act-click="hac_toggle">
-        <input type="checkbox" id="sk-ac-toggle-input" tabindex="-1" style="pointer-events:none">
-        <span class="toggle-track"><span class="toggle-knob"></span></span>
-      </label>
-    </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.45">
-      After each vault distribution (every 480 blocks), the staking rewards that just landed in your wallet get re-staked at the tier below. Mining rewards and incoming transfers are <b>not</b> touched. Stops automatically when you lock.
-    </div>
-    <div>
-      <label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:6px;font-weight:500">Lockup tier for swept stake</label>
-      <!-- Native <select> on iOS PWA dropped its change event
- often enough that the tier never persisted. Replaced with the
- same tap-chip pattern the regular stake form uses. -->
-      <div class="tiers" id="sk-ac-tier-chips" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
-        <div class="tier" data-act-click="hac_tier_chip" data-tier="1"><div class="t">Base</div><div class="d">7d</div><div class="m">1.00<span class="x">&times;</span></div></div>
-        <div class="tier" data-act-click="hac_tier_chip" data-tier="2"><div class="t">Short</div><div class="d">14d</div><div class="m">1.10<span class="x">&times;</span></div></div>
-        <div class="tier" data-act-click="hac_tier_chip" data-tier="3"><div class="t">Medium</div><div class="d">30d</div><div class="m">1.25<span class="x">&times;</span></div></div>
-        <div class="tier" data-act-click="hac_tier_chip" data-tier="4"><div class="t">Long</div><div class="d">90d</div><div class="m">1.50<span class="x">&times;</span></div></div>
-      </div>
-    </div>
-    <!-- Live status: state + next-sweep ETA, plus a one-line history of
-         the most recent sweep so the user has at-a-glance proof it
-         worked. -->
-    <div style="margin-top:12px;padding:8px 10px;border-radius:6px;background:rgba(255,216,74,.04);border:1px solid rgba(255,216,74,.12);font-size:11px;color:var(--muted);line-height:1.5">
-      <div><span style="color:var(--muted2)">State:</span> <span id="sk-ac-state-line">disabled</span></div>
-      <div><span style="color:var(--muted2)">Next sweep:</span> <span id="sk-ac-next-line">—</span></div>
-      <div><span style="color:var(--muted2)">Last sweep:</span> <span id="sk-ac-last-line">never</span></div>
     </div>
   </div>
 
@@ -4497,7 +4454,7 @@ function veldApplyExternalValueUiPolicy(){
 setTimeout(veldApplyExternalValueUiPolicy,0);
 // `VELD_NETWORK_BYTE` is the transaction-sighash domain byte (M/T). It is
 // NOT an address prefix. P2PKH addresses use 0x46 on mainnet and 0x6f on
-// testnet, matching wallet.h::PubKeyToAddress and script.h.
+// alternate-network profile, matching wallet.h::PubKeyToAddress and script.h.
 var VELD_NETWORK_BYTE = __VELD_NETWORK_BYTE__;
 var VELD_ADDRESS_VERSION = __VELD_ADDRESS_VERSION__;
 var VELD_MIN_TX_FEE_UNITS = __VELD_MIN_TX_FEE_UNITS__;
@@ -4695,26 +4652,14 @@ function _veldAssertActiveSignerSeed(seedHex) {
 // ═══════════════════════════════════════
 // RPC
 // ═══════════════════════════════════════
-var VELD_PUBLIC_HISTORY_UNAVAILABLE =
-  'Transaction history is unavailable in the Veld 3.0.0 public release.';
-function showPublicHistoryUnavailable() {
-  if (document.getElementById('veld-history-unavailable')) return;
-  var banner = document.createElement('div');
-  banner.id = 'veld-history-unavailable';
-  banner.setAttribute('role', 'status');
-  banner.style.cssText =
-    'margin:12px;padding:12px;border:1px solid #9b7935;border-radius:8px;' +
-    'background:#211b10;color:#f2d38b;font-size:13px';
-  banner.textContent = VELD_PUBLIC_HISTORY_UNAVAILABLE;
-  var target = document.querySelector('main') || document.body;
-  if (target.firstChild) target.insertBefore(banner, target.firstChild);
-  else target.appendChild(banner);
-}
-function publicHistoryUnavailable() {
-  showPublicHistoryUnavailable();
-  // Resolve to an empty bounded result so legacy view renderers fail safely
-  // without an unhandled rejection, retry loop, or network request.
-  return Promise.resolve([]);
+function publicAddressHistory(address, limit) {
+  if (!address) return Promise.resolve([]);
+  var bounded = Math.max(1, Math.min(50, parseInt(limit || 50, 10) || 50));
+  return rpc('getaddresshistory', [address, String(bounded)]).then(function(page) {
+    if (!page || !Array.isArray(page.entries))
+      throw new Error('Invalid address-history response');
+    return page.entries;
+  });
 }
 function rpc(method, params) {
   // fetch has no built-in timeout; without an AbortController
@@ -4742,7 +4687,7 @@ function rpc(method, params) {
     .then(function(t){
       if (!t || !t.trim()) throw new Error('Empty response from node — try again in a moment');
       var r = JSON.parse(t);
-      if (r.error) throw new Error(r.error.message || JSON.stringify(r.error));
+      if (r.error) { var rpcError = new Error(r.error.message || JSON.stringify(r.error)); rpcError.code = r.error.code; throw rpcError; }
       return r.result;
     })
     .catch(function(e){
@@ -4902,7 +4847,7 @@ function _veldBase58Decode(s) {
 function _veldAddrToHash160Hex(addr) {
   // Returns the 20-byte hash160 of a P2PKH address for THIS build only.
   // Checksum-only decoding is insufficient: accepting an arbitrary version
-  // byte lets a mainnet wallet treat a foreign/testnet payload as one of its
+  // byte lets a mainnet wallet treat a foreign-network payload as one of its
   // own addresses and construct the wrong output/change script.
   if (typeof addr !== 'string' || addr.length < 25 || addr.length > 35) return null;
   var raw = _veldBase58Decode(addr);
@@ -5225,14 +5170,15 @@ function _veldUnitsToAmountString(units) {
   return whole.toString() + (frac ? '.' + frac : '');
 }
 // Assert the unsigned tx's OP_RETURN content is EXACTLY what the user typed.
-//   undefined / null → no check (legacy callers: gov/stake build their own OP_RETURN)
+//   undefined / null → refuse: every signing flow must supply its local intent
 //   ''               → assert ZERO OP_RETURN outputs (Send with no memo)
 //   '<hex>'          → assert exactly one OP_RETURN output, script == hex, value 0
 // Closes the data-tamper vector: a compromised local node cannot add or alter
 // the memo the user is about to sign (value redirection is already blocked by
 // the P2PKH allow-list guards).
 function _veldAssertOpReturnExact(prep, expectedOpReturnHex) {
-  if (expectedOpReturnHex === undefined || expectedOpReturnHex === null) return;
+  if (typeof expectedOpReturnHex !== 'string')
+    throw new Error('Refusing to sign: missing local transaction instruction policy.');
   if (!prep || typeof prep.unsigned_tx_hex !== 'string') {
     throw new Error('Tx verification failed: missing unsigned_tx_hex');
   }
@@ -5550,6 +5496,8 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
   return Promise.resolve().then(function() {
     var claimedAddress = (Array.isArray(params) && typeof params[0] === 'string')
       ? params[0].trim() : '';
+    if(prepareMethod === 'prepareconsolidatetx' && expectedOpReturnHex !== '')
+      throw new Error('Refusing to sign: consolidation requires an empty instruction policy.');
     var identity = _veldRequireBoundIdentity(keyHex, null, claimedAddress);
     var ownerHash160 = _veldAddrToHash160Hex(identity.address);
     if (!ownerHash160) throw new Error('Refusing to sign: locally-derived wallet address is invalid.');
@@ -5645,7 +5593,7 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
 
 // btcVELD — on-chain AMM swap + liquidity (VELD ⇄ btcVELD). Backend:
 // getammpool / getammlp / prepareammswap / prepareammadd / prepareammremove
-// (rpc.h), all consensus-verified by the full-node regtest harness. The
+// (rpc.h), all consensus-verified by the isolated full-node harness. The
 // browser only signs its OWN inputs (injectSignatures leaves the sigless
 // pool covenant input untouched) and submits via sendrawtransaction.
 // ═══════════════════════════════════════════════════════════════════
@@ -6002,7 +5950,7 @@ function bvProbeNav(){
 }
 function bvRenderPool(){
   var p=bvState.pool; if(!p) return;
-  var price=p.price_veld_per_btcveld||(p.reserve_btcveld>0?Math.floor(p.reserve_veld/p.reserve_btcveld):0);
+  var price=bvDisplayPoolPrice(p);
   var _ppu=(bvState.btcUsd>0&&price>0)?(' · 1 VELD ≈ $'+(bvState.btcUsd/price).toFixed(4)):'';
   if(bvG('bv-pool-price')) bvG('bv-pool-price').textContent=price?price.toLocaleString('en-US')+' VELD / btcVELD'+_ppu:'—';
   if(bvG('bv-pool-veld')) bvG('bv-pool-veld').textContent=bvFmt(p.reserve_veld)+' VELD';
@@ -6097,6 +6045,18 @@ function bvRenderPegBalances(){
   }
   bvRedeemCompute();
 }
+function bvDisplayPoolPrice(pool){
+  if(!pool || typeof pool !== 'object') return 0;
+  var price=pool.price_veld_per_btcveld;
+  if(typeof price === 'number' && Number.isFinite(price) && price > 0)
+    return price;
+  var nativeReserve=pool.reserve_veld, wrappedReserve=pool.reserve_btcveld;
+  if(typeof nativeReserve !== 'number' || !Number.isFinite(nativeReserve) ||
+     nativeReserve < 0 || typeof wrappedReserve !== 'number' ||
+     !Number.isFinite(wrappedReserve) || wrappedReserve <= 0) return 0;
+  var fallback=Math.floor(nativeReserve/wrappedReserve);
+  return Number.isFinite(fallback) && fallback >= 0 ? fallback : 0;
+}
 function bvCompute(){
   var p=bvState.pool; if(!p||!bvActive()) return;
   var amtEl=bvG('bv-pay-amt'), getEl=bvG('bv-get-amt'), rateEl=bvG('bv-rate'), btn=bvG('bv-swap-btn');
@@ -6104,7 +6064,7 @@ function bvCompute(){
   var payV=bvPayIsVeld();
   var rout=payV?p.reserve_btcveld:p.reserve_veld;
   var getSym=payV?'btcVELD':'VELD';
-  var price=p.price_veld_per_btcveld||(p.reserve_btcveld>0?Math.floor(p.reserve_veld/p.reserve_btcveld):0);
+  var price=bvDisplayPoolPrice(p);
   var quote=(inSats>0)?bvQuote(p,payV,inSats):{out:0n,feeOut:0n,feeBps:(p.base_fee_bps||30),band:1,rebalances:false,reject:false};
   var out=quote.out;
   var impactBps=bvPriceImpactBps(p,payV,inSats,out);
@@ -6122,7 +6082,7 @@ function bvCompute(){
     :quote.reject?((quote.rejectCode==='FEE_SCHEDULE_NO_FIXED_POINT')?'deviation-fee band unavailable — adjust the amount':('swap unavailable: '+quote.rejectCode))
     :((quote.feeBps/100).toFixed(2)+'% LP fee in '+getSym
       +(quote.rebalances?' (healing → 0.30% base)':(' (band '+quote.band+' deviation fee)')));
-  var rateHtml='1 btcVELD ≈ <b>'+(price?price.toLocaleString('en-US'):'—')+'</b> VELD · '+_feeTxt
+  var rateHtml='1 btcVELD ≈ <b>'+escHtml(price?price.toLocaleString('en-US'):'—')+'</b> VELD · '+escHtml(_feeTxt)
     +(quote.feeOut>0n?' · <b>'+bvFmt(Number(quote.feeOut))+' '+getSym+'</b> retained for LPs':'')
     +(!quote.reject&&inSats>0?' · deviation '+(quote.preBps/100).toFixed(2)+'% → '+(quote.postBps/100).toFixed(2)+'%':'')
     +' · native transaction fee shown separately at confirmation'
@@ -8830,10 +8790,6 @@ function nav(page, el) {
       // Delay balance load slightly so the page layout is ready
       setTimeout(function() { onStakeAddrChange(); loadStakeHistory(); }, 200);
     }
-    // #12 — refresh auto-compound UI on page entry.
-    // (Bio card moved to keystore modal in — refreshes from
-    // there when the modal opens.)
-    try { acRefreshUi();  } catch(_){}
     // Clear text fields when entering tab
     var skAmt = document.getElementById('sk-amount');
     if (skAmt) skAmt.value = '';
@@ -9073,11 +9029,9 @@ function loadDashRecentBlocks(tipHeight) {
 
 function loadActivityFeed() {
   if (!currentAddr) return;
-  // Public history is intentionally unavailable. The shared helper displays
-  // the stable release notice and returns an empty bounded result locally.
-  publicHistoryUnavailable().then(function(txs) {
+  publicAddressHistory(currentAddr, 10).then(function(txs) {
     if (!txs || !txs.length) {
-      document.getElementById('d-activity').innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:10px">Transaction history unavailable in this release</div>';
+      document.getElementById('d-activity').innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:10px">No transactions found</div>';
       return;
     }
     var html = '';
@@ -9243,7 +9197,7 @@ function loadWalletAddr(addr) {
     //   (absent)                  show if balance > threshold
     // Threshold 100 VELD = roughly the value where losing the key
     // becomes "actually losing real money" rather than "lost a small
-    // testnet stake". Re-evaluated on every balance refresh, so the
+    // pre-activation amount". Re-evaluated on every balance refresh, so the
     // banner appears the FIRST time the user crosses the threshold
     // (no need for the wallet to be open at the exact moment).
     try {
@@ -9307,7 +9261,7 @@ function loadWalletAddr(addr) {
     // (pending_out_veld) minus the counterparty outflow already shown as
     // "Pending Out" (pending_transfer_out_veld). This is the user's own
     // coin temporarily locked by their own pending stake / consolidation /
-    // endorsement / auto-compound TX, returning to Spendable on confirm.
+    // endorsement TX, returning to Spendable on confirm.
     // Surfacing it makes the grid reconcile to the hero total exactly:
     //   Spendable + Staked + Maturing + PendingOut + Settling == Total
     // (canonical ComputeWalletState invariant: selectable+immature+
@@ -9402,13 +9356,15 @@ function loadWalletAddr(addr) {
     window._statusVaultETA = (rem != null) ? rem : 0;
   }).catch(function(){ window._statusVaultETA = 0; });
 
-  // History-derived lifetime earnings are unavailable in the public release.
-  // No local or hosted fallback performs a chain scan.
-  publicHistoryUnavailable().then(function() {
+  publicAddressHistory(addr, 50).then(function(txs) {
     var el  = document.getElementById('w-bal-lifetime');
     var sub = document.getElementById('w-bal-lifetime-sub');
-    if (el)  el.textContent  = '—';
-    if (sub) sub.textContent = 'transaction history unavailable';
+    var income = (txs || []).reduce(function(total, tx) {
+      var n = parseFloat(tx.net_veld || 0) || 0;
+      return total + (n > 0 ? n : 0);
+    }, 0);
+    if (el)  el.textContent  = fmt(income, 2);
+    if (sub) sub.textContent = 'recent indexed income';
   }).catch(function() {
     var el = document.getElementById('w-bal-lifetime');
     if (el) el.textContent = '—';
@@ -9695,9 +9651,9 @@ function loadWalletAddr(addr) {
   // Recent transactions inline
   var _txh = parseInt((document.getElementById('d-height')?.textContent||'0').replace(/,/g,''))||0;
   var _txfrom = Math.max(0, _txh - 5000);
-  publicHistoryUnavailable().then(function(txs) {
+  publicAddressHistory(addr, 50).then(function(txs) {
     if (!txs || !txs.length) {
-      document.getElementById('w-recent-txs').innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">Transaction history unavailable in this release</div>';
+      document.getElementById('w-recent-txs').innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">No transactions found</div>';
       return;
     }
     // Same friendly label set as the full history panel below
@@ -9952,7 +9908,7 @@ function autoConsolidateRun(keyHex, totalAtStart, thresholdVeld) {
           (sweptInputs ? '<br><span style="font-size:10.5px;opacity:.75">' +
             sweptInputs + ' inputs swept in ' + (batchN-1) + ' prior batches</span>' : '')
         );
-      }
+      }, ''
     ).then(function(r){
       var inputs = r.inputs_consolidated || (r.inputs && r.inputs.length) || 0;
       if (inputs <= 0) return null;          // nothing left
@@ -10140,7 +10096,7 @@ function doConsolidateUtxos() {
         'prepareconsolidatetx',
         [currentAddr, String(PER_BATCH), DUST_THRESHOLD_VELD],
         keyHex,
-        null, guard, allowed
+        null, guard, allowed, null, ''
       ).then(function(r) {
         var inputs = r.inputs_consolidated || (r.inputs && r.inputs.length) || 0;
         var outAmt = (r.total_output != null) ? (parseFloat(r.total_output) / 1e8) : 0;
@@ -10515,15 +10471,12 @@ function loadPendingSends() {
       return {pending: stillPending, confirmed: confirmed, unknown: unknown};
     });
   }).then(function(state) {
-    // Drop confirmed entries (they belong in history now) and any
-    // entry older than 24h that the node has never confirmed AND
-    // is no longer in mempool — at that point the TX is gone for
-    // good and clearing it stops nag-ware accumulation.
+    // Remove only confirmed entries. A busy/incomplete lookup cannot prove
+    // a transaction was dropped, regardless of its age.
     var keptTxids = {};
     state.pending.forEach(function(e) { keptTxids[e.txid] = true; });
     state.unknown.forEach(function(e) {
-      var age = nowSec - (e.ts || 0);
-      if (age < 24 * 3600) keptTxids[e.txid] = true;
+      keptTxids[e.txid] = true;
     });
     var pruned = arr.filter(function(e) {
       // Keep all other wallets' entries untouched
@@ -10534,9 +10487,7 @@ function loadPendingSends() {
       try { localStorage.setItem(key, JSON.stringify(pruned)); } catch(_){}
     }
     // Render
-    var rows = state.pending.concat(state.unknown.filter(function(e) {
-      return (nowSec - (e.ts || 0)) < 24 * 3600;
-    }));
+    var rows = state.pending.concat(state.unknown);
     if (!rows.length) {
       document.getElementById('w-pending-card').style.display = 'none';
       return;
@@ -10687,7 +10638,7 @@ function logoutWallet() {
   _veldClearSecretInputs();
   // FULL device reset: logout clears every piece of user info this app stored —
   // keystore, saved wallets, address book, recent recipients, swap/escrow/channel
-  // logs, autocompound state, session flags. Only the theme preference survives.
+  // logs and session flags. Only the theme preference survives.
   try {
     var _keep = { veld_theme: 1 };
     var _doomed = [];
@@ -11606,300 +11557,6 @@ function mwDeleteCancel() {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Auto-compound staking (distribution-cycle aware)
-//
-// Sweeps spendable balance to staking ONCE PER VAULT DISTRIBUTION CYCLE
-// (every VAULT_DISTRIBUTION_INTERVAL = 480 blocks). On each tick:
-//   1. Read current tip height
-//   2. Compute the most-recent distribution boundary:
-//        last_distribution_h = floor(cur_h / 480) * 480
-//   3. If last_distribution_h > c.last_action_h, a new distribution has
-//      landed since the last sweep — re-read spendable and stake the
-//      delta (whatever the vault paid out).
-//
-// No threshold knob: the sweep runs at network MIN_STAKE_VELD floor.
-// No 60-second balance polling: the only event that triggers a sweep
-// is the chain crossing a 480-block boundary, so polls are cheap
-// (getblockcount only) until a boundary is crossed.
-//
-// Stops automatically when: user disables the toggle, wallet locks, or
-// staking system isn't active yet.
-// ──────────────────────────────────────────────────────────────────────
-var VAULT_DISTRIBUTION_INTERVAL = 480;
-var _ACTimer = null;
-var _ACBusy  = false;
-
-function acLoadConfig() {
-  return {
-    enabled:        localStorage.getItem('veld_autocompound_enabled') === '1',
-    tier:           parseInt(localStorage.getItem('veld_autocompound_tier') || '1', 10),
-    last_balance:   parseFloat(localStorage.getItem('veld_autocompound_last_balance')  || '0'),
-    last_action_h:  parseInt(localStorage.getItem('veld_autocompound_last_action_h')   || '0', 10),
-    last_action_amount: parseFloat(localStorage.getItem('veld_autocompound_last_action_amount') || '0'),
-    last_action_txid:   localStorage.getItem('veld_autocompound_last_action_txid') || '',
-    last_action_ts:     parseInt(localStorage.getItem('veld_autocompound_last_action_ts') || '0', 10)
-  };
-}
-function acSaveConfig(c) {
-  try {
-    localStorage.setItem('veld_autocompound_enabled',  c.enabled ? '1' : '0');
-    localStorage.setItem('veld_autocompound_tier',     String(c.tier));
-    if (c.last_balance        != null) localStorage.setItem('veld_autocompound_last_balance',        String(c.last_balance));
-    if (c.last_action_h       != null) localStorage.setItem('veld_autocompound_last_action_h',       String(c.last_action_h));
-    if (c.last_action_amount  != null) localStorage.setItem('veld_autocompound_last_action_amount',  String(c.last_action_amount));
-    if (c.last_action_txid    != null) localStorage.setItem('veld_autocompound_last_action_txid',    c.last_action_txid);
-    if (c.last_action_ts      != null) localStorage.setItem('veld_autocompound_last_action_ts',      String(c.last_action_ts));
-  } catch(_){}
-}
-
-function _acCurTipH() {
-  var dh = document.getElementById('d-height');
-  if (!dh) return 0;
-  return parseInt((dh.textContent || '0').replace(/,/g, ''), 10) || 0;
-}
-function _acFmtBlocks(rem) {
-  if (rem <= 0) return 'now';
-  var mins = rem * 3;  // 180s/block target
-  if (mins < 60)   return rem + ' blocks (~' + mins + 'm)';
-  if (mins < 1440) return rem + ' blocks (~' + (mins/60).toFixed(1) + 'h)';
-  return rem + ' blocks (~' + (mins/1440).toFixed(1) + 'd)';
-}
-
-function acRefreshUi() {
-  var c = acLoadConfig();
-  var toggleInp = document.getElementById('sk-ac-toggle-input');
-  var stateEl   = document.getElementById('sk-ac-state-line');
-  var nextEl    = document.getElementById('sk-ac-next-line');
-  var lastEl    = document.getElementById('sk-ac-last-line');
-  if (toggleInp) toggleInp.checked = !!c.enabled;
-  // Highlight the active tier chip. Toggles the .on class
-  // across the four chips based on the saved tier.
-  var chipsWrap = document.getElementById('sk-ac-tier-chips');
-  if (chipsWrap) {
-    var chips = chipsWrap.querySelectorAll('.tier');
-    for (var i = 0; i < chips.length; i++) {
-      var ct = parseInt(chips[i].getAttribute('data-tier') || '0', 10);
-      if (ct === c.tier) chips[i].classList.add('on');
-      else chips[i].classList.remove('on');
-    }
-  }
-
-  if (stateEl) {
-    if (!c.enabled) {
-      stateEl.textContent = 'disabled';
-      stateEl.style.color = 'var(--muted2)';
-    } else if (typeof __veldKey !== 'undefined' && __veldKey.has()) {
-      stateEl.innerHTML = '<span style="color:var(--gold)">● armed</span> — will sweep at next distribution';
-    } else {
-      stateEl.innerHTML = '<span style="color:var(--muted)">enabled · waiting for keystore unlock</span>';
-    }
-  }
-  if (nextEl) {
-    if (!c.enabled) {
-      nextEl.textContent = '—';
-    } else {
-      var tip = _acCurTipH();
-      if (!tip) { nextEl.textContent = '— (height unknown)'; }
-      else {
-        var next_dist_h = Math.ceil((tip + 1) / VAULT_DISTRIBUTION_INTERVAL) * VAULT_DISTRIBUTION_INTERVAL;
-        var rem = next_dist_h - tip;
-        nextEl.innerHTML = 'h=' + next_dist_h + ' · ' + _acFmtBlocks(rem);
-      }
-    }
-  }
-  if (lastEl) {
-    if (c.last_action_h > 0 && c.last_action_amount > 0) {
-      var nowSec = Math.floor(Date.now() / 1000);
-      var ageSec = nowSec - (c.last_action_ts || 0);
-      var ageStr = ageSec < 60 ? (ageSec + 's ago')
-                 : ageSec < 3600 ? (Math.floor(ageSec/60) + 'm ago')
-                 : ageSec < 86400 ? (Math.floor(ageSec/3600) + 'h ago')
-                 : (Math.floor(ageSec/86400) + 'd ago');
-      var txShort = c.last_action_txid ? (c.last_action_txid.substr(0, 12) + '…') : '';
-      lastEl.innerHTML = '<span style="color:var(--em)">' + fmt(c.last_action_amount, 2) + ' VELD</span> at h=' + escHtml(String(Number(c.last_action_h) || 0)) +
-        ' · ' + escHtml(ageStr) + (txShort ? ' · <span class="mono" style="font-size:10px;color:var(--muted)">' + escHtml(txShort) + '</span>' : '');
-    } else {
-      lastEl.textContent = 'never';
-    }
-  }
-}
-
-function acToggle(event) {
-  // Reliable toggle on iOS Safari. The label owns the click and the handler
-  // inverts persisted state rather than trusting inp.checked, which can be stale or
-  // miss the change event entirely when the input is opacity:0
-  // inside a label). A 60ms debounce flag protects against
-  // double-fire from a click that might bubble through the label
-  // AND the synthetic click on the wrapped input.
-  if (window._acToggling) {
-    if (event && event.preventDefault) event.preventDefault();
-    return;
-  }
-  window._acToggling = true;
-  setTimeout(function(){ window._acToggling = false; }, 60);
-  // Prevent the native checkbox click from also firing (we own the state).
-  if (event && event.preventDefault) event.preventDefault();
-  var c = acLoadConfig();
-  c.enabled = !c.enabled;
-  if (c.enabled) {
-    c.last_action_h = _acCurTipH();
-    var bal = parseFloat((document.getElementById('w-bal-liquid')||{}).textContent || '0') ||
-              parseFloat((document.getElementById('sk-balance')||{}).textContent || '0') ||
-              0;
-    c.last_balance = bal;
-  }
-  acSaveConfig(c);
-  acRefreshUi();
-  acStartLoop();
-}
-// acSetTier rewritten for the chip-row picker. Reads
-// data-tier from the chip the user tapped (walked up from event.target,
-// same pattern as _bookEventAddr). Saves to localStorage + refreshes UI
-// so the "on" chip highlight updates immediately.
-function acSetTier(event) {
-  var t = event && (event.currentTarget || event.target);
-  var tier = 0;
-  while (t && t !== document) {
-    if (t.getAttribute && t.getAttribute('data-tier')) {
-      tier = parseInt(t.getAttribute('data-tier'), 10);
-      break;
-    }
-    t = t.parentNode;
-  }
-  if (!(tier >= 1 && tier <= 4)) return;
-  var c = acLoadConfig();
-  c.tier = tier;
-  acSaveConfig(c);
-  acRefreshUi();
-}
-
-async function acTick() {
-  var c = acLoadConfig();
-  if (!c.enabled) return;
-  if (typeof __veldKey === 'undefined' || !__veldKey.has()) return;
-  if (!currentAddr) return;
-  if (_ACBusy) return;
-
-  try {
-    _ACBusy = true;
-    // Cheap height-only probe — most ticks bail out here.
-    var bc = await rpc('getblockcount', []);
-    var cur_h = parseInt(bc, 10) || 0;
-    if (!cur_h) return;
-    var last_distribution_h = Math.floor(cur_h / VAULT_DISTRIBUTION_INTERVAL) * VAULT_DISTRIBUTION_INTERVAL;
-    // No distribution boundary crossed since our last action? Idle.
-    if (last_distribution_h <= (c.last_action_h || 0)) {
-      acRefreshUi();
-      return;
-    }
-    // Auto-compound now ONLY sweeps staking rewards,
-    // not arbitrary spendable. The whole point is to compound staking,
-    // so mining rewards / inbound transfers must not be auto-staked.
-    //
-    // Auto-compound requires an authenticated indexed reward delta. Public
-    // history is unavailable, so the empty local result below safely leaves
-    // auto-compound idle instead of scanning blocks or staking other funds.
-    var sinceH = (c.last_action_h || 0) + 1;
-    var hist = await publicHistoryUnavailable();
-    if (!Array.isArray(hist)) hist = [];
-    var stakingRewardDelta = 0;
-    hist.forEach(function(t) {
-      if (t && (t.type === 'vault_distribution' || t.type === 'staking_distribution')) {
-        var n = parseFloat(t.net_veld || 0) || 0;
-        if (n > 0) stakingRewardDelta += n;
-      }
-    });
-    var minV = (typeof stakingMinVeld === 'number') ? stakingMinVeld : 1;
-    if (stakingRewardDelta < minV) {
-      // No staking reward landed (or below network minimum). Advance the
-      // bookmark so we don't re-scan this cycle, and bail.
-      c.last_action_h = last_distribution_h;
-      acSaveConfig(c);
-      acRefreshUi();
-      return;
-    }
-    // Skip if staking system isn't active yet.
-    var info = await rpc('getstakinginfo', []);
-    if (!(info && (info.staking_active === true || info.staking_active === 'true'))) {
-      acRefreshUi();
-      return;
-    }
-    // Also double-check spendable is at least the delta (defensive — if the
-    // user moved funds between distribution + tick, we may not have enough).
-    var r = await rpc('getbalance', [currentAddr]);
-    var spendable = (r && typeof r === 'object' && r.spendable_veld != null)
-      ? parseFloat(r.spendable_veld) : 0;
-    if (!isFinite(spendable)) spendable = 0;
-    var amt = Math.min(stakingRewardDelta, spendable);
-    amt = Math.floor(amt * 1e8) / 1e8;
-    if (amt < minV) {
-      c.last_action_h = last_distribution_h;
-      acSaveConfig(c);
-      acRefreshUi();
-      return;
-    }
-    var keyHex = __veldKey.get();
-    var acTier = Number(c.tier);
-    if (!Number.isInteger(acTier) || acTier < 1 || acTier > 4) throw new Error('invalid auto-compound tier');
-    var acUnits = _veldParseVeldUnitsExact(amt.toFixed(8));
-    var acAmount = _veldUnitsToAmountString(acUnits);
-    var acOpHex = _veldBuildProtocolOpReturnHex(
-      'VELD_STAKE|LOCK|' + currentAddr + '|' + acUnits.toString() + '|T' + String(acTier));
-    var result = await signAndBroadcast(
-      'preparestake',
-      [currentAddr, acAmount, String(acTier)],
-      keyHex,
-      null,
-      _veldAddrToHash160Hex(currentAddr),
-      null,
-      null,
-      acOpHex
-    );
-    if (result && result.txid) {
-      c.last_action_h        = last_distribution_h;
-      c.last_balance         = Math.max(0, spendable - amt);
-      c.last_action_amount   = amt;
-      c.last_action_txid     = result.txid;
-      c.last_action_ts       = Math.floor(Date.now() / 1000);
-      acSaveConfig(c);
-      acRefreshUi();
-    }
-  } catch (e) {
-    // Silent on errors — UI doesn't show stack traces; tick will retry
-    // next cycle. Real failures surface via the absence of "Last sweep"
-    // updates which is visible enough.
-  } finally {
-    _ACBusy = false;
-  }
-}
-function acStartLoop() {
-  if (_ACTimer) return;
-  // 30 s cadence — most ticks just compare heights and bail. The
-  // distribution interval is 480 blocks at 180 seconds each, so the actual
-  // sweep work runs at most once per day per user.
-  _ACTimer = setInterval(function() {
-    if (document.hidden) return;
-    var c = acLoadConfig();
-    if (!c.enabled) { acRefreshUi(); return; }
-    try { acTick(); } catch(_){}
-    // Always tick the UI so the countdown stays fresh.
-    try { acRefreshUi(); } catch(_){}
-  }, 30 * 1000);
-}
-function acStopLoop() {
-  if (_ACTimer) { clearInterval(_ACTimer); _ACTimer = null; }
-}
-// #12 — auto-start the auto-compound loop on page
-// load so it works regardless of which tab the user is on. Conditions
-// in acTick() short-circuit when disabled or locked, so this is safe
-// to always run.
-(function setupAutocompoundLoop() {
-  if (window._veldAutocompoundTimer) return;
-  window._veldAutocompoundTimer = true;
-  try { acStartLoop(); } catch(_){}
-})();
-
-// ──────────────────────────────────────────────────────────────────────
 // #13 — Biometric unlock (WebAuthn PRF)
 //
 // WebAuthn's PRF (Pseudo-Random Function) extension lets us derive a
@@ -12248,11 +11905,10 @@ async function bioUnlock() {
   }
   // ALWAYS close the modal once the authenticated session identity is set,
   // even if downstream UI updates throw. Previously updateKsIndicator
-  // / acRefreshUi / _setCurrentAddr were called unwrapped — any
+  // / _setCurrentAddr were called unwrapped — any
   // synchronous throw left the modal open, which iOS-PWA WebAuthn
   // sometimes triggered, locking the user out of the rest of the app.
   try { updateKsIndicator(); } catch(_){}
-  try { acRefreshUi(); } catch(_){}
   closeKeystoreModal();
   try { loadDashboard(); } catch(_){}
   try { loadWalletAddr(parsed.address); } catch(_){}
@@ -12269,7 +11925,7 @@ function loadSendTransfers() {
   if (!currentAddr) return;
   var el = document.getElementById('s-transfers');
   el.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:12px">Loading...</div>';
-  publicHistoryUnavailable().then(function(txs) {
+  publicAddressHistory(currentAddr, 50).then(function(txs) {
     // Recent transfers filter tightened. Only show
     // entries that actually moved VELD between distinct wallets. The
     // prior filter included every "sent" TX, which surfaced
@@ -12284,7 +11940,7 @@ function loadSendTransfers() {
       return Math.abs(n) > FEE_FLOOR;
     });
     if (!transfers.length) {
-      el.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:12px">Transaction history unavailable in this release</div>';
+      el.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:12px">No recent transfers found</div>';
       return;
     }
     var html = '<div class="tbl-scroll list-box"><table class="tbl"><thead><tr><th>Type</th><th>Amount</th><th>Block</th></tr></thead><tbody>';
@@ -12315,7 +11971,7 @@ function loadHistory() {
   // btcVELD token ledger remains best-effort for peg wrap/redeem activity.
   window._histScanFrom = _txfrom;
   Promise.all([
-    publicHistoryUnavailable().catch(function(){ return []; }),
+    publicAddressHistory(addr, 50).catch(function(){ return []; }),
     rpc('gettokenhistory',[addr]).catch(function(){ return []; }),
     rpc('getbalance',[addr]).catch(function(){ return null; })
   ]).then(function(res) {
@@ -12360,7 +12016,7 @@ function renderWalletRecentTxs() {
   if (!host) return;
   var txs = window._wRecentTxs || [];
   if (!txs.length) {
-    host.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">Public transaction history is unavailable; no indexed token activity was found.</div>';
+    host.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">No indexed transaction or token activity found.</div>';
     return;
   }
   var _typeLabel = {
@@ -12760,7 +12416,9 @@ function loadValidatorsPage() {
   rpc('getvalidators').then(function(d) {
     document.getElementById('val-sys').innerHTML = d.system_active
       ? '<span style="color:var(--em)">Active</span>'
-      : '<span style="color:var(--muted)">Locked</span>';
+      : d.existing_operations_active
+        ? '<span style="color:var(--em)">Active; new registration paused</span>'
+        : '<span style="color:var(--muted)">Locked</span>';
     document.getElementById('val-count').textContent = d.validator_count || 0;
 
     // render the LIVE MIN_VALIDATOR_STAKE in
@@ -13303,9 +12961,8 @@ function __opUnlock(key, btnIds) {
 // a height/block_hash hint to close an O(N) chain-walk DoS. At
 // post-broadcast poll time we don't yet know the height — that's
 // exactly what we're polling to discover. `gettransactionrecent` does
-// a capped scan over the last 2016 blocks (~4.2 days at 180 s blocks),
-// which more than covers any reasonable confirmation window (the
-// caller above caps at 5 min by default).
+// an indexed lookup, or advances a shared-budget search of recent blocks.
+// Incomplete/busy replies remain retryable while polling.
 function __waitForTxConfirm(txid, maxSeconds, onConfirmed, onTimeout, onTick) {
   if (!txid) { try { onTimeout && onTimeout(); } catch(_){} return { cancel: function(){} }; }
   var pollEveryMs = 5000;
@@ -13693,9 +13350,55 @@ function loadStakeHistory() {
   });
 }
 
+var _veldStakingActivation = {
+  active: false,
+  known: false,
+  supply: 0,
+  threshold: 10000
+};
+
+function setStakingActivationUi(active, supply, threshold, known) {
+  var parsedSupply = Number(supply);
+  var parsedThreshold = Number(threshold);
+  _veldStakingActivation.active = active === true;
+  _veldStakingActivation.known = known === true;
+  _veldStakingActivation.supply = isFinite(parsedSupply) && parsedSupply >= 0 ? parsedSupply : 0;
+  _veldStakingActivation.threshold = isFinite(parsedThreshold) && parsedThreshold > 0
+    ? parsedThreshold : 10000;
+  var locked = !_veldStakingActivation.active;
+  var remaining = Math.max(0, _veldStakingActivation.threshold - _veldStakingActivation.supply);
+  var title = _veldStakingActivation.known
+    ? ('Staking unlocks at ' + _veldStakingActivation.threshold.toFixed(0) +
+       ' VELD mined (' + remaining.toFixed(2) + ' VELD remaining)')
+    : 'Checking mainnet staking activation';
+  // Opening the staking page is always available; only submission is gated.
+  var button = document.querySelector('#page-staking .btn-em');
+  if (button) {
+    button.disabled = locked;
+    button.setAttribute('aria-disabled', locked ? 'true' : 'false');
+    button.title = locked ? title : '';
+  }
+}
+
+function stakingActivationErrorText() {
+  if (!_veldStakingActivation.known) {
+    return 'Staking is locked until the wallet verifies mainnet activation.';
+  }
+  var remaining = Math.max(0,
+    _veldStakingActivation.threshold - _veldStakingActivation.supply);
+  return 'Staking is not active yet. It unlocks at ' +
+    _veldStakingActivation.threshold.toFixed(0) + ' VELD mined; ' +
+    remaining.toFixed(2) + ' VELD remains.';
+}
+
 function loadStakingPage() {
   rpc('getstakinginfo').then(function(d) {
     var active = d.staking_active === true || d.staking_active === 'true';
+    setStakingActivationUi(
+      active,
+      d.current_supply_veld,
+      d.activation_supply_veld,
+      true);
     if (d.min_stake_veld) { stakingMinVeld = parseFloat(d.min_stake_veld); }
     if (d.max_stake_veld) { stakingMaxVeld = parseFloat(d.max_stake_veld); }
     var lbl = document.getElementById('sk-amount-label');
@@ -13841,7 +13544,9 @@ function loadStakingPage() {
         }
       } else { posWrap.style.display = 'none'; }
     } else { if (posWrap) posWrap.style.display = 'none'; }
-  }).catch(function(){});
+  }).catch(function(){
+    setStakingActivationUi(false, 0, 10000, false);
+  });
 }
 
 function onStakeAddrChange() {
@@ -13864,10 +13569,11 @@ function onStakeAddrChange() {
     // MAX_STAKE_UNITS aggregate per address and per-record maturity for unstakes.
     // No wallet-side restriction — let users add stakes until they hit the cap.
     var stakeBtn = document.querySelector('#page-staking .btn-em');
-    if (stakeBtn) {
-      stakeBtn.disabled = false;
-      stakeBtn.title = '';
-    }
+    if (stakeBtn) setStakingActivationUi(
+      _veldStakingActivation.active,
+      _veldStakingActivation.supply,
+      _veldStakingActivation.threshold,
+      _veldStakingActivation.known);
     var unlockEl = document.getElementById('sk-unlock-info');
     if (unlockEl) {
       if (staked > 0 && unlockBlocks > 0) {
@@ -13905,6 +13611,16 @@ function doStake() {
   //   helper below; the success path's `setInterval` handles its own
   //   release via __opUnlock when confirmed or at the 90 s cap.
   var stakeBtn = document.querySelector('#page-staking .btn-em');
+  if (!_veldStakingActivation.active) {
+    var lockedMsg = document.getElementById('stake-msg');
+    if (lockedMsg) lockedMsg.innerHTML = '<div class="alert alert-info">' +
+      escHtml(stakingActivationErrorText()) + '</div>';
+    setStakingActivationUi(false,
+      _veldStakingActivation.supply,
+      _veldStakingActivation.threshold,
+      _veldStakingActivation.known);
+    return;
+  }
   if (!__opLock('stake', stakeBtn ? [stakeBtn] : [], 'Staking…')) return;
   if (stakeBtn) stakeBtn.disabled = true;
   var skAddrRow = document.getElementById('sk-addr-row');
@@ -13916,7 +13632,11 @@ function doStake() {
   var msgEl = document.getElementById('stake-msg');
   var reenable = function(){
     __opUnlock('stake', stakeBtn ? [stakeBtn] : []);
-    if (stakeBtn) { stakeBtn.disabled = false; stakeBtn.title = ''; }
+    if (stakeBtn) setStakingActivationUi(
+      _veldStakingActivation.active,
+      _veldStakingActivation.supply,
+      _veldStakingActivation.threshold,
+      _veldStakingActivation.known);
   };
   if (!addr) { msgEl.innerHTML = '<div class="alert alert-err">No address. Unlock your keystore above.</div>'; reenable(); return; }
   if (!keyHex || keyHex.length !== 64) { msgEl.innerHTML = '<div class="alert alert-err">Unlock your keystore above to sign transactions.</div>'; reenable(); return; }
@@ -14021,7 +13741,11 @@ function _doStakeContinue(addr, keyHex, amount, amountUnitsStr, msgEl) {
           window._lastConfirmedStake = nowStaked;
           var sb = document.querySelector('#page-staking .btn-em');
           __opUnlock('stake', sb ? [sb] : []);
-          if (sb) { sb.disabled = false; sb.title = ''; }
+          if (sb) setStakingActivationUi(
+            _veldStakingActivation.active,
+            _veldStakingActivation.supply,
+            _veldStakingActivation.threshold,
+            _veldStakingActivation.known);
           var ub = document.querySelector('button[data-act-click="haa7ba916"]');
           if (ub) { ub.disabled = false; ub.title = ''; }
           onStakeAddrChange();
@@ -14033,7 +13757,11 @@ function _doStakeContinue(addr, keyHex, amount, amountUnitsStr, msgEl) {
     onStakeAddrChange();
   }).catch(function(e) {
     __opUnlock('stake', stakeBtn ? [stakeBtn] : []);
-    if (stakeBtn) stakeBtn.disabled = false;
+    if (stakeBtn) setStakingActivationUi(
+      _veldStakingActivation.active,
+      _veldStakingActivation.supply,
+      _veldStakingActivation.threshold,
+      _veldStakingActivation.known);
     // Re-enable unstake on staking failure
     window._pendingStakeAddr = null;
     if (unstakeBtn) { unstakeBtn.disabled = false; unstakeBtn.title = ''; }
@@ -14672,6 +14400,30 @@ function govRenderProposals() {
   el.innerHTML = html;
 }
 
+function _veldGovernanceVoteIntent(info, proposal, id, choice) {
+  var height = info && info.blocks;
+  var prefix = info && info.gov_chain_prefix;
+  if (!Number.isSafeInteger(height) || height <= 0 || typeof prefix !== 'string' || !prefix)
+    throw new Error('Cannot fetch the governance signing context.');
+  if (!Number.isSafeInteger(Number(id)) || Number(id) <= 0 ||
+      ['yes', 'no', 'abstain'].indexOf(choice) < 0)
+    throw new Error('Invalid governance vote.');
+  var version = info.gov_vote_version;
+  if (version === undefined) version = 1; // old node before the coordinated upgrade
+  if (version !== 1 && version !== 2) throw new Error('Unsupported governance vote version.');
+  var identity = '';
+  if (version === 2) {
+    if (!proposal || String(proposal.id) !== String(id) ||
+        !/^[0-9a-f]{64}$/.test(proposal.vote_identity || ''))
+      throw new Error('Refresh proposals after activation before voting.');
+    identity = proposal.vote_identity;
+  }
+  return { height: String(height), identity: identity,
+    marker: version === 2 ? 'V2' : 'V',
+    challenge: prefix + (version === 2 ? 'GOV_VOTE_V2:' : 'GOV_VOTE:') +
+      String(id) + ':' + (identity ? identity + ':' : '') + choice + ':@' + String(height) };
+}
+
 function govVote(id, choice) {
   // Ordering:
   //   1. Run every input validation FIRST.
@@ -14719,17 +14471,12 @@ function govVote(id, choice) {
   rpc('getblockchaininfo', []).then(function(info) {
     // getblockchaininfo returns the tip height under "blocks" (Bitcoin-style).
     var tipH = (info && typeof info.blocks === 'number') ? info.blocks : 0;
-    var challenge;
-    var extraParam = null;
-    //  genesis-bind via the node-served gov_chain_prefix.
-    var govPrefix = (info && typeof info.gov_chain_prefix === 'string') ? info.gov_chain_prefix : '';
-    if (tipH > 0) {
-      if (!govPrefix) throw new Error('Node did not return gov_chain_prefix — update veld-node before voting.');
-      challenge = govPrefix + 'GOV_VOTE:' + String(id) + ':' + choice + ':@' + String(tipH);
-      extraParam = String(tipH);
-    } else {
-      challenge = 'GOV_VOTE:' + String(id) + ':' + choice;
-    }
+    var selectedProposal = (govAllProposals || []).find(function(p) {
+      return String(p.id) === String(id);
+    });
+    var voteIntent = _veldGovernanceVoteIntent(info, selectedProposal, id, choice);
+    var challenge = voteIntent.challenge;
+    var extraParam = voteIntent.height;
     var sigHex = veldCrypto.signMessage ? veldCrypto.signMessage(keyHex, challenge) : veldCrypto.sign(keyHex, challenge);
     // ON-CHAIN: preparegovvote → sign inputs → sendrawtransaction.
     // signed_height is required (extraParam). If tipH was unavailable, we
@@ -14737,7 +14484,9 @@ function govVote(id, choice) {
     if (extraParam === null) {
       throw new Error('Cannot fetch chain tip; vote requires height binding.');
     }
-    return rpc('preparegovvote', [addr, String(id), choice, pubHex, sigHex, extraParam])
+    var voteParams = [addr, String(id), choice, pubHex, sigHex, extraParam];
+    if (voteIntent.identity) voteParams.push(voteIntent.identity);
+    return rpc('preparegovvote', voteParams)
       .then(function(prep) {
         // gate every P2PKH output to the voter's own
         // hash160. The OP_RETURN payload carries the vote intent, but the
@@ -14747,8 +14496,9 @@ function govVote(id, choice) {
         _veldAssertAllP2PKHOutputsInAllowed(prep, [_veldAddrToHash160Hex(addr)]);
         var voteCode = choice === 'yes' ? 'y' : (choice === 'no' ? 'n' : 'a');
         _veldAssertOpReturnExact(prep, _veldBuildProtocolOpReturnHex(
-          'VELD_GOV|V|' + String(id) + '|' + addr + '|' + voteCode + '|' +
-          String(extraParam) + '|' + pubHex + '|' + sigHex));
+          'VELD_GOV|' + voteIntent.marker + '|' + String(id) + '|' + addr + '|' + voteCode + '|' +
+          String(extraParam) + '|' + pubHex + '|' + sigHex +
+          (voteIntent.identity ? '|' + voteIntent.identity : '')));
         _veldVerifyInputSighashes(prep, [],
           '76a914' + _veldAddrToHash160Hex(addr).toLowerCase() + '88ac');
         // async injectSignatures (yields between signs), after exact fee proof.
@@ -14972,13 +14722,13 @@ function loadCominingHistory() {
   var addr = document.getElementById('cm-addr').value.trim();
   if (!addr) return;
   var histEl = document.getElementById('cm-history');
-  histEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">Transaction history unavailable in this release</div>';
+  histEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">Loading...</div>';
   var _txh = parseInt((document.getElementById('d-height')?.textContent||'0').replace(/,/g,''))||0;
   var _txfrom = Math.max(0, _txh - 5000);
-  publicHistoryUnavailable().then(function(txs) {
+  publicAddressHistory(addr, 50).then(function(txs) {
     var payouts = (txs||[]).filter(function(t){ return parseFloat(t.net_veld||0) > 0 && (t.type === 'received' || t.type === 'comine_payout'); });
     if (!payouts.length) {
-      histEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">Transaction history unavailable in this release</div>';
+      histEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;font-size:11px">No recent payouts found</div>';
       return;
     }
     var total = payouts.reduce(function(s,t){ return s + parseFloat(t.net_veld||0); }, 0);
@@ -14999,7 +14749,22 @@ function loadCominingHistory() {
 // ═══════════════════════════════════════
 // EXPLORER
 // ═══════════════════════════════════════
+var exSearchGeneration = 0;
+async function _veldRecentSearch(txid, onProgress, isCurrent) {
+  for (var attempt = 0; attempt < 600 && isCurrent(); attempt++) {
+    try { return await rpc('gettransactionrecent', [txid]); }
+    catch (error) {
+      if (error.code !== -32005) throw error;
+      onProgress();
+      await new Promise(function(resolve) { setTimeout(resolve, 2000); });
+    }
+  }
+  var incomplete = new Error('Search is incomplete. Retry to continue, or enable the transaction index.');
+  incomplete.code = -32005;
+  throw incomplete;
+}
 function doExSearch() {
+  var generation = ++exSearchGeneration;
   var q = document.getElementById('ex-search').value.trim();
   if (!q) return;
   var resultEl = document.getElementById('ex-result');
@@ -15008,14 +14773,16 @@ function doExSearch() {
     rpc('getblockbyheight',[q]).then(function(b){ showBlockResult(b, resultEl); }).catch(function(e){ resultEl.innerHTML='<div class="alert alert-err">'+escHtml(e.message)+'</div>'; });
   } else if (/^[0-9a-f]{64}$/i.test(q)) {
     rpc('getblock',[q]).then(function(b){ showBlockResult(b, resultEl); }).catch(function() {
-      // use gettransactionrecent here. The
-      // explorer search is invoked with just a txid (no height context),
-      // so we can't pass a hint to the canonical gettransaction. The
-      // capped-fallback scans the last 2016 blocks, which is the right
-      // shape for an interactive explorer "I just got this txid" lookup.
-      // For older transactions the user can click through from a block
-      // listing (which provides height) instead.
-      rpc('gettransactionrecent',[q]).then(function(t){ showTxResult(t, resultEl); }).catch(function(e){ resultEl.innerHTML='<div class="alert alert-err">Not found: '+escHtml(q)+'</div>'; });
+      var isCurrent = function(){ return generation === exSearchGeneration; };
+      _veldRecentSearch(q.toLowerCase(), function(){
+        if(isCurrent()) resultEl.textContent = 'Searching recent blocks; waiting for available lookup capacity…';
+      }, isCurrent).then(function(t){
+        if(isCurrent()) showTxResult(t, resultEl);
+      }).catch(function(e){
+        if(!isCurrent()) return;
+        resultEl.innerHTML='<div class="alert alert-err">'+
+          escHtml(e.code === -32602 ? 'Not found in recent blocks: '+q : e.message)+'</div>';
+      });
     });
   } else if (q[0] === 'V') {
     rpc('getbalance',[q]).then(function(bal) {
@@ -15200,6 +14967,11 @@ function loadDashboardAdaptive() {
     document.getElementById('d-staking-status').innerHTML = d.staking_active
       ? '<span class="badge badge-em">ACTIVE</span>'
       : '<span class="badge badge-muted">INACTIVE</span>';
+    setStakingActivationUi(
+      d.staking_active === true || d.staking_active === 'true',
+      sup,
+      d.staking_activation_supply || 10000,
+      true);
     document.getElementById('dot').className = 'dot online';
     document.getElementById('status-txt').textContent = 'h=' + h;
     loadDashBlocks(h);
@@ -15440,24 +15212,6 @@ loadDashboard = loadDashboardAdaptive;
   });
   window.addEventListener('focus', wake);
 })();
-
-// Direct click delegate for the AUTO-COMPOUND tier chip
-// row (#sk-ac-tier-chips). Belt-and-suspenders alongside the dispatcher
-// hac_tier_chip handler: if dispatcher routing fails on iOS PWA for
-// any reason, this directly updates config + UI from a captured click.
-document.addEventListener('click', function(e){
-  var chip = e.target && e.target.closest && e.target.closest('#sk-ac-tier-chips .tier');
-  if (!chip) return;
-  var tier = parseInt(chip.getAttribute('data-tier') || '0', 10);
-  if (!(tier >= 1 && tier <= 4)) return;
-  try {
-    var c = (typeof acLoadConfig === 'function') ? acLoadConfig() : null;
-    if (!c) return;
-    c.tier = tier;
-    if (typeof acSaveConfig === 'function') acSaveConfig(c);
-    if (typeof acRefreshUi === 'function') acRefreshUi();
-  } catch (_) {}
-}, false);
 
 // Keep the hidden tier select synchronized with the visible chip controls.
 document.addEventListener('click', function(e){
@@ -16222,15 +15976,11 @@ function renderVhTab() {
 // ═══════════════════════════════════════
 // EARNINGS
 // ═══════════════════════════════════════
-// Public per-transaction and derived earnings history are unavailable. This
-// view renders a stable local notice and deliberately performs no RPC, fetch,
-// timer, or retry. A future indexed implementation needs a separate review.
 function loadEarningsPage(addr) {
   if (!addr) addr = currentAddr;
   if (!addr) return;
   var setText = function(id, v){ var el=document.getElementById(id); if(el) el.textContent=v; };
   setText('earn-recent-addr', addr.substr(0,10)+'…'+addr.substr(-4));
-  showPublicHistoryUnavailable();
   [
     'earn-30d', 'earn-life', 'earn-next', 'earn-bar-mining-amt',
     'earn-bar-comine-amt', 'earn-bar-staking-amt',
@@ -16243,7 +15993,7 @@ function loadEarningsPage(addr) {
     'earn-up-stake-meta', 'earn-up-endorse-when',
     'earn-up-endorse-meta', 'earn-up-unlock-when',
     'earn-up-unlock-meta'
-  ].forEach(function(id){ setText(id, 'Earnings history unavailable in this release'); });
+  ].forEach(function(id){ setText(id, 'Latest 50 indexed transactions'); });
   var body = document.getElementById('earn-recent-body');
   if (body) {
     body.textContent = '';
@@ -16254,10 +16004,37 @@ function loadEarningsPage(addr) {
     td.style.textAlign='center';
     td.style.color='var(--muted2)';
     td.style.fontSize='12px';
-    td.textContent='Earnings and payout history are unavailable in this release.';
+    td.textContent='Loading indexed earnings history...';
     tr.appendChild(td);
     body.appendChild(tr);
   }
+  publicAddressHistory(addr, 50).then(function(rows) {
+    rows = Array.isArray(rows) ? rows : [];
+    var totals = {mining:0, comine:0, staking:0, endorse:0};
+    rows.forEach(function(t) {
+      var amount = Math.max(0, parseFloat(t.net_veld || 0) || 0);
+      if (t.type === 'coinbase') totals.mining += amount;
+      else if (t.type === 'comine_payout') totals.comine += amount;
+      else if (t.type === 'vault_distribution' || t.type === 'staking_distribution') totals.staking += amount;
+      else if (t.type === 'endorsement_reward' || t.type === 'endorsement_payout') totals.endorse += amount;
+    });
+    setText('earn-30d', fmt(totals.mining + totals.comine + totals.staking + totals.endorse, 2) + ' VELD');
+    setText('earn-bar-mining-amt', fmt(totals.mining, 2));
+    setText('earn-bar-comine-amt', fmt(totals.comine, 2));
+    setText('earn-bar-staking-amt', fmt(totals.staking, 2));
+    setText('earn-bar-endorse-amt', fmt(totals.endorse, 2));
+    if (!body) return;
+    if (!rows.length) {
+      body.innerHTML='<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--muted2)">No indexed earnings found.</td></tr>';
+      return;
+    }
+    body.innerHTML=rows.slice(0, 25).map(function(t) {
+      var amount=parseFloat(t.net_veld||0)||0;
+      return '<tr><td>'+escHtml(t.type||'transaction')+'</td><td>'+escHtml(t.block_height||0)+'</td><td>'+escHtml(shortHash(t.txid||''))+'</td><td>'+fmt(amount,4)+' VELD</td><td>Confirmed</td></tr>';
+    }).join('');
+  }).catch(function(e) {
+    if (body) body.innerHTML='<tr><td colspan="5" class="alert alert-err">'+escHtml(e.message||'History unavailable')+'</td></tr>';
+  });
 }
 
 // ═══════════════════════════════════════
@@ -16348,7 +16125,7 @@ if ('serviceWorker' in navigator) {
     swControllerChanged = true;
     window.location.reload();
   });
-  navigator.serviceWorker.register('/sw.js?ui=wallet-20260813-tiers', {updateViaCache:'none'})
+  navigator.serviceWorker.register('/sw.js?ui=wallet-305-mainnet-staking-lock', {updateViaCache:'none'})
     .then(function(registration) { return registration.update(); })
     .catch(function(){});
 }
@@ -16470,9 +16247,6 @@ if ('serviceWorker' in navigator) {
       hmw_del:           function(event){ var a = _bookEventAddr(event); if (a) mwDeleteWallet(a) },
       hmw_del_confirm:   function(event){ var a = _bookEventAddr(event); if (a) mwDeleteConfirm(a) },
       hmw_del_cancel:    function(event){ mwDeleteCancel() },
-      hac_toggle:     function(event){ acToggle(event) },
-      hac_tier:       function(event){ acSetTier(event) },
-      hac_tier_chip:  function(event){ acSetTier(event) },
       hbio_register: function(event){ bioRegister() },
       hbio_unlock:   function(event){ bioUnlock() },
       hbio_clear:    function(event){ bioClear() },
@@ -16718,7 +16492,7 @@ function escHtml(s){
 async function rpc(m,p=[]){
   const r=await fetch(RPC,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:m,params:p})});
   const j=await r.json();
-  if(j.error)throw new Error(j.error.message||JSON.stringify(j.error));
+  if(j.error){var rpcError=new Error(j.error.message||JSON.stringify(j.error));rpcError.code=j.error.code;throw rpcError;}
   return j.result;
 }
 
@@ -16967,9 +16741,6 @@ init();
       hmw_del:           function(event){ var a = _bookEventAddr(event); if (a) mwDeleteWallet(a) },
       hmw_del_confirm:   function(event){ var a = _bookEventAddr(event); if (a) mwDeleteConfirm(a) },
       hmw_del_cancel:    function(event){ mwDeleteCancel() },
-      hac_toggle:     function(event){ acToggle(event) },
-      hac_tier:       function(event){ acSetTier(event) },
-      hac_tier_chip:  function(event){ acSetTier(event) },
       hbio_register: function(event){ bioRegister() },
       hbio_unlock:   function(event){ bioUnlock() },
       hbio_clear:    function(event){ bioClear() },
@@ -17258,7 +17029,7 @@ let walletAddr='', walletKey='', walletPub='';
 async function rpc(m,p=[]){
   const r=await fetch(RPC,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:m,params:p})});
   const j=await r.json();
-  if(j.error)throw new Error(j.error.message||JSON.stringify(j.error));
+  if(j.error){var rpcError=new Error(j.error.message||JSON.stringify(j.error));rpcError.code=j.error.code;throw rpcError;}
   return j.result;
 }
 
@@ -17435,9 +17206,6 @@ async function completeSetup(){
       hmw_del:           function(event){ var a = _bookEventAddr(event); if (a) mwDeleteWallet(a) },
       hmw_del_confirm:   function(event){ var a = _bookEventAddr(event); if (a) mwDeleteConfirm(a) },
       hmw_del_cancel:    function(event){ mwDeleteCancel() },
-      hac_toggle:     function(event){ acToggle(event) },
-      hac_tier:       function(event){ acSetTier(event) },
-      hac_tier_chip:  function(event){ acSetTier(event) },
       hbio_register: function(event){ bioRegister() },
       hbio_unlock:   function(event){ bioUnlock() },
       hbio_clear:    function(event){ bioClear() },

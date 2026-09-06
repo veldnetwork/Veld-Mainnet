@@ -13,6 +13,8 @@
 #include "../consensus/btcveld_mint_policy.h"
 #include "../core/multisig.h"
 #include "strict_json.h"
+#include "pagination.h"
+#include "recent_lookup_progress.h"
 
 #include "../core/mempool.h"
 #include "../core/transaction.h"
@@ -51,6 +53,7 @@
 #include <cstring>
 #include <limits>
 #include <utility>
+#include <atomic>
 #include "../compat/platform.h"
 #include "../crypto/vendored.h"
 
@@ -819,79 +822,6 @@ public:
         RegisterMethods();
     }
 
-    uint64_t GetReservedStake(const std::string& address) {
-        std::lock_guard<std::recursive_mutex> lk(stake_reserve_mutex_);
-        auto now = std::chrono::steady_clock::now();
-        auto ex_it = stake_reserve_expiry_.find(address);
-        if (ex_it != stake_reserve_expiry_.end() &&
-            now - ex_it->second > std::chrono::seconds(10)) {
-            stake_reserve_units_.erase(address);
-            stake_reserve_expiry_.erase(ex_it);
-        }
-        auto it = stake_reserve_units_.find(address);
-        return (it != stake_reserve_units_.end()) ? it->second : 0;
-    }
-
-    static constexpr size_t MAX_STAKE_RESERVATIONS = 50000;
-
-    void AddStakeReservation(const std::string& address, uint64_t units) {
-        std::lock_guard<std::recursive_mutex> lk(stake_reserve_mutex_);
-        auto it = stake_reserve_units_.find(address);
-        if (it == stake_reserve_units_.end() &&
-            stake_reserve_units_.size() >= MAX_STAKE_RESERVATIONS) {
-            return;
-        }
-        stake_reserve_units_[address] += units;
-        stake_reserve_expiry_[address] = std::chrono::steady_clock::now();
-    }
-
-    void ClearStakeReservation(const std::string& address) {
-        std::lock_guard<std::recursive_mutex> lk(stake_reserve_mutex_);
-        stake_reserve_units_.erase(address);
-        stake_reserve_expiry_.erase(address);
-    }
-
-    bool TryReserveStakeAtomic(const std::string& address,
-                               uint64_t units,
-                               uint64_t pending_in_mempool,
-                               uint64_t* out_pending,
-                               uint64_t* out_reserved)
-    {
-        std::lock_guard<std::recursive_mutex> lk(stake_reserve_mutex_);
-        auto now = std::chrono::steady_clock::now();
-        uint64_t pending_live = mempool_.GetPendingStakeUnits(address);
-        (void)pending_in_mempool;
-        for (auto it = stake_reserve_expiry_.begin(); it != stake_reserve_expiry_.end(); ) {
-            if (now - it->second > std::chrono::seconds(10)) {
-                stake_reserve_units_.erase(it->first);
-                it = stake_reserve_expiry_.erase(it);
-            } else { ++it; }
-        }
-        uint64_t reserved = 0;
-        auto it = stake_reserve_units_.find(address);
-        if (it != stake_reserve_units_.end()) reserved = it->second;
-
-        if (pending_live == 0 && reserved > 0) {
-            auto ex_it = stake_reserve_expiry_.find(address);
-            if (ex_it != stake_reserve_expiry_.end() &&
-                (now - ex_it->second) > std::chrono::seconds(3))
-            {
-                stake_reserve_units_.erase(address);
-                stake_reserve_expiry_.erase(address);
-                reserved = 0;
-            }
-        }
-        if (out_pending)  *out_pending  = pending_live;
-        if (out_reserved) *out_reserved = reserved;
-        if (pending_live > 0) return false;
-        if (reserved > 0) return false;
-        if (stake_reserve_units_.size() >= MAX_STAKE_RESERVATIONS)
-            return false;
-        stake_reserve_units_[address] += units;
-        stake_reserve_expiry_[address] = now;
-        return true;
-    }
-
     void SetTxBroadcast(TxBroadcastFn fn) { tx_broadcast_ = fn; }
     void SetBlockBroadcast(BlockBroadcastFn fn) {
         block_broadcast_ = std::move(fn);
@@ -1162,7 +1092,17 @@ public:
     void SetFlushTriggerFn(std::function<std::string(bool )> fn) { flush_trigger_fn_ = fn; }
     void SetIBDCompleteFn(std::function<bool()> fn) { ibd_complete_fn_ = fn; }
     void SetTxIndexEnabledFn(std::function<bool()> fn) { txindex_enabled_fn_ = std::move(fn); }
-    void SetTxIndexLookupFn(std::function<std::optional<uint64_t>(const std::string&)> fn) { txindex_lookup_fn_ = std::move(fn); }
+    struct TxIndexLookup {
+        bool complete = false;
+        std::optional<uint64_t> height;
+    };
+    using TxIndexLookupFn = std::function<TxIndexLookup(const std::string&, uint64_t, const std::string&)>;
+    void SetTxIndexLookupFn(TxIndexLookupFn fn) { txindex_lookup_fn_ = std::move(fn); }
+    void SetAddressHistoryFn(
+            std::function<std::string(const std::string&, size_t,
+                                      const std::string&)> fn) {
+        address_history_fn_ = std::move(fn);
+    }
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     void SetDumpSnapshotFn(std::function<std::string(const std::string&)> fn) { dump_snapshot_fn_ = fn; }
 #endif
@@ -1447,7 +1387,10 @@ private:
     std::function<std::string(bool)> flush_trigger_fn_;
     std::function<bool()> ibd_complete_fn_;
     std::function<bool()> txindex_enabled_fn_;
-    std::function<std::optional<uint64_t>(const std::string&)> txindex_lookup_fn_;
+    TxIndexLookupFn txindex_lookup_fn_;
+    std::function<std::string(const std::string&, size_t,
+                              const std::string&)> address_history_fn_;
+    std::atomic<uint32_t> address_history_queries_{0};
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     std::function<std::string(const std::string&)> dump_snapshot_fn_;
 #endif
@@ -1486,16 +1429,89 @@ private:
     std::function<Hash256()> redeem_bond_digest_fn_;    // complete signer-bond/redeem covenant state
     std::function<std::pair<uint64_t, uint64_t>()> module_cursor_fn_;
     std::function<std::string()> pow_verify_status_fn_;
-    std::unordered_map<std::string, std::time_t> unstake_cooldowns_;
-
-    std::recursive_mutex stake_reserve_mutex_;
-    std::unordered_map<std::string, uint64_t> stake_reserve_units_;
-    std::unordered_map<std::string, std::chrono::steady_clock::time_point> stake_reserve_expiry_;
 
     using RpcMethod = std::function<std::string(const std::vector<std::string>&)>;
     std::unordered_map<std::string, RpcMethod> methods_;
     RuntimeAdmissionFn runtime_admission_fn_;
     std::string runtime_admission_refusal_;
+
+    using RecentLookupProgress = rpc_detail::RecentLookupProgress;
+    std::mutex transaction_lookup_mutex_;
+    std::unordered_map<std::string, RecentLookupProgress> transaction_lookup_progress_;
+    std::chrono::steady_clock::time_point transaction_lookup_window_{};
+    size_t transaction_lookup_bodies_ = 0;
+
+    template<typename Emit>
+    std::string LookupTransaction_(const std::string& txid_hex, const Hash256& txid,
+                                   uint64_t tip, bool recent_only, Emit emit) {
+        // Both aliases share one worker, a finite progress map and an aggregate
+        // cold-body budget. Admission precedes index and body reads.
+        std::unique_lock<std::mutex> lock(transaction_lookup_mutex_, std::try_to_lock);
+        const auto unavailable = [] {
+            return rpc_error(-32005, "Transaction lookup incomplete or busy; retry, enable --txindex, or supply a block hint to gettransaction");
+        };
+        if (!lock.owns_lock()) throw unavailable();
+        const auto now = std::chrono::steady_clock::now();
+        if (now - transaction_lookup_window_ >= std::chrono::seconds(10)) {
+            transaction_lookup_window_ = now;
+            transaction_lookup_bodies_ = 0;
+        }
+        const auto tip_hash = chain_.GetBlockHashAtHeight(tip);
+        if (tip_hash.empty()) throw unavailable();
+        const uint64_t first = tip > 2016 ? tip - 2016 : 0;
+        auto unchanged = [&] {
+            return chain_.Height() == tip && chain_.GetBlockHashAtHeight(tip) == tip_hash;
+        };
+        auto read = [&](uint64_t height) {
+            if (transaction_lookup_bodies_ >= 32) throw unavailable();
+            ++transaction_lookup_bodies_;
+            return chain_.GetBlock(height);
+        };
+        TxIndexLookup indexed;
+        try {
+            if (txindex_lookup_fn_) indexed = txindex_lookup_fn_(txid_hex, tip, tip_hash);
+        } catch (...) { throw unavailable(); }
+        if (indexed.complete) {
+            if (indexed.height && *indexed.height <= tip &&
+                (!recent_only || *indexed.height >= first)) {
+                Block block = read(*indexed.height);
+                for (const auto& tx : block.transactions) {
+                    if (tx.GetTxID() != txid) continue;
+                    if (!unchanged()) throw unavailable();
+                    return emit(block, tx, *indexed.height);
+                }
+                throw unavailable(); // inconsistent index/body is never absence
+            }
+            if (!unchanged()) throw unavailable();
+            throw rpc_error(-32602, "tx not found in the requested canonical range");
+        }
+        auto it = transaction_lookup_progress_.find(txid_hex);
+        if (it == transaction_lookup_progress_.end()) {
+            if (transaction_lookup_progress_.size() >= 128)
+                transaction_lookup_progress_.erase(transaction_lookup_progress_.begin());
+            it = transaction_lookup_progress_.emplace(txid_hex, RecentLookupProgress{}).first;
+        }
+        auto& progress = it->second;
+        const bool anchor_canonical = !progress.tip_hash.empty() &&
+            chain_.GetBlockHashAtHeight(progress.tip_height) == progress.tip_hash;
+        progress.ObserveTip(tip, tip_hash, anchor_canonical);
+        for (size_t step = 0; step < 8; ++step) {
+            const auto next = progress.Next();
+            if (!next) break;
+            const uint64_t height = *next;
+            Block block;
+            try { block = read(height); } catch (...) { throw unavailable(); }
+            if (!unchanged()) { progress.tip_hash.clear(); throw unavailable(); }
+            for (const auto& tx : block.transactions) {
+                if (tx.GetTxID() == txid)
+                    return emit(block, tx, height);
+            }
+            progress.MarkExamined(height);
+        }
+        if (progress.Next()) throw unavailable();
+        throw rpc_error(-32602,
+            "tx not found in last 2016 blocks; use gettransaction with a block hint for older txs");
+    }
 
     void RegisterMethods() {
         using JB = JsonBuilder;
@@ -1577,6 +1593,11 @@ private:
                 // string — closing the cross-layer mismatch that silently dropped
                 // every governance op.
                 {"gov_chain_prefix", JB::String(GovernanceEngine::GovChainIdPrefix())},
+                {"gov_vote_version", JB::Number((uint64_t)(
+                    ConsensusSecurityUpgradeActive(chain_.Height() == UINT64_MAX
+                        ? UINT64_MAX : chain_.Height() + 1) ? 2 : 1))},
+                {"consensus_security_upgrade_height",
+                    JB::Number(CONSENSUS_SECURITY_UPGRADE_HEIGHT)},
             });
         });
 
@@ -1759,18 +1780,8 @@ private:
             }
             Hash256 txid = HexToHash(txid_hex);
 
-            constexpr uint64_t SCAN_WINDOW = 2016;
-            uint64_t tip = chain_.Height();
-            uint64_t scan_from = (tip > SCAN_WINDOW) ? tip - SCAN_WINDOW : 0;
-
-            for (uint64_t h = tip; h + 1 > scan_from; --h) {
-                bool got_block = false;
-                Block block;
-                try { block = chain_.GetBlock(h); got_block = true; }
-                catch (...) {  }
-                if (!got_block) { if (h == 0) break; continue; }
-                for (const auto& tx : block.transactions) {
-                    if (tx.GetTxID() == txid) {
+            const uint64_t tip = chain_.Height();
+            auto emit = [&](const Block& block, const Transaction& tx, uint64_t h) {
                         std::vector<std::string> inputs;
                         for (const auto& inp : tx.inputs) {
                             inputs.push_back(JB::Object({
@@ -1797,12 +1808,8 @@ private:
                             {"vout",          JB::Array(outputs)},
                             {"confirmations", JB::Number(tip - h + 1)},
                         });
-                    }
-                }
-                if (h == 0) break;
-            }
-            throw rpc_error(-32602,
-                "tx not found in last 2016 blocks; use `gettransaction <txid> <height|block_hash>` for older txs");
+            };
+            return LookupTransaction_(txid_hex, txid, tip, true, emit);
         });
 
         methods_["getrawtransaction"] = RpcMethod([this](const P& params) -> std::string {
@@ -1851,36 +1858,7 @@ private:
                 });
             };
 
-            if (txindex_lookup_fn_) {
-                try {
-                    auto h_opt = txindex_lookup_fn_(txid_hex);
-                    if (h_opt && *h_opt <= tip) {
-                        uint64_t h = *h_opt;
-                        Block block = chain_.GetBlock(h);
-                        for (const auto& tx : block.transactions) {
-                            if (tx.GetTxID() == txid) return emit(block, tx, h);
-                        }
-                    }
-                } catch (...) {
-                }
-            }
-
-            constexpr uint64_t SCAN_WINDOW = 2016;
-            uint64_t scan_from = (tip > SCAN_WINDOW) ? tip - SCAN_WINDOW : 0;
-            for (uint64_t h = tip; h + 1 > scan_from; --h) {
-                Block block;
-                try { block = chain_.GetBlock(h); }
-                catch (...) { if (h == 0) break; continue; }
-                for (const auto& tx : block.transactions) {
-                    if (tx.GetTxID() == txid) return emit(block, tx, h);
-                }
-                if (h == 0) break;
-            }
-
-            throw rpc_error(-32602,
-                "tx not found; start the node with --txindex for O(1) "
-                "txid lookups, or use `gettransaction <txid> "
-                "<height|block_hash>`");
+            return LookupTransaction_(txid_hex, txid, tip, false, emit);
         });
 
         methods_["getminerstatus"] = RpcMethod([this](const P&) -> std::string {
@@ -2310,24 +2288,14 @@ private:
                     // pending slashable bond never disappears from operator UI.
                     if (!v.bond_custodial || v.bond_units == 0) continue;
                     if (v.active && !v.slashed) custodial_count++;
-                    uint64_t return_boundary = 0;
-                    uint64_t settlement_boundary = 0;
-                    bool pending_return = false;
-                    if (!v.slashed && v.deregistered_at_height > 0) {
-                        return_boundary = ValidatorRegistry::DeregReturnBoundary(
-                            v.deregistered_at_height,
-                            v.last_finality_vote_height);
-                        settlement_boundary = return_boundary;
-                        pending_return = height < return_boundary;
-                        if (pending_return) pending_return_count++;
-                    } else if (v.slashed && v.slashed_at_height > 0) {
-                        settlement_boundary =
-                            ValidatorRegistry::SlashSettlementBoundary(
-                                v.slashed_at_height);
-                    }
-                    const bool principal_held = v.active ||
-                        (settlement_boundary > 0 &&
-                         height < settlement_boundary);
+                    const auto lifecycle = validators_->GetBondLifecycleStatus(
+                        v.pubkey_hex, height);
+                    const uint64_t return_boundary = lifecycle.return_boundary;
+                    const uint64_t settlement_boundary = lifecycle.settlement_boundary;
+                    const bool principal_held = lifecycle.principal_held;
+                    const bool pending_return = !v.slashed &&
+                        v.deregistered_at_height > 0 && principal_held;
+                    if (pending_return) pending_return_count++;
                     uint64_t acc = 0;
                     auto it = accrued_by_pk.find(v.pubkey_hex);
                     if (it != accrued_by_pk.end()) acc = it->second;
@@ -2526,6 +2494,55 @@ private:
                << ",\"spendable_veld\":" << spendable << "}";
             return jb.str();
         });
+
+        // Bounded, index-only public history. This deliberately does not
+        // accept block ranges: one request performs one ordered index seek,
+        // returns at most 50 fixed-shape rows, and never loads block bodies.
+        methods_["getaddresshistory"] = RpcMethod(
+            [this](const P& params) -> std::string {
+                if (params.empty() || params.size() > 3)
+                    throw std::invalid_argument(
+                        "expected address, optional limit, optional cursor");
+                size_t limit = 25;
+                if (params.size() >= 2) {
+                    const uint64_t parsed = ParseCanonicalRpcU64OrThrow(
+                        params[1], "limit");
+                    if (parsed == 0 || parsed > 50)
+                        throw std::invalid_argument(
+                            "limit must be an integer from 1 to 50");
+                    limit = static_cast<size_t>(parsed);
+                }
+                const std::string cursor =
+                    params.size() >= 3 ? params[2] : std::string{};
+                if (cursor.size() > 192)
+                    throw std::invalid_argument("cursor is too long");
+                if (!address_history_fn_)
+                    throw rpc_error(-32004,
+                                    "address history index unavailable");
+
+                uint32_t active = address_history_queries_.load(
+                    std::memory_order_relaxed);
+                do {
+                    if (active >= 4)
+                        throw rpc_error(-32005,
+                                        "address history is busy; retry shortly");
+                } while (!address_history_queries_.compare_exchange_weak(
+                    active, active + 1, std::memory_order_acq_rel,
+                    std::memory_order_relaxed));
+                struct QueryGuard {
+                    std::atomic<uint32_t>& count;
+                    ~QueryGuard() {
+                        count.fetch_sub(1, std::memory_order_release);
+                    }
+                } guard{address_history_queries_};
+
+                std::string result = address_history_fn_(
+                    params[0], limit, cursor);
+                if (result.size() > 32768)
+                    throw rpc_error(-32004,
+                                    "address history response exceeded bound");
+                return result;
+            });
 
         methods_["listunspent"] = RpcMethod([this](const P& params) -> std::string {
             if (params.empty()) throw std::invalid_argument("Missing address");
@@ -2801,34 +2818,6 @@ private:
             }
             if (!authorized_sink_broadcast && tx_broadcast_)
                 tx_broadcast_(tx);
-
-            for (const auto& out : tx.outputs) {
-                if (out.value != 0) continue;
-                if (out.script_pubkey.size() < 2) continue;
-                if (out.script_pubkey[0] != 0x6A) continue;
-                size_t off = 1;
-                size_t opdata_len = 0;
-                if (out.script_pubkey[off] <= 75) { opdata_len = out.script_pubkey[off++]; }
-                else if (out.script_pubkey[off] == 0x4C && out.script_pubkey.size() > off + 1) {
-                    off++; opdata_len = out.script_pubkey[off++];
-                }
-                else if (out.script_pubkey[off] == 0x4D && out.script_pubkey.size() > off + 2) {
-                    off++;
-                    opdata_len = out.script_pubkey[off] | (out.script_pubkey[off+1] << 8);
-                    off += 2;
-                }
-                if (off + opdata_len > out.script_pubkey.size()) continue;
-                std::string opdata(out.script_pubkey.begin() + off,
-                                   out.script_pubkey.begin() + off + opdata_len);
-                static const std::string LOCK_PREFIX = "VELD_STAKE|LOCK|";
-                if (opdata.rfind(LOCK_PREFIX, 0) != 0) continue;
-                size_t addr_start = LOCK_PREFIX.size();
-                size_t addr_end   = opdata.find('|', addr_start);
-                if (addr_end == std::string::npos) continue;
-                std::string staker_addr = opdata.substr(addr_start, addr_end - addr_start);
-                ClearStakeReservation(staker_addr);
-                break;
-            }
 
             return JB::String(HashToHex(tx.GetTxID()));
         });
@@ -5612,6 +5601,8 @@ private:
             uint64_t total_staked = staking_ ? staking_->GetTotalStake() : 0;
             j << "{";
             j << "\"system_active\":" << (sys_active ? "true" : "false") << ",";
+            j << "\"existing_operations_active\":"
+              << (validators_ && validators_->ExistingValidatorOperationsActive() ? "true" : "false") << ",";
             j << "\"unlock_threshold_veld\":" << (double)VALIDATOR_UNLOCK_STAKED / VELD_UNITS << ",";
             j << "\"total_staked_veld\":" << (double)total_staked / VELD_UNITS << ",";
             j << "\"min_stake_veld\":" << (double)(validators_ ? validators_->GetEffectiveMinStake() : MIN_VALIDATOR_STAKE) / VELD_UNITS << ",";
@@ -6084,7 +6075,9 @@ private:
             j << "\"query\":\"" << arg << "\",";
             j << "\"resolved_as\":\"" << (is_address ? "address" : "pubkey") << "\",";
             j << "\"registered\":" << (registered ? "true" : "false") << ",";
-            j << "\"system_active\":" << (validators_ && validators_->IsValidatorSystemActive() ? "true" : "false");
+            j << "\"system_active\":" << (validators_ && validators_->IsValidatorSystemActive() ? "true" : "false") << ",";
+            j << "\"existing_operations_active\":"
+              << (validators_ && validators_->ExistingValidatorOperationsActive() ? "true" : "false");
             j << "}";
             return j.str();
         });
@@ -6348,7 +6341,7 @@ private:
                 throw std::runtime_error(
                     "Governance is locked until the bonded-validator activation threshold is reached");
             if (params.size() < 6) throw std::invalid_argument(
-                "Usage: preparegovvote ADDRESS PROPOSAL_ID CHOICE PUBKEY_HEX SIGNATURE_HEX SIGNED_HEIGHT");
+                "Usage: preparegovvote ADDRESS PROPOSAL_ID CHOICE PUBKEY_HEX SIGNATURE_HEX SIGNED_HEIGHT [VOTE_IDENTITY]");
             const std::string& address    = params[0];
             const uint64_t proposal_id = ParseCanonicalRpcU64OrThrow(
                 params[1], "proposal_id");
@@ -6361,21 +6354,26 @@ private:
             if (choice_str == "yes")      choice = VoteChoice::YES;
             else if (choice_str == "no")  choice = VoteChoice::NO;
             else if (choice_str != "abstain") throw std::invalid_argument("choice must be yes|no|abstain");
-            //  genesis-bind to match on-chain ApplyVoteFromChain.
-            std::string challenge = GovernanceEngine::GovChainIdPrefix() +
-                                     "GOV_VOTE:" + std::to_string(proposal_id) + ":" + choice_str +
-                                     ":@" + std::to_string(signed_height);
+            const uint64_t tip = chain_.Height();
+            const uint64_t inclusion_height = tip == UINT64_MAX ? tip : tip + 1;
+            const std::string identity = gov_->VoteIdentityFor(proposal_id, inclusion_height);
+            if ((!identity.empty() && (params.size() != 7 || params[6] != identity)) ||
+                (identity.empty() && params.size() != 6))
+                throw std::invalid_argument("Vote identity changed or missing; refresh and sign the current round");
+            const std::string challenge = GovernanceEngine::BuildVoteChallenge(
+                proposal_id, choice, signed_height, identity);
             if (!GovernanceEngine::VerifyGovSig(pubkey_hex, sig_hex, challenge))
                 throw std::runtime_error("Invalid signature");
             if (GovernanceEngine::PubKeyHexToAddress(pubkey_hex) != address)
                 throw std::runtime_error("Public key does not derive to claimed address");
-            uint64_t tip = (uint64_t)chain_.Height();
-            if (tip > signed_height + GOV_SIG_REPLAY_WINDOW_BLOCKS)
+            if (tip > signed_height && tip - signed_height > GOV_SIG_REPLAY_WINDOW_BLOCKS)
                 throw std::runtime_error("Signed height too stale; re-sign against current tip");
-            if (signed_height > tip + 1)
+            if (signed_height > inclusion_height)
                 throw std::runtime_error("signed_height is ahead of chain tip");
+            const std::string vote_prefix = std::string("VELD_GOV|") +
+                (identity.empty() ? "V|" : "V2|");
             if (mempool_.HasPendingOpReturn(
-                    "VELD_GOV|V|" + std::to_string(proposal_id) + "|" + address + "|"))
+                    vote_prefix + std::to_string(proposal_id) + "|" + address + "|"))
                 throw std::runtime_error(
                     "A vote from this address on this proposal is already "
                     "pending in the mempool. Wait for it to be mined "
@@ -6383,7 +6381,7 @@ private:
                     std::to_string(TARGET_BLOCK_TIME) +
                     " seconds) before re-submitting.");
             std::string payload = GovernanceEngine::BuildVoteOp(
-                proposal_id, address, choice, signed_height, pubkey_hex, sig_hex);
+                proposal_id, address, choice, signed_height, pubkey_hex, sig_hex, identity);
             auto op_script = build_op_return_script(payload);
             return build_gov_tx_template(address, op_script);
         });
@@ -6722,32 +6720,15 @@ private:
                     std::to_string((double)eff_min_stake / VELD_UNITS) + " VELD");
 
             uint64_t pending_staked = mempool_.GetPendingStakeUnits(address);
-            uint64_t reserved_units = 0;
-            uint64_t _p = 0;
-            if (!TryReserveStakeAtomic(address, amount_units,
-                                       pending_staked, &_p, &reserved_units))
-            {
-                if (_p > 0)
-                    throw std::runtime_error(
-                        "A stake transaction is already pending in the mempool. "
-                        "Wait for it to be mined (~180 seconds) before staking again.");
+            // Unsigned preparation grants no authority over this address.
+            // Only an admitted signed transaction may reserve its inputs.
+            if (pending_staked > 0)
                 throw std::runtime_error(
-                    "A stake of " + std::to_string((double)reserved_units / VELD_UNITS) +
-                    " VELD was just prepared and is awaiting broadcast. "
-                    "Wait ~30 seconds for the reservation to clear or for the "
-                    "previous TX to confirm before staking again.");
-            }
-            bool reservation_committed = false;
-            auto reservation_guard = std::shared_ptr<void>(
-                nullptr,
-                [this, address, &reservation_committed](void*) {
-                    if (!reservation_committed) {
-                        try { ClearStakeReservation(address); } catch (...) {}
-                    }
-                });
+                    "A stake transaction is already pending in the mempool. "
+                    "Wait for it to be mined (~180 seconds) before staking again.");
 
             uint64_t on_chain_staked = staking_ ? staking_->GetStake(address) : 0;
-            uint64_t already_staked  = on_chain_staked + pending_staked + reserved_units;
+            uint64_t already_staked  = on_chain_staked + pending_staked;
 
             if (already_staked + amount_units > MAX_STAKE_UNITS)
                 throw std::runtime_error(
@@ -6756,8 +6737,7 @@ private:
                     " VELD per address. Currently committed: " +
                     std::to_string((double)already_staked / VELD_UNITS) +
                     " VELD (on-chain " + std::to_string((double)on_chain_staked / VELD_UNITS) +
-                    " + pending " + std::to_string((double)pending_staked / VELD_UNITS) +
-                    " + reserved " + std::to_string((double)reserved_units / VELD_UNITS) + ")");
+                    " + pending " + std::to_string((double)pending_staked / VELD_UNITS) + ")");
 
             auto script = AddressToScript(address);
             if (script.empty()) throw std::runtime_error("Invalid address");
@@ -6835,8 +6815,6 @@ private:
             uint64_t total_input = 0;
             for (auto& utxo : coins.selected_utxos) total_input += utxo.value;
 
-            reservation_committed = true;
-
             uint64_t tier_blocks   = LOCKUP_TIERS[lockup_tier - 1].blocks;
             uint64_t unlock_height = chain_.Height() + tier_blocks;
             double   tier_mult     = ComputeStakeMultiplier(lockup_tier, amount_units);
@@ -6906,23 +6884,6 @@ private:
                     std::to_string((double)mature / VELD_UNITS) +
                     " VELD. Newly staked funds unlock in " +
                     std::to_string(blocks_remaining) + " blocks.");
-            }
-
-            {
-                auto& unstake_cooldowns = unstake_cooldowns_;
-                auto now = std::time(nullptr);
-                auto it = unstake_cooldowns.find(address);
-                if (it != unstake_cooldowns.end() && (now - it->second) < 60) {
-                    throw std::runtime_error("Unstake cooldown: please wait " +
-                        std::to_string(60 - (now - it->second)) + " seconds");
-                }
-                unstake_cooldowns[address] = now;
-                if (unstake_cooldowns.size() > 1000) {
-                    for (auto jt = unstake_cooldowns.begin(); jt != unstake_cooldowns.end(); ) {
-                        if (now - jt->second > 300) jt = unstake_cooldowns.erase(jt);
-                        else ++jt;
-                    }
-                }
             }
 
             auto script = AddressToScript(address);
@@ -7605,12 +7566,13 @@ private:
                 total_rewards = paid_rewards + pending_rewards;
             }
 
-            int total_filtered = (int)entries.size();
-            int start = (page - 1) * per_page;
-            int end = std::min(start + per_page, total_filtered);
-            if (start > total_filtered) start = total_filtered;
-            int total_pages = (per_page > 0) ? (total_filtered + per_page - 1) / per_page : 1;
-            if (total_pages < 1) total_pages = 1;
+            const size_t total_filtered = entries.size();
+            const auto range = rpc_detail::BoundedPageRange(
+                total_filtered, static_cast<size_t>(page),
+                static_cast<size_t>(per_page));
+            const size_t start = range.begin;
+            const size_t end = range.end;
+            const size_t total_pages = range.total_pages;
 
             std::ostringstream j;
             j << std::fixed << std::setprecision(8);
@@ -7628,7 +7590,7 @@ private:
             j << "\"pending_count\":" << pending_count << ",";
             j << "\"reward_per_endorsement_est\":" << reward_per_endorsement_est << ",";
             j << "\"endorsements\":[";
-            for (int i = start; i < end; ++i) {
+            for (size_t i = start; i < end; ++i) {
                 if (i > start) j << ",";
                 j << entries[i];
             }

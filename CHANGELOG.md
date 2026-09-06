@@ -1,7 +1,97 @@
+# Current source — 2026-09-06
+
+### Deployed portal and hosted wallet updates
+
+- Add an Add machine action beside the portal's machine selector and in
+  Settings, including installed PWA mode. Pairing retains existing machines
+  and preserves the entered code through background status refreshes.
+- Keep the wallet's Stake shortcut available before staking activation;
+  transaction submission continues to require activation.
+- Remove wallet Auto-compound controls, saved-preference handling, the
+  background timer, and automatic staking. Manual staking is unchanged.
+- Match the balance's VELD unit typography between light and dark themes.
+- Publish the hosted wallet stylesheet and compatibility overlay alongside
+  the application source. These web updates do not change the client version.
+
+### Awaiting the next Windows client release
+
+- Place New pair code immediately beside Open portal in Windows Settings,
+  with Copy code to their left when a code is available. This native layout
+  change is in source only; it is not part of the published 3.0.8 package.
+
+# Veld 3.0.8 — 2026-09-06
+
+- Fix startup after a signed snapshot's foreground chain advances while
+  independent background validation is still pending.
+- Validate the original snapshot height, hash and state commitment on restart;
+  retain its original independent validation target and saved progress.
+- Fully verify the post-snapshot blocks during startup replay. Mining and
+  endorsing remain paused until independent validation completes.
+- Retain the 3.0.7 Windows updater launcher correction and H2,880 activation.
+
+# Veld 3.0.7 — 2026-09-06
+
+- Restart Windows signed updates through Start Veld Node.bat with installed
+  package verification, the installation working directory and literal paths.
+- Keep the terminal restart launcher and signed update version protections.
+- Retain consensus security activation at H2,880 from 3.0.6.
+
 # Changelog
 
 All notable public-source changes are recorded here. Signed binary identity is
 recorded separately from source-publication commits.
+
+## 3.0.6 - 2026-09-06
+
+- Schedule the consensus security corrections at block 2,880.
+- Preserve finality and validator liability rules, bind governance votes to
+  their branch-local round, and retain the corrected staking query callback.
+- Retain directional peer sessions used for synchronization evidence.
+- Advance the signed update identity so existing 3.0.5 clients can accept
+  the new manifest. Publish exact build identities and source with the release.
+
+## 3.0.5 - 2026-09-03
+
+### Fixed
+
+- Locked both wallet staking controls by default and kept them disabled until
+  the live mainnet node reports that canonical issued supply has reached the
+  10,000 VELD staking-activation threshold.
+- Added a fail-closed submission guard so an unavailable or inactive staking
+  status cannot reach transaction preparation from the wallet interface.
+- Removed alternate-chain terminology from the public wallet, Explorer, and
+  portal source surfaces while retaining isolated developer profiles and their
+  production-build exclusion gates.
+
+### Compatibility
+
+- Consensus rules, the 10,000 VELD activation threshold, protocol version,
+  deployment identity, genesis, state digest v8, existing blocks, wallets,
+  addresses, and datadirs are unchanged.
+
+## 3.0.4 - 2026-09-03
+
+### Fixed
+
+- Restored public address transaction history through a bounded persistent
+  index rather than request-time whole-chain scanning.
+- Made explorer document navigation retain the last successful shell during
+  transient upstream failures instead of displaying a white refresh page.
+- Preserved signed-snapshot eligibility across maintenance updates and exposed
+  the actual selected, eligible, validating, or unavailable state in the GUI.
+- Exported one portable encrypted `.veld-keys` copy of the mining identity
+  after successful sign-in without generating a second wallet.
+- Added a locally confirmed portal re-pair action that revokes prior portal
+  command trust and issues a new one-time pairing code.
+- Restored the signed `Start Veld Node.bat` launcher in the minimal Windows
+  package and made that launcher explicitly select clearnet.
+- Reworded the initial peer-discovery status so a normal connection delay is
+  not reported as a persistent no-peer warning.
+
+### Compatibility
+
+- Consensus rules, protocol version, deployment identity, genesis, state
+  digest v8, existing blocks, wallets, addresses, and datadirs are unchanged.
 
 ## 3.0.3 - 2026-09-03
 

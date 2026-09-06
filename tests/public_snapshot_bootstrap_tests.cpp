@@ -125,6 +125,8 @@ int main() {
           "unexpected database rejected");
     Check(!SafeArchiveMemberName("db/blocks/CURRENT/extra"),
           "unexpected member depth rejected");
+    Check(!SafeArchiveMemberName("network.identity"),
+          "archive cannot supply the local network identity");
 
     const auto suffix = std::to_string(
         std::chrono::steady_clock::now().time_since_epoch().count());
@@ -175,6 +177,35 @@ int main() {
         extracted / "db" / "blocks" / "000001.ldb");
     Check(!ValidateExtractedLevelDbTree(extracted, &error),
           "external hardlink identity rejected");
+
+    // A legitimate snapshot has database state before VeldNode construction.
+    // Generic datadir initialization must still refuse that unmarked layout;
+    // only the authenticated snapshot preparation path supplies the local marker.
+    const auto identity_extract = root / "identity-extract";
+    for (const char* database : {"blocks", "index", "utxo"}) {
+        const auto directory = identity_extract / "db" / database;
+        std::filesystem::create_directories(directory);
+        Write(directory / "CURRENT", "MANIFEST-000001\n");
+        Write(directory / "MANIFEST-000001", "fixture\n");
+    }
+    Check(channel::secure_file::EnsurePrivateDirectory(identity_extract.string(), &error),
+          "snapshot identity fixture root is private");
+    Check(!ValidateOrCreatePublicNetworkIdentity(identity_extract.string(), &error),
+          "ordinary unmarked nonempty public datadir remains refused");
+    error.clear();
+    Check(InitializeAuthenticatedSnapshotIdentity(identity_extract, &error),
+          "snapshot preparation initializes local identity after layout validation");
+    std::vector<uint8_t> identity_bytes;
+    Check(channel::secure_file::Read(
+              (identity_extract / "network.identity").string(), identity_bytes,
+              &error, 4096, true) == channel::secure_file::ReadResult::Ok &&
+          std::string(identity_bytes.begin(), identity_bytes.end()) ==
+              CompiledPublicNetworkIdentityText(),
+          "snapshot identity is private and byte-exact compiled identity");
+    Check(ValidateOrCreatePublicNetworkIdentity(identity_extract.string(), &error),
+          "initialized public snapshot datadir reopens through ordinary identity gate");
+    Check(!InitializeAuthenticatedSnapshotIdentity(identity_extract, &error),
+          "snapshot initialization does not replace an existing identity");
 
     Check(IsBackgroundValidationInboundCommand(MessageType::VERSION) &&
           IsBackgroundValidationInboundCommand(MessageType::BLOCK) &&

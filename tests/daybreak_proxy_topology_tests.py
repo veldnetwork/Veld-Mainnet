@@ -173,6 +173,33 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
             "/api/v1/devices/rename", "POST", rename_headers, rename_body
         )[0] == 200)
 
+        reset_headers = proxy_headers("198.51.100.41") | {
+            "Authorization": "Bearer " + device_token,
+            "Content-Type": "application/json",
+            "Content-Length": "2",
+        }
+        reset_status, reset_value, _ = request(
+            "/api/v1/device/reset-pairing", "POST", reset_headers, b"{}"
+        )
+        check(reset_status == 200)
+        check(isinstance(reset_value.get("pair_code"), str))
+        check(reset_value["pair_code"] != report_response["pair_code"])
+        devices_status, devices_value, _ = request(
+            "/api/v1/devices", headers=session_headers
+        )
+        check(devices_status == 200 and devices_value["devices"] == [])
+        report_status, report_after_reset, _ = request(
+            "/api/v1/device/report", "POST",
+            proxy_headers("198.51.100.41") | {
+                "Authorization": "Bearer " + device_token,
+                "Content-Type": "application/json",
+                "Content-Length": str(len(report_body)),
+            }, report_body,
+        )
+        check(report_status == 200)
+        check(report_after_reset["paired"] is False)
+        check(report_after_reset["pair_code"] == reset_value["pair_code"])
+
         # Malformed bearer traffic spends only its unauthenticated client and
         # global request envelope; it cannot consume the known device quota.
         server.limiter = PORTAL.RateLimiter()

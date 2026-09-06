@@ -387,7 +387,9 @@ int main() {
             return std::static_pointer_cast<void>(permit);
         });
         auto write = std::async(std::launch::async, [&] {
-            server.TestRecordPeerSyncHeight(*peer_b, 350);
+            // Change the lower of the two source heights. An update only to
+            // the higher source is deliberately coalesced and needs no barrier.
+            server.TestRecordPeerSyncHeight(*peer_a, 350);
         });
         Check(write.wait_for(std::chrono::seconds(2)) ==
                   std::future_status::ready,
@@ -430,7 +432,7 @@ int main() {
         uint64_t sink_order = 0;
         uint64_t writer_order = 0;
         std::thread writer([&] {
-            server.TestRecordPeerSyncHeight(*peer_a, 400);
+            server.TestRecordPeerSyncHeight(*peer_b, 400);
             writer_order = order.fetch_add(1) + 1;
         });
         Check(close_started.wait_for(std::chrono::seconds(2)) ==
@@ -457,8 +459,8 @@ int main() {
         Check(!replay, "remote predecessor bearer remains one-use");
     }
 
-    // Verified-height writes and exact handshake removal use the same
-    // transition contract; cleanup removes both source and IP evidence.
+    // Genesis evidence leaves the effective verified height at zero and is
+    // coalesced. Exact handshake removal still uses the transition contract.
     {
         Coordinator coordinator(Limits(), Mint());
         std::mutex transition;
@@ -475,8 +477,8 @@ int main() {
         const uint64_t before_verified = callbacks.load();
         server.TestRecordVerifiedPeerHeight(
             peer_a->RemoteAddr(), genesis.GetHash());
-        Check(callbacks.load() == before_verified + 1,
-              "verified-height mutation entered sequencer");
+        Check(callbacks.load() == before_verified,
+              "genesis evidence keeps unchanged verified-height view unrevoked");
         Check(server.TestVerifiedPeerEvidenceCount() == 1,
               "canonical verified-height evidence published");
         const size_t before_sources = server.TestPeerWorkSourceCount();

@@ -734,6 +734,91 @@ static bool _wiz_create_portable_key_bundle(
     }
     return true;
 }
+
+// Once an encrypted mining identity has been authenticated, keep exactly one
+// portable copy beside miner.key.  This migrates identities created by older
+// clients without generating a replacement wallet or re-encrypting the key.
+// Existing matching bytes are accepted; conflicting bytes fail closed.
+static bool _wiz_ensure_portable_keyfile(
+        const std::string& datadir,
+        const std::string& address,
+        std::string& portable_path,
+        bool& created,
+        std::string& error) {
+    portable_path.clear();
+    created = false;
+    error.clear();
+    if (address.size() < 8) {
+        error = "mining identity has no canonical address";
+        return false;
+    }
+
+    const std::string operational_path = datadir + "/miner.key";
+    portable_path = datadir + "/veld-wallet-" + address.substr(0, 8)
+        + ".veld-keys";
+    if (!_wiz_is_encrypted(operational_path)) {
+        error = "portable keyfile requires an encrypted miner.key";
+        return false;
+    }
+
+    std::vector<uint8_t> operational_bytes;
+    std::vector<uint8_t> portable_bytes;
+    struct KeyfileBytesWiper {
+        std::vector<uint8_t>& first;
+        std::vector<uint8_t>& second;
+        ~KeyfileBytesWiper() {
+            if (!first.empty())
+                veld::compat::SecureZero(first.data(), first.size());
+            if (!second.empty())
+                veld::compat::SecureZero(second.data(), second.size());
+        }
+    } wipe_bytes{operational_bytes, portable_bytes};
+
+    if (!_wiz_read_private_bytes(
+            operational_path, operational_bytes,
+            WIZ_MAX_OPERATIONAL_SECRET_BYTES, &error)) {
+        return false;
+    }
+
+    std::error_code exists_error;
+    const bool portable_exists = std::filesystem::exists(
+        portable_path, exists_error);
+    if (exists_error) {
+        error = "cannot determine portable keyfile state";
+        return false;
+    }
+    if (portable_exists) {
+        if (!_wiz_read_private_bytes(
+                portable_path, portable_bytes,
+                WIZ_MAX_OPERATIONAL_SECRET_BYTES, &error)) {
+            return false;
+        }
+        if (portable_bytes.size() != operational_bytes.size() ||
+            !std::equal(operational_bytes.begin(), operational_bytes.end(),
+                        portable_bytes.begin())) {
+            error = "existing portable keyfile differs from miner.key";
+            return false;
+        }
+        return true;
+    }
+
+    if (!veld::channel::secure_file::AtomicWriteNew(
+            portable_path, operational_bytes, &error,
+            /*require_private_parent=*/true)) {
+        return false;
+    }
+    if (!_wiz_read_private_bytes(
+            portable_path, portable_bytes,
+            WIZ_MAX_OPERATIONAL_SECRET_BYTES, &error) ||
+        portable_bytes.size() != operational_bytes.size() ||
+        !std::equal(operational_bytes.begin(), operational_bytes.end(),
+                    portable_bytes.begin())) {
+        error = "portable keyfile readback differs from miner.key";
+        return false;
+    }
+    created = true;
+    return true;
+}
 #endif
 
 static bool _wiz_parse_key_record(std::string_view content,
@@ -1711,7 +1796,7 @@ int main(int argc, char* argv[]) {
             arg.rfind("--upnp-", 0) == 0) {
             std::cerr << "veld-node: FATAL: " << arg
                       << " is not supported in the "
-                         "Veld 3.0.0 public release\n";
+                      << "Veld " << CLIENT_VERSION << " public release\n";
             return 2;
         }
 #endif
@@ -2112,7 +2197,7 @@ int main(int argc, char* argv[]) {
                       << "  --reachable          Auto-open the P2P port via NAT-PMP/PCP so peers can dial you (publishes your IP; no-op on a public IP)\n"
                       << "  --tor                Be reachable as a Tor v3 .onion (zero IP exposure; needs a local Tor daemon with ControlPort)\n"
                       << "  --tor-data-dir DIR   Required with --tor; trusted owner-only Tor directory containing control_auth_cookie\n"
-                      << "  --tor-only           Route ALL traffic through Tor (onion-only, real IP never exposed); reads .onion from <datadir>/tor/hs/hostname\n"
+                      << "  --tor-only           Route outbound P2P through Tor; disable ancillary HTTPS downloads; reads .onion from <datadir>/tor/hs/hostname\n"
 #ifndef VELD_PUBLIC_TESTNET
                       << "  --verify-release M S Verify release manifest M against signature S using the pinned release key; exit 0=valid (used by the updater)\n"
 #endif
@@ -2601,6 +2686,46 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "\n";
 
+    std::string tor_only_onion;
+    if (opt_tor_only) {
+        // Tor-only: the launcher already started a fetched+pinned Tor with a
+        // static v3 hidden service. Read our .onion from its hostname file and
+        // route ALL traffic through Tor's SOCKS5 (zero clearnet IP exposure).
+        {
+            std::vector<uint8_t> hostname;
+            std::string hostname_error;
+            if (veld::channel::secure_file::Read(
+                    opt_datadir + "/tor/hs/hostname", hostname,
+                    &hostname_error, 4096,
+                    /*require_private_parent=*/true)
+                == veld::channel::secure_file::ReadResult::Ok) {
+                tor_only_onion.assign(hostname.begin(), hostname.end());
+            }
+            if (tor_only_onion.empty()) {
+                std::cerr << RED
+                          << "  [FATAL] --tor-only requires a readable owner-only "
+                             "datadir/tor/hs/hostname file"
+                          << (hostname_error.empty() ? "" : ": " + hostname_error)
+                          << ".\n  Re-run tor-setup.ps1 and restart; refusing outbound-only "
+                             "Tor mode because this node would not be dialable.\n"
+                          << RESET;
+                return 1;
+            }
+        }
+        while (!tor_only_onion.empty() &&
+               (tor_only_onion.back()=='\n'||tor_only_onion.back()=='\r'||
+                tor_only_onion.back()==' '||tor_only_onion.back()=='\t'))
+            tor_only_onion.pop_back();
+        std::cout << CYAN << "  [tor] --tor-only: reachable as " << tor_only_onion
+                  << " — outbound P2P uses Tor; HTTPS oracle and checkpoint fetches are disabled." << RESET << "\n";
+    }
+
+    if (opt_tor_only && opt_snapshot_bootstrap) {
+        opt_snapshot_bootstrap = false;
+        std::cout << "  [snapshot] Tor-only routing disables HTTPS downloads; "
+                     "synchronization uses Tor peers.\n";
+    }
+
 #if defined(VELD_PUBLIC_MAINNET) && \
     defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     // Acquire and validate a snapshot before constructing the live node, while
@@ -2900,6 +3025,7 @@ int main(int argc, char* argv[]) {
         opt_full_ibd = true;
 #endif
         node.SetFullIbd(opt_full_ibd);
+        if (opt_tor_only) node.ConfigureTorOnly(tor_only_onion);
 
         node.Start();
     }
@@ -2936,40 +3062,7 @@ int main(int argc, char* argv[]) {
         node.GetTCPServer()->EnablePortMapping();
         node.GetTCPServer()->EnableHolePunch();   // fallback if the router declines port-mapping
     }
-    std::string tor_only_onion;
-    if (opt_tor_only && node.GetTCPServer()) {
-        // Tor-only: the launcher already started a fetched+pinned Tor with a
-        // static v3 hidden service. Read our .onion from its hostname file and
-        // route ALL traffic through Tor's SOCKS5 (zero clearnet IP exposure).
-        {
-            std::vector<uint8_t> hostname;
-            std::string hostname_error;
-            if (veld::channel::secure_file::Read(
-                    opt_datadir + "/tor/hs/hostname", hostname,
-                    &hostname_error, 4096,
-                    /*require_private_parent=*/true)
-                == veld::channel::secure_file::ReadResult::Ok) {
-                tor_only_onion.assign(hostname.begin(), hostname.end());
-            }
-            if (tor_only_onion.empty()) {
-                std::cerr << RED
-                          << "  [FATAL] --tor-only requires a readable owner-only "
-                             "datadir/tor/hs/hostname file"
-                          << (hostname_error.empty() ? "" : ": " + hostname_error)
-                          << ".\n  Re-run tor-setup.ps1 and restart; refusing outbound-only "
-                             "Tor mode because this node would not be dialable.\n"
-                          << RESET;
-                return 1;
-            }
-        }
-        while (!tor_only_onion.empty() &&
-               (tor_only_onion.back()=='\n'||tor_only_onion.back()=='\r'||
-                tor_only_onion.back()==' '||tor_only_onion.back()=='\t'))
-            tor_only_onion.pop_back();
-        node.GetTCPServer()->EnableTorOnly(tor_only_onion);   // all dials via SOCKS regardless
-        std::cout << CYAN << "  [tor] --tor-only: reachable as " << tor_only_onion
-                  << " — all traffic via Tor, zero IP exposure." << RESET << "\n";
-    } else if (opt_tor && node.GetTCPServer()) {
+    if (opt_tor && node.GetTCPServer()) {
         std::cout << CYAN << "  [tor] --tor: publishing a v3 .onion hidden service "
                      "(needs a local Tor daemon w/ ControlPort; zero IP exposure)."
                   << RESET << "\n";
@@ -3024,7 +3117,7 @@ int main(int argc, char* argv[]) {
             }
         }
         if (connected == 0) {
-            std::cerr << "  [WARN] No peers are reachable; sync will retry automatically.\n";
+            std::cout << "  Peer discovery is active; initial connections are still pending.\n";
         } else {
             std::cout << GREEN << "  Peers:   " << RESET << connected
                       << " connected\n";
@@ -3096,14 +3189,11 @@ int main(int argc, char* argv[]) {
             std::cout << "  [background-ibd] opening independent validation "
                          "state; verified restart progress will be reused.\n";
             std::cout.flush();
+            if (opt_tor_only)
+                background_chainstate->ConfigureTorOnly(tor_only_onion);
             background_chainstate->Start();
             node.SetIndependentValidationProgress(
                 background_chainstate->GetChain().Height());
-
-            if (opt_tor_only && background_chainstate->GetTCPServer()) {
-                background_chainstate->GetTCPServer()->EnableTorOnly(
-                    tor_only_onion);
-            }
 
             if (!opt_connect.empty()) {
                 background_validation_peers = opt_connect;
@@ -3527,6 +3617,30 @@ int main(int argc, char* argv[]) {
             }
         }
 
+#ifndef VELD_PUBLIC_TESTNET
+        // A successful sign-in must leave one wallet/node-compatible portable
+        // keyfile for this identity.  This is an exact encrypted-byte copy,
+        // never a second key generation, and is idempotent on every restart.
+        if (miner_key_ready && !g_passphrase.empty()) {
+            std::string portable_path;
+            std::string portable_error;
+            bool portable_created = false;
+            if (!_wiz_ensure_portable_keyfile(
+                    opt_datadir, miner_kp.address, portable_path,
+                    portable_created, portable_error)) {
+                std::cerr << RED
+                          << "  FATAL: portable mining keyfile verification failed: "
+                          << portable_error << "\n" << RESET;
+                return 1;
+            }
+            if (portable_created) {
+                std::cout << GREEN
+                          << "  Portable wallet keyfile created: "
+                          << portable_path << "\n" << RESET;
+            }
+        }
+#endif
+
         if (!opt_miner_addr.empty()) {
             auto override_script = AddressToScript(opt_miner_addr);
             if (override_script.empty()) {
@@ -3624,6 +3738,7 @@ int main(int argc, char* argv[]) {
     uint64_t stable_ticks         = 0;
     int      tick                 = 0;
     int64_t  last_seed_redial_ms  = 0;
+    int64_t  last_directed_redial_ms = 0;
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     uint64_t background_last_reported_height = UINT64_MAX;
 #endif
@@ -3670,6 +3785,14 @@ int main(int argc, char* argv[]) {
             const int64_t now_seconds = static_cast<int64_t>(std::time(nullptr));
 
             std::ostringstream status;
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+            const bool snapshot_bootstrap_compiled = true;
+            const bool snapshot_fast_start_eligible =
+                node.SnapshotFastStartEligible();
+#else
+            const bool snapshot_bootstrap_compiled = false;
+            const bool snapshot_fast_start_eligible = false;
+#endif
             status << std::fixed << std::setprecision(2)
                    << "{\"mining_configured\":"
                    << (node.IsMiningConfigured() ? "true" : "false")
@@ -3677,6 +3800,12 @@ int main(int argc, char* argv[]) {
                    << (node.IsMiningReady() ? "true" : "false")
                    << ",\"mining_active\":"
                    << (node.IsMiningActive() ? "true" : "false")
+                   << ",\"snapshot_bootstrap_compiled\":"
+                   << (snapshot_bootstrap_compiled ? "true" : "false")
+                   << ",\"snapshot_fast_start_eligible\":"
+                   << (snapshot_fast_start_eligible ? "true" : "false")
+                   << ",\"full_ibd\":"
+                   << (node.IsFullIbd() ? "true" : "false")
                    << ",\"work_state\":\""
                    << node.GetMiningWorkStateName() << "\""
                    << ",\"hashrate\":" << node.GetHashrate()
@@ -3949,17 +4078,24 @@ int main(int argc, char* argv[]) {
         }
 
         if (!opt_connect.empty()) {
-            for (const auto& peer : opt_connect) {
-                auto colon = peer.rfind(':');
-                std::string host = (colon != std::string::npos) ? peer.substr(0, colon) : peer;
-                uint16_t port = config.port;
-                if (colon != std::string::npos) {
-                    try { port = (uint16_t)std::stoi(peer.substr(colon+1)); }
-                    catch (...) { port = config.port; }
+            const int64_t now_ms = (int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            // Old peers may still collapse a cross-dial. Bound retries while
+            // counterparts are being upgraded; an inbound leg is not a sync source.
+            if (now_ms - last_directed_redial_ms >= 30000) {
+                last_directed_redial_ms = now_ms;
+                for (const auto& peer : opt_connect) {
+                    auto colon = peer.rfind(':');
+                    std::string host = (colon != std::string::npos) ? peer.substr(0, colon) : peer;
+                    uint16_t port = config.port;
+                    if (colon != std::string::npos) {
+                        try { port = (uint16_t)std::stoi(peer.substr(colon+1)); }
+                        catch (...) { port = config.port; }
+                    }
+                    std::string key = host + ":" + std::to_string(port);
+                    bool need_connect = !node.IsPeerConnected(key, true);
+                    if (need_connect) node.ConnectTo(host, port);
                 }
-                std::string key = host + ":" + std::to_string(port);
-                bool need_connect = !node.IsPeerConnected(key);
-                if (need_connect) node.ConnectTo(host, port);
             }
         }
 
@@ -3994,7 +4130,7 @@ int main(int argc, char* argv[]) {
                 for (const auto& seed : seeds) {
                     const std::string key =
                         seed + ":" + std::to_string(config.port);
-                    if (!node.IsPeerConnected(key))
+                    if (!node.IsPeerConnected(key, true))
                         node.ConnectTo(seed, config.port);
                 }
             }

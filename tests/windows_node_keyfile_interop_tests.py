@@ -20,7 +20,7 @@ def check(condition: bool, message: str) -> None:
 
 
 bundle_start = NODE.index("static bool _wiz_create_portable_key_bundle(")
-bundle_end = NODE.index("\n#endif", bundle_start)
+bundle_end = NODE.index("static bool _wiz_ensure_portable_keyfile(", bundle_start)
 bundle = NODE[bundle_start:bundle_end]
 
 check("_wiz_encrypt_key_record(" in bundle, "bundle must encrypt one canonical record")
@@ -80,5 +80,27 @@ check("imported into both Veld Wallet and Veld Node" in GUI,
       "GUI must explain the portable keyfile's two supported import targets")
 check("using the same passphrase" in GUI,
       "GUI must explain passphrase continuity")
+
+ensure_start = NODE.index("static bool _wiz_ensure_portable_keyfile(")
+ensure_end = NODE.index("\n#endif", ensure_start)
+ensure_flow = NODE[ensure_start:ensure_end]
+check("GenerateKeyPair(" not in ensure_flow,
+      "portable-key migration must never generate a second wallet")
+check(ensure_flow.count("AtomicWriteNew(") == 1,
+      "portable-key migration must publish at most one new file")
+check("existing portable keyfile differs from miner.key" in ensure_flow,
+      "a conflicting portable keyfile must fail closed")
+check("portable keyfile readback differs from miner.key" in ensure_flow,
+      "a newly published portable keyfile needs exact-byte readback")
+check("portable_exists" in ensure_flow,
+      "portable-key migration must be idempotent")
+check("_wiz_is_encrypted(operational_path)" in ensure_flow,
+      "portable-key migration must refuse plaintext operational keys")
+
+startup_call = NODE.index("// A successful sign-in must leave one wallet/node-compatible")
+check(startup_call > NODE.index("Mining wallet unlocked."),
+      "portable-key migration must run only after successful sign-in")
+check("_wiz_ensure_portable_keyfile(" in NODE[startup_call:startup_call + 1400],
+      "successful sign-in must enforce the portable keyfile invariant")
 
 print(f"PASS windows_node_keyfile_interop_tests checks={checks}")

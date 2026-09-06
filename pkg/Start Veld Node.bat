@@ -5,12 +5,10 @@ title Veld Node
 set "VELD_HOME=%~dp0"
 set "VELD_INSTALL_DIR=%VELD_HOME:~0,-1%"
 set "VELD_NODE=%VELD_HOME%bin\veld-node.exe"
-set "VELD_GUI=%VELD_HOME%bin\veld-node-gui.exe"
 set "VELD_WINDOWED=%VELD_HOME%Veld Node.exe"
 set "VELD_MANIFEST=%VELD_HOME%SHA256SUMS.txt"
 set "VELD_SIGNATURE=%VELD_HOME%SHA256SUMS.txt.sig"
 set "VELD_UPDATER=%VELD_HOME%veld-update.ps1"
-set "VELD_REACHABILITY=%VELD_HOME%veld-reachability.ps1"
 
 REM Mining work admission requires at least one explicitly configured outbound
 REM anchor. Keep the established terminal-client defaults while allowing an
@@ -18,12 +16,10 @@ REM operator to replace the complete set before launch.
 if not defined VELD_FLEET_ANCHOR_IPS set "VELD_FLEET_ANCHOR_IPS=5.78.107.166,5.78.97.56,5.78.127.51"
 
 if not exist "%VELD_NODE%" goto :missing
-if not exist "%VELD_GUI%" goto :missing
 if not exist "%VELD_WINDOWED%" goto :missing
 if not exist "%VELD_MANIFEST%" goto :missing
 if not exist "%VELD_SIGNATURE%" goto :missing
 if not exist "%VELD_UPDATER%" goto :missing
-if not exist "%VELD_REACHABILITY%" goto :missing
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%VELD_UPDATER%" -Mode Recover -InstallDir "%VELD_INSTALL_DIR%"
 if errorlevel 1 (
@@ -56,7 +52,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "if(-not $path.StartsWith($root,[StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $path -PathType Leaf)){ $bad=$true; break };" ^
   "$got=(Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant();" ^
   "if($got -ne $matches[1].ToLowerInvariant()){ $bad=$true; break }}};" ^
-  "foreach($need in @('bin\veld-node.exe','bin\veld-node-gui.exe','Veld Node.exe','Start Veld Node.bat','veld-update.ps1','veld-reachability.ps1')){" ^
+  "foreach($need in @('bin\veld-node.exe','bin\veld-wallet.exe','Veld Node.exe','Start Veld Node.bat','veld-update.ps1','tor-setup.ps1','CHANGES.txt')){" ^
   "if(-not $seen.ContainsKey($need)){ $bad=$true; break }}; if($bad){exit 1}"
 if errorlevel 1 (
     echo.
@@ -93,8 +89,7 @@ exit /b 0
 
 :launch
 
-powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%VELD_REACHABILITY%" -Mode Ensure >nul 2>nul
-start "" /D "%VELD_HOME%" "%VELD_WINDOWED%" --node "%VELD_NODE%" --datadir "%VELD_HOME%veld-data"
+start "" /D "%VELD_HOME%" "%VELD_WINDOWED%" --clearnet --node "%VELD_NODE%" --datadir "%VELD_HOME%veld-data"
 exit /b 0
 
 :missing

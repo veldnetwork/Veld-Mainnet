@@ -16,6 +16,8 @@
 #include "../network/chainparams.h"
 #include "../network/trusted_proxy.h"
 #include "explorer_icons.h"
+#include "explorer_prevouts.h"
+#include "receipt_source_slots.h"
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -44,6 +46,7 @@ namespace explorer {
 
 using SocketHandle = veld::compat::SocketHandle;
 inline constexpr size_t EXPLORER_MAX_RESPONSE_BODY = 4U * 1024U * 1024U;
+inline constexpr size_t EXPLORER_BLOCK_PAGE_BODY_BUDGET = 1024U * 1024U;
 
 struct HttpRequest {
     std::string method;
@@ -1150,21 +1153,9 @@ public:
         return proxy_configuration_error_;
     }
     void PrewarmRichList() {
-        if (!cache_dir_.empty()) {
-            std::string path = cache_dir_ + "/.richlist-cache.html";
-            std::ifstream f(path, std::ios::binary);
-            if (f.good()) {
-                std::stringstream ss;
-                ss << f.rdbuf();
-                std::string disk_body = ss.str();
-                if (!disk_body.empty()) {
-                    std::lock_guard<std::mutex> lk(richlist_cache_mu_);
-                    richlist_cache_body_  = disk_body;
-                    richlist_cache_until_ = std::chrono::steady_clock::now()
-                                          + std::chrono::seconds(5);
-                }
-            }
-        }
+        // A persisted HTML body cannot prove which active-chain height produced
+        // it. Rebuild from the current chain instead of briefly serving stale
+        // balances after startup or a reorganization.
         std::lock_guard<std::mutex> lk(prewarm_thread_mu_);
         if (prewarm_thread_.joinable()) prewarm_thread_.join();
         prewarm_thread_ = std::thread([this]() {
@@ -1179,6 +1170,11 @@ public:
     struct PeerStatsItem { std::string ip; uint64_t mempool_size; uint32_t peer_count; int64_t age_s; };
     void SetPeerStatsFn(std::function<std::vector<PeerStatsItem>()> fn) {
         peer_stats_fn_ = std::move(fn);
+    }
+    void SetAddressHistoryFn(
+            std::function<std::string(const std::string&, size_t,
+                                      const std::string&)> fn) {
+        address_history_fn_ = std::move(fn);
     }
     std::vector<PeerStatsItem> LivePeerStats() const {
         return peer_stats_fn_ ? peer_stats_fn_() : std::vector<PeerStatsItem>{};
@@ -1254,6 +1250,18 @@ public:
             ::shutdown(fd_, SHUT_RDWR);
 #endif
             VELD_CLOSE_SOCKET(fd_);
+        }
+        {
+            // Workers remove and close sockets under this same mutex. Holding
+            // it through shutdown prevents touching a reused descriptor.
+            std::lock_guard<std::mutex> lk(request_workers_mutex_);
+            for (const auto& [client, source] : request_sockets_) {
+#ifdef _WIN32
+                ::shutdown(client, SD_BOTH);
+#else
+                ::shutdown(client, SHUT_RDWR);
+#endif
+            }
         }
         if (server_thread_.joinable()) server_thread_.join();
         fd_ = veld::compat::kInvalidSocket;
@@ -1340,9 +1348,13 @@ public:
         if (parts.size() == 1 && parts[0] == "sw.js") {
             static const std::string sw = R"VLDSW(
 const CACHE_PREFIX = 'veld-explorer-shell-';
-const CACHE = 'veld-explorer-shell-ui-20260814-wallet-footer-layout';
+const CACHE = 'veld-explorer-shell-ui-20260903-navigation-fallback';
 self.addEventListener('install', event => {
-  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE)
+      .then(cache => cache.addAll(['/', '/blocks']))
+      .then(() => self.skipWaiting())
+  );
 });
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(
@@ -1353,7 +1365,28 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   if (event.request.mode === 'navigate' || event.request.destination === 'document') {
-    event.respondWith(fetch(event.request, {cache:'no-store'}));
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      const url = new URL(event.request.url);
+      const canonical = new Request(url.origin + url.pathname, {
+        method: 'GET', credentials: 'same-origin'
+      });
+      try {
+        const response = await fetch(event.request, {cache:'no-store'});
+        if (response.ok) {
+          await cache.put(canonical, response.clone());
+          return response;
+        }
+        const saved = await cache.match(canonical)
+          || (url.pathname === '/blocks' ? await cache.match('/blocks') : null)
+          || await cache.match('/');
+        return saved || response;
+      } catch (_) {
+        return await cache.match(canonical)
+          || (url.pathname === '/blocks' ? await cache.match('/blocks') : null)
+          || await cache.match('/');
+      }
+    })());
   }
 });
 )VLDSW";
@@ -1502,6 +1535,36 @@ self.addEventListener('fetch', event => {
                 j << std::fixed << std::setprecision(8);
                 j << "{\"address\":\"" << HttpResponse::JsonEscape(parts[3]) << "\",\"balance_veld\":" << bal << "}";
                 return HttpResponse::JSON(j.str());
+            }
+
+            if (resource == "addresshistory" && parts.size() == 5) {
+                uint64_t limit = 0;
+                if (!ParseExplorerHeight_(parts[4], limit) || limit == 0 ||
+                    limit > 50)
+                    return HttpResponse::JSON(
+                        "{\"error\":\"limit must be an integer from 1 to 50\"}",
+                        400);
+                if (!address_history_fn_)
+                    return HttpResponse::JSON(
+                        "{\"error\":\"address history index unavailable\"}",
+                        503);
+                try {
+                    std::string body = address_history_fn_(
+                        parts[3], static_cast<size_t>(limit), "");
+                    if (body.size() > 32768)
+                        return HttpResponse::JSON(
+                            "{\"error\":\"address history response exceeded bound\"}",
+                            503);
+                    return HttpResponse::JSON(body);
+                } catch (const std::invalid_argument& e) {
+                    return HttpResponse::JSON(
+                        "{\"error\":\"" +
+                        HttpResponse::JsonEscape(e.what()) + "\"}", 400);
+                } catch (const std::exception& e) {
+                    return HttpResponse::JSON(
+                        "{\"error\":\"" +
+                        HttpResponse::JsonEscape(e.what()) + "\"}", 503);
+                }
             }
 
             // One bounded request serves a complete history page.  The old UI
@@ -1687,14 +1750,13 @@ self.addEventListener('fetch', event => {
             }
 
             if (resource == "richlist") {
-                static std::mutex richlist_json_cache_mu;
-                static std::string richlist_json_cached_body;
-                static std::chrono::steady_clock::time_point richlist_json_cached_until;
+                const uint64_t richlist_height = chain_.Height();
                 {
-                    std::lock_guard<std::mutex> lk(richlist_json_cache_mu);
-                    if (!richlist_json_cached_body.empty()
-                        && std::chrono::steady_clock::now() < richlist_json_cached_until) {
-                        return HttpResponse::JSON(richlist_json_cached_body);
+                    std::lock_guard<std::mutex> lk(richlist_json_cache_mu_);
+                    if (!richlist_json_cache_body_.empty()
+                        && richlist_json_cache_height_ == richlist_height
+                        && std::chrono::steady_clock::now() < richlist_json_cache_until_) {
+                        return HttpResponse::JSON(richlist_json_cache_body_);
                     }
                 }
                 auto holders = chain_.GetTopHolders(50);
@@ -1742,24 +1804,25 @@ self.addEventListener('fetch', event => {
                     if (is_sys) {
                         j << "{\"rank\":null,\"is_system\":true"
                           << ",\"address\":\"" << addr << "\""
-                          << ",\"balance_veld\":" << bal
+                          << ",\"balance_veld\":" << std::setprecision(8) << bal
                           << ",\"pct_supply\":" << std::setprecision(4) << pct << "}";
                     } else {
                         ++rank;
                         j << "{\"rank\":" << rank
                           << ",\"address\":\"" << addr << "\""
-                          << ",\"balance_veld\":" << bal
+                          << ",\"balance_veld\":" << std::setprecision(8) << bal
                           << ",\"pct_supply\":" << std::setprecision(4) << pct << "}";
                     }
                     first = false;
                 }
                 j << "]";
                 std::string body = j.str();
-                {
-                    std::lock_guard<std::mutex> lk(richlist_json_cache_mu);
-                    richlist_json_cached_body = body;
-                    richlist_json_cached_until = std::chrono::steady_clock::now()
-                                                + std::chrono::seconds(30);
+                if (chain_.Height() == richlist_height) {
+                    std::lock_guard<std::mutex> lk(richlist_json_cache_mu_);
+                    richlist_json_cache_body_ = body;
+                    richlist_json_cache_height_ = richlist_height;
+                    richlist_json_cache_until_ = std::chrono::steady_clock::now()
+                                               + std::chrono::seconds(30);
                 }
                 return HttpResponse::JSON(body);
             }
@@ -2278,6 +2341,8 @@ private:
     };
     std::mutex request_workers_mutex_;
     std::vector<RequestWorker> request_workers_;
+    std::unordered_map<SocketHandle, std::string> request_sockets_;
+    ReceiptSourceSlots receipt_source_slots_;
     std::mutex prewarm_thread_mu_;
     std::thread prewarm_thread_;
     OnChainTokenLedger* tokens_;
@@ -2287,6 +2352,8 @@ private:
     std::function<uint64_t()> network_height_fn_;
     std::function<size_t()>   peer_count_fn_;
     std::function<std::vector<PeerStatsItem>()> peer_stats_fn_;
+    std::function<std::string(const std::string&, size_t,
+                              const std::string&)> address_history_fn_;
 
     std::string                                cache_dir_;
     net::trusted_proxy::Configuration          trusted_proxy_;
@@ -2295,6 +2362,10 @@ private:
     std::string                                richlist_cache_body_;
     std::chrono::steady_clock::time_point      richlist_cache_until_;
     uint64_t                                   richlist_cache_height_ = 0;
+    mutable std::mutex                         richlist_json_cache_mu_;
+    std::string                                richlist_json_cache_body_;
+    std::chrono::steady_clock::time_point      richlist_json_cache_until_;
+    uint64_t                                   richlist_json_cache_height_ = 0;
     std::atomic<bool>                          richlist_refresh_in_flight_{false};
 
     std::string proposals_json_ = "[]";
@@ -2720,7 +2791,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="syncing">16. Syncing &amp; trust</h2>
-  <p>Veld 3.0.3 public-mainnet nodes can start from an <strong>official signed snapshot</strong> or perform a full IBD from genesis. Snapshot bytes are consensus-replayed locally before use and are bound to this deployment, genesis, launch-chain anchor, height, tip, and complete state schema.</p>
+  <p>Veld 3.0.8 public-mainnet nodes can start from an <strong>official signed snapshot</strong> or perform a full IBD from genesis. Snapshot bytes are consensus-replayed locally before use and are bound to this deployment, genesis, launch-chain anchor, height, tip, and complete state schema.</p>
   <p>A snapshot is an availability optimization, not a consensus authority. RPC, inbound P2P, explorer, mining, and validator signing remain quarantined while an independent genesis IBD downloads and validates every block and proof of work into a separate chainstate. Those services activate only after the independent chain reaches the exact snapshot tip and complete state digest.</p>
   <p>If the signed snapshot is missing, stale, malformed, from a different chain, or fails validation, the client rejects it and falls back to ordinary peer synchronization. <code>--full-ibd</code> or <code>--no-snapshot</code> always selects validation from genesis without importing a snapshot.</p>
   <p>Before validator finality activates, a fresh node relies on independently verified proof of work and the bounded reorganization horizon. After it observes a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that locally verified floor and rejects histories that conflict with it.</p>
@@ -3175,6 +3246,40 @@ setInterval(loadProposals, 30000);
         return true;
     }
 
+    void CloseRequestSocket_(SocketHandle fd) {
+        std::lock_guard<std::mutex> lk(request_workers_mutex_);
+        const auto it = request_sockets_.find(fd);
+        if (it != request_sockets_.end()) {
+            receipt_source_slots_.Release(it->second);
+            request_sockets_.erase(it);
+            VELD_CLOSE_SOCKET(fd);
+        }
+    }
+
+    static bool SetReceiveDeadline_(
+            SocketHandle fd, std::chrono::steady_clock::time_point deadline) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline) return false;
+#ifdef _WIN32
+        const auto remaining = std::chrono::duration_cast<
+            std::chrono::milliseconds>(deadline - now).count() + 1;
+        // Winsock shutdown need not wake a synchronous recv immediately.
+        // Poll running_ within the absolute receipt deadline on both platforms.
+        const DWORD timeout = static_cast<DWORD>(std::min<int64_t>(remaining, 250));
+        return ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
+            reinterpret_cast<const char*>(&timeout), sizeof(timeout)) == 0;
+#else
+        const auto remaining = std::chrono::duration_cast<
+            std::chrono::microseconds>(deadline - now).count() + 1;
+        const auto poll_remaining = std::min<int64_t>(remaining, 250000);
+        timeval timeout{};
+        timeout.tv_sec = static_cast<decltype(timeout.tv_sec)>(poll_remaining / 1000000);
+        timeout.tv_usec = static_cast<decltype(timeout.tv_usec)>(poll_remaining % 1000000);
+        return ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
+                           &timeout, sizeof(timeout)) == 0;
+#endif
+    }
+
     void ReapRequestWorkers() {
         std::vector<std::thread> finished;
         {
@@ -3250,6 +3355,21 @@ setInterval(loadProposals, 30000);
 
 #ifdef VELD_TEST_HOOKS
 public:
+    static bool TestSetReceiveDeadline(SocketHandle fd,
+            std::chrono::steady_clock::time_point deadline) {
+        return SetReceiveDeadline_(fd, deadline);
+    }
+    void TestTrackReceiptSocket(SocketHandle fd, const std::string& source) {
+        std::lock_guard<std::mutex> lock(request_workers_mutex_);
+        if (!receipt_source_slots_.Take(source)) throw std::runtime_error("fixture source full");
+        request_sockets_.emplace(fd, source);
+    }
+    void TestCloseReceiptSocket(SocketHandle fd) { CloseRequestSocket_(fd); }
+    void TestHandleReceipt(SocketHandle fd, std::chrono::steady_clock::time_point deadline) {
+        running_.store(true, std::memory_order_release);
+        HandleRequest(fd, "127.0.0.1", deadline);
+    }
+
     struct TestExplorerRateSlotState {
         bool present = false;
         uint64_t window_start = 0;
@@ -3316,6 +3436,9 @@ private:
             if (second == "v1" && req.path_parts.size() >= 3
                     && req.path_parts[2] == "address") return "address-api";
             if (second == "v1" && req.path_parts.size() >= 3
+                    && req.path_parts[2] == "addresshistory")
+                return "address-history-api";
+            if (second == "v1" && req.path_parts.size() >= 3
                     && req.path_parts[2] == "blocks") return "block";
             static const std::unordered_set<std::string> cheap = {
                 "stats", "blocks", "mempool", "mining", "balance",
@@ -3381,7 +3504,11 @@ private:
         const bool history = route == "history" || route == "address-page";
         const bool heavy = history || route == "utxos" || route == "address-api"
                         || route == "rich" || route == "block" || route == "tx";
-        const uint32_t memory_units = history ? 16 : (heavy ? 8 : 4);
+        // A block page owns two decoded bodies plus cold-loader temporaries.
+        // Reserve the whole Explorer memory pool for either block URL alias;
+        // see docs/security/3.0.5-explorer-memory-accounting.md.
+        const uint32_t memory_units = route == "block" ? EXPLORER_MEMORY_UNITS_MAX
+            : (history ? 16 : (heavy ? 8 : 4));
         const uint32_t work_units = history ? 16 : (heavy ? 8 : 1);
         const uint64_t route_cap = history ? 60 : (heavy ? 600 : 1200);
         std::vector<ExplorerCharge> charges = {
@@ -3440,6 +3567,8 @@ private:
             socklen_t len = sizeof(client);
             SocketHandle client_fd = ::accept(fd_, (struct sockaddr*)&client, &len);
             if (!veld::compat::IsValidSocket(client_fd)) { if (running_) std::this_thread::sleep_for(std::chrono::milliseconds(10)); continue; }
+            const auto receipt_deadline = std::chrono::steady_clock::now()
+                + std::chrono::seconds(EXPLORER_RECV_TIMEOUT_S);
 
             char ip_buf[INET_ADDRSTRLEN] = {0};
             ::inet_ntop(AF_INET, &client.sin_addr, ip_buf, sizeof(ip_buf));
@@ -3483,9 +3612,27 @@ private:
             }
 
             bool worker_started = false;
+            bool socket_registered = false;
             try {
                 auto done = std::make_shared<std::atomic<bool>>(false);
-                std::thread worker([this, client_fd, done, socket_peer]() {
+                {
+                    std::lock_guard<std::mutex> lk(request_workers_mutex_);
+                    if (!running_.load(std::memory_order_acquire)) {
+                        active_requests_.fetch_sub(1, std::memory_order_acq_rel);
+                        VELD_CLOSE_SOCKET(client_fd);
+                        break;
+                    }
+                    if (!receipt_source_slots_.Take(socket_peer)) {
+                        active_requests_.fetch_sub(1, std::memory_order_acq_rel);
+                        VELD_CLOSE_SOCKET(client_fd);
+                        continue;
+                    }
+                    try { request_sockets_.emplace(client_fd, socket_peer); }
+                    catch (...) { receipt_source_slots_.Release(socket_peer); throw; }
+                    socket_registered = true;
+                }
+                std::thread worker([this, client_fd, done, socket_peer,
+                                    receipt_deadline]() {
                     struct Guard {
                         std::atomic<uint64_t>* active;
                         std::atomic<bool>* done;
@@ -3494,9 +3641,9 @@ private:
                             done->store(true, std::memory_order_release);
                         }
                     } guard{&active_requests_, done.get()};
-                    try { HandleRequest(client_fd, socket_peer); }
+                    try { HandleRequest(client_fd, socket_peer, receipt_deadline); }
                     catch (...) {  }
-                    VELD_CLOSE_SOCKET(client_fd);
+                    CloseRequestSocket_(client_fd);
                 });
                 worker_started = true;
                 try {
@@ -3513,20 +3660,27 @@ private:
                 std::cerr << "  [explorer] thread spawn failed (" << e.what()
                           << ") — dropping request fd=" << client_fd << "\n";
                 std::cerr.flush();
-                if (!worker_started) VELD_CLOSE_SOCKET(client_fd);
+                if (!worker_started) {
+                    if (socket_registered) CloseRequestSocket_(client_fd);
+                    else VELD_CLOSE_SOCKET(client_fd);
+                }
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
             } catch (const std::exception& e) {
                 if (!worker_started)
                     active_requests_.fetch_sub(1, std::memory_order_acq_rel);
                 std::cerr << "  [explorer] unexpected thread-spawn error: " << e.what() << "\n";
                 std::cerr.flush();
-                if (!worker_started) VELD_CLOSE_SOCKET(client_fd);
+                if (!worker_started) {
+                    if (socket_registered) CloseRequestSocket_(client_fd);
+                    else VELD_CLOSE_SOCKET(client_fd);
+                }
             }
         }
         ReapRequestWorkers();
     }
 
-    void HandleRequest(SocketHandle client_fd, const std::string& socket_peer) {
+    void HandleRequest(SocketHandle client_fd, const std::string& socket_peer,
+                       std::chrono::steady_clock::time_point receipt_deadline) {
         std::string buf;
         buf.reserve(8192);
         char chunk[8192];
@@ -3534,7 +3688,22 @@ private:
         size_t expected_body = 0;
         size_t headers_end = 0;
         while (buf.size() < EXPLORER_MAX_BODY) {
-            int n = ::recv(client_fd, chunk, sizeof(chunk), 0);
+            if (!running_.load(std::memory_order_acquire) ||
+                !SetReceiveDeadline_(client_fd, receipt_deadline)) return;
+            const size_t room = std::min(sizeof(chunk),
+                                        EXPLORER_MAX_BODY - buf.size());
+            int n = ::recv(client_fd, chunk, static_cast<int>(room), 0);
+            if (std::chrono::steady_clock::now() >= receipt_deadline) return;
+            if (n < 0) {
+#ifdef _WIN32
+                const int error = ::WSAGetLastError();
+                if (error == WSAETIMEDOUT || error == WSAEWOULDBLOCK || error == WSAEINTR)
+                    continue;
+#else
+                if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+                    continue;
+#endif
+            }
             if (n <= 0) break;
             buf.append(chunk, (size_t)n);
             if (!have_full_headers) {
@@ -4400,7 +4569,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
   if(sheet)sheet.addEventListener('click',function(event){if(event.target===sheet)closeSheet();});
   document.addEventListener('keydown',function(event){if(event.key==='Escape')closeSheet();});
   if(isIOS&&!standalone)setTimeout(show,1200);
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js?ui=20260814-wallet-footer-layout',{scope:'/',updateViaCache:'none'}).catch(function(){});}
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js?ui=20260903-navigation-fallback',{scope:'/',updateViaCache:'none'}).catch(function(){});}
 
   var txPath=/^\/tx\/[0-9a-f]{64}$/i;
   function markMempoolContext(){
@@ -4558,7 +4727,7 @@ document.getElementById('gsearch-btn').addEventListener('click',doSearch);
 document.getElementById('gsearch').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});
 var knownH=0;
 function loadStats(){
-  fetch('/api/stats').then(function(r){return r.json();}).then(function(d){
+  fetch('/api/stats').then(function(r){if(!r.ok)throw new Error('stats unavailable');return r.json();}).then(function(d){
     var h=d.height||0;
     document.getElementById('s-height-big').textContent=h.toLocaleString();
     var sup=parseFloat(d.supply_veld||0);
@@ -4633,7 +4802,7 @@ loadStats();
   function tick(){
     var now=Date.now();
     var heartbeat=(now-_lastHeavy)>=60000;
-    fetch('/api/stats').then(function(r){return r.json();}).then(function(d){
+    fetch('/api/stats').then(function(r){if(!r.ok)throw new Error('stats unavailable');return r.json();}).then(function(d){
       var h=(d&&typeof d.height==='number')?d.height:-1;
       if(h===-1)return;
       if(h!==_lastTip||heartbeat){_lastTip=h;_lastHeavy=now;loadStats();}
@@ -4648,6 +4817,14 @@ loadStats();
     }
 
     HttpResponse ServeBlock(const std::string& hash_hex) {
+        const auto page_budget_exceeded = [] {
+            HttpResponse response;
+            response.status_code = 503;
+            response.status_text = "Service Unavailable";
+            response.content_type = "text/plain";
+            response.body = "Block page exceeds the rendering budget; use the block RPC.";
+            return response;
+        };
         if (!IsStrictLowerHex64(hash_hex)) {
             std::ostringstream err;
             err << "<div class=\"container\" style=\"padding:40px;text-align:center\">"
@@ -4657,7 +4834,9 @@ loadStats();
             return HttpResponse::HTML(HtmlWrapArcade("Invalid Block", err.str(), "blocks"));
         }
         Hash256 hash = HexToHash(hash_hex);
-        auto block = chain_.GetBlockByHash(hash);
+        std::optional<Block> block;
+        try { block = chain_.GetBlockByHash(hash, EXPLORER_BLOCK_PAGE_BODY_BUDGET); }
+        catch (const std::length_error&) { return page_budget_exceeded(); }
         if (!block) return HttpResponse::NotFound("block " + hash_hex);
 
         std::ostringstream c;
@@ -4819,15 +4998,19 @@ loadStats();
         }
 
         c << "<div class=\"card\"><div class=\"card-title\">Transactions</div>";
-        std::unordered_map<std::string, const Transaction*> prev_tx_index;
-        std::vector<Block> prev_blocks;
-        uint64_t scan_start = block->height > 150 ? block->height - 150 : 0;
-        for (uint64_t h = scan_start; h <= block->height; ++h) {
-            try { prev_blocks.push_back(chain_.GetBlock(h)); } catch (...) { break; }
+        PrevoutProjection prevouts;
+        for (const auto& tx : block->transactions)
+            if (!prevouts.AddInputs(tx)) return page_budget_exceeded();
+        // Same-block spends use the body already loaded for this page.
+        for (const auto& tx : block->transactions) prevouts.Observe(tx);
+        const uint64_t scan_start = block->height > 150 ? block->height - 150 : 0;
+        for (uint64_t h = block->height; h > scan_start && prevouts.Remaining();) {
+            --h;
+            try {
+                const Block previous = chain_.GetBlock(h, EXPLORER_BLOCK_PAGE_BODY_BUDGET);
+                for (const auto& tx : previous.transactions) prevouts.Observe(tx);
+            } catch (...) { break; }
         }
-        for (const auto& pb : prev_blocks)
-            for (const auto& ptx : pb.transactions)
-                prev_tx_index[HashToHex(ptx.GetTxID())] = &ptx;
         c << "<div class=\"tbl-scroll\"><table class=\"tbl\"><thead><tr><th>TXID</th><th>Type</th><th>Flow</th><th>Total</th><th>Fee</th></tr></thead><tbody>";
         for (const auto& tx : block->transactions) {
             std::string txid = HashToHex(tx.GetTxID());
@@ -4874,11 +5057,9 @@ loadStats();
                     sender_addr = ScriptToAddress(sscript);
                 } else {
                     for (const auto& inp : tx.inputs) {
-                        auto it = prev_tx_index.find(HashToHex(inp.prev_tx_hash));
-                        if (it == prev_tx_index.end()) continue;
-                        const Transaction* ptx = it->second;
-                        if (inp.prev_out_index >= ptx->outputs.size()) continue;
-                        sender_addr = ScriptToAddress(ptx->outputs[inp.prev_out_index].script_pubkey);
+                        const auto* previous = prevouts.Find(inp);
+                        if (!previous) continue;
+                        sender_addr = previous->address;
                         if (!sender_addr.empty()) break;
                     }
                 }
@@ -5046,6 +5227,8 @@ loadStats();
                 uint64_t cb_sum = 0;
                 for (const auto& out : tx.outputs) cb_sum += out.value;
                 for (const auto& out : tx.outputs) {
+                    if (flow_html.size() > EXPLORER_MAX_RESPONSE_BODY / 2)
+                        return page_budget_exceeded();
                     std::string addr = ScriptToAddress(out.script_pubkey);
                     bool iv = (addr == VAULT_ADDRESS);
                     bool ip = (addr == POOL_ADDRESS);
@@ -5076,6 +5259,8 @@ loadStats();
                 flow_html += "<div style=\"font-size:10px;color:" + pcolor + ";margin-bottom:2px\">"
                     + std::to_string(tx.inputs.size()) + " " + plabel + " UTXOs \xe2\x86\x92</div>";
                 for (const auto& out : tx.outputs) {
+                    if (flow_html.size() > EXPLORER_MAX_RESPONSE_BODY / 2)
+                        return page_budget_exceeded();
                     std::string addr = ScriptToAddress(out.script_pubkey);
                     if (addr.empty()) continue;
                     std::ostringstream val; val << std::fixed << std::setprecision(2) << (double)out.value/VELD_UNITS;
@@ -5088,6 +5273,8 @@ loadStats();
                 std::string dist_label = (tx_type == "ENDORSE REWARD") ? "Vault \xe2\x86\x92 Validators" : "Vault \xe2\x86\x92 Stakers";
                 flow_html += "<div style=\"font-size:10px;color:" + dist_color + ";margin-bottom:2px\">" + dist_label + "</div>";
                 for (const auto& out : tx.outputs) {
+                    if (flow_html.size() > EXPLORER_MAX_RESPONSE_BODY / 2)
+                        return page_budget_exceeded();
                     std::string addr = ScriptToAddress(out.script_pubkey);
                     if (addr.empty()) continue;
                     if (addr == VAULT_ADDRESS) continue;
@@ -5098,6 +5285,8 @@ loadStats();
                 }
             } else {
                 for (const auto& out : tx.outputs) {
+                    if (flow_html.size() > EXPLORER_MAX_RESPONSE_BODY / 2)
+                        return page_budget_exceeded();
                     std::string addr = ScriptToAddress(out.script_pubkey);
                     if (addr.empty()) {
                         // OP_RETURN. If it's a plain user memo (not a VELD_*
@@ -5167,6 +5356,8 @@ loadStats();
                     || tx_type == "ENDORSE REWARD") {
                 uint64_t recipient_units = 0;
                 for (const auto& out : tx.outputs) {
+                    if (flow_html.size() > EXPLORER_MAX_RESPONSE_BODY / 2)
+                        return page_budget_exceeded();
                     std::string oaddr = ScriptToAddress(out.script_pubkey);
                     if (oaddr.empty()) continue;
                     if (oaddr == VAULT_ADDRESS
@@ -5205,9 +5396,9 @@ loadStats();
                 uint64_t in_total = 0, out_total = tx.TotalOutput();
                 bool all_resolved = true;
                 for (const auto& in : tx.inputs) {
-                    auto it = prev_tx_index.find(HashToHex(in.prev_tx_hash));
-                    if (it != prev_tx_index.end() && in.prev_out_index < it->second->outputs.size()) {
-                        in_total += it->second->outputs[in.prev_out_index].value;
+                    const auto* previous = prevouts.Find(in);
+                    if (previous) {
+                        in_total += previous->units;
                     } else {
                         all_resolved = false;
                         break;
@@ -5234,6 +5425,8 @@ loadStats();
               << "<td style=\"color:" << total_color << ";white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:11px\">" << total_val.str() << "</td>"
               << fee_cell
               << "</tr>";
+            if (c.tellp() > static_cast<std::streamoff>(EXPLORER_MAX_RESPONSE_BODY / 2))
+                return page_budget_exceeded();
         }
         c << "</tbody></table></div>";
 
@@ -5262,8 +5455,9 @@ loadStats();
 
     HttpResponse ServeBlockByHeight(uint64_t height) {
         try {
-            Block block = chain_.GetBlock(height);
-            return ServeBlock(HashToHex(block.GetHash()));
+            const auto hash = chain_.GetBlockHashAtHeight(height);
+            if (hash.empty()) return HttpResponse::NotFound("block at height " + std::to_string(height));
+            return ServeBlock(hash);
         } catch (...) {
             return HttpResponse::NotFound("block at height " + std::to_string(height));
         }
@@ -5515,7 +5709,7 @@ loadStats();
           << "  var d = window._expHist || [];"
           << "  var host = document.getElementById('tx-hist');"
           << "  if(!host) return;"
-          << "  if(!d.length){host.innerHTML='<div style=\"color:var(--muted);text-align:center;padding:16px;font-size:11px\">No transactions found in scanned range.</div>';return;}"
+          << "  if(!d.length){host.innerHTML='<div style=\"color:var(--muted);text-align:center;padding:16px;font-size:11px\">No transactions found.</div>';return;}"
           << "  var totalPages = Math.max(1, Math.ceil(d.length / EXP_HIST_PAGE_SIZE));"
           << "  var page = Math.min(Math.max(1, window._expHistPage || 1), totalPages);"
           << "  window._expHistPage = page;"
@@ -5589,7 +5783,7 @@ loadStats();
           << "    t = t.parentNode;"
           << "  }"
           << "});"
-          << "document.getElementById('tx-hist').innerHTML='<div style=\"color:var(--muted);text-align:center;padding:16px\">Public transaction history is unavailable in Veld 3.0.0.</div>';"
+          << "fetch('/api/v1/addresshistory/" << address << "/50',{cache:'no-store'}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'History unavailable');return d;});}).then(function(d){window._expHist=Array.isArray(d.entries)?d.entries:[];window._expHistPage=1;expHistRender();}).catch(function(e){document.getElementById('tx-hist').innerHTML='<div style=\"color:var(--muted);text-align:center;padding:16px\">'+escHtml(e.message||'History unavailable')+'</div>';});"
           << "fetch('/api/v1/address/" << address << "').then(r=>r.json()).then(function(d){"
           << "  document.getElementById('addr-staked').textContent=d.staked_veld!==undefined?parseFloat(d.staked_veld).toFixed(2)+' VELD':'0.00 VELD';"
           << "}).catch(function(){document.getElementById('addr-staked').textContent='--';});"
@@ -6142,10 +6336,10 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
                 return HttpResponse::HTML(richlist_cache_body_);
             }
         }
-        return ServeRichListBuild();
+        return ServeRichListBuild(cur_h);
     }
 
-    HttpResponse ServeRichListBuild() {
+    HttpResponse ServeRichListBuild(uint64_t requested_height) {
         auto holders = chain_.GetTopHolders(50);
         auto pin_address = [&](const std::string& addr) {
             for (const auto& [a, b] : holders) {
@@ -6272,7 +6466,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             page << "</div>";
             page << "</div>";
             page << "<div class=\"rl-val\">";
-            page << "<div class=\"rl-v\" style=\"color:var(--em);font-size:16px\">" << std::fixed << std::setprecision(2) << bal << "</div>";
+            page << "<div class=\"rl-v\" style=\"color:var(--em);font-size:16px\">" << std::fixed << std::setprecision(8) << bal << "</div>";
             page << "<div class=\"rl-vs\">VELD</div>";
             page << "</div>";
             page << "</a>";
@@ -6281,28 +6475,12 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             page << "<div class=\"rl-row\" style=\"color:var(--muted);justify-content:center;font-style:italic\">No UTXO data yet.</div>";
         page << "</div></div>";
         std::string body = HtmlWrapArcade("Rich List", page.str(), "rich");
-        {
+        if (chain_.Height() == requested_height) {
             std::lock_guard<std::mutex> lk(richlist_cache_mu_);
             richlist_cache_body_   = body;
-            richlist_cache_height_ = chain_.Height();
+            richlist_cache_height_ = requested_height;
             richlist_cache_until_  = std::chrono::steady_clock::now()
                                    + std::chrono::seconds(60);
-        }
-        if (!cache_dir_.empty()) {
-            try {
-                std::string path     = cache_dir_ + "/.richlist-cache.html";
-                std::string tmp_path = path + ".tmp";
-                {
-                    std::ofstream f(tmp_path, std::ios::binary | std::ios::trunc);
-                    if (f.good()) {
-                        f.write(body.data(), (std::streamsize)body.size());
-                        f.close();
-                    }
-                }
-                std::error_code ec;
-                std::filesystem::rename(tmp_path, path, ec);
-                if (ec) std::filesystem::remove(tmp_path, ec);
-            } catch (...) {  }
         }
         return HttpResponse::HTML(body);
     }
@@ -6460,6 +6638,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
     HttpResponse ServeValidatorsPage() {
         bool sys_active = false;
+        bool existing_operations_active = false;
         double total_staked = 0.0;
         double min_stake = (double)MIN_VALIDATOR_STAKE / VELD_UNITS;
         size_t val_count = 0;
@@ -6469,6 +6648,8 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         if (rpc_delegate_) {
             auto resp = rpc_delegate_->Handle(R"({"jsonrpc":"2.0","id":"1","method":"getvalidators","params":[]})");
             if (resp.find("\"system_active\":true") != std::string::npos) sys_active = true;
+            existing_operations_active = sys_active ||
+                resp.find("\"existing_operations_active\":true") != std::string::npos;
             {   auto p = resp.find("\"total_staked_veld\":");
                 if (p != std::string::npos) { auto s = p + 20; auto e = resp.find_first_of(",}", s); try { total_staked = std::stod(resp.substr(s, e-s)); } catch (...) {} }
             }
@@ -6521,6 +6702,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             }
         } else if (validators_) {
             sys_active = validators_->IsValidatorSystemActive();
+            existing_operations_active = validators_->ExistingValidatorOperationsActive();
             val_count = validators_->GetActiveValidatorCount();
             auto records = validators_->GetValidators();
             for (auto& r : records) {
@@ -6552,9 +6734,11 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
         page << "<div class=\"stat-grid\" style=\"margin-bottom:20px\">";
         page << "<div class=\"stat\"><div class=\"stat-label\">System Status</div><div class=\"stat-value " << (sys_active ? "em" : "") << "\">"
-             << (sys_active ? "Active" : "Locked") << "</div><div class=\"stat-sub\">";
+             << (existing_operations_active ? "Active" : "Locked") << "</div><div class=\"stat-sub\">";
         if (sys_active) {
             page << "Validators are endorsing blocks";
+        } else if (existing_operations_active) {
+            page << "Existing validators remain active; new registration is paused";
         } else {
             page << "Needs " << std::fixed << std::setprecision(0)
                  << ((double)VALIDATOR_UNLOCK_STAKED / (double)VELD_UNITS)

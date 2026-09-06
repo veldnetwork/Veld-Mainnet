@@ -2034,6 +2034,7 @@ private:
                     "getrawtransaction", "gettxout", "getmempoolinfo",
                     "getrawmempool", "getmempoolentry",
                     "getbalance", "getaddressbalance",
+                    "getaddresshistory",
                     "getblockcount", "gettips", "getchaintips",
                     "getpeerinfo", "getnetworkinfo", "getminerinfo", "getmininginfo",
                     "getvaultinfo", "getbondvaultinfo",

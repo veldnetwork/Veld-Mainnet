@@ -1,4 +1,5 @@
 #pragma once
+#include "security_upgrade.h"
 
 #include "../core/constants.h"
 #include "../core/canonical_numeric.h"
@@ -69,6 +70,8 @@ struct Proposal {
     std::unordered_map<std::string, VoteChoice> votes;
 
     uint64_t    timelock_until        = 0;
+    std::string creation_identity; // reconstructed from canonical tx/outpoint
+    uint64_t    vote_round_start = 0; // zero is the legacy unbound round
 };
 
 struct GovernanceEligibility {
@@ -187,6 +190,7 @@ public:
         // Replay assigns proposal identifiers deterministically in chain order.
         // The persisted counter is informational and is not restored here.
         next_id_ = 1;
+        security_upgrade_active_ = false;
         PruneOrphanedKVLocked();
     }
 
@@ -199,11 +203,12 @@ public:
         std::unordered_map<uint64_t, Proposal>     proposals;
         std::unordered_map<std::string, uint64_t>  last_proposal_block;
         std::unordered_map<std::string, uint64_t>  last_vote_block;
+        bool security_upgrade_active = false;
     };
     StateSnapshot SnapshotState() const {
         std::lock_guard<std::mutex> lock(mutex_);
         return StateSnapshot{ next_id_, proposals_, last_proposal_block_,
-                              last_vote_block_ };
+                              last_vote_block_, security_upgrade_active_ };
     }
     void RestoreState(const StateSnapshot& s) {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -211,12 +216,14 @@ public:
         proposals_            = s.proposals;
         last_proposal_block_  = s.last_proposal_block;
         last_vote_block_      = s.last_vote_block;
+        security_upgrade_active_ = s.security_upgrade_active;
     }
 
     Hash256 GovernanceDigest() const {
         std::lock_guard<std::mutex> lock(mutex_);
         namespace sd = ::veld::state_digest;
         std::vector<uint8_t> body;
+        if (security_upgrade_active_) sd::put_len_prefixed(body, "GOV_BOUND_VOTES_v2");
         sd::put_u64_le(body, next_id_);
         std::vector<uint64_t> ids;
         ids.reserve(proposals_.size());
@@ -247,6 +254,10 @@ public:
                 sd::put_u8(body, (uint8_t)c);
             }
             sd::put_u64_le(body, p.timelock_until);
+            if (security_upgrade_active_) {
+                sd::put_len_prefixed(body, p.creation_identity);
+                sd::put_u64_le(body, p.vote_round_start);
+            }
         }
         std::vector<std::pair<std::string, uint64_t>> lpb_sorted;
         lpb_sorted.reserve(last_proposal_block_.size());
@@ -291,8 +302,11 @@ public:
           << ",\"votes_yes\":" << p.votes_yes
           << ",\"votes_no\":" << p.votes_no
           << ",\"votes_abstain\":" << p.votes_abstain
-          << ",\"timelock_until\":" << p.timelock_until
-          << ",\"votes\":[";
+          << ",\"timelock_until\":" << p.timelock_until;
+        if (!p.creation_identity.empty())
+            j << ",\"identity_version\":1,\"creation_identity\":\""
+              << p.creation_identity << "\",\"vote_round_start\":" << p.vote_round_start;
+        j << ",\"votes\":[";
         bool first = true;
         for (const auto& [addr, ch] : p.votes) {
             if (!first) j << ",";
@@ -425,6 +439,15 @@ public:
         out.votes_abstain = u32_tmp;
         if (!readU64("timelock_until", u64_tmp)) return false;
         out.timelock_until = u64_tmp;
+        out.creation_identity.clear();
+        out.vote_round_start = 0;
+        if (findField("identity_version") != std::string::npos) {
+            if (!readU64("identity_version", u64_tmp) || u64_tmp != 1 ||
+                !readStr("creation_identity", out.creation_identity) ||
+                !CanonicalIdentity(out.creation_identity) ||
+                !readU64("vote_round_start", out.vote_round_start)) return false;
+        } else if (findField("creation_identity") != std::string::npos ||
+                   findField("vote_round_start") != std::string::npos) return false;
 
         size_t vp = findField("votes");
         if (vp == std::string::npos) return false;
@@ -567,6 +590,8 @@ public:
         if (description.size() > GOV_DESCRIPTION_MAX_BYTES)
             return "error:description must be ≤ " + std::to_string(GOV_DESCRIPTION_MAX_BYTES) + " bytes";
 
+        if (ConsensusSecurityUpgradeActive(chain_.Height()))
+            return "error:use the on-chain proposal path";
         auto elig = CheckEligibility(proposer, script_hex);
         if (!elig.can_propose) return "error:not_eligible:" + elig.reason;
 
@@ -639,6 +664,8 @@ public:
         VoteChoice choice,
         bool voter_is_validator = false
     ) {
+        if (ConsensusSecurityUpgradeActive(chain_.Height()))
+            return "error:use the bound on-chain vote path";
         auto elig = CheckEligibility(voter, script_hex);
         if (!elig.can_vote) return "error:not_eligible:" + elig.reason;
 
@@ -735,6 +762,9 @@ public:
           << "\"votes_needed\":" << GetMinVotesRequired(p.type) << ","
           << "\"threshold_pct\":" << GetPassPct(p.type) << ","
           << "\"timelock_until\":" << p.timelock_until
+          << ",\"creation_identity\":\"" << p.creation_identity << "\""
+          << ",\"vote_identity\":\"" << VoteIdentity(p) << "\""
+          << ",\"vote_round_start\":" << p.vote_round_start
           << std::setprecision(4);
         j << "}";
         return j.str();
@@ -962,18 +992,75 @@ public:
           << sig_hex;
         return o.str();
     }
+    static bool CanonicalIdentity(const std::string& value) {
+        return value.size() == 64 && std::all_of(value.begin(), value.end(),
+            [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
+    }
+
+    static std::string ProposalCreationIdentity(const Hash256& txid, uint64_t output_index) {
+        namespace sd = ::veld::state_digest;
+        std::vector<uint8_t> body;
+        sd::put_len_prefixed(body, GovChainIdPrefix());
+        sd::put_bytes(body, txid.data(), txid.size());
+        sd::put_u64_le(body, output_index);
+        // The transaction commits the exact immutable marker content, both
+        // supported proposal forms and every otherwise ignored marker byte.
+        return HashToHex(sd::sha256_domain("VELD_GOV_CREATION_v1|", body));
+    }
+
+    static std::string VoteIdentity(const Proposal& p) {
+        if (!CanonicalIdentity(p.creation_identity) || p.vote_round_start == 0)
+            return {};
+        namespace sd = ::veld::state_digest;
+        std::vector<uint8_t> body;
+        sd::put_len_prefixed(body, p.creation_identity);
+        sd::put_u64_le(body, p.vote_round_start);
+        return HashToHex(sd::sha256_domain("VELD_GOV_ROUND_v1|", body));
+    }
+
+    std::string VoteIdentityFor(uint64_t id, uint64_t inclusion_height) const {
+        if (!ConsensusSecurityUpgradeActive(inclusion_height)) return {};
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto it = proposals_.find(id);
+        if (!security_upgrade_active_ || it == proposals_.end() ||
+            it->second.status != ProposalStatus::OPEN ||
+            !CanonicalIdentity(VoteIdentity(it->second)))
+            throw std::runtime_error("Bound governance round unavailable; refresh after activation/replay");
+        return VoteIdentity(it->second);
+    }
+
+    static std::string BuildVoteChallenge(uint64_t id, VoteChoice choice,
+                                          uint64_t signed_height,
+                                          const std::string& identity = {}) {
+        const std::string c = choice == VoteChoice::YES ? "yes" :
+                              choice == VoteChoice::NO ? "no" : "abstain";
+        if (!identity.empty()) {
+            if (!CanonicalIdentity(identity)) throw std::invalid_argument("Invalid vote identity");
+            return GovChainIdPrefix() + "GOV_VOTE_V2:" + std::to_string(id) +
+                   ":" + identity + ":" + c + ":@" + std::to_string(signed_height);
+        }
+        return (signed_height >= BATCH2_HARDENING_HEIGHT ? GovChainIdPrefix() : "") +
+            "GOV_VOTE:" + std::to_string(id) + ":" + c + ":@" +
+            std::to_string(signed_height);
+    }
+
     static std::string BuildVoteOp(
         uint64_t proposal_id,
         const std::string& voter,
         VoteChoice choice,
         uint64_t signed_height,
         const std::string& pubkey_hex,
-        const std::string& sig_hex) {
+        const std::string& sig_hex,
+        const std::string& identity = {}) {
+        if (!identity.empty() && !CanonicalIdentity(identity))
+            throw std::invalid_argument("Invalid vote identity");
         std::ostringstream o;
         char c = (choice == VoteChoice::YES) ? 'y' :
                  (choice == VoteChoice::NO)  ? 'n' : 'a';
-        o << GOV_PREFIX << "V|" << proposal_id << "|" << voter << "|" << c << "|"
+        o << GOV_PREFIX << (identity.empty() ? "V|" : "V2|")
+          << proposal_id << "|" << voter << "|" << c << "|"
           << signed_height << "|" << pubkey_hex << "|" << sig_hex;
+        if (!identity.empty()) o << "|" << identity;
         return o.str();
     }
 
@@ -985,6 +1072,30 @@ public:
                       bool persist = true) {
         std::lock_guard<std::mutex> lock(mutex_);
         bool state_mutated = false;
+        if (ConsensusSecurityUpgradeActive(block_height) && !security_upgrade_active_) {
+            // Verify reconstruction before any migration mutation. Old derived KV
+            // rows without creation identities cannot authorize a new-format vote.
+            for (const auto& [id, p] : proposals_)
+                if (!CanonicalIdentity(p.creation_identity))
+                    throw std::runtime_error("Governance identity missing; full canonical replay required");
+            const uint64_t restart = CONSENSUS_SECURITY_UPGRADE_HEIGHT;
+            if (restart > (uint64_t)std::numeric_limits<std::time_t>::max() -
+                          GOV_VOTE_DURATION_DAYS * BLOCKS_PER_DAY)
+                throw std::runtime_error("Governance migration height overflow");
+            for (auto& [id, p] : proposals_) {
+                if (p.status != ProposalStatus::OPEN && p.status != ProposalStatus::TIMELOCKED)
+                    continue;
+                p.status = ProposalStatus::OPEN;
+                p.votes.clear();
+                p.votes_yes = p.votes_no = p.votes_abstain = 0;
+                p.timelock_until = 0;
+                p.vote_round_start = restart;
+                p.expires_at = (std::time_t)(restart + GOV_VOTE_DURATION_DAYS * BLOCKS_PER_DAY);
+            }
+            last_vote_block_.clear();
+            security_upgrade_active_ = true;
+            state_mutated = true;
+        }
         for (size_t ti = 0; ti < block.transactions.size(); ++ti) {
             const auto& tx = block.transactions[ti];
             for (size_t oi = 0; oi < tx.outputs.size(); ++oi) {
@@ -992,7 +1103,8 @@ public:
                 std::string data = ParseOpReturnPayload(out.script_pubkey);
                 if (data.size() < GOV_PREFIX_LEN) continue;
                 if (data.compare(0, GOV_PREFIX_LEN, GOV_PREFIX) != 0) continue;
-                if (ProcessOpLocked(data, block_height)) state_mutated = true;
+                if (ProcessOpLocked(data, block_height, tx.GetTxID(), oi))
+                    state_mutated = true;
             }
         }
         // Quorum finalization is part of the deterministic block transition.
@@ -1123,7 +1235,8 @@ private:
         return ParseCanonicalUint64Text(s, out);
     }
 
-    bool ProcessOpLocked(const std::string& data, uint64_t block_height) {
+    bool ProcessOpLocked(const std::string& data, uint64_t block_height,
+                         const Hash256& txid, uint64_t output_index) {
         try {
             std::vector<std::string> fields;
             {
@@ -1150,7 +1263,8 @@ private:
                 return ApplyProposalFromChain(
                     block_height, ProposalType::GENERAL,
                     /*typed_marker=*/false, proposer, title, description,
-                    timestamp, signed_height, pubkey_hex, sig_hex);
+                    timestamp, signed_height, pubkey_hex, sig_hex,
+                    ProposalCreationIdentity(txid, output_index));
             }
             if (op == "P" && fields.size() == 10) {
                 ProposalType type;
@@ -1167,9 +1281,11 @@ private:
                 return ApplyProposalFromChain(
                     block_height, type, /*typed_marker=*/true,
                     proposer, title, description, timestamp, signed_height,
-                    pubkey_hex, sig_hex);
+                    pubkey_hex, sig_hex, ProposalCreationIdentity(txid, output_index));
             }
-            if (op == "V" && fields.size() == 8) {
+            const bool bound = ConsensusSecurityUpgradeActive(block_height);
+            if ((!bound && op == "V" && fields.size() == 8) ||
+                (bound && op == "V2" && fields.size() == 9)) {
                 uint64_t proposal_id = 0, signed_height = 0;
                 if (!ParseCanonicalUint64(fields[2], proposal_id) ||
                     !ParseCanonicalUint64(fields[5], signed_height))
@@ -1185,7 +1301,7 @@ private:
                 else return false;
                 return ApplyVoteFromChain(
                     block_height, proposal_id, voter, c,
-                    signed_height, pubkey_hex, sig_hex);
+                    signed_height, pubkey_hex, sig_hex, bound ? fields[8] : "");
             }
             return false;
         } catch (...) {
@@ -1210,7 +1326,8 @@ private:
                                  uint64_t ,
                                  uint64_t signed_height,
                                  const std::string& pubkey_hex,
-                                 const std::string& sig_hex) {
+                                 const std::string& sig_hex,
+                                 const std::string& creation_identity) {
         if (block_height > signed_height + GOV_SIG_REPLAY_WINDOW_BLOCKS) return false;
         if (signed_height > block_height + 1) return false;
         std::string challenge;
@@ -1242,12 +1359,20 @@ private:
         // runs BEFORE governance_.ProcessBlock in on_commit_.
         if (!validators_ || !validators_->IsValidatorByAddress(proposer)) return false;
         if (!GovernanceBondGateOpen()) return false;   // mainnet: dormant until 50k bonded
+        if (ConsensusSecurityUpgradeActive(block_height) &&
+            (!CanonicalIdentity(creation_identity) ||
+             block_height > (uint64_t)std::numeric_limits<std::time_t>::max() -
+                 GOV_VOTE_DURATION_DAYS * BLOCKS_PER_DAY)) return false;
         Proposal p;
         p.id            = next_id_++;
         p.type          = type;
         p.title         = title;
         p.description   = description;
         p.proposer      = proposer;
+        p.creation_identity = creation_identity;
+        if (ConsensusSecurityUpgradeActive(block_height)) {
+            p.vote_round_start = block_height;
+        }
         p.created_at    = (std::time_t)block_height;
         p.expires_at    = p.created_at + (GOV_VOTE_DURATION_DAYS * BLOCKS_PER_DAY);
         p.status        = ProposalStatus::OPEN;
@@ -1265,7 +1390,8 @@ private:
                              VoteChoice choice,
                              uint64_t signed_height,
                              const std::string& pubkey_hex,
-                             const std::string& sig_hex) {
+                             const std::string& sig_hex,
+                             const std::string& identity = {}) {
         if (!GovernanceBondGateOpen()) return false;   // mainnet: dormant until 50k bonded
         if (block_height > signed_height + GOV_SIG_REPLAY_WINDOW_BLOCKS) {
             if (gov_debug_) { std::cerr << "[VOTE-REJ] stale_sig bh=" << block_height << " signed_h=" << signed_height << " id=" << proposal_id << "\n"; std::cerr.flush(); }
@@ -1277,17 +1403,13 @@ private:
         }
         std::string choice_str = (choice == VoteChoice::YES) ? "yes" :
                                   (choice == VoteChoice::NO)  ? "no"  : "abstain";
-        std::string challenge;
-        if (signed_height >= BATCH2_HARDENING_HEIGHT) {
-            challenge = GovChainIdPrefix()
-                      + "GOV_VOTE:" + std::to_string(proposal_id)
-                      + ":" + choice_str
-                      + ":@" + std::to_string(signed_height);
-        } else {
-            challenge = "GOV_VOTE:" + std::to_string(proposal_id)
-                      + ":" + choice_str
-                      + ":@" + std::to_string(signed_height);
-        }
+        if (ConsensusSecurityUpgradeActive(block_height)) {
+            const auto proposal = proposals_.find(proposal_id);
+            if (!CanonicalIdentity(identity) || proposal == proposals_.end() ||
+                identity != VoteIdentity(proposal->second)) return false;
+        } else if (!identity.empty()) return false;
+        const std::string challenge = BuildVoteChallenge(
+            proposal_id, choice, signed_height, identity);
         if (!VerifyGovSig(pubkey_hex, sig_hex, challenge)) {
             if (gov_debug_) { std::cerr << "[VOTE-REJ] sig_verify_failed voter=" << voter << " id=" << proposal_id << " choice=" << choice_str << " signed_h=" << signed_height << "\n"; std::cerr.flush(); }
             return false;
@@ -1342,6 +1464,7 @@ private:
     }
 
 private:
+    bool security_upgrade_active_{false};
     const Blockchain&      chain_;
     const StakingLedger&   staking_;
     const ValidatorRegistry* validators_;

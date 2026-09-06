@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 LOGGER = logging.getLogger(__name__)
 
-VELD_OPERATOR_VERSION = "3.0.3"
+VELD_OPERATOR_VERSION = "3.0.8"
 VELD_OPERATOR_PROFILE = "veld-public-mainnet-v2"
 
 MAX_BODY = 32 * 1024
@@ -196,7 +196,7 @@ PORTAL_MANIFEST = {
     "scope": "/",
     "display": "standalone",
     "background_color": "#080a09",
-    "theme_color": "#080a09",
+    "theme_color": "#0d100e",
     "orientation": "any",
     "icons": [
         {
@@ -208,7 +208,7 @@ PORTAL_MANIFEST = {
     ],
 }
 PORTAL_OFFLINE_HTML = b"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a09"><title>Veld Portal offline</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#080a09;color:#f2f5f2;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(430px,100%);padding:25px;border:1px solid #343a36;border-radius:10px;background:#101311}h1{margin:0 0 8px;font:700 24px ui-monospace,Consolas,monospace}p{margin:0;color:#c5cbc7}</style><main class="card"><h1>Portal offline</h1><p>Reconnect to the internet, then reopen or refresh the app. Your node continues running independently.</p></main></html>"""
-PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v11';
+PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v18';
 const ASSETS=['/manifest.webmanifest','/icon.png?v=6','/offline'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
@@ -231,10 +231,10 @@ PORTAL_HTML = r"""<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#080a09">
+  <meta name="theme-color" content="#0d100e">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Veld Portal">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.png?v=6" type="image/png">
@@ -247,27 +247,103 @@ PORTAL_HTML = r"""<!doctype html>
     .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.cards.network-cards{grid-template-columns:repeat(3,minmax(0,1fr))}.card{background:linear-gradient(145deg,var(--panel),#0d100e);border:1px solid var(--line);border-radius:8px;padding:20px;min-width:0}.card h2,.section h2{font:700 19px ui-monospace,Consolas,monospace;margin:0}.card .value{font:700 29px ui-monospace,Consolas,monospace;margin-top:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.card .label{color:var(--muted);margin-top:5px}.wide{grid-column:span 2}.full{grid-column:1/-1}.section{margin-top:15px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:18px}.section-head p{color:var(--muted);margin:4px 0 0}.kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--soft);border:1px solid var(--soft);border-radius:6px;overflow:hidden}.kv div{background:#0d100e;padding:15px}.kv b{display:block;font:700 18px ui-monospace,Consolas,monospace}.kv span{color:var(--muted);font-size:12px}.control-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;align-items:center;padding:15px 0;border-top:1px solid var(--soft)}.control-row:first-child{border-top:0}.control-row h3{margin:0;font:700 16px ui-monospace,Consolas,monospace}.control-row p{margin:4px 0 0;color:var(--muted)}.controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}.toggle{width:54px;height:29px;border:1px solid var(--line);border-radius:15px;background:#202521;padding:3px;position:relative}.toggle:after{content:"";position:absolute;top:4px;left:4px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:.15s}.toggle.on{background:#323e34}.toggle.on:after{left:29px;background:var(--text)}.pill{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:20px;padding:6px 10px;color:var(--sub);font-size:12px}.warning{color:#f1c778;background:#1b1710;border:1px solid #49381b;border-radius:6px;padding:11px 13px;margin-top:12px}.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:13px;border-bottom:1px solid var(--soft)}.table th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}.mono{font-family:ui-monospace,Consolas,monospace}.green{color:var(--green)}.warn{color:var(--warn)}.muted{color:var(--muted)}.empty{text-align:center;color:var(--muted);padding:55px 20px}.log{background:#080a09;border:1px solid var(--soft);border-radius:6px;padding:14px;min-height:260px;white-space:pre-wrap;color:var(--sub);font:13px/1.65 ui-monospace,Consolas,monospace}.local-only{border:1px solid var(--soft);background:#0d100e;border-radius:6px;padding:12px;color:var(--muted)}
     .chart{height:230px;border:1px solid var(--soft);border-radius:7px;background:#0a0d0b;padding:10px}.chart svg,.topology svg{width:100%;height:100%;display:block}.chart .axis{stroke:#3a423d;stroke-width:1}.chart .trace{fill:none;stroke:#dfe5e1;stroke-width:2;vector-effect:non-scaling-stroke}.chart text,.topology text{fill:var(--sub);font:600 12px ui-monospace,Consolas,monospace}.topology{height:430px;border:1px solid var(--soft);border-radius:7px;background:radial-gradient(circle at 50% 48%,#111713 0,#090c0a 58%);padding:4px;overflow:hidden}.topology .orbit{fill:none;stroke-width:1;stroke-dasharray:3 7;vector-effect:non-scaling-stroke}.topology .orbit.fleet{stroke:#283631}.topology .orbit.validator{stroke:#302b38}.topology .orbit.operator{stroke:#303a35}.topology .edge-underlay{fill:none;stroke:#101411;stroke-width:4;vector-effect:non-scaling-stroke}.topology .edge{fill:none;stroke:#81938a;stroke-width:1.25;opacity:.72;vector-effect:non-scaling-stroke}.topology .edge.one{stroke-dasharray:5 7;opacity:.48}.topology .edge.differs{stroke:var(--warn)}.topology .center-ring{fill:none;stroke:#36453d;stroke-width:1}.topology .center-core{fill:url(#topology-center);stroke:#71917f;stroke-width:1.5}.topology .center-label{fill:var(--text);font-size:10px;letter-spacing:.08em}.topology .center-sub{fill:var(--sub);font-size:8px;letter-spacing:.11em}.topology .peer .halo{fill:none;stroke:currentColor;stroke-width:7;opacity:.08}.topology .peer .direct-ring{fill:none;stroke:currentColor;stroke-width:1.4;opacity:.8}.topology .peer .core{stroke-width:1.7}.topology .peer.fleet{color:#79a9c2}.topology .peer.fleet .core{fill:url(#topology-fleet);stroke:#79a9c2}.topology .peer.node{color:#6ab38f}.topology .peer.node .core{fill:url(#topology-node);stroke:#6ab38f}.topology .peer.miner{color:#7ed949}.topology .peer.miner .core{fill:url(#topology-miner);stroke:#7ed949}.topology .peer.validator{color:#9f82cf}.topology .peer.validator .core{fill:url(#topology-validator);stroke:#9f82cf}.topology .peer.differs .core{stroke:var(--warn)}.topology .peer.stale .core,.topology .peer.unavailable .core{fill:#282d2a;stroke:#737b76}.topology .peer text{fill:currentColor;font-size:12px}.topology .peer:hover .core{stroke:#fff;stroke-width:2.4}.topology-legend{display:grid;grid-template-columns:repeat(4,minmax(0,max-content));align-items:center;gap:10px 22px;margin-top:13px;color:var(--muted);font-size:12px}.topology-legend+.topology-legend{padding-top:12px;border-top:1px solid var(--soft)}.topology-legend span{display:inline-flex;align-items:center;min-width:0;white-space:nowrap}.legend-line{display:inline-block;width:27px;border-top:1px solid #81938a;margin-right:8px}.legend-line.one{border-top-style:dashed;opacity:.7}.legend-dot{width:9px;height:9px;border-radius:50%;margin-right:8px;border:1px solid currentColor}.legend-dot.node{color:#6ab38f;background:#203d31}.legend-dot.fleet{color:#79a9c2;background:#21343e}.legend-dot.miner{color:#7ed949;background:#27431a}.legend-dot.validator{color:#9f82cf;background:#3c2d51}.legend-dot.differs{color:var(--warn);background:#503c23}.legend-dot.unavailable{color:#737b76;background:#282d2a}.auth-shell{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% -20%,#142018 0,#080a09 42%)}.auth{width:min(440px,100%);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:26px}.auth h1{font:700 24px ui-monospace,Consolas,monospace;margin:0 0 6px}.auth p{color:var(--muted);margin:0 0 20px}.field{display:grid;gap:7px;margin:13px 0}.field label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.field input{width:100%;background:#070908;border:1px solid #454d47;border-radius:6px;color:var(--text);padding:12px}.actions{display:flex;gap:9px;align-items:center;margin-top:18px}.error{color:#ef8b82;min-height:22px;margin-top:10px}.pair{display:grid;grid-template-columns:1fr auto;gap:10px}.pair input{text-transform:uppercase;letter-spacing:.15em;font:700 17px ui-monospace,Consolas,monospace;background:#070908;border:1px solid #454d47;border-radius:6px;color:var(--text);padding:11px;min-width:0}.more-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.portal-more{display:none}.toast{position:fixed;right:22px;bottom:90px;z-index:1200;background:#151916}
     @media(max-width:1050px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.kv{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media(max-width:900px){:root{--portal-nav-height:68px;--portal-safe-bottom:env(safe-area-inset-bottom,0px)}html{background:#0d100e!important}html,body{width:100%;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important;overflow-x:hidden!important;overscroll-behavior-y:none}body,.app,.main{background:var(--bg)!important}.app{display:block;min-height:100vh;min-height:100dvh}.side{position:fixed!important;left:0!important;right:0!important;top:auto!important;bottom:0!important;width:100%!important;height:calc(var(--portal-nav-height) + var(--portal-safe-bottom))!important;min-height:calc(var(--portal-nav-height) + var(--portal-safe-bottom))!important;max-height:calc(var(--portal-nav-height) + var(--portal-safe-bottom))!important;padding:0 0 var(--portal-safe-bottom)!important;background:#0d100e!important;border:0!important;border-top:1px solid var(--line)!important;display:block!important;overflow:hidden!important;z-index:1000!important;transform:none!important;-webkit-transform:none!important;will-change:auto!important;box-shadow:0 -8px 28px rgba(0,0,0,.38)!important}.side>.brand,.side-foot{display:none!important}.nav{width:100%!important;height:var(--portal-nav-height)!important;min-height:var(--portal-nav-height)!important;max-height:var(--portal-nav-height)!important;display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:0!important;margin:0!important;padding:0!important}.app .side .nav button,.app .side .nav button:hover,.app .side .nav button.active{display:none;position:relative!important;min-width:0!important;width:100%!important;height:var(--portal-nav-height)!important;min-height:var(--portal-nav-height)!important;max-height:var(--portal-nav-height)!important;margin:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--muted);text-align:center!important;padding:7px 2px 6px!important;font-size:10px!important;line-height:1!important;letter-spacing:.02em!important;appearance:none!important;-webkit-appearance:none!important;transform:none!important;-webkit-tap-highlight-color:transparent;touch-action:manipulation}.app .side .nav button.mobile,.app .side .nav button.mobile:hover,.app .side .nav button.mobile.active{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:3px!important}.app .side .nav button.active{color:var(--text)!important}.app .side .nav button.active:before{content:"";position:absolute;top:0;left:50%;width:32px;height:2px;transform:translateX(-50%);border-radius:0 0 3px 3px;background:var(--text)}.nav-icon{display:block!important;width:22px!important;height:22px!important;flex:0 0 22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}.nav-glyph{display:block!important;width:22px;height:22px;flex:0 0 22px;font:400 23px/22px "Segoe UI Symbol","Apple Symbols",sans-serif;color:currentColor}.main{padding:max(20px,env(safe-area-inset-top)) 14px 0;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important;padding-bottom:calc(var(--portal-nav-height) + var(--portal-safe-bottom) + 20px)!important}.top{align-items:stretch;flex-direction:column;gap:14px;margin-bottom:18px}.top-actions{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px}.device-select{width:100%;min-width:0}.status{padding:0 2px;white-space:nowrap}.top-actions .button{padding-inline:12px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.cards.network-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.card{padding:15px;min-height:104px}.card .value{font-size:22px;white-space:normal;overflow-wrap:anywhere}.section{padding:15px;margin-top:12px}.section-head{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-bottom:15px}.section-head>.pill,.section-head>.controls{justify-self:start}.kv{grid-template-columns:repeat(2,minmax(0,1fr))}.kv div{padding:13px}.control-row{grid-template-columns:1fr;gap:12px}.controls{justify-content:flex-start}.wide{grid-column:span 2}.table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain}.pair{grid-template-columns:1fr}.pair .button{width:100%}.field input,.pair input,.device-select{font-size:16px}.page-title h1{font-size:25px}.page-title p{font-size:13px}.more-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.more-grid .button{min-height:50px}.chart{height:190px}.topology{height:auto;aspect-ratio:760/430;padding:2px}.topology .peer text{font-size:13px}.topology-legend{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 14px}.auth-shell{align-items:start;padding:max(22px,env(safe-area-inset-top)) 14px}.auth{padding:22px 18px;margin-top:5vh}.portal-more{position:fixed;left:0;right:0;bottom:calc(var(--portal-nav-height) + var(--portal-safe-bottom))!important;z-index:1100;display:none;padding:14px;background:rgba(13,16,14,.98);border-top:1px solid var(--line);box-shadow:0 -14px 28px rgba(0,0,0,.35);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}.portal-more[data-open="1"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.portal-more button{min-height:58px;border:1px solid var(--line);border-radius:7px;background:var(--button);color:var(--text);display:flex;align-items:center;justify-content:flex-start;gap:11px;padding:11px 14px;text-align:left}.portal-more button:hover{background:var(--button-hover)}.portal-more svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}}
+    @media(max-width:900px){
+      html{background:#0d100e!important}
+      html,body{width:100%;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important;overflow-x:hidden!important;overscroll-behavior-y:none}
+      body,.app,.main{background:var(--bg)!important}
+      .app{display:block;min-height:100vh;min-height:100dvh}
+      .side{display:none!important}
+      #mobile-nav{display:flex!important;position:fixed;bottom:0;left:0;right:0;z-index:500;height:68px;min-height:68px;max-height:68px;background:linear-gradient(0deg,rgba(3,5,3,.98),rgba(7,10,7,.95));backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-top:1px solid rgba(50,240,110,.15);box-shadow:0 -8px 32px rgba(50,240,110,.06),0 -2px 8px rgba(50,240,110,.04);padding:0;box-sizing:border-box;animation:navGlow 3s ease infinite;transform:translateZ(0);will-change:transform}
+      #mobile-nav .mob-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--muted);font-size:10px;letter-spacing:.5px;text-transform:uppercase;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:600;border:none;background:none;padding:4px 2px;transition:all .15s;-webkit-tap-highlight-color:transparent;height:68px;min-height:68px;max-height:68px;min-width:0;overflow:hidden;position:relative;box-sizing:border-box}
+      #mobile-nav .mob-tab .mob-icon{font-size:24px;line-height:1;transition:all .2s;font-variant-emoji:text;-webkit-font-feature-settings:"liga" 0;display:inline-block;max-height:28px;overflow:hidden}
+      #mobile-nav .mob-tab .mob-icon svg{display:block;width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+      #mobile-nav .mob-tab .mob-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+      #mobile-nav .mob-tab.active{color:var(--green)}
+      #mobile-nav .mob-tab.active::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:3px;background:var(--green);border-radius:0 0 5px 5px;box-shadow:0 4px 20px rgba(50,240,110,.7),0 0 6px var(--green)}
+      #mobile-nav .mob-tab.active .mob-icon{filter:drop-shadow(0 0 14px rgba(50,240,110,.8));transform:translateY(-2px) scale(1.08)}
+      #mobile-nav .mob-tab:active{opacity:.4}
+      .main{padding:max(20px,env(safe-area-inset-top)) 14px 0;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important}
+      .main{padding-bottom:88px!important}
+      .app.unpaired .main{padding-bottom:20px!important}
+      .top{align-items:stretch;flex-direction:column;gap:14px;margin-bottom:18px}
+      .top-actions{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+      .device-select{width:100%;min-width:0}
+      .status{padding:0 2px;white-space:nowrap}
+      .top-actions .button{padding-inline:12px}
+      .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+      .cards.network-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .card{padding:15px;min-height:104px}
+      .card .value{font-size:22px;white-space:normal;overflow-wrap:anywhere}
+      .section{padding:15px;margin-top:12px}
+      .section-head{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-bottom:15px}
+      .section-head>.pill,.section-head>.controls{justify-self:start}
+      .kv{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .kv div{padding:13px}
+      .control-row{grid-template-columns:1fr;gap:12px}
+      .controls{justify-content:flex-start}
+      .wide{grid-column:span 2}
+      .table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain}
+      .pair{grid-template-columns:1fr}
+      .pair .button{width:100%}
+      .field input,.pair input,.device-select{font-size:16px}
+      .page-title h1{font-size:25px}
+      .page-title p{font-size:13px}
+      .more-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .more-grid .button{min-height:50px}
+      .chart{height:190px}
+      .topology{height:auto;aspect-ratio:760/430;padding:2px}
+      .topology .peer text{font-size:13px}
+      .topology-legend{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 14px}
+      .auth-shell{align-items:start;padding:max(22px,env(safe-area-inset-top)) 14px}
+      .auth{padding:22px 18px;margin-top:5vh}
+      .portal-more{position:fixed;left:0;right:0;bottom:68px!important;z-index:1100;display:none;padding:14px;background:rgba(13,16,14,.98);border-top:1px solid var(--line);box-shadow:0 -14px 28px rgba(0,0,0,.35);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+      .portal-more[data-open="1"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+      .portal-more button{min-height:58px;border:1px solid var(--line);border-radius:7px;background:var(--button);color:var(--text);display:flex;align-items:center;justify-content:flex-start;gap:11px;padding:11px 14px;text-align:left}
+      .portal-more button:hover{background:var(--button-hover)}
+      .portal-more svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+    }
     @media(max-width:900px){.portal-more{padding:16px 18px 18px;background:rgba(9,14,11,.985);border-top:1px solid #28332b;box-shadow:0 -12px 40px rgba(0,0,0,.55)}.portal-more[data-open="1"]{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px}.portal-more button{min-height:94px;border:.5px solid #28332b;border-radius:12px;background:#171c18;color:var(--text);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:13px 7px;text-align:center}.portal-more button:hover,.portal-more button:active{background:#1d241f;border-color:#3d4a40}.portal-more button span{font:700 10.5px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.05em;text-transform:uppercase}.portal-more svg{width:26px;height:26px;flex:0 0 26px;stroke-width:1.7}}
+    @media(max-width:900px){html,body{background:#0d100e!important}.app,.main,.auth-shell{background:var(--bg)!important}}
     @media(max-width:520px){.topology{aspect-ratio:420/390}}
-    @media(max-width:390px){.top-actions{grid-template-columns:minmax(0,1fr) auto}.top-actions .status{grid-row:2;grid-column:1}.top-actions .button{grid-row:2;grid-column:2}.cards{grid-template-columns:1fr}.cards.network-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.wide{grid-column:auto}.card{min-height:0}.kv{grid-template-columns:1fr}.more-grid{grid-template-columns:1fr 1fr}}
+    @media(max-width:390px){.top-actions{grid-template-columns:minmax(0,1fr) auto}.top-actions .status{grid-row:2;grid-column:1}.top-actions #logout{grid-row:2;grid-column:2}.cards{grid-template-columns:1fr}.cards.network-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.wide{grid-column:auto}.card{min-height:0}.kv{grid-template-columns:1fr}.more-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:340px){.cards.network-cards{grid-template-columns:1fr}}
-    #mobile-nav{display:none!important}
+    @keyframes navGlow{0%,100%{box-shadow:0 -4px 20px rgba(50,240,110,.05),0 -1px 6px rgba(50,240,110,.04)}50%{box-shadow:0 -6px 28px rgba(50,240,110,.1),0 -2px 10px rgba(50,240,110,.06)}}
+    #mobile-nav{display:none}#mobile-nav[hidden]{display:none!important}
+    @media(min-width:901px){#mobile-nav{display:none!important}}
+    .pair-dialog{width:440px;max-width:calc(100% - 28px);max-height:calc(100dvh - 32px);padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);overflow:auto}
+    .pair-dialog::backdrop{background:rgba(0,0,0,.7)}
+    .pair-dialog h2{margin:0 0 10px;font-size:21px}.pair-dialog p{color:var(--sub);line-height:1.5;margin:0 0 20px}
+    .pair-dialog input{font-size:16px;text-transform:uppercase}.pair-dialog .controls{justify-content:flex-end;margin-top:18px;gap:8px}
   </style>
 </head>
 <body>
 <section id="auth-view" class="auth-shell hidden"><div class="auth"><div class="brand"><div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><defs><linearGradient id="auth-veld-mark" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse"><stop stop-color="#97D222"/><stop offset=".52" stop-color="#5FAC18"/><stop offset="1" stop-color="#329418"/></linearGradient></defs><path d="M12 2.5 21.5 12 12 21.5 2.5 12Z" stroke="url(#auth-veld-mark)" stroke-width="2.2"/><path d="M12 7 17 12 12 17 7 12Z" stroke="url(#auth-veld-mark)" stroke-width="1.9"/></svg></div><div><b>VELD NODE</b></div></div><h1>Remote access</h1><p>Sign in to manage your paired nodes and miners.</p><div class="field"><label for="account">Account</label><input id="account" maxlength="48" autocomplete="username"></div><div class="field"><label for="password">Password</label><input id="password" type="password" maxlength="128" autocomplete="current-password"></div><div class="actions"><button id="login" class="button">Log in</button><button id="register" class="button ghost">Create account</button></div><div id="auth-error" class="error"></div></div></section>
 <div id="app-view" class="app hidden">
   <aside class="side"><div class="brand"><div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><defs><linearGradient id="side-veld-mark" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse"><stop stop-color="#97D222"/><stop offset=".52" stop-color="#5FAC18"/><stop offset="1" stop-color="#329418"/></linearGradient></defs><path d="M12 2.5 21.5 12 12 21.5 2.5 12Z" stroke="url(#side-veld-mark)" stroke-width="2.2"/><path d="M12 7 17 12 12 17 7 12Z" stroke="url(#side-veld-mark)" stroke-width="1.9"/></svg></div><div><b>VELD NODE</b></div></div><nav class="nav" id="nav"><button data-page="overview" class="active mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20h-6v-5h-4v5H4z"/></svg><span>Overview</span></button><button data-page="blockchain" class="mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4-8 4-8-4 8-4Z"/><path d="m4 12 8 4 8-4M4 17l8 4 8-4"/></svg><span>Chain</span></button><button data-page="mining" class="mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M1308 1634Q1362 1634 1408.0 1630.0Q1454 1626 1486 1621Q1525 1617 1554 1610V1577Q1539 1577 1496.5 1575.0Q1454 1573 1392.5 1560.5Q1331 1548 1251.0 1525.0Q1171 1502 1081.5 1459.0Q992 1416 894.0 1353.0Q796 1290 697 1199L1897 1L1786 -108L588 1090Q519 1015 466.0 939.0Q413 863 373.5 787.5Q334 712 306.5 641.5Q279 571 260 509Q217 363 207 228H174Q166 257 162 296Q157 329 154.0 374.5Q151 420 151 476Q151 555 162.0 651.5Q173 748 204.0 851.5Q235 955 289.5 1061.0Q344 1167 432 1266L251 1497L283 1530L520 1353Q619 1439 723.5 1494.5Q828 1550 931.5 1580.5Q1035 1611 1131.0 1622.5Q1227 1634 1308 1634Z" transform="translate(0.270332 20.739977) scale(0.01145475 -0.01145475)" fill="currentColor" stroke="none"/></svg><span>Mining</span></button><button data-page="workers">Workers</button><button data-page="explorer" class="mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></svg><span>Explorer</span></button><button data-page="network">Network</button><button data-page="logs">Logs</button><button data-page="settings">Settings</button><button data-page="more" class="mobile" aria-expanded="false" aria-controls="portal-more-menu"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button></nav><div class="side-foot"><span>Remote operations portal</span><a href="https://x.com/VeldNetwork" rel="noreferrer">Follow on X @VeldNetwork</a></div></aside>
-  <main class="main"><header class="top"><div class="page-title"><h1 id="page-title">Overview</h1><p id="page-subtitle">Your node at a glance.</p></div><div class="top-actions"><select id="device-select" class="device-select"></select><span id="online" class="status">Offline</span><button id="logout" class="button ghost">Log out</button></div></header><div id="page"></div></main>
+  <main class="main"><header class="top"><div class="page-title"><h1 id="page-title">Overview</h1><p id="page-subtitle">Your node at a glance.</p></div><div class="top-actions"><select id="device-select" class="device-select" aria-label="Machine"></select><button id="add-machine" type="button" class="button ghost" data-portal-action="addMachine">+ Add machine</button><span id="online" class="status">Offline</span><button id="logout" class="button ghost">Log out</button></div></header><div id="page"></div></main>
 </div>
-<nav id="mobile-nav" aria-label="Primary" hidden></nav>
+<nav id="mobile-nav" aria-label="Primary" hidden>
+  <button type="button" class="mob-tab active" data-page="overview"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20h-6v-5h-4v5H4z"/></svg></span><span class="mob-label">Overview</span></button>
+  <button type="button" class="mob-tab" data-page="blockchain"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4-8 4-8-4 8-4Z"/><path d="m4 12 8 4 8-4M4 17l8 4 8-4"/></svg></span><span class="mob-label">Chain</span></button>
+  <button type="button" class="mob-tab" data-page="mining"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1308 1634Q1362 1634 1408.0 1630.0Q1454 1626 1486 1621Q1525 1617 1554 1610V1577Q1539 1577 1496.5 1575.0Q1454 1573 1392.5 1560.5Q1331 1548 1251.0 1525.0Q1171 1502 1081.5 1459.0Q992 1416 894.0 1353.0Q796 1290 697 1199L1897 1L1786 -108L588 1090Q519 1015 466.0 939.0Q413 863 373.5 787.5Q334 712 306.5 641.5Q279 571 260 509Q217 363 207 228H174Q166 257 162 296Q157 329 154.0 374.5Q151 420 151 476Q151 555 162.0 651.5Q173 748 204.0 851.5Q235 955 289.5 1061.0Q344 1167 432 1266L251 1497L283 1530L520 1353Q619 1439 723.5 1494.5Q828 1550 931.5 1580.5Q1035 1611 1131.0 1622.5Q1227 1634 1308 1634Z" transform="translate(0.270332 20.739977) scale(0.01145475 -0.01145475)" fill="currentColor" stroke="none"/></svg></span><span class="mob-label">Mining</span></button>
+  <button type="button" class="mob-tab" data-page="explorer"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></svg></span><span class="mob-label">Explorer</span></button>
+  <button type="button" class="mob-tab" data-page="more" aria-expanded="false" aria-controls="portal-more-menu"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span><span class="mob-label">More</span></button>
+</nav>
 <div class="portal-more" id="portal-more-menu" data-open="0" aria-hidden="true">
   <button type="button" data-more-page="workers"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14v10H5zM8 4v3m8-3v3M8 17v3m8-3v3"/></svg><span>Workers</span></button>
   <button type="button" data-more-page="network"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="17" r="2"/><path d="m10.9 7.7-3.8 7.6m6-7.6 3.8 7.6M8 17h8"/></svg><span>Network</span></button>
   <button type="button" data-more-page="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg><span>Logs</span></button>
   <button type="button" data-more-page="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1A7 7 0 0 0 15 6l-.4-2.6h-4L10 6a7 7 0 0 0-1.6 1L6 6 4 9.4 6.1 11a7 7 0 0 0 0 2L4 14.6 6 18l2.4-1a7 7 0 0 0 1.6 1l.5 2.6h4L15 18a7 7 0 0 0 1.6-1l2.4 1 2-3.4-2.1-1.6a7 7 0 0 0 .1-1Z"/></svg><span>Settings</span></button>
 </div>
+<dialog id="pair-dialog" class="pair-dialog" aria-labelledby="pair-dialog-title">
+  <form id="pair-form">
+    <h2 id="pair-dialog-title">Add machine</h2>
+    <p>On the other machine, open Veld Node Settings, enable Remote access, and copy its one-time pair code.</p>
+    <div class="field"><label for="add-pair-code">Pair code</label><input id="add-pair-code" maxlength="9" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" required></div>
+    <div id="add-pair-error" class="error" role="alert"></div>
+    <div class="controls"><button id="cancel-pair" type="button" class="button ghost" data-portal-action="cancelPair">Cancel</button><button id="add-pair-submit" type="submit" class="button">Pair machine</button></div>
+  </form>
+</dialog>
 <script>
 const $=id=>document.getElementById(id);let csrf="",devices=[],selected=0,page="overview",installPrompt=null;
 const portalHtmlPolicy=globalThis.trustedTypes?trustedTypes.createPolicy("portal-render",{createHTML:value=>value}):null;
@@ -307,11 +383,10 @@ function topologyGraph(t){
   return `<div class="topology"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Sanitized Veld peer topology"><defs><radialGradient id="topology-center" cx="34%" cy="28%"><stop offset="0" stop-color="#26372e"/><stop offset="1" stop-color="#121a16"/></radialGradient><radialGradient id="topology-fleet" cx="34%" cy="28%"><stop offset="0" stop-color="#385363"/><stop offset="1" stop-color="#172832"/></radialGradient><radialGradient id="topology-node" cx="34%" cy="28%"><stop offset="0" stop-color="#2c4b3d"/><stop offset="1" stop-color="#14271f"/></radialGradient><radialGradient id="topology-miner" cx="34%" cy="28%"><stop offset="0" stop-color="#355925"/><stop offset="1" stop-color="#182d14"/></radialGradient><radialGradient id="topology-validator" cx="34%" cy="28%"><stop offset="0" stop-color="#493861"/><stop offset="1" stop-color="#251d31"/></radialGradient></defs>${orbits}${edges}<g aria-hidden="true"><circle class="center-ring" cx="${cx}" cy="${cy}" r="36"/><circle class="center-ring" cx="${cx}" cy="${cy}" r="31"/><circle class="center-ring" cx="${cx}" cy="${cy}" r="27"/><circle class="center-core" cx="${cx}" cy="${cy}" r="23"/><text class="center-label" x="${cx}" y="${cy-2}" text-anchor="middle">VELD</text><text class="center-sub" x="${cx}" y="${cy+11}" text-anchor="middle">NETWORK</text></g>${marks}</svg></div><div class="topology-legend" aria-label="Peer role colors"><span><i class="legend-dot node"></i>Node</span><span><i class="legend-dot fleet"></i>Fleet</span><span><i class="legend-dot miner"></i>Miner</span><span><i class="legend-dot validator"></i>Validator</span></div><div class="topology-legend" aria-label="Link and status legend"><span><i class="legend-line"></i>Seen by both</span><span><i class="legend-line one"></i>One-sided</span><span><i class="legend-dot differs"></i>Tip differs</span><span><i class="legend-dot unavailable"></i>Status unavailable</span></div>`
 }
 function action(name,payload={}){actionQueue=actionQueue.then(()=>signedAction(name,payload)).catch(error=>toast(error.message,true));return actionQueue}function confirmAction(name,question){if(window.confirm(question))return action(name)}function toggle(name,value){action(name,{enabled:!value})}function toast(msg,bad=false){let t=document.createElement("div");t.className="toast "+(bad?"warning":"pill");t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3600)}
-function firstPair(){return `<section class="section"><div class="section-head"><div><h2>Pair your first machine</h2><p>Enable Remote access in the Veld desktop client, then enter the one-time pairing code shown there.</p></div></div><div class="pair"><input id="pair-code" maxlength="9" inputmode="text" autocomplete="one-time-code" placeholder="PAIR CODE"><button class="button" data-portal-action="claim">Pair machine</button></div><div id="pair-error" class="error"></div><div class="local-only">The portal receives operational status only. Commands are signed by a non-exportable key in this app and every change must still be approved on the paired machine. Wallet keys, passphrases, RPC credentials, peer addresses, and identity files never leave it.</div></section>`}
+function firstPair(){return `<section class="section"><div class="section-head"><div><h2>Pair your first machine</h2><p>Connect a Veld node or miner with its one-time pair code.</p></div><button type="button" class="button" data-portal-action="addMachine">Add machine</button></div><div class="local-only">Your existing machines stay paired when you add another. Wallet keys and passphrases stay on each machine.</div></section>`}
 function pageScrollState(){const state={};document.querySelectorAll("#page [data-scroll-key]").forEach(el=>state[el.dataset.scrollKey]=el.scrollLeft);return state}
 function restorePageScroll(state){requestAnimationFrame(()=>document.querySelectorAll("#page [data-scroll-key]").forEach(el=>{const value=state[el.dataset.scrollKey];if(Number.isFinite(value))el.scrollLeft=value}))}
-document.querySelectorAll("#nav button.mobile").forEach(button=>{const clone=button.cloneNode(true);clone.classList.add("mob-tab");$("mobile-nav").appendChild(clone)});
-function render(){const scroll=pageScrollState();const d=current();const meta=d?titles[page]:["Pair a machine","Connect your first Veld node or miner."];$("page-title").textContent=meta[0];$("page-subtitle").textContent=meta[1];const extra=["workers","network","logs","settings"];document.querySelectorAll("#nav button,#mobile-nav button").forEach(b=>b.classList.toggle("active",!!d&&(b.dataset.page===page||(b.dataset.page==="more"&&extra.includes(page)))));if(!d){$("online").className="status";$("online").textContent="Offline";setHtml($("page"),firstPair());return}$("online").className="status "+(d.online?"online":"");$("online").textContent=d.online?"Online":"Offline";const fn={overview,blockchain,mining,workers,explorer,network,logs,settings,more}[page];setHtml($("page"),fn(d,snap(d)));restorePageScroll(scroll)}
+function render(){const scroll=pageScrollState();const d=current();$("mobile-nav").hidden=!d;$("app-view").classList.toggle("unpaired",!d);const meta=d?titles[page]:["Pair a machine","Connect your first Veld node or miner."];$("page-title").textContent=meta[0];$("page-subtitle").textContent=meta[1];const extra=["workers","network","logs","settings"];document.querySelectorAll("#nav button,#mobile-nav button").forEach(b=>b.classList.toggle("active",!!d&&(b.dataset.page===page||(b.dataset.page==="more"&&extra.includes(page)))));if(!d){$("online").className="status";$("online").textContent="Offline";setHtml($("page"),firstPair());return}$("online").className="status "+(d.online?"online":"");$("online").textContent=d.online?"Online":"Offline";const fn={overview,blockchain,mining,workers,explorer,network,logs,settings,more}[page];setHtml($("page"),fn(d,snap(d)));restorePageScroll(scroll)}
 function overview(d,s){return `<div class="cards">${metric(n(d.height),"Block height","green")}${metric(d.sync_lag?n(d.sync_lag)+" behind":"100.0%","Synchronization")}${metric(n(d.peers),"P2P peers")}${metric(n(d.hashrate,1)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(d.workers),"CPU workers")}${metric(n(s.mempool),"Mempool transactions")}${metric(n(s.supply,2)+" VELD","Circulating supply")}</div><section class="section"><div class="section-head"><div><h2>Node status</h2><p>${esc(d.warning||"Consensus validation is active inside veld-node.")}</p></div><div class="controls"><span class="status ${d.online?'online':''}">${esc(d.mining_state)}</span><button class="button" data-command="${s.process_running?'node.stop':'node.start'}"${s.process_running?' data-confirm="Stop this node gracefully?"':''}>${s.process_running?'Stop node':'Start node'}</button></div></div><div class="kv"><div><b>${d.sync_lag?'Syncing':'Validated'}</b><span>Chain</span></div><div><b>${n(d.peers)}</b><span>Connections</span></div><div><b>${s.mining_ready?'Ready':'Waiting'}</b><span>Work admission</span></div><div><b>v${esc(d.version)}</b><span>Client build</span></div></div>${d.last_command?`<div class="warning">Last command: ${esc(d.last_command.action)} | ${esc(d.last_command.state)}</div>`:""}</section><section class="section"><div class="section-head"><div><h2>Chain activity</h2><p>Locally reported verified chain height over the last hour.</p></div></div>${spark(d.history,"height","Verified chain height")}</section>`}
 function blockchain(d,s){return `<div class="cards">${metric(n(d.height),"Locally verified height","green")}${metric(d.sync_lag?n(d.sync_lag):"0","Blocks behind")}${metric(bytes(s.chain_bytes),"Chain storage")}${metric("Signed + verified","Snapshot bootstrap")}</div><section class="section"><div class="section-head"><div><h2>Synchronization mode</h2><p>Snapshot starts remain quarantined until an independent genesis validation matches exactly.</p></div></div><div class="control-row"><div><h3>Signed snapshot</h3><p>Fast startup with independent full-chain validation in the background.</p></div><button class="button" data-command="sync.mode" data-mode="snapshot">Select</button></div><div class="control-row"><div><h3>Full initial block download</h3><p>Download and validate the complete chain from genesis before services open.</p></div><button class="button" data-command="sync.mode" data-mode="full">Select</button></div></section>`}
 function mining(d,s){return `<div class="cards">${metric(esc(d.mining_state),"Mining status",s.mining_active?"green":"")}${metric(n(d.hashrate,2)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.workers),"CPU workers")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(s.total_hashes),"Session hashes","wide")}${metric(s.mining_ready?"Admitted":"Waiting","Work admission","wide")}</div><section class="section"><div class="section-head"><div><h2>Hashrate history</h2><p>Measured aggregate VeldHash rate over the last hour.</p></div></div>${spark(d.history,"hashrate","VeldHash rate",(x,p)=>n(x,p)+" H/s")}</section><section class="section"><div class="control-row"><div><h3>CPU mining</h3><p>Enable mining for the next app-managed start.</p></div><button class="toggle ${s.mining_enabled?'on':''}" aria-label="Toggle mining" data-command="mining.enabled" data-enabled="${!!s.mining_enabled}"></button></div><div class="control-row"><div><h3>Worker count</h3><p>Choose an exact worker count from 1 to 256.</p></div><div class="controls"><button class="button ghost" data-worker-delta="-1">-</button><span class="pill">${n(d.workers||s.configured_workers||1)} workers</span><button class="button ghost" data-worker-delta="1">+</button></div></div></section>`}
@@ -323,17 +398,61 @@ function network(d,s){const topology=s.topology||{},roles=topologyRoles(topology
 function logs(d,s){const events=Array.isArray(s.events)?s.events:[];return `<section class="section"><div class="section-head"><div><h2>Operational events</h2><p>Sanitized status events only. Raw logs and local paths stay on the machine.</p></div></div><div class="log">${events.length?events.map(esc).join("\n"):"Waiting for sanitized client events..."}</div></section>`}
 function settingRow(title,detail,actionName,value,disabled=false){return `<div class="control-row"><div><h3>${title}</h3><p>${detail}</p></div><button class="toggle ${value?'on':''}" ${disabled?'disabled':''} data-command="${actionName}" data-enabled="${!!value}"></button></div>`}
 function installedPortal(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true}
-function settings(d,s){const pair=installedPortal()?'':`<section class="section"><div class="section-head"><div><h2>Pair another machine</h2><p>Enable Remote access in the desktop client, then enter its one-time code.</p></div></div><div class="pair"><input id="pair-code" maxlength="9" placeholder="PAIR CODE"><button class="button" data-portal-action="claim">Pair machine</button></div><div id="pair-error" class="error"></div></section>`;return `<section class="section"><div class="section-head"><div><h2>Node preferences</h2><p>Changes that affect transport or sync apply on the next start.</p></div></div>${settingRow("CPU mining","Run VeldHash workers when the node starts.","mining.enabled",s.mining_enabled)}${settingRow("Tor-only privacy","Route peer traffic through Tor.","privacy.tor",s.tor,s.process_running)}${settingRow("Attempt inbound reachability","Ask the router for an inbound P2P mapping.","network.reachable",s.reachable,s.process_running||s.tor)}${settingRow("Show public height reference","Use the public explorer for visual sync progress only.","display.reference",s.reference)}</section><section class="section"><div class="section-head"><div><h2>Release and updates</h2><p>Installed v${esc(d.version)}</p></div><div class="controls"><button class="button" data-command="updates.check">Check now</button><button class="button" data-command="updates.install" data-confirm="Install the signed update and restart this node?">Update now</button></div></div><div class="local-only">Signed feed verification and package installation run on the paired machine. Identity creation, keyfile import, and passphrase entry stay local and are never sent through this portal.</div></section>${pair}<section class="section"><div class="section-head"><div><h2>Current machine</h2><p>Rename or remove this paired machine.</p></div></div><div class="control-row"><div><h3>Machine name</h3><p>${esc(d.name)}</p></div><div class="controls"><button class="button ghost" data-portal-action="rename">Rename</button><button class="button danger" data-portal-action="remove">Remove</button></div></div></section>`}
+function settings(d,s){const pair=`<section class="section"><div class="section-head"><div><h2>Pair another machine</h2><p>Connect another Veld node or miner using its one-time code.</p></div><button type="button" class="button" data-portal-action="addMachine">Add machine</button></div></section>`;return `<section class="section"><div class="section-head"><div><h2>Node preferences</h2><p>Changes that affect transport or sync apply on the next start.</p></div></div>${settingRow("CPU mining","Run VeldHash workers when the node starts.","mining.enabled",s.mining_enabled)}${settingRow("Tor-only privacy","Route peer traffic through Tor.","privacy.tor",s.tor,s.process_running)}${settingRow("Attempt inbound reachability","Ask the router for an inbound P2P mapping.","network.reachable",s.reachable,s.process_running||s.tor)}${settingRow("Show public height reference","Use the public explorer for visual sync progress only.","display.reference",s.reference)}</section><section class="section"><div class="section-head"><div><h2>Release and updates</h2><p>Installed v${esc(d.version)}</p></div><div class="controls"><button class="button" data-command="updates.check">Check now</button><button class="button" data-command="updates.install" data-confirm="Install the signed update and restart this node?">Update now</button></div></div><div class="local-only">Signed feed verification and package installation run on the paired machine. Identity creation, keyfile import, and passphrase entry stay local and are never sent through this portal.</div></section>${pair}<section class="section"><div class="section-head"><div><h2>Current machine</h2><p>Rename or remove this paired machine.</p></div></div><div class="control-row"><div><h3>Machine name</h3><p>${esc(d.name)}</p></div><div class="controls"><button class="button ghost" data-portal-action="rename">Rename</button><button class="button danger" data-portal-action="remove">Remove</button></div></div></section>`}
 function more(){const installed=installedPortal();return `<section class="section"><div class="more-grid"><button class="button" data-open-page="workers">Workers</button><button class="button" data-open-page="network">Network</button><button class="button" data-open-page="logs">Logs</button><button class="button" data-open-page="settings">Settings</button>${installed?'':`<button class="button" data-portal-action="install">Install portal</button>`}</div></section>`}
 async function installPortal(){if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;render();return}toast('Open your browser menu and choose Add to Home Screen')}
-async function claim(){try{const keyInfo=await commandKey();await api("/api/v1/devices/claim","POST",{code:$("pair-code").value,command_key:keyInfo.key});$("pair-code").value="";refresh()}catch(e){$("pair-error").textContent=e.message}}async function renameDevice(){const d=current(),name=prompt("Machine name",d.name);if(name){await api("/api/v1/devices/rename","POST",{id:d.id,name});refresh()}}async function removeDevice(){const d=current();if(confirm("Remove this machine from your portal?")){await api("/api/v1/devices/revoke","POST",{id:d.id});selected=0;refresh()}}
-function showAuth(){csrf="";$("auth-view").classList.remove("hidden");$("app-view").classList.add("hidden");$("mobile-nav").hidden=true}function showApp(){$("auth-view").classList.add("hidden");$("app-view").classList.remove("hidden");$("mobile-nav").hidden=false;refresh()}async function auth(mode){$("auth-error").textContent="";try{const j=await api("/api/v1/"+mode,"POST",{account:$("account").value,password:$("password").value});csrf=j.csrf;$("password").value="";showApp()}catch(e){$("auth-error").textContent=e.message}}
+let pairingBusy=false;
+function openAddMachine(){
+  if(pairingBusy)return;
+  closePortalMore();
+  const dialog=$("pair-dialog");
+  if(dialog.open)return;
+  $("add-pair-code").value="";
+  $("add-pair-error").textContent="";
+  dialog.showModal();
+  $("add-pair-code").focus();
+}
+function closeAddMachine(){
+  if(pairingBusy)return;
+  $("pair-dialog").close();
+  $("add-machine").focus();
+}
+async function claimMachine(event){
+  event.preventDefault();
+  if(pairingBusy)return;
+  const input=$("add-pair-code"),submit=$("add-pair-submit"),cancel=$("cancel-pair"),error=$("add-pair-error");
+  const code=input.value.trim().toUpperCase();
+  if(!code){error.textContent="Enter the pair code from the other machine.";input.focus();return;}
+  const previousIds=new Set(devices.map(device=>device.id));
+  pairingBusy=true;submit.disabled=true;cancel.disabled=true;input.readOnly=true;
+  submit.textContent="Pairing…";error.textContent="";
+  let paired=false;
+  try{
+    const keyInfo=await commandKey();
+    await api("/api/v1/devices/claim","POST",{code,command_key:keyInfo.key});
+    paired=true;input.value="";
+    await refresh();
+    const added=devices.find(device=>!previousIds.has(device.id));
+    if(added){selected=added.id;page="overview";renderSelector();render();}
+    toast("Machine added");
+  }catch(e){
+    if(paired)toast("Machine paired. Refresh the portal to load it.",true);
+    else error.textContent=e.message||"Could not pair this machine.";
+  }finally{
+    pairingBusy=false;submit.disabled=false;cancel.disabled=false;input.readOnly=false;
+    submit.textContent="Pair machine";
+    if(paired)closeAddMachine();
+  }
+}
+async function renameDevice(){const d=current(),name=prompt("Machine name",d.name);if(name){await api("/api/v1/devices/rename","POST",{id:d.id,name});refresh()}}async function removeDevice(){const d=current();if(confirm("Remove this machine from your portal?")){await api("/api/v1/devices/revoke","POST",{id:d.id});selected=0;refresh()}}
+function showAuth(){csrf="";$("auth-view").classList.remove("hidden");$("app-view").classList.add("hidden");$("mobile-nav").hidden=true}function showApp(){$("auth-view").classList.add("hidden");$("app-view").classList.remove("hidden");$("mobile-nav").hidden=true;refresh()}async function auth(mode){$("auth-error").textContent="";try{const j=await api("/api/v1/"+mode,"POST",{account:$("account").value,password:$("password").value});csrf=j.csrf;$("password").value="";showApp()}catch(e){$("auth-error").textContent=e.message}}
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event});
 window.addEventListener('appinstalled',()=>{installPrompt=null;if(page==='more')render()});
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).catch(()=>{}));
 function closePortalMore(){const menu=$("portal-more-menu");menu.dataset.open="0";menu.setAttribute("aria-hidden","true");document.querySelectorAll('[data-page="more"]').forEach(button=>button.setAttribute("aria-expanded","false"))}
 function togglePortalMore(){const menu=$("portal-more-menu"),opening=menu.dataset.open!=="1";menu.dataset.open=opening?"1":"0";menu.setAttribute("aria-hidden",opening?"false":"true");document.querySelectorAll('[data-page="more"]').forEach(button=>button.setAttribute("aria-expanded",opening?"true":"false"))}
-function handlePortalClick(event){if(!(event.target instanceof Element))return;const target=event.target.closest("[data-portal-action],[data-command],[data-worker-delta],[data-open-page]");if(!target||target.disabled)return;if(target.dataset.openPage){page=target.dataset.openPage;render();return}if(target.dataset.workerDelta){setWorkers(Number(target.dataset.workerDelta));return}if(target.dataset.portalAction){const handlers={claim,install:installPortal,rename:renameDevice,remove:removeDevice},handler=handlers[target.dataset.portalAction];if(handler)Promise.resolve(handler()).catch(error=>toast(error.message,true));return}if(target.dataset.command){if(target.dataset.confirm&&!window.confirm(target.dataset.confirm))return;const payload={};if(Object.prototype.hasOwnProperty.call(target.dataset,"enabled"))payload.enabled=target.dataset.enabled!=="true";if(target.dataset.mode)payload.mode=target.dataset.mode;action(target.dataset.command,payload)}}
+function handlePortalClick(event){if(!(event.target instanceof Element))return;const target=event.target.closest("[data-portal-action],[data-command],[data-worker-delta],[data-open-page]");if(!target||target.disabled)return;if(target.dataset.openPage){page=target.dataset.openPage;render();return}if(target.dataset.workerDelta){setWorkers(Number(target.dataset.workerDelta));return}if(target.dataset.portalAction){const handlers={addMachine:openAddMachine,cancelPair:closeAddMachine,install:installPortal,rename:renameDevice,remove:removeDevice},handler=handlers[target.dataset.portalAction];if(handler)Promise.resolve(handler()).catch(error=>toast(error.message,true));return}if(target.dataset.command){if(target.dataset.confirm&&!window.confirm(target.dataset.confirm))return;const payload={};if(Object.prototype.hasOwnProperty.call(target.dataset,"enabled"))payload.enabled=target.dataset.enabled!=="true";if(target.dataset.mode)payload.mode=target.dataset.mode;action(target.dataset.command,payload)}}
+$("pair-form").addEventListener("submit",claimMachine);$("pair-dialog").addEventListener("cancel",event=>{if(pairingBusy)event.preventDefault()});
 document.addEventListener("click",handlePortalClick);document.querySelectorAll("#nav button,#mobile-nav button").forEach(b=>b.addEventListener("click",e=>{if(b.dataset.page==="more"){e.stopPropagation();togglePortalMore();return}closePortalMore();page=b.dataset.page;render()}));document.querySelectorAll("[data-more-page]").forEach(b=>b.addEventListener("click",()=>{page=b.dataset.morePage;closePortalMore();render()}));document.addEventListener("click",e=>{const menu=$("portal-more-menu"),buttons=[...document.querySelectorAll('[data-page="more"]')];if(menu.dataset.open==="1"&&!menu.contains(e.target)&&!buttons.some(button=>button.contains(e.target)))closePortalMore()});document.addEventListener("keydown",e=>{if(e.key==="Escape")closePortalMore()});$("device-select").addEventListener("change",e=>{selected=Number(e.target.value);render()});$("login").addEventListener("click",()=>auth("login"));$("register").addEventListener("click",()=>auth("register"));$("logout").addEventListener("click",async()=>{try{await api("/api/v1/logout","POST",{})}catch{}showAuth()});api("/api/v1/session").then(j=>{csrf=j.csrf;showApp()}).catch(showAuth);setInterval(()=>{if(!$("app-view").classList.contains("hidden"))refresh()},5000);
 </script></body></html>"""
 
@@ -414,7 +533,8 @@ def route_rate_bucket(path: str) -> str:
         "/", "/healthz", "/manifest.webmanifest", "/service-worker.js",
         "/offline.html", "/icon.png", "/api/v1/session", "/api/v1/devices",
         "/api/v1/register", "/api/v1/login", "/api/v1/logout",
-        "/api/v1/device/report", "/api/v1/devices/claim",
+        "/api/v1/device/report", "/api/v1/device/reset-pairing",
+        "/api/v1/devices/claim",
         "/api/v1/devices/trust-key", "/api/v1/devices/command",
         "/api/v1/devices/rename", "/api/v1/devices/revoke",
     }
@@ -955,6 +1075,38 @@ class PortalStore:
                 ),
             )
             return cur.rowcount == 1
+
+    def reset_pairing(self, token: str) -> dict[str, int | str] | None:
+        """Detach one authenticated device and issue exactly one fresh code."""
+        now, token_hash = int(time.time()), self.token_hash(token)
+        with self.lock, self.database() as db:
+            row = db.execute(
+                "SELECT id FROM devices WHERE token_hash=?", (token_hash,)
+            ).fetchone()
+            if row is None:
+                return None
+            device_id = int(row["id"])
+            for _ in range(8):
+                code = self.pair_code()
+                expires = now + PAIR_SECONDS
+                try:
+                    db.execute(
+                        """UPDATE devices
+                           SET account_id=NULL,pair_code=?,pair_expires=?,
+                               command_key_x='',command_key_y='',command_key_id='',
+                               command_sequence=0
+                           WHERE id=?""",
+                        (code, expires, device_id),
+                    )
+                    db.execute(
+                        """UPDATE commands SET state='superseded',completed_at=?
+                           WHERE device_id=? AND state IN ('queued','delivered')""",
+                        (now, device_id),
+                    )
+                    return {"pair_code": code, "pair_expires": expires}
+                except sqlite3.IntegrityError:
+                    continue
+        raise RuntimeError("pair code allocation failed")
 
     def enroll_command_key(
         self, account_id: int, device_id: int, key: dict[str, str]
@@ -1901,6 +2053,31 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return self.reply(
                     200, self.app.store.report(token, validate_report(self.read_json()))
                 )
+
+            if path == "/api/v1/device/reset-pairing":
+                authorizations = self.headers.get_all("Authorization", [])
+                if len(authorizations) != 1:
+                    return self.reply(401, {"error": "Invalid device credential"})
+                authorization = authorizations[0]
+                token = authorization[7:] if authorization.startswith("Bearer ") else ""
+                if not DEVICE_TOKEN_RE.fullmatch(token):
+                    return self.reply(401, {"error": "Invalid device credential"})
+                if self.read_json() != {}:
+                    return self.reply(400, {"error": "Invalid reset request"})
+                token_identity = "device-token:" + hashlib.sha256(
+                    token.encode("ascii")
+                ).hexdigest()
+                if not self.app.limiter.allow_many(
+                    (
+                        (token_identity, "pairing-reset", 3, 3600),
+                        ("global", "pairing-reset", 300, 3600),
+                    )
+                ):
+                    return self.reply(429, {"error": "Pairing reset rate exceeded"})
+                replacement = self.app.store.reset_pairing(token)
+                if replacement is None:
+                    return self.reply(404, {"error": "Machine not found"})
+                return self.reply(200, {"ok": True, **replacement})
 
             row = self.authenticated(csrf=True)
             if not row:

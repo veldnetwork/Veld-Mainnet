@@ -208,6 +208,12 @@ static uint64_t juint(const std::string& json, const std::string& key) {
     try { return std::stoull(s); } catch (...) { return 0; }
 }
 
+static bool validator_operations_available(const std::string& validators_info) {
+    // Older nodes omit the new capability; preserve their registration gate.
+    return jstr(validators_info, "system_active") == "true" ||
+           jstr(validators_info, "existing_operations_active") == "true";
+}
+
 static std::string bytes_to_hex(const uint8_t* data, size_t len) {
     static const char* hex = "0123456789abcdef";
     std::string out(len * 2, '0');
@@ -1266,6 +1272,8 @@ static int cmd_status(const std::string& host, uint16_t port,
     std::cout << "  Supply:            " << std::fixed << std::setprecision(2) << supply << " VELD\n";
     std::cout << "\n";
     std::cout << "  Validator system:  " << (sys_active ? (std::string(GRN) + "ACTIVE") : (std::string(YEL) + "LOCKED")) << RST << "\n";
+    if (!sys_active && validator_operations_available(vi))
+        std::cout << "  Existing validators remain active; new registration is paused.\n";
     std::cout << "  Network staked:    " << net_staked << " / " << threshold << " VELD required\n";
     std::cout << "  Active validators: " << val_count << "\n";
     std::cout << "\n";
@@ -1454,8 +1462,7 @@ static int run_daemon(const std::string& host, uint16_t port,
             }
 
             std::string vi = json_rpc(host, port, "getvalidators");
-            bool sys_active = jstr(vi, "system_active") == "true";
-            if (!sys_active) {
+            if (!validator_operations_available(vi)) {
                 double threshold = 0, current = 0;
                 try { threshold = std::stod(jstr(vi, "unlock_threshold_veld")); } catch (...) {}
                 try { current = std::stod(jstr(vi, "total_staked_veld")); } catch (...) {}

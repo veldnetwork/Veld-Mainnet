@@ -961,6 +961,7 @@ private:
         uint64_t resolved_input_total = 0;
         std::unordered_set<std::string> candidate_spends;
         candidate_spends.reserve(tx.inputs.size());
+        TransactionScriptHashes script_hashes(tx);
         for (size_t input_index = 0; input_index < tx.inputs.size();
              ++input_index) {
             const auto& input = tx.inputs[input_index];
@@ -995,7 +996,7 @@ private:
                     const auto input_result =
                         chain.ValidateMempoolCanonicalInput(
                             tx, static_cast<uint32_t>(input_index),
-                            *utxo_opt);
+                            *utxo_opt, &script_hashes);
                     if (input_result == Blockchain::
                             MempoolCanonicalInputResult::MISSING_OR_CHANGED) {
                         return AddResult::MISSING_INPUT;

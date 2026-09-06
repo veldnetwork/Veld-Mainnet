@@ -11,6 +11,7 @@
 #include "../crypto/veld_signing.h"
 #include "../consensus/nms.h"
 #include "../consensus/state_digest.h"
+#include "../consensus/security_upgrade.h"
 #ifdef VELD_TEST_PHASE_INTERLEAVE
 #include "../test/phase_interleave.h"
 #endif
@@ -623,11 +624,11 @@ public:
         return it->second.height == height;
     }
 
-    Block GetBlock(uint64_t height) const {
+    Block GetBlock(uint64_t height, size_t body_budget = MAX_BLOCK_SIZE) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         if (height >= chain_.size())
             throw std::out_of_range("Block height out of range");
-        return LoadCanonicalBlockNoLock_(height);
+        return LoadCanonicalBlockNoLock_(height, body_budget);
     }
 
     Block GetBlockUnlocked(uint64_t height) const {
@@ -644,7 +645,8 @@ public:
         return result;
     }
 
-    std::optional<Block> GetBlockByHash(const Hash256& hash) const {
+    std::optional<Block> GetBlockByHash(const Hash256& hash,
+                                       size_t body_budget = MAX_BLOCK_SIZE) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         const std::string hash_hex = HashToHex(hash);
         // Keep deferred/quarantined bodies strictly inside the contextual
@@ -654,13 +656,15 @@ public:
         auto it = block_index_.find(hash_hex);
         if (it != block_index_.end()) {
             if (it->second >= chain_.size()) return std::nullopt;
-            return LoadCanonicalBlockNoLock_(it->second);
+            return LoadCanonicalBlockNoLock_(it->second, body_budget);
         }
         auto tree_it = block_tree_.find(hash_hex);
         if (tree_it == block_tree_.end() || tree_it->second.on_main_chain)
             return std::nullopt;
         try {
-            return LoadIndexedBlockNoLock_(hash_hex);
+            return LoadIndexedBlockNoLock_(hash_hex, body_budget);
+        } catch (const std::length_error&) {
+            throw;
         } catch (...) {
             return std::nullopt;
         }
@@ -3108,6 +3112,7 @@ public:
                 return false;
         }
 
+        TransactionScriptHashes script_hashes(tx);
         for (uint32_t i = 0; i < tx.inputs.size(); ++i) {
             const auto& inp = tx.inputs[i];
             auto u = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
@@ -3139,7 +3144,7 @@ public:
                 sctx.utxo_height = u->block_height;
                 sctx.covenants_active = true;
                 ScriptInterpreter interp;
-                if (!interp.Execute(inp.script_sig, script, tx, i, sctx))
+                if (!interp.Execute(inp.script_sig, script, tx, i, sctx, &script_hashes))
                     return false;
                 continue;
             }
@@ -3179,7 +3184,8 @@ public:
     MempoolCanonicalInputResult ValidateMempoolCanonicalInput(
                                        const Transaction& tx,
                                        uint32_t input_index,
-                                       const UTXO& observed_utxo) const {
+                                       const UTXO& observed_utxo,
+                                       TransactionScriptHashes* script_hashes = nullptr) const {
         if (input_index >= tx.inputs.size() || tx.IsCoinbase())
             return MempoolCanonicalInputResult::INVALID;
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
@@ -3238,7 +3244,7 @@ public:
             sctx.covenants_active = true;
             ScriptInterpreter interp;
             return interp.Execute(tx.inputs[input_index].script_sig,
-                                  script_pubkey, tx, input_index, sctx)
+                                  script_pubkey, tx, input_index, sctx, script_hashes)
                 ? MempoolCanonicalInputResult::VALID
                 : MempoolCanonicalInputResult::INVALID;
         }
@@ -3432,6 +3438,7 @@ public:
                 return false;
         }
 
+        TransactionScriptHashes script_hashes(tx);
         for (size_t i = 0; i < tx.inputs.size(); ++i) {
             const auto& inp = tx.inputs[i];
 
@@ -3472,7 +3479,7 @@ public:
                 sctx.utxo_height      = utxo_opt->block_height;
                 sctx.covenants_active = true;
                 ScriptInterpreter interp;
-                if (!interp.Execute(inp.script_sig, script_pubkey, tx, (uint32_t)i, sctx))
+                if (!interp.Execute(inp.script_sig, script_pubkey, tx, (uint32_t)i, sctx, &script_hashes))
                     return false;
                 continue;
             }
@@ -6099,6 +6106,9 @@ public:
     // would rewrite the target. Necessary but insufficient for activation
     // until the engine also preserves its authenticated QC/carrier.
     std::function<bool(uint64_t)>                                             finality_reorg_gate_;
+    // Full candidate overlay retention check, after replay and before durable
+    // bodies, validation-only success, callbacks or publication.
+    std::function<bool()> finality_reorg_retention_gate_;
 
     //  #1:
     // *** NO LOCK. THE CALLER MUST ALREADY HOLD chain_mutex_ (unique). ***
@@ -6199,14 +6209,19 @@ private:
     mutable std::atomic<bool>               test_force_rebuild_utxo_miss_{false};
 #endif
 
-    Block LoadCanonicalBlockNoLock_(uint64_t height) const {
+    Block LoadCanonicalBlockNoLock_(uint64_t height,
+                                    size_t body_budget = MAX_BLOCK_SIZE) const {
 #ifdef VELD_TEST_HOOKS
         test_block_body_lookup_count_.fetch_add(1, std::memory_order_relaxed);
 #endif
         if (height >= chain_.size())
             throw std::out_of_range("Block height out of range");
         const Block& skeleton = chain_[height];
-        if (!skeleton.transactions.empty()) return skeleton;
+        if (!skeleton.transactions.empty()) {
+            if (body_budget < MAX_BLOCK_SIZE && skeleton.SerializedSize() > body_budget)
+                throw std::length_error("block exceeds display body budget");
+            return skeleton;
+        }
         if (!historical_block_loader_) {
             throw std::runtime_error(
                 "historical canonical block body is not resident and no "
@@ -6227,6 +6242,10 @@ private:
                 std::to_string(height));
         }
 
+        // Display callers can reject an oversized cold body before decoding.
+        // Default consensus/storage callers retain the MAX_BLOCK_SIZE limit.
+        if (raw->size() > body_budget)
+            throw std::length_error("block exceeds display body budget");
         Block loaded;
         const size_t consumed = Block::Deserialize(*raw, 0, loaded);
         if (consumed == 0 || consumed != raw->size() ||
@@ -6249,7 +6268,8 @@ private:
         return loaded;
     }
 
-    Block LoadIndexedBlockNoLock_(const std::string& hash_hex) const {
+    Block LoadIndexedBlockNoLock_(const std::string& hash_hex,
+                                  size_t body_budget = MAX_BLOCK_SIZE) const {
 #ifdef VELD_TEST_HOOKS
         test_block_body_lookup_count_.fetch_add(1, std::memory_order_relaxed);
 #endif
@@ -6258,13 +6278,21 @@ private:
         if (tree_it == block_tree_.end() || store_it == block_store_.end())
             throw std::runtime_error("indexed side block is missing");
         const Block& skeleton = store_it->second;
-        if (!skeleton.transactions.empty()) return skeleton;
+        if (!skeleton.transactions.empty()) {
+            if (body_budget < MAX_BLOCK_SIZE && skeleton.SerializedSize() > body_budget)
+                throw std::length_error("block exceeds display body budget");
+            return skeleton;
+        }
         if (!historical_block_loader_)
             throw std::runtime_error(
                 "side block body is evicted and no durable loader is installed");
         auto raw = historical_block_loader_(tree_it->second.hash);
         if (!raw || raw->size() > MAX_BLOCK_SIZE)
             throw std::runtime_error("durable side block body is missing/oversize");
+        // Display callers can reject an oversized cold body before decoding.
+        // Default consensus/storage callers retain the MAX_BLOCK_SIZE limit.
+        if (raw->size() > body_budget)
+            throw std::length_error("block exceeds display body budget");
         Block loaded;
         const size_t consumed = Block::Deserialize(*raw, 0, loaded);
         if (consumed == 0 || consumed != raw->size() ||
@@ -8177,6 +8205,20 @@ private:
                 1, std::memory_order_relaxed);
         }
 
+        bool retains_finality = true;
+        try {
+            if (finality_reorg_retention_gate_)
+                retains_finality = finality_reorg_retention_gate_();
+            else if (finality_reorg_gate_ &&
+                     ConsensusSecurityUpgradeActive(alt_blocks.back().height))
+                retains_finality = false;
+        } catch (...) { retains_finality = false; }
+        if (!retains_finality) {
+            restore_after_failure();
+            last_reject_tag_ = "reorg_finality_retention_pending";
+            return ReorgDisposition::DeferredLocalWork;
+        }
+
         if (validation_only) {
             // The candidate suffix has now passed the exact VBFR/engine-overlay
             // path used by a real reorg.  Restore the canonical frame before
@@ -8827,6 +8869,7 @@ public:
         uint64_t input_total  = 0;
         uint64_t output_total = tx.TotalOutput();
         ScriptInterpreter interpreter;
+        TransactionScriptHashes script_hashes(tx);
 
         const uint64_t cov_height = chain_.Height() + 1;
         const bool covenants_active = (cov_height >= COVENANTS_ACTIVATION_HEIGHT);
@@ -8867,7 +8910,8 @@ public:
                 utxo->script_pubkey,
                 tx,
                 i,
-                sctx
+                sctx,
+                &script_hashes
             );
 
             if (!script_valid) {

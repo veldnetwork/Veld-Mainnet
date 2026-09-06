@@ -27,6 +27,9 @@ struct MiningStats {
     bool mining_configured{false};
     bool mining_ready{false};
     bool mining_active{false};
+    bool snapshot_bootstrap_compiled{false};
+    bool snapshot_fast_start_eligible{false};
+    bool full_ibd{true};
     uint64_t total_hashes{0};
     uint64_t threads{0};
     uint64_t blocks_mined_session{0};
@@ -399,6 +402,11 @@ inline bool ParseMiningStats(const std::string& body, MiningStats& out,
     if (!ParseBool(root.Get("mining_configured"), parsed.mining_configured) ||
         !ParseBool(root.Get("mining_ready"), parsed.mining_ready) ||
         !ParseBool(root.Get("mining_active"), parsed.mining_active) ||
+        !ParseBool(root.Get("snapshot_bootstrap_compiled"),
+                   parsed.snapshot_bootstrap_compiled) ||
+        !ParseBool(root.Get("snapshot_fast_start_eligible"),
+                   parsed.snapshot_fast_start_eligible) ||
+        !ParseBool(root.Get("full_ibd"), parsed.full_ibd) ||
         !ParseUint(root.Get("total_hashes"), parsed.total_hashes) ||
         !ParseUint(root.Get("threads"), parsed.threads) ||
         !ParseUint(root.Get("blocks_mined_session"),
