@@ -66,7 +66,7 @@ $originalLauncher = $env:VELD_UPDATE_RESTART_LAUNCHER
 try {
     # Literal percent sequences must not turn into environment expansion;
     # ampersands, parentheses and exclamation marks are ordinary path bytes.
-    $InstallDir = Join-Path $TempRoot 'Veld %PATH% ! & (3.0.7)'
+    $InstallDir = Join-Path $TempRoot 'Veld %PATH% ! & (3.0.8)'
     [IO.Directory]::CreateDirectory($InstallDir) | Out-Null
     [IO.File]::WriteAllText((Join-Path $InstallDir 'Start Veld Node.bat'),
         "@echo off`r`necho node>restart-node.txt`r`nexit /b 0`r`n")

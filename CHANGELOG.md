@@ -1,3 +1,13 @@
+# Veld 3.0.8 — 2026-09-06
+
+- Fix startup after a signed snapshot's foreground chain advances while
+  independent background validation is still pending.
+- Validate the original snapshot height, hash and state commitment on restart;
+  retain its original independent validation target and saved progress.
+- Fully verify the post-snapshot blocks during startup replay. Mining and
+  endorsing remain paused until independent validation completes.
+- Retain the 3.0.7 Windows updater launcher correction and H2,880 activation.
+
 # Veld 3.0.7 — 2026-09-06
 
 - Restart Windows signed updates through Start Veld Node.bat with installed

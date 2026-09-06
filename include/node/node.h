@@ -13507,6 +13507,21 @@ private:
 
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         const auto snapshot_requirement = ReadSnapshotReplayRequirement_();
+        const auto prior_snapshot_base = ReadIndependentValidationRequirement_();
+        std::optional<SnapshotValidationBase> replayed_snapshot_base;
+        if (snapshot_requirement) {
+            if (snapshot_requirement->first > target_height) {
+                throw std::runtime_error(
+                    "ReplayChain: stored tip is below the signed snapshot handoff");
+            }
+            if (prior_snapshot_base &&
+                (prior_snapshot_base->height != snapshot_requirement->first ||
+                 HashToHex(prior_snapshot_base->tip_hash) !=
+                     snapshot_requirement->second)) {
+                throw std::runtime_error(
+                    "ReplayChain: independent validation base conflicts with the signed snapshot handoff");
+            }
+        }
         const bool local_pow_cache_permitted =
             !snapshot_requirement &&
             (snapshot_fast_start_eligible_ ||
@@ -13526,7 +13541,14 @@ private:
         }
         const bool independent_snapshot_validation =
             snapshot_requirement.has_value() && !verify_historical_pow;
+        // The foreground chain may advance while independent IBD is pending.
+        // Only the original signed prefix may defer its historical PoW; every
+        // later block must receive the ordinary full startup checks.
+        const uint64_t deferred_pow_through = verify_historical_pow ? 0 :
+            (snapshot_requirement ? snapshot_requirement->first : target_height);
 #else
+        const uint64_t deferred_pow_through =
+            verify_historical_pow ? 0 : target_height;
         if (trusted_pow_through != 0) {
             throw std::runtime_error(
                 "ReplayChain: local PoW cache is not valid for this replay mode");
@@ -13777,7 +13799,7 @@ private:
             if (!chain_.AddBlockDirect(
                     blk, /*skip_pow=*/false, /*skip_scripts=*/false,
                     /*skip_pow_hash_only=*/
-                        !verify_historical_pow || h <= trusted_pow_through,
+                        h <= deferred_pow_through || h <= trusted_pow_through,
                     mining::PowAdmissionContext::Internal())) {
                 throw std::runtime_error(
                     "ReplayChain: full consensus validation rejected block at height " +
@@ -13840,6 +13862,24 @@ private:
             CaptureModuleCheckpoint_(h, hash, running_supply);
             last_token_height_ = h;
             last_module_supply_ = running_supply;
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+            if (snapshot_requirement && h == snapshot_requirement->first) {
+                if (HashToHex(hash) != snapshot_requirement->second) {
+                    throw std::runtime_error(
+                        "ReplayChain: canonical snapshot base does not match the signed snapshot handoff");
+                }
+                SnapshotValidationBase base;
+                base.height = h;
+                base.tip_hash = hash;
+                base.state_digest = ConsensusStateDigest();
+                if (prior_snapshot_base &&
+                    prior_snapshot_base->state_digest != base.state_digest) {
+                    throw std::runtime_error(
+                        "ReplayChain: replayed snapshot state does not match the independent validation base");
+                }
+                replayed_snapshot_base = base;
+            }
+#endif
         }
 
         if (chain_.Height() != target_height ||
@@ -13875,11 +13915,9 @@ private:
             }
         }
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
-        if (snapshot_requirement &&
-            (snapshot_requirement->first != target_height ||
-             snapshot_requirement->second != replayed_tip)) {
+        if (snapshot_requirement && !replayed_snapshot_base) {
             throw std::runtime_error(
-                "ReplayChain: replayed tip does not match the signed snapshot handoff");
+                "ReplayChain: replay did not reach the signed snapshot handoff");
         }
 #endif
         // If replay reached a required C, exact block pins are insufficient on
@@ -13990,11 +14028,12 @@ private:
 
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         if (independent_snapshot_validation) {
-            SnapshotValidationBase base;
-            base.height = target_height;
-            base.tip_hash = replay_target_hash;
-            base.state_digest = ConsensusStateDigest();
-            if (!WriteIndependentValidationRequirement_(base)) {
+            // Preserve the original comparison target and completed background
+            // prefix across restarts instead of moving the target to today's
+            // foreground tip. An existing commitment was re-proved above.
+            const SnapshotValidationBase base = *replayed_snapshot_base;
+            if (!prior_snapshot_base &&
+                !WriteIndependentValidationRequirement_(base)) {
                 throw std::runtime_error(
                     "ReplayChain: cannot persist independent background-validation requirement");
             }

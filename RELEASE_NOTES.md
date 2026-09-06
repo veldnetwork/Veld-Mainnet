@@ -1,4 +1,29 @@
-# Veld 3.0.7 release notes
+# Veld 3.0.8 release notes
+
+Version 3.0.8 fixes restarting a snapshot-based node after its foreground
+chain has advanced while independent background validation is unfinished.
+Earlier startup code incorrectly required the current tip to equal the
+original signed snapshot tip and could stop with "replayed tip does not
+match the signed snapshot handoff".
+
+Startup now verifies the original signed snapshot at its original height,
+preserves the independent validation target and state commitment, and fully
+checks every block after that snapshot. Mining and endorsing remain paused
+until independent validation completes. Existing data and validation progress
+are retained; operators should not delete their data or verification markers.
+
+The correction passed offline Windows and Linux lifecycle checks using
+authenticated public snapshots and ordinary historical successor blocks.
+The affected operator's machine still needs a successful update and resumed
+validation to confirm recovery. These checks did not use that machine's disk.
+
+The signed updater requires a strictly newer version, so this correction is
+released as 3.0.8. Consensus security activation remains H2,880; the activation
+height and consensus rules are unchanged. The 3.0.7 Windows batch-launcher
+restart correction and all 3.0.6 consensus corrections are retained.
+
+## Changes inherited from 3.0.7 and 3.0.6
+
 
 Release date: 2026-09-06
 Consensus security activation: block 2,880 on veld-public-mainnet-v2.
