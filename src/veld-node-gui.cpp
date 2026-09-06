@@ -5482,7 +5482,8 @@ private:
             monitor_status = remote_monitor_status_;
         }
         RECT monitor_detail{monitor.left + S(22), monitor.top + S(43),
-                            monitor.right - S(390), monitor.bottom - S(10)};
+                            monitor.right - S(monitor_status.pair_code.empty() ? 352 : 492),
+                            monitor.bottom - S(10)};
         std::wstring monitor_text = monitor_status.detail;
         if (!monitor_status.pair_code.empty())
             monitor_text += L"  Pair code: " + monitor_status.pair_code;
@@ -5500,15 +5501,15 @@ private:
         DrawButton(dc, open_monitor_portal_button_, L"Open portal", true);
         if (!monitor_status.pair_code.empty()) {
             copy_monitor_code_button_ = {
-                monitor.right - S(320), monitor.top + S(48),
-                monitor.right - S(190), monitor.top + S(87)};
+                monitor.right - S(480), monitor.top + S(48),
+                monitor.right - S(350), monitor.top + S(87)};
             DrawButton(dc, copy_monitor_code_button_, L"Copy code", true);
         } else {
             copy_monitor_code_button_ = {};
         }
         reset_monitor_pairing_button_ = {
-            monitor.right - S(480), monitor.top + S(48),
-            monitor.right - S(330), monitor.top + S(87)};
+            open_monitor_portal_button_.left - S(160), monitor.top + S(48),
+            open_monitor_portal_button_.left - S(10), monitor.top + S(87)};
         DrawButton(dc, reset_monitor_pairing_button_, L"New pair code",
                    remote_monitoring_enabled_.load()
                        && monitor_status.credential_ready);
