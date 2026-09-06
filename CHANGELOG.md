@@ -1,3 +1,10 @@
+# Veld 3.0.7 — 2026-09-06
+
+- Restart Windows signed updates through Start Veld Node.bat with installed
+  package verification, the installation working directory and literal paths.
+- Keep the terminal restart launcher and signed update version protections.
+- Retain consensus security activation at H2,880 from 3.0.6.
+
 # Changelog
 
 All notable public-source changes are recorded here. Signed binary identity is

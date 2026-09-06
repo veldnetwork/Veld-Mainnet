@@ -1,4 +1,4 @@
-# Veld 3.0.6 release notes
+# Veld 3.0.7 release notes
 
 Release date: 2026-09-06
 Consensus security activation: block 2,880 on veld-public-mainnet-v2.
@@ -19,9 +19,19 @@ addresses, and existing datadirs remain the same. Keep wallet backups and
 preserve the existing datadir when updating. Do not use older consensus
 software as a rollback after activation.
 
-Version 3.0.6 is required because the signed updater rejects different
-manifests carrying the same release version. The new release identity does
-not change the qualified H2,880 consensus code.
+The Windows updater now restarts through the signed Start Veld Node.bat
+launcher instead of opening Veld Node.exe through Explorer. The batch launcher
+performs its normal recovery and package checks and supplies the usual node,
+datadir and clearnet arguments. Terminal clients retain Start Mining.bat.
+The complete installed package is verified again before any restart.
+
+Version 3.0.7 is newer than the published 3.0.6, so the ordinary signed updater
+can install it without an equal-version exception. The updater already running
+in an older installation controls that first upgrade's restart; the corrected
+restart code takes effect once 3.0.7 is installed. This change does not guarantee
+that Windows will never display a reputation prompt.
+
+Consensus activation remains H2,880 and its rules are unchanged from 3.0.6.
 
 Qualification: prior bounded populated lifecycle and recovery evidence,
 Linux/Windows activation migration controls, public release builds, compiled

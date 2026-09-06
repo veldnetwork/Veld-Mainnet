@@ -14,7 +14,7 @@ and the documentation-only publication boundary.
 
 ## Mainnet profile
 
-- Current maintenance client: `3.0.6`
+- Current maintenance client: `3.0.7`
 - Deployment identity: `veld-public-mainnet-v2`
 - State digest: `VELD_STATE_DIGEST_v8`
 - Reserve wire formats: `RTP1` and `RVS1`

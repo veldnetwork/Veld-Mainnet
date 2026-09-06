@@ -827,9 +827,28 @@ function Wait-ForParentExit([int]$ProcessId) {
 }
 
 function Relaunch-InstalledClient() {
-    $launcher = Join-Path $InstallDir $PrimaryLauncher
-    if (Test-Path -LiteralPath $launcher) {
-        Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $launcher + '"') | Out-Null
+    # Re-enter the signed launcher so recovery, package verification and launch
+    # arguments are the same as when the operator starts the client normally.
+    # PrimaryLauncher remains the final payload promoted by the transaction.
+    $installed = Get-VerifiedInstalled
+    $launcherName = if ($Distribution -eq 'Terminal') {
+        'Start Mining.bat'
+    } else { 'Start Veld Node.bat' }
+    if (-not $installed.Entries.ContainsKey($launcherName)) {
+        throw 'installed release has no signed restart launcher'
+    }
+    $launcher = Join-Path $InstallDir $launcherName
+    $previousLauncher = $env:VELD_UPDATE_RESTART_LAUNCHER
+    try {
+        # Expand the path once through an environment variable. Quoting plus
+        # disabled delayed expansion preserves spaces and literal %, ! and &.
+        $env:VELD_UPDATE_RESTART_LAUNCHER = $launcher
+        Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\cmd.exe') `
+            -ArgumentList '/d /v:off /s /c ""%VELD_UPDATE_RESTART_LAUNCHER%""' `
+            -WorkingDirectory $InstallDir -WindowStyle Normal | Out-Null
+    }
+    finally {
+        $env:VELD_UPDATE_RESTART_LAUNCHER = $previousLauncher
     }
 }
 
