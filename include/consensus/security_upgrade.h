@@ -5,7 +5,7 @@
 
 namespace veld {
 
-// Provisional coordinated candidate at 1920; not qualified for deployment.
+// Provisional coordinated candidate at 3840; not qualified for deployment.
 // Any binary built from this candidate activates at that height automatically.
 // Release requires an authenticated pre-upgrade checkpoint, complete replay and
 // restart qualification, and a coordinated compatible rollout. No runtime or
@@ -16,7 +16,7 @@ namespace veld {
 #endif
 constexpr uint64_t CONSENSUS_SECURITY_UPGRADE_HEIGHT = VELD_CONSENSUS_SECURITY_TEST_HEIGHT;
 #else
-constexpr uint64_t CONSENSUS_SECURITY_UPGRADE_HEIGHT = 1920;
+constexpr uint64_t CONSENSUS_SECURITY_UPGRADE_HEIGHT = 3840;
 #endif
 static_assert(CONSENSUS_SECURITY_UPGRADE_HEIGHT % BOND_SETTLEMENT_INTERVAL == 0,
               "Consensus security upgrade must use a settlement boundary");
