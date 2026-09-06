@@ -1401,7 +1401,8 @@ public:
             [this](const Hash256& evidence_id) {
                 return PrepareFinalityEquivocationSlash(evidence_id);
             });
-        if (config_.validator_system_always_active)
+        // Relay stake accounting requires the ledger on every network,
+        // independently of validator activation policy.
         chain_.SetStakedForAddrFn([this](const std::string& addr) -> uint64_t {
             const auto* overlay = Blockchain::alt_engine_overlay_;
             const StakingLedger& staking =
