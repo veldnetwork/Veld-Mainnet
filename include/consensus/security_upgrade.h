@@ -5,7 +5,7 @@
 
 namespace veld {
 
-// Provisional coordinated candidate at 3840; not qualified for deployment.
+// Coordinated consensus security upgrade at block 3840.
 // Any binary built from this candidate activates at that height automatically.
 // Release requires an authenticated pre-upgrade checkpoint, complete replay and
 // restart qualification, and a coordinated compatible rollout. No runtime or

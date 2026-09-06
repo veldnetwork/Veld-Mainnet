@@ -1,4 +1,36 @@
-# Veld 3.0.5 release notes
+# Veld 3.0.6 release notes
+
+Release date: 2026-09-06
+Consensus security activation: block 3,840 on veld-public-mainnet-v2.
+
+Miners and node operators must install this compatible release before block
+3,840. Block arrival varies; use chain height when coordinating the upgrade.
+Publishing the client does not upgrade servers or confirm operator adoption.
+
+At block 3,840 this release activates the qualified consensus corrections for
+certified finality retention, validator principal accountability and evidence
+retention, registration-only stake-floor enforcement, and branch-bound
+governance vote identity. Open or timelocked governance rounds restart under
+the new identity rules; terminal proposals retain their completed status.
+
+It also includes the corrected staking query wiring and directional peer
+connection maintenance. Protocol version 2, the public-mainnet-v2 genesis,
+addresses, and existing datadirs remain the same. Keep wallet backups and
+preserve the existing datadir when updating. Do not use older consensus
+software as a rollback after activation.
+
+Version 3.0.6 is required because the signed updater rejects different
+manifests carrying the same release version. The new release identity does
+not change the qualified H3,840 consensus code.
+
+Qualification: prior bounded populated lifecycle and recovery evidence,
+Linux/Windows activation migration controls, public release builds, compiled
+genesis checks, and isolated peer replay/restart checks. This is not a claim
+of exhaustive security coverage or completed mainnet adoption.
+
+## Earlier release notes
+
+### Veld 3.0.5 release notes
 
 Release date: pending
 Status: Windows client maintenance candidate
