@@ -5,7 +5,7 @@ recorded separately from source-publication commits.
 
 ## 3.0.6 - 2026-09-06
 
-- Schedule the consensus security corrections at block 3,840.
+- Schedule the consensus security corrections at block 2,880.
 - Preserve finality and validator liability rules, bind governance votes to
   their branch-local round, and retain the corrected staking query callback.
 - Retain directional peer sessions used for synchronization evidence.
