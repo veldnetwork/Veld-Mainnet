@@ -1,3 +1,24 @@
+# Current source — 2026-09-06
+
+### Deployed portal and hosted wallet updates
+
+- Add an Add machine action beside the portal's machine selector and in
+  Settings, including installed PWA mode. Pairing retains existing machines
+  and preserves the entered code through background status refreshes.
+- Keep the wallet's Stake shortcut available before staking activation;
+  transaction submission continues to require activation.
+- Remove wallet Auto-compound controls, saved-preference handling, the
+  background timer, and automatic staking. Manual staking is unchanged.
+- Match the balance's VELD unit typography between light and dark themes.
+- Publish the hosted wallet stylesheet and compatibility overlay alongside
+  the application source. These web updates do not change the client version.
+
+### Awaiting the next Windows client release
+
+- Place New pair code immediately beside Open portal in Windows Settings,
+  with Copy code to their left when a code is available. This native layout
+  change is in source only; it is not part of the published 3.0.8 package.
+
 # Veld 3.0.8 — 2026-09-06
 
 - Fix startup after a signed snapshot's foreground chain advances while

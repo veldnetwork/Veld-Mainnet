@@ -1982,7 +1982,7 @@ html:not([data-theme="light"]) .balance-hero,html:not([data-theme="light"]) .wal
 html:not([data-theme="light"]) .balance-hero::before,html:not([data-theme="light"]) .balance-hero::after,html:not([data-theme="light"]) .wallet-bal-hero::before,html:not([data-theme="light"]) .wallet-bal-hero::after{display:none!important;animation:none!important}
 html:not([data-theme="light"]) .wallet-bal-hero{padding:28px 22px 24px!important}
 html:not([data-theme="light"]) .wallet-bal-hero .balance-amount,html:not([data-theme="light"]) .balance-amount#w-total-bal{background:none!important;-webkit-background-clip:initial!important;background-clip:initial!important;-webkit-text-fill-color:#edf4ee!important;color:#edf4ee!important;font-family:var(--font)!important;font-size:48px!important;font-weight:700!important;letter-spacing:-.055em!important;text-shadow:none!important}
-html:not([data-theme="light"]) .wallet-bal-hero .balance-amount>span{color:#7ED949!important;-webkit-text-fill-color:#7ED949!important;font-size:14px!important;text-shadow:none!important;letter-spacing:0!important}
+html:not([data-theme="light"]) .wallet-bal-hero .balance-amount>span{color:#7ED949!important;-webkit-text-fill-color:#7ED949!important;text-shadow:none!important}
 html:not([data-theme="light"]) .wallet-bal-hero .chg-pill{background:rgba(126,217,73,.12)!important;color:#7ED949!important}
 html:not([data-theme="light"]) .wallet-bal-hero .act-round{gap:8px!important;margin-top:22px!important}
 html:not([data-theme="light"]) .wallet-bal-hero .ar{width:auto!important;min-width:102px!important;flex-direction:row!important;justify-content:center!important;gap:8px!important;padding:10px 14px!important;background:#303832!important;border:1px solid #59645b!important;border-radius:9px!important;box-shadow:inset 0 1px rgba(255,255,255,.05)!important}
@@ -2640,7 +2640,7 @@ __VELD_DEPLOYMENT_BANNER_HTML__
       <div class="act-round">
         <button class="ar send" data-act-click="hcc27a9f6" type="button"><span class="ic"><svg viewBox="0 0 24 24" width="25" height="25" fill="currentColor" aria-hidden="true" style="display:block"><path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .66.71 1.11 1.39.91z"/></svg></span><span class="lbl">Send</span></button>
         <button class="ar recv" data-act-click="h7841866f" title="Show QR to receive VELD" type="button"><span class="ic">&darr;</span><span class="lbl">Receive</span></button>
-        <button class="ar stake" data-act-click="h9c6994df" type="button" disabled aria-disabled="true" title="Staking unlocks at 10,000 VELD mined"><span class="ic">%</span><span class="lbl">Stake</span></button>
+        <button class="ar stake" data-act-click="h9c6994df" type="button" title="Open staking"><span class="ic">%</span><span class="lbl">Stake</span></button>
         <button class="ar swap" data-act-click="hbtcveld_nav" title="Open the btcVELD swap" type="button"><span class="ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3m3 3-3 3M20 16H7l3 3m-3-3 3-3"/></svg></span><span class="lbl">Swap</span></button>
       </div>
     </div>
@@ -2728,12 +2728,12 @@ __VELD_DEPLOYMENT_BANNER_HTML__
  part actually leaving to a counterparty (pending_transfer_out_
  veld, shown as "Pending Out" above). This is YOUR coin briefly
  locked by your own pending stake / consolidation / validator
- endorsement / auto-compound TX; it returns to Spendable when
+ endorsement TX; it returns to Spendable when
  that TX confirms. Without this row the tiles silently failed to
  sum (Spendable+Staked+Maturing+PendingOut ≠ Total) whenever any
  self-transaction was in flight — misleading when money's
  involved. Hidden (zero-collapse) when there's nothing settling. -->
-      <div class="tok-row" id="w-bal-settling-row" style="display:none" title="Your own coin briefly in motion inside one of YOUR pending transactions (a stake, a dust cleanup, a validator endorsement, or auto-compound). It is not going to anyone else — it lands back in Spendable when that transaction confirms (typically around one 3-minute target block when uncongested).">
+      <div class="tok-row" id="w-bal-settling-row" style="display:none" title="Your own coin briefly in motion inside one of YOUR pending transactions (a stake, a dust cleanup, a validator endorsement). It is not going to anyone else — it lands back in Spendable when that transaction confirms (typically around one 3-minute target block when uncongested).">
         <div class="tok-ic ic-mat">~</div>
         <div class="tok-info">
           <div class="tok-name">Settling</div>
@@ -3499,49 +3499,6 @@ __VELD_DEPLOYMENT_BANNER_HTML__
         <div class="prev-row"><span class="k"><span class="diamond-prismatic">Mining tier &middot; Diamond</span></span><span class="v diamond-prismatic">3.00&times;</span></div>
         <div class="prev-note"><a href="https://explorer.veld.network/rules" target="_blank" rel="noopener noreferrer" style="color:var(--em);text-decoration:none">Full distribution rules &amp; vault caps &rarr;</a></div>
       </div>
-    </div>
-  </div>
-
-  <!-- #12 — Auto-compound staking. Opt-in toggle
- that runs a balance-watch loop while the wallet is open: when
- new VELD lands in the spendable balance (mining reward, vault
- distribution, incoming send) AND ≥ the threshold AND the
- keystore is unlocked, the wallet builds + signs + broadcasts a
- preparestake TX for the delta at the chosen tier. Per-session
- only — no daemon, no key-on-server. -->
-  <div class="card tint-gold" id="sk-autocompound-card" style="margin-bottom:14px;padding:14px 16px">
-    <!-- Auto-compound runs once per vault distribution cycle and sweeps the
-         newly spendable balance.  The status block shows the next sweep
-         height and countdown. -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <span style="font-size:13px;font-weight:600;color:var(--text)">Auto-compound</span>
-      <label class="toggle toggle-gold" style="margin:0" data-act-click="hac_toggle">
-        <input type="checkbox" id="sk-ac-toggle-input" tabindex="-1" style="pointer-events:none">
-        <span class="toggle-track"><span class="toggle-knob"></span></span>
-      </label>
-    </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.45">
-      After each vault distribution (every 480 blocks), the staking rewards that just landed in your wallet get re-staked at the tier below. Mining rewards and incoming transfers are <b>not</b> touched. Stops automatically when you lock.
-    </div>
-    <div>
-      <label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:6px;font-weight:500">Lockup tier for swept stake</label>
-      <!-- Native <select> on iOS PWA dropped its change event
- often enough that the tier never persisted. Replaced with the
- same tap-chip pattern the regular stake form uses. -->
-      <div class="tiers" id="sk-ac-tier-chips" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
-        <div class="tier" data-act-click="hac_tier_chip" data-tier="1"><div class="t">Base</div><div class="d">7d</div><div class="m">1.00<span class="x">&times;</span></div></div>
-        <div class="tier" data-act-click="hac_tier_chip" data-tier="2"><div class="t">Short</div><div class="d">14d</div><div class="m">1.10<span class="x">&times;</span></div></div>
-        <div class="tier" data-act-click="hac_tier_chip" data-tier="3"><div class="t">Medium</div><div class="d">30d</div><div class="m">1.25<span class="x">&times;</span></div></div>
-        <div class="tier" data-act-click="hac_tier_chip" data-tier="4"><div class="t">Long</div><div class="d">90d</div><div class="m">1.50<span class="x">&times;</span></div></div>
-      </div>
-    </div>
-    <!-- Live status: state + next-sweep ETA, plus a one-line history of
-         the most recent sweep so the user has at-a-glance proof it
-         worked. -->
-    <div style="margin-top:12px;padding:8px 10px;border-radius:6px;background:rgba(255,216,74,.04);border:1px solid rgba(255,216,74,.12);font-size:11px;color:var(--muted);line-height:1.5">
-      <div><span style="color:var(--muted2)">State:</span> <span id="sk-ac-state-line">disabled</span></div>
-      <div><span style="color:var(--muted2)">Next sweep:</span> <span id="sk-ac-next-line">—</span></div>
-      <div><span style="color:var(--muted2)">Last sweep:</span> <span id="sk-ac-last-line">never</span></div>
     </div>
   </div>
 
@@ -8833,10 +8790,6 @@ function nav(page, el) {
       // Delay balance load slightly so the page layout is ready
       setTimeout(function() { onStakeAddrChange(); loadStakeHistory(); }, 200);
     }
-    // #12 — refresh auto-compound UI on page entry.
-    // (Bio card moved to keystore modal in — refreshes from
-    // there when the modal opens.)
-    try { acRefreshUi();  } catch(_){}
     // Clear text fields when entering tab
     var skAmt = document.getElementById('sk-amount');
     if (skAmt) skAmt.value = '';
@@ -9308,7 +9261,7 @@ function loadWalletAddr(addr) {
     // (pending_out_veld) minus the counterparty outflow already shown as
     // "Pending Out" (pending_transfer_out_veld). This is the user's own
     // coin temporarily locked by their own pending stake / consolidation /
-    // endorsement / auto-compound TX, returning to Spendable on confirm.
+    // endorsement TX, returning to Spendable on confirm.
     // Surfacing it makes the grid reconcile to the hero total exactly:
     //   Spendable + Staked + Maturing + PendingOut + Settling == Total
     // (canonical ComputeWalletState invariant: selectable+immature+
@@ -10685,7 +10638,7 @@ function logoutWallet() {
   _veldClearSecretInputs();
   // FULL device reset: logout clears every piece of user info this app stored —
   // keystore, saved wallets, address book, recent recipients, swap/escrow/channel
-  // logs, autocompound state, session flags. Only the theme preference survives.
+  // logs and session flags. Only the theme preference survives.
   try {
     var _keep = { veld_theme: 1 };
     var _doomed = [];
@@ -11604,300 +11557,6 @@ function mwDeleteCancel() {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Auto-compound staking (distribution-cycle aware)
-//
-// Sweeps spendable balance to staking ONCE PER VAULT DISTRIBUTION CYCLE
-// (every VAULT_DISTRIBUTION_INTERVAL = 480 blocks). On each tick:
-//   1. Read current tip height
-//   2. Compute the most-recent distribution boundary:
-//        last_distribution_h = floor(cur_h / 480) * 480
-//   3. If last_distribution_h > c.last_action_h, a new distribution has
-//      landed since the last sweep — re-read spendable and stake the
-//      delta (whatever the vault paid out).
-//
-// No threshold knob: the sweep runs at network MIN_STAKE_VELD floor.
-// No 60-second balance polling: the only event that triggers a sweep
-// is the chain crossing a 480-block boundary, so polls are cheap
-// (getblockcount only) until a boundary is crossed.
-//
-// Stops automatically when: user disables the toggle, wallet locks, or
-// staking system isn't active yet.
-// ──────────────────────────────────────────────────────────────────────
-var VAULT_DISTRIBUTION_INTERVAL = 480;
-var _ACTimer = null;
-var _ACBusy  = false;
-
-function acLoadConfig() {
-  return {
-    enabled:        localStorage.getItem('veld_autocompound_enabled') === '1',
-    tier:           parseInt(localStorage.getItem('veld_autocompound_tier') || '1', 10),
-    last_balance:   parseFloat(localStorage.getItem('veld_autocompound_last_balance')  || '0'),
-    last_action_h:  parseInt(localStorage.getItem('veld_autocompound_last_action_h')   || '0', 10),
-    last_action_amount: parseFloat(localStorage.getItem('veld_autocompound_last_action_amount') || '0'),
-    last_action_txid:   localStorage.getItem('veld_autocompound_last_action_txid') || '',
-    last_action_ts:     parseInt(localStorage.getItem('veld_autocompound_last_action_ts') || '0', 10)
-  };
-}
-function acSaveConfig(c) {
-  try {
-    localStorage.setItem('veld_autocompound_enabled',  c.enabled ? '1' : '0');
-    localStorage.setItem('veld_autocompound_tier',     String(c.tier));
-    if (c.last_balance        != null) localStorage.setItem('veld_autocompound_last_balance',        String(c.last_balance));
-    if (c.last_action_h       != null) localStorage.setItem('veld_autocompound_last_action_h',       String(c.last_action_h));
-    if (c.last_action_amount  != null) localStorage.setItem('veld_autocompound_last_action_amount',  String(c.last_action_amount));
-    if (c.last_action_txid    != null) localStorage.setItem('veld_autocompound_last_action_txid',    c.last_action_txid);
-    if (c.last_action_ts      != null) localStorage.setItem('veld_autocompound_last_action_ts',      String(c.last_action_ts));
-  } catch(_){}
-}
-
-function _acCurTipH() {
-  var dh = document.getElementById('d-height');
-  if (!dh) return 0;
-  return parseInt((dh.textContent || '0').replace(/,/g, ''), 10) || 0;
-}
-function _acFmtBlocks(rem) {
-  if (rem <= 0) return 'now';
-  var mins = rem * 3;  // 180s/block target
-  if (mins < 60)   return rem + ' blocks (~' + mins + 'm)';
-  if (mins < 1440) return rem + ' blocks (~' + (mins/60).toFixed(1) + 'h)';
-  return rem + ' blocks (~' + (mins/1440).toFixed(1) + 'd)';
-}
-
-function acRefreshUi() {
-  var c = acLoadConfig();
-  var toggleInp = document.getElementById('sk-ac-toggle-input');
-  var stateEl   = document.getElementById('sk-ac-state-line');
-  var nextEl    = document.getElementById('sk-ac-next-line');
-  var lastEl    = document.getElementById('sk-ac-last-line');
-  if (toggleInp) toggleInp.checked = !!c.enabled;
-  // Highlight the active tier chip. Toggles the .on class
-  // across the four chips based on the saved tier.
-  var chipsWrap = document.getElementById('sk-ac-tier-chips');
-  if (chipsWrap) {
-    var chips = chipsWrap.querySelectorAll('.tier');
-    for (var i = 0; i < chips.length; i++) {
-      var ct = parseInt(chips[i].getAttribute('data-tier') || '0', 10);
-      if (ct === c.tier) chips[i].classList.add('on');
-      else chips[i].classList.remove('on');
-    }
-  }
-
-  if (stateEl) {
-    if (!c.enabled) {
-      stateEl.textContent = 'disabled';
-      stateEl.style.color = 'var(--muted2)';
-    } else if (typeof __veldKey !== 'undefined' && __veldKey.has()) {
-      stateEl.innerHTML = '<span style="color:var(--gold)">● armed</span> — will sweep at next distribution';
-    } else {
-      stateEl.innerHTML = '<span style="color:var(--muted)">enabled · waiting for keystore unlock</span>';
-    }
-  }
-  if (nextEl) {
-    if (!c.enabled) {
-      nextEl.textContent = '—';
-    } else {
-      var tip = _acCurTipH();
-      if (!tip) { nextEl.textContent = '— (height unknown)'; }
-      else {
-        var next_dist_h = Math.ceil((tip + 1) / VAULT_DISTRIBUTION_INTERVAL) * VAULT_DISTRIBUTION_INTERVAL;
-        var rem = next_dist_h - tip;
-        nextEl.innerHTML = 'h=' + next_dist_h + ' · ' + _acFmtBlocks(rem);
-      }
-    }
-  }
-  if (lastEl) {
-    if (c.last_action_h > 0 && c.last_action_amount > 0) {
-      var nowSec = Math.floor(Date.now() / 1000);
-      var ageSec = nowSec - (c.last_action_ts || 0);
-      var ageStr = ageSec < 60 ? (ageSec + 's ago')
-                 : ageSec < 3600 ? (Math.floor(ageSec/60) + 'm ago')
-                 : ageSec < 86400 ? (Math.floor(ageSec/3600) + 'h ago')
-                 : (Math.floor(ageSec/86400) + 'd ago');
-      var txShort = c.last_action_txid ? (c.last_action_txid.substr(0, 12) + '…') : '';
-      lastEl.innerHTML = '<span style="color:var(--em)">' + fmt(c.last_action_amount, 2) + ' VELD</span> at h=' + escHtml(String(Number(c.last_action_h) || 0)) +
-        ' · ' + escHtml(ageStr) + (txShort ? ' · <span class="mono" style="font-size:10px;color:var(--muted)">' + escHtml(txShort) + '</span>' : '');
-    } else {
-      lastEl.textContent = 'never';
-    }
-  }
-}
-
-function acToggle(event) {
-  // Reliable toggle on iOS Safari. The label owns the click and the handler
-  // inverts persisted state rather than trusting inp.checked, which can be stale or
-  // miss the change event entirely when the input is opacity:0
-  // inside a label). A 60ms debounce flag protects against
-  // double-fire from a click that might bubble through the label
-  // AND the synthetic click on the wrapped input.
-  if (window._acToggling) {
-    if (event && event.preventDefault) event.preventDefault();
-    return;
-  }
-  window._acToggling = true;
-  setTimeout(function(){ window._acToggling = false; }, 60);
-  // Prevent the native checkbox click from also firing (we own the state).
-  if (event && event.preventDefault) event.preventDefault();
-  var c = acLoadConfig();
-  c.enabled = !c.enabled;
-  if (c.enabled) {
-    c.last_action_h = _acCurTipH();
-    var bal = parseFloat((document.getElementById('w-bal-liquid')||{}).textContent || '0') ||
-              parseFloat((document.getElementById('sk-balance')||{}).textContent || '0') ||
-              0;
-    c.last_balance = bal;
-  }
-  acSaveConfig(c);
-  acRefreshUi();
-  acStartLoop();
-}
-// acSetTier rewritten for the chip-row picker. Reads
-// data-tier from the chip the user tapped (walked up from event.target,
-// same pattern as _bookEventAddr). Saves to localStorage + refreshes UI
-// so the "on" chip highlight updates immediately.
-function acSetTier(event) {
-  var t = event && (event.currentTarget || event.target);
-  var tier = 0;
-  while (t && t !== document) {
-    if (t.getAttribute && t.getAttribute('data-tier')) {
-      tier = parseInt(t.getAttribute('data-tier'), 10);
-      break;
-    }
-    t = t.parentNode;
-  }
-  if (!(tier >= 1 && tier <= 4)) return;
-  var c = acLoadConfig();
-  c.tier = tier;
-  acSaveConfig(c);
-  acRefreshUi();
-}
-
-async function acTick() {
-  var c = acLoadConfig();
-  if (!c.enabled) return;
-  if (typeof __veldKey === 'undefined' || !__veldKey.has()) return;
-  if (!currentAddr) return;
-  if (_ACBusy) return;
-
-  try {
-    _ACBusy = true;
-    // Cheap height-only probe — most ticks bail out here.
-    var bc = await rpc('getblockcount', []);
-    var cur_h = parseInt(bc, 10) || 0;
-    if (!cur_h) return;
-    var last_distribution_h = Math.floor(cur_h / VAULT_DISTRIBUTION_INTERVAL) * VAULT_DISTRIBUTION_INTERVAL;
-    // No distribution boundary crossed since our last action? Idle.
-    if (last_distribution_h <= (c.last_action_h || 0)) {
-      acRefreshUi();
-      return;
-    }
-    // Auto-compound now ONLY sweeps staking rewards,
-    // not arbitrary spendable. The whole point is to compound staking,
-    // so mining rewards / inbound transfers must not be auto-staked.
-    //
-    // Auto-compound requires an authenticated indexed reward delta. Public
-    // history is unavailable, so the empty local result below safely leaves
-    // auto-compound idle instead of scanning blocks or staking other funds.
-    var sinceH = (c.last_action_h || 0) + 1;
-    var hist = await publicAddressHistory(currentAddr, 50);
-    if (!Array.isArray(hist)) hist = [];
-    var stakingRewardDelta = 0;
-    hist.forEach(function(t) {
-      if (t && (t.type === 'vault_distribution' || t.type === 'staking_distribution')) {
-        var n = parseFloat(t.net_veld || 0) || 0;
-        if (n > 0) stakingRewardDelta += n;
-      }
-    });
-    var minV = (typeof stakingMinVeld === 'number') ? stakingMinVeld : 1;
-    if (stakingRewardDelta < minV) {
-      // No staking reward landed (or below network minimum). Advance the
-      // bookmark so we don't re-scan this cycle, and bail.
-      c.last_action_h = last_distribution_h;
-      acSaveConfig(c);
-      acRefreshUi();
-      return;
-    }
-    // Skip if staking system isn't active yet.
-    var info = await rpc('getstakinginfo', []);
-    if (!(info && (info.staking_active === true || info.staking_active === 'true'))) {
-      acRefreshUi();
-      return;
-    }
-    // Also double-check spendable is at least the delta (defensive — if the
-    // user moved funds between distribution + tick, we may not have enough).
-    var r = await rpc('getbalance', [currentAddr]);
-    var spendable = (r && typeof r === 'object' && r.spendable_veld != null)
-      ? parseFloat(r.spendable_veld) : 0;
-    if (!isFinite(spendable)) spendable = 0;
-    var amt = Math.min(stakingRewardDelta, spendable);
-    amt = Math.floor(amt * 1e8) / 1e8;
-    if (amt < minV) {
-      c.last_action_h = last_distribution_h;
-      acSaveConfig(c);
-      acRefreshUi();
-      return;
-    }
-    var keyHex = __veldKey.get();
-    var acTier = Number(c.tier);
-    if (!Number.isInteger(acTier) || acTier < 1 || acTier > 4) throw new Error('invalid auto-compound tier');
-    var acUnits = _veldParseVeldUnitsExact(amt.toFixed(8));
-    var acAmount = _veldUnitsToAmountString(acUnits);
-    var acOpHex = _veldBuildProtocolOpReturnHex(
-      'VELD_STAKE|LOCK|' + currentAddr + '|' + acUnits.toString() + '|T' + String(acTier));
-    var result = await signAndBroadcast(
-      'preparestake',
-      [currentAddr, acAmount, String(acTier)],
-      keyHex,
-      null,
-      _veldAddrToHash160Hex(currentAddr),
-      null,
-      null,
-      acOpHex
-    );
-    if (result && result.txid) {
-      c.last_action_h        = last_distribution_h;
-      c.last_balance         = Math.max(0, spendable - amt);
-      c.last_action_amount   = amt;
-      c.last_action_txid     = result.txid;
-      c.last_action_ts       = Math.floor(Date.now() / 1000);
-      acSaveConfig(c);
-      acRefreshUi();
-    }
-  } catch (e) {
-    // Silent on errors — UI doesn't show stack traces; tick will retry
-    // next cycle. Real failures surface via the absence of "Last sweep"
-    // updates which is visible enough.
-  } finally {
-    _ACBusy = false;
-  }
-}
-function acStartLoop() {
-  if (_ACTimer) return;
-  // 30 s cadence — most ticks just compare heights and bail. The
-  // distribution interval is 480 blocks at 180 seconds each, so the actual
-  // sweep work runs at most once per day per user.
-  _ACTimer = setInterval(function() {
-    if (document.hidden) return;
-    var c = acLoadConfig();
-    if (!c.enabled) { acRefreshUi(); return; }
-    try { acTick(); } catch(_){}
-    // Always tick the UI so the countdown stays fresh.
-    try { acRefreshUi(); } catch(_){}
-  }, 30 * 1000);
-}
-function acStopLoop() {
-  if (_ACTimer) { clearInterval(_ACTimer); _ACTimer = null; }
-}
-// #12 — auto-start the auto-compound loop on page
-// load so it works regardless of which tab the user is on. Conditions
-// in acTick() short-circuit when disabled or locked, so this is safe
-// to always run.
-(function setupAutocompoundLoop() {
-  if (window._veldAutocompoundTimer) return;
-  window._veldAutocompoundTimer = true;
-  try { acStartLoop(); } catch(_){}
-})();
-
-// ──────────────────────────────────────────────────────────────────────
 // #13 — Biometric unlock (WebAuthn PRF)
 //
 // WebAuthn's PRF (Pseudo-Random Function) extension lets us derive a
@@ -12246,11 +11905,10 @@ async function bioUnlock() {
   }
   // ALWAYS close the modal once the authenticated session identity is set,
   // even if downstream UI updates throw. Previously updateKsIndicator
-  // / acRefreshUi / _setCurrentAddr were called unwrapped — any
+  // / _setCurrentAddr were called unwrapped — any
   // synchronous throw left the modal open, which iOS-PWA WebAuthn
   // sometimes triggered, locking the user out of the rest of the app.
   try { updateKsIndicator(); } catch(_){}
-  try { acRefreshUi(); } catch(_){}
   closeKeystoreModal();
   try { loadDashboard(); } catch(_){}
   try { loadWalletAddr(parsed.address); } catch(_){}
@@ -13713,15 +13371,13 @@ function setStakingActivationUi(active, supply, threshold, known) {
     ? ('Staking unlocks at ' + _veldStakingActivation.threshold.toFixed(0) +
        ' VELD mined (' + remaining.toFixed(2) + ' VELD remaining)')
     : 'Checking mainnet staking activation';
-  [
-    document.querySelector('.act-round button.ar.stake'),
-    document.querySelector('#page-staking .btn-em')
-  ].forEach(function(button) {
-    if (!button) return;
+  // Opening the staking page is always available; only submission is gated.
+  var button = document.querySelector('#page-staking .btn-em');
+  if (button) {
     button.disabled = locked;
     button.setAttribute('aria-disabled', locked ? 'true' : 'false');
     button.title = locked ? title : '';
-  });
+  }
 }
 
 function stakingActivationErrorText() {
@@ -15557,24 +15213,6 @@ loadDashboard = loadDashboardAdaptive;
   window.addEventListener('focus', wake);
 })();
 
-// Direct click delegate for the AUTO-COMPOUND tier chip
-// row (#sk-ac-tier-chips). Belt-and-suspenders alongside the dispatcher
-// hac_tier_chip handler: if dispatcher routing fails on iOS PWA for
-// any reason, this directly updates config + UI from a captured click.
-document.addEventListener('click', function(e){
-  var chip = e.target && e.target.closest && e.target.closest('#sk-ac-tier-chips .tier');
-  if (!chip) return;
-  var tier = parseInt(chip.getAttribute('data-tier') || '0', 10);
-  if (!(tier >= 1 && tier <= 4)) return;
-  try {
-    var c = (typeof acLoadConfig === 'function') ? acLoadConfig() : null;
-    if (!c) return;
-    c.tier = tier;
-    if (typeof acSaveConfig === 'function') acSaveConfig(c);
-    if (typeof acRefreshUi === 'function') acRefreshUi();
-  } catch (_) {}
-}, false);
-
 // Keep the hidden tier select synchronized with the visible chip controls.
 document.addEventListener('click', function(e){
   var chip = e.target && e.target.closest && e.target.closest('#sk-tier-chips .tier');
@@ -16609,9 +16247,6 @@ if ('serviceWorker' in navigator) {
       hmw_del:           function(event){ var a = _bookEventAddr(event); if (a) mwDeleteWallet(a) },
       hmw_del_confirm:   function(event){ var a = _bookEventAddr(event); if (a) mwDeleteConfirm(a) },
       hmw_del_cancel:    function(event){ mwDeleteCancel() },
-      hac_toggle:     function(event){ acToggle(event) },
-      hac_tier:       function(event){ acSetTier(event) },
-      hac_tier_chip:  function(event){ acSetTier(event) },
       hbio_register: function(event){ bioRegister() },
       hbio_unlock:   function(event){ bioUnlock() },
       hbio_clear:    function(event){ bioClear() },
@@ -17106,9 +16741,6 @@ init();
       hmw_del:           function(event){ var a = _bookEventAddr(event); if (a) mwDeleteWallet(a) },
       hmw_del_confirm:   function(event){ var a = _bookEventAddr(event); if (a) mwDeleteConfirm(a) },
       hmw_del_cancel:    function(event){ mwDeleteCancel() },
-      hac_toggle:     function(event){ acToggle(event) },
-      hac_tier:       function(event){ acSetTier(event) },
-      hac_tier_chip:  function(event){ acSetTier(event) },
       hbio_register: function(event){ bioRegister() },
       hbio_unlock:   function(event){ bioUnlock() },
       hbio_clear:    function(event){ bioClear() },
@@ -17574,9 +17206,6 @@ async function completeSetup(){
       hmw_del:           function(event){ var a = _bookEventAddr(event); if (a) mwDeleteWallet(a) },
       hmw_del_confirm:   function(event){ var a = _bookEventAddr(event); if (a) mwDeleteConfirm(a) },
       hmw_del_cancel:    function(event){ mwDeleteCancel() },
-      hac_toggle:     function(event){ acToggle(event) },
-      hac_tier:       function(event){ acSetTier(event) },
-      hac_tier_chip:  function(event){ acSetTier(event) },
       hbio_register: function(event){ bioRegister() },
       hbio_unlock:   function(event){ bioUnlock() },
       hbio_clear:    function(event){ bioClear() },

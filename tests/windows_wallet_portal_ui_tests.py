@@ -77,9 +77,9 @@ for surface_name, surface in (
         )
 
 require(
-    'class="ar stake" data-act-click="h9c6994df" type="button" disabled '
-    'aria-disabled="true"' in WALLET,
-    "wallet quick stake control must start locked",
+    'class="ar stake" data-act-click="h9c6994df" type="button" '
+    'title="Open staking"' in WALLET,
+    "wallet stake shortcut must allow navigation before activation",
 )
 require(
     'data-act-click="h2e4ed19f" disabled aria-disabled="true"' in WALLET,
@@ -91,7 +91,7 @@ require(
 )
 require(
     "button.disabled = locked" in WALLET,
-    "wallet activation state must control both stake buttons",
+    "wallet activation state must control stake submission",
 )
 do_stake = WALLET[WALLET.index("function doStake() {"):
                   WALLET.index("function _doStakeContinue(")]
@@ -106,7 +106,7 @@ require(
 )
 require(
     "setStakingActivationUi(false, 0, 10000, false)" in WALLET,
-    "staking controls must remain locked when activation RPC is unavailable",
+    "stake submission must remain locked when activation RPC is unavailable",
 )
 require(
     "d.current_supply_veld" in WALLET and "d.activation_supply_veld" in WALLET,
