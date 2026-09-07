@@ -3366,6 +3366,8 @@ __VELD_DEPLOYMENT_BANNER_HTML__
       <div class="tab-btn" data-act-click="ha52e5321">Sent/Fees</div>
       <div class="tab-btn" data-act-click="hhist_btcveld">btcVELD</div>
     </div>
+    <div id="h-load-status" role="status" style="display:none;margin-bottom:10px;font-size:12px;color:var(--muted)"></div>
+    <button id="h-load-older" class="btn btn-sm" style="display:none;margin-bottom:12px" data-act-click="hhistory_older">Load older activity</button>
     <div id="h-summary" style="display:none;margin-bottom:10px;font-size:11px;color:var(--muted)"></div>
     <div id="h-list"><div style="color:var(--muted);text-align:center;padding:24px;font-size:12px">Enter an address to load history</div></div>
   </div>
@@ -11988,32 +11990,109 @@ function loadSendTransfers() {
 // ═══════════════════════════════════════
 // HISTORY
 // ═══════════════════════════════════════
-function loadHistory() {
+var historyLoadState = null;
+function historyLoadIsCurrent(state) {
+  return historyLoadState === state && document.getElementById('h-addr').value.trim() === state.address;
+}
+function renderHistoryLoadStatus() {
+  var state = historyLoadState;
+  var status = document.getElementById('h-load-status'), older = document.getElementById('h-load-older');
+  if (!status || !older) return;
+  var message = '';
+  if (state && state.busy) message = 'Loading activity… ' + state.entries.length + ' transactions read.';
+  else if (state && state.error) message = 'Activity could not finish loading. Select Load to retry. ' + state.error;
+  else if (state && state.hasMore) message = 'Older activity remains. Totals cover loaded transactions only.';
+  status.textContent = message;
+  status.style.display = message ? 'block' : 'none';
+  older.style.display = state && state.hasMore && !state.busy && !state.error ? 'inline-block' : 'none';
+}
+// Follow the ordered index cursor. Each request reads at most 50 rows; each
+// batch reads at most 20 pages. Large wallets can explicitly load another batch.
+function loadHistoryPages(state, budget) {
+  if (!historyLoadIsCurrent(state)) return Promise.resolve();
+  var cursor = state.cursor;
+  var params = [state.address, '50'];
+  if (cursor) params.push(cursor);
+  return rpc('getaddresshistory', params).then(function(page) {
+    if (!historyLoadIsCurrent(state)) return;
+    if (!page || !Array.isArray(page.entries) || page.entries.length > 50 ||
+        typeof page.has_more !== 'boolean' || typeof page.next_cursor !== 'string' ||
+        (page.has_more && (!page.entries.length || !page.next_cursor || page.next_cursor.length > 192 ||
+          page.next_cursor === cursor || state.cursors.has(page.next_cursor))))
+      throw new Error('Invalid activity pagination response.');
+    return Promise.all(page.entries.map(function(t) {
+      if (!t || typeof t.txid !== 'string' || typeof t.type !== 'string' ||
+          !Number.isSafeInteger(Number(t.block_height)) || Number(t.block_height) < 0)
+        throw new Error('Invalid activity entry.');
+      return historyIsConsolidation(t, state.address).then(function(yes) {
+        return yes ? Object.assign({}, t, {type:'consolidation'}) : t;
+      });
+    })).then(function(entries) {
+      if (!historyLoadIsCurrent(state)) return;
+      entries.forEach(function(t) {
+        if (!state.txids.has(t.txid)) { state.txids.add(t.txid); state.entries.push(t); }
+      });
+      state.pages++;
+      state.hasMore = page.has_more;
+      state.cursor = page.next_cursor;
+      if (state.cursor) state.cursors.add(state.cursor);
+      renderHistoryLoadStatus();
+      if (state.hasMore && budget > 1) return loadHistoryPages(state, budget - 1);
+    });
+  });
+}
+function finishHistoryLoad(state) {
+  state.busy = false;
+  if (!historyLoadIsCurrent(state)) return;
+  historyData = state.entries;
+  document.getElementById('h-filter-tabs').style.display = 'flex';
+  renderHistoryLoadStatus();
+  renderHistory();
+}
+function loadOlderHistory() {
+  var state = historyLoadState;
+  if (!state || !historyLoadIsCurrent(state) || state.busy || !state.hasMore || state.error) return;
+  state.busy = true;
+  renderHistoryLoadStatus();
+  state.promise = loadHistoryPages(state, 20).catch(function(e) {
+    state.error = e.message || 'History service unavailable.';
+  }).then(function() { finishHistoryLoad(state); });
+  return state.promise;
+}
+function loadHistory(autoRefresh) {
   var addr = document.getElementById('h-addr').value.trim();
-  if (!addr) return;
+  var prior = historyLoadState;
+  if (!addr) { historyLoadState = null; historyData = []; window._tokenHist = []; window._histBal = null; renderHistoryLoadStatus(); renderHistory(); return; }
+  if (prior && prior.address === addr && historyLoadIsCurrent(prior)) {
+    if (prior.busy) return prior.promise;
+    // Do not interrupt browsing a partial history with the periodic refresh.
+    // Manual Load always starts a fresh read, including after an error.
+    if (autoRefresh && (prior.hasMore || Date.now() - prior.started < 30000)) return;
+  }
+  var state = {address:addr, entries:[], cursor:'', cursors:new Set(), txids:new Set(), pages:0,
+    hasMore:true, busy:true, error:'', started:Date.now()};
+  historyLoadState = state;
+  historyData = []; window._tokenHist = []; window._histBal = null;
+  if (!prior || prior.address !== addr) window._histPage = 1;
+  document.getElementById('h-summary').style.display = 'none';
+  document.getElementById('h-filter-tabs').style.display = 'flex';
   document.getElementById('h-list').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">Loading available indexed activity...</div>';
-  var _txh = parseInt((document.getElementById('d-height')?.textContent||'0').replace(/,/g,''))||0;
-  var _txfrom = Math.max(0, _txh - 5000);
-  // Public VELD transaction history is unavailable. The separate indexed
-  // btcVELD token ledger remains best-effort for peg wrap/redeem activity.
-  window._histScanFrom = _txfrom;
-  Promise.all([
-    publicAddressHistory(addr, 50).catch(function(){ return []; }),
+  renderHistoryLoadStatus();
+  // btcVELD has a separate ledger. VELD totals never substitute for getbalance.
+  state.promise = Promise.all([
+    loadHistoryPages(state, prior && prior.address === addr ? Math.max(20, prior.pages) : 20)
+      .catch(function(e) { state.error = e.message || 'History service unavailable.'; }),
     rpc('gettokenhistory',[addr]).catch(function(){ return []; }),
     rpc('getbalance',[addr]).catch(function(){ return null; })
   ]).then(function(res) {
-    historyData = res[0] || [];
+    if (!historyLoadIsCurrent(state)) { state.busy = false; return; }
     window._tokenHist = res[1] || [];
-    // authoritative balance for the summary line (windowed sums are not a balance)
     var b = res[2];
     window._histBal = (b && typeof b === 'object') ? (b.balance_veld != null ? b.balance_veld : null)
                      : (typeof b === 'number' ? b : null);
-    var any = historyData.length || (window._tokenHist && window._tokenHist.length);
-    document.getElementById('h-filter-tabs').style.display = any ? 'flex' : 'none';
-    renderHistory();
-  }).catch(function(e) {
-    document.getElementById('h-list').innerHTML = '<div class="alert alert-err">' + escHtml(e.message) + '</div>';
+    finishHistoryLoad(state);
   });
+  return state.promise;
 }
 
 function setHistoryFilter(f, el) {
@@ -12144,7 +12223,9 @@ function renderHistory() {
     return true;
   });
   if (!data.length) {
-    document.getElementById('h-list').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;font-size:12px">No transactions match filter.</div>';
+    var incomplete = historyLoadState && (historyLoadState.busy || historyLoadState.hasMore || historyLoadState.error);
+    var emptyText = incomplete ? 'No matching transactions in the activity loaded so far.' : 'No transactions match filter.';
+    document.getElementById('h-list').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;font-size:12px">' + emptyText + '</div>';
     document.getElementById('h-summary').style.display = 'none';
     return;
   }
@@ -12170,7 +12251,7 @@ function renderHistory() {
     if (f > 0) totalFees += f;
   });
   document.getElementById('h-summary').style.display = 'block';
-  // The in/out sums cover the SCANNED WINDOW only — never present them as a
+  // The in/out sums cover the loaded, filtered transactions — never present them as a
   // balance. The authoritative balance comes from getbalance (fetched in
   // loadHistory) so the header always matches what the wallet really holds.
   var balLine = '';
@@ -12178,8 +12259,8 @@ function renderHistory() {
     balLine = '&nbsp;·&nbsp; <span style="color:var(--text);font-weight:600">balance now: ' + fmt(window._histBal,2) + ' VELD</span>';
   }
   var windowNote = '';
-  if ((window._histScanFrom||0) > 0) {
-    windowNote = '<div style="margin-top:3px;color:var(--muted2)">Totals cover the most recent ' + (5000).toLocaleString() + ' blocks (from block ' + window._histScanFrom.toLocaleString() + '). Your live balance above is exact.</div>';
+  if (historyLoadState && (historyLoadState.busy || historyLoadState.hasMore || historyLoadState.error)) {
+    windowNote = '<div style="margin-top:3px;color:var(--muted2)">Partial history — totals cover loaded transactions only.</div>';
   }
   document.getElementById('h-summary').innerHTML =
     data.length + ' transactions &nbsp;·&nbsp; '
@@ -15198,7 +15279,7 @@ loadDashboard = loadDashboardAdaptive;
       if (pgEarnings  && pgEarnings.classList.contains('active')  && window.currentAddr && typeof loadEarningsPage === 'function') loadEarningsPage(window.currentAddr);
       if (pgGov       && pgGov.classList.contains('active')       && typeof loadProposals      === 'function') loadProposals();
       if (pgValidator && pgValidator.classList.contains('active') && typeof loadValidatorPage  === 'function') loadValidatorPage();
-      if (pgHistory   && pgHistory.classList.contains('active')   && typeof loadHistory        === 'function') loadHistory();
+      if (pgHistory   && pgHistory.classList.contains('active')   && typeof loadHistory        === 'function') loadHistory(true);
       if (typeof loadActivityFeed === 'function' && window.currentAddr) loadActivityFeed();
     } catch(_){}
   }
@@ -16260,6 +16341,7 @@ if ('serviceWorker' in navigator) {
       ha921b10f: function(event){ sUtxoPage(-1) },
       hc61c436b: function(event){ sUtxoPage(1) },
       hd40f00e8: function(event){ loadHistory() },
+      hhistory_older: function(event){ loadOlderHistory() },
       hreb27cast: function(event){ doRebroadcastTx.call(this, event) },
       hconsolidate: function(event){ doConsolidateUtxos() },
       h9289dcaa: function(event){ setHistoryFilter('all',this) },
@@ -16755,6 +16837,7 @@ init();
       ha921b10f: function(event){ sUtxoPage(-1) },
       hc61c436b: function(event){ sUtxoPage(1) },
       hd40f00e8: function(event){ loadHistory() },
+      hhistory_older: function(event){ loadOlderHistory() },
       hreb27cast: function(event){ doRebroadcastTx.call(this, event) },
       hconsolidate: function(event){ doConsolidateUtxos() },
       h9289dcaa: function(event){ setHistoryFilter('all',this) },
@@ -17221,6 +17304,7 @@ async function completeSetup(){
       ha921b10f: function(event){ sUtxoPage(-1) },
       hc61c436b: function(event){ sUtxoPage(1) },
       hd40f00e8: function(event){ loadHistory() },
+      hhistory_older: function(event){ loadOlderHistory() },
       hreb27cast: function(event){ doRebroadcastTx.call(this, event) },
       hconsolidate: function(event){ doConsolidateUtxos() },
       h9289dcaa: function(event){ setHistoryFilter('all',this) },
