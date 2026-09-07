@@ -2,6 +2,10 @@
 
 ### Deployed portal and hosted wallet updates
 
+- Match Consolidate now to the light-grey wallet actions in light mode. Replace
+  the bare automatic-cleanup checkbox with a labelled switch, a separated settings
+  row, and keyboard focus feedback. Preserve the default-off preference and consent.
+
 - Fit the portal's compact bottom navigation within the phone's safe area and
   keep page content and the More menu above it. Move Log out from the header
   into More, with access on mobile, desktop, and before the first machine is paired.

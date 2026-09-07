@@ -2814,15 +2814,29 @@ __VELD_DEPLOYMENT_BANNER_HTML__
     </div>
 
     <style>
-#w-cleanup-card .cleanup-copy{color:var(--muted);line-height:1.5;margin:0 0 12px}
 #w-cleanup-card{overflow:visible!important}
-#w-cleanup-card .cleanup-auto{display:flex;align-items:center;gap:8px;margin-top:14px;position:relative}
-#w-cleanup-card .cleanup-auto label{display:flex;align-items:center;gap:10px;min-height:44px;margin:0;font-weight:600;cursor:pointer}
+#w-cleanup-card .card-title{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 8px}
+#w-cleanup-card .cleanup-copy{color:var(--muted);line-height:1.5;margin:0 0 12px}
+#w-cleanup-card .cleanup-auto{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px;padding-top:12px;border-top:1px solid var(--b1);position:relative}
+#w-cleanup-card .cleanup-auto-heading{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0}
+#w-cleanup-card .cleanup-auto-heading label{margin:0;font-size:14px;line-height:1.4;font-weight:600;cursor:pointer}
 #w-cleanup-card .help-tip{margin:0;flex:none;position:static}
 #w-cleanup-card .help-tip>summary{width:28px;height:28px;font-size:13px}
 #w-cleanup-card .help-tip[open]>.help-body{left:auto;right:0;width:280px;max-width:calc(100vw - 80px);font-size:13px;line-height:1.6}
-#w-utxo-consolidate-btn{background:#303832!important;border:1px solid #59645b!important;border-radius:9px!important;color:#eef2ed!important;-webkit-text-fill-color:#eef2ed!important;box-shadow:inset 0 1px rgba(255,255,255,.05)!important}
+#w-cleanup-card .cleanup-toggle{position:relative;display:flex;align-items:center;justify-content:center;width:52px;min-width:52px;height:44px;margin:0;flex:none;cursor:pointer}
+#w-auto-consolidate{position:absolute;inset:0;width:100%!important;height:100%!important;margin:0!important;padding:0!important;opacity:0;cursor:pointer;z-index:1}
+#w-cleanup-card .cleanup-switch-track{display:block;position:relative;width:48px;height:28px;box-sizing:border-box;border:1px solid var(--b3);border-radius:999px;background:var(--s3);transition:background .15s,border-color .15s;pointer-events:none}
+#w-cleanup-card .cleanup-switch-track::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:var(--muted);transition:transform .15s,background .15s}
+#w-auto-consolidate:checked+.cleanup-switch-track{background:var(--em);border-color:var(--em)}
+#w-auto-consolidate:checked+.cleanup-switch-track::after{transform:translateX(20px);background:var(--bg)}
+#w-auto-consolidate:focus-visible+.cleanup-switch-track{outline:2px solid var(--em);outline-offset:3px}
+#w-auto-consolidate:disabled+.cleanup-switch-track{opacity:.5}
+#w-utxo-consolidate-msg:empty{display:none}
+#w-utxo-consolidate-btn{background:#303832!important;border:1px solid #59645b!important;border-radius:9px!important;color:#eef2ed!important;-webkit-text-fill-color:#eef2ed!important;box-shadow:inset 0 1px rgba(255,255,255,.05)!important;min-height:44px}
 #w-utxo-consolidate-btn:hover{background:#3a443c!important;border-color:#6a756d!important}
+html[data-theme="light"] #w-utxo-consolidate-btn,html[data-theme="light"] .wallet-bal-hero .ar{background:#dfe5e0!important;border-color:#b9c7bb!important;color:#172119!important;-webkit-text-fill-color:#172119!important;box-shadow:none!important}
+html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] .wallet-bal-hero .ar:hover{background:#d3ddd5!important;border-color:#91ad96!important}
+@media(prefers-reduced-motion:reduce){#w-cleanup-card .cleanup-switch-track,#w-cleanup-card .cleanup-switch-track::after{transition:none}}
     </style>
     <!-- Wallet cleanup is manual unless explicitly enabled in this browser. -->
     <div class="card" id="w-cleanup-card" style="margin-top:14px;min-width:0">
@@ -2832,8 +2846,14 @@ __VELD_DEPLOYMENT_BANNER_HTML__
       <button class="btn" id="w-utxo-consolidate-btn" data-act-click="hconsolidate">Consolidate now</button>
       <div id="w-utxo-consolidate-msg" aria-live="polite" style="margin-top:10px;overflow-wrap:anywhere"></div>
       <div class="cleanup-auto">
-        <label for="w-auto-consolidate"><input type="checkbox" id="w-auto-consolidate" data-act-change="hauto_consolidate" aria-describedby="w-auto-consolidate-help w-auto-consolidate-pref-status" style="width:20px;height:20px;flex:none;margin:0;accent-color:var(--em)"><span>Automatic cleanup</span></label>
+        <div class="cleanup-auto-heading">
+          <label id="w-auto-consolidate-label" for="w-auto-consolidate">Automatic cleanup</label>
         <details class="help-tip"><summary aria-label="About automatic cleanup" title="About automatic cleanup">?</summary><div class="help-body" id="w-auto-consolidate-help">Off by default. Enabling this authorizes automatic cleanup and network fees for wallets you unlock in this browser while the app is open. Each transaction pays a fee; larger cleanups may need several transactions. Funds being combined become spendable after confirmation. Turning this off stops new batches; a transaction already in progress may still complete.</div></details>
+        </div>
+        <label class="cleanup-toggle" for="w-auto-consolidate">
+          <input type="checkbox" role="switch" id="w-auto-consolidate" data-act-change="hauto_consolidate" aria-labelledby="w-auto-consolidate-label" aria-describedby="w-auto-consolidate-help w-auto-consolidate-pref-status">
+          <span class="cleanup-switch-track" aria-hidden="true"></span>
+        </label>
       </div>
       <div id="w-auto-consolidate-pref-status" role="status" style="display:none;color:var(--muted);line-height:1.5;margin-top:8px;overflow-wrap:anywhere"></div>
     </div>
