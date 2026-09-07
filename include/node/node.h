@@ -2734,6 +2734,8 @@ public:
                   << "\"ip\":\"" << p.ip << "\","
                   << "\"port\":" << p.port << ","
                   << "\"inbound\":" << (p.inbound ? "true" : "false") << ","
+                  << "\"role\":\"" << p.role << "\","
+                  << "\"services\":" << p.services << ","
                   << "\"bytes_sent\":" << p.bytes_sent << ","
                   << "\"bytes_recv\":" << p.bytes_recv << ","
                   << "\"peer_height\":" << peer_h << ","

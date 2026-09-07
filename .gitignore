@@ -71,6 +71,7 @@ Thumbs.db
 !/scripts/rebuild-pqc-wasm.sh
 !/scripts/rebuild-pqc-wasm.py
 !/scripts/generate-mldsa65-nist-kat.py
+!/scripts/veld-topology-rpc-collector.py
 /swap/
 /*.bat
 /*.csv
