@@ -27,14 +27,15 @@ if '$("mobile-nav").hidden=false' in PORTAL:
     raise AssertionError("pair screen must not reveal the navbar before a machine exists")
 require('</div>\n<nav id="mobile-nav"', "mobile nav is a direct body child, outside the app layout")
 require(".side{display:none!important}", "desktop sidebar is hidden on mobile")
-require("#mobile-nav{display:flex!important;position:fixed;bottom:0;left:0;right:0;z-index:500;height:68px;min-height:68px;max-height:68px;",
-        "mobile nav uses the wallet navbar's fixed bottom geometry")
+require("#mobile-nav{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;bottom:0;left:0;right:0;",
+        "mobile nav divides the available viewport into five equal tabs")
 require("transform:translateZ(0);will-change:transform", "mobile nav uses the wallet compositor behavior")
-require("#mobile-nav .mob-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;",
+require("#mobile-nav .mob-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;",
         "mobile buttons use the wallet tab layout")
-require("height:68px;min-height:68px;max-height:68px", "mobile nav has the wallet's bounded height")
-require(".main{padding-bottom:88px!important}", "page content clears the navbar")
-require("bottom:68px!important", "More menu opens directly above the fixed wallet navbar")
+require("--portal-nav-row:56px", "mobile tabs have a compact touch target")
+require("--portal-nav-safe:env(safe-area-inset-bottom,0px)", "navigation reserves the iPhone home-indicator area")
+require(".main{padding-bottom:calc(var(--portal-nav-total) + 18px)!important}", "page content clears the complete navbar")
+require("bottom:var(--portal-nav-total)", "More menu opens above the tabs and bottom safe area")
 if "box-shadow:0 96px 0 96px" in PORTAL:
     raise AssertionError("legacy oversized navbar shadow must stay removed")
 if "#mobile-nav" in PORTAL and "bottom:calc(0px - env(safe-area-inset-bottom" in PORTAL:
@@ -51,4 +52,11 @@ for page in ("overview", "blockchain", "mining", "explorer", "more"):
     if f'data-page="{page}"' not in mobile_nav:
         raise AssertionError(f"mobile nav is missing {page}")
 
-print("PASS portal_mobile_nav_tests checks=25")
+menu_start = PORTAL.index('<div class="portal-more" id="portal-more-menu"')
+menu_end = PORTAL.index('</div>', menu_start)
+if PORTAL.count('id="logout"') != 1 or 'id="logout"' not in PORTAL[menu_start:menu_end]:
+    raise AssertionError("the single logout control belongs in More")
+require('function showAuth(){closePortalMore();', "logout closes the menu before showing sign-in")
+require('.app.unpaired .unpaired-more{display:inline-flex', "More remains accessible before the first machine is paired")
+
+print("PASS portal mobile navigation: equal tabs, safe-area spacing, five routes, logout in More, and unpaired access")
