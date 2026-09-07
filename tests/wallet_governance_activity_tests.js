@@ -16,7 +16,7 @@ const elements={};
 function el(id){return elements[id]||(elements[id]={innerHTML:'',value:'',style:{},classList:{add(){},remove(){}}});}
 let calls=0,active=0,maxActive=0,entries=[],details=new Map();
 const context=vm.createContext({Map,Date,Number,Promise,Object,Array,
-  window:{},document:{getElementById:el},historyData:[],historyFilter:'all',HISTORY_PAGE_SIZE:25,WALLET_RECENT_PAGE_SIZE:25,
+  window:{},document:{getElementById:el},historyLoadState:null,historyData:[],historyFilter:'all',HISTORY_PAGE_SIZE:25,WALLET_RECENT_PAGE_SIZE:25,
   fmt:(x,d)=>Number(x||0).toFixed(d),escHtml:s=>String(s).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])),shortHash:s=>s.slice(0,8),
   rpc:async(method,params)=>{
     assert(['getaddresshistory','gettransactionrecent'].includes(method),'No mutation RPC');

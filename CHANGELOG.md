@@ -2,6 +2,15 @@
 
 ### Deployed portal and hosted wallet updates
 
+- Follow address-history cursors in Activity so older sends remain visible in
+  Sent/Fees after newer mining rewards. Retain small fees, show incomplete reads
+  explicitly, and provide bounded batches with a Load older activity action.
+  Prevent overlapping refreshes and responses for a previously selected address
+  from replacing the current view.
+- Embed the supplied btcVELD artwork in the Liquidity page, preserving its detail
+  without a separate image download. Publish the current hosted wallet overlay
+  and Liquidity page source; these web changes do not require a client release.
+
 - Render temporary Explorer page errors as an HTML retry page so mobile browsers
   do not download a small untyped response. Retain rate limits, retry status,
   security headers and existing API handling.
