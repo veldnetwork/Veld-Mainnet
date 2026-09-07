@@ -2,6 +2,13 @@
 
 ### Deployed portal and hosted wallet updates
 
+- Format wallet governance rules as wrapping cards on phones and a two-column
+  layout on larger screens, preserving the existing rule text.
+- Label verified many-input, single-output self transfers as Consolidation in
+  wallet Activity and recent transactions. Preserve transfer amounts and fees;
+  ordinary self transfers remain distinct. No automatic cleanup or validator
+  exit policy changes.
+
 - Keep one full network topology chart visible on the portal Network tab.
   Restore the original chart layout and peer-class counts; remove the separate
   selected-machine chart and network-overview toggle.

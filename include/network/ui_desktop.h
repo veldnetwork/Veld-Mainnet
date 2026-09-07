@@ -3867,15 +3867,35 @@ __VELD_DEPLOYMENT_BANNER_HTML__
     <div id="gov-proposals-list"><div style="color:var(--muted);text-align:center;padding:20px;font-size:11px">Loading...</div></div>
   </div>
 
+  <style>
+.governance-rules .gov-rule-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.governance-rules .gov-rule{min-width:0;padding:16px;border:1px solid var(--line);border-radius:10px}
+.governance-rules .gov-rule h3{margin:0 0 12px;font-family:inherit;font-size:16px;font-weight:600;line-height:1.4;color:var(--text)}
+.governance-rules .gov-rule dl,.governance-rules .gov-rule p{margin:0;font-size:14px;line-height:1.6;white-space:normal;overflow-wrap:anywhere}
+.governance-rules .gov-rule dt{margin:12px 0 3px;font-size:12px;font-weight:600;color:var(--muted)}
+.governance-rules .gov-rule dt:first-child{margin-top:0}
+.governance-rules .gov-rule dd{margin:0;color:var(--text);white-space:normal;overflow-wrap:anywhere}
+@media(max-width:600px){.governance-rules .gov-rule-grid{grid-template-columns:minmax(0,1fr)}}
+  </style>
   <!-- GOVERNANCE RULES -->
-  <div class="card">
+  <div class="card governance-rules">
     <div class="card-title">Governance Rules</div>
-    <div class="tbl-scroll"><table class="tbl"><thead><tr><th>Proposal</th><th>Approval</th><th>Result</th></tr></thead><tbody>
-      <tr><td>General</td><td style="color:var(--em)">51% yes with the current general quorum</td><td style="color:var(--muted)">Approved network signalling</td></tr>
-      <tr><td>Protocol upgrade</td><td style="color:var(--em)">67% yes with a hard 10-vote minimum</td><td style="color:var(--muted)">On-chain approval after a 7-day timelock</td></tr>
-      <tr><td>Voting window</td><td colspan="2" style="color:var(--muted)">6,720 blocks (~14 days). Proposals that do not pass expire.</td></tr>
-      <tr><td>Eligibility</td><td colspan="2" style="color:var(--muted)">Registered validators submit and vote; quorum tracks recent validator activity.</td></tr>
-    </tbody></table></div>
+    <div class="gov-rule-grid">
+      <section class="gov-rule"><h3>General proposals</h3><dl>
+        <dt>Approval</dt><dd>51% yes with the current general quorum</dd>
+        <dt>Result</dt><dd>Approved network signalling</dd>
+      </dl></section>
+      <section class="gov-rule"><h3>Protocol upgrades</h3><dl>
+        <dt>Approval</dt><dd>67% yes with a hard 10-vote minimum</dd>
+        <dt>Result</dt><dd>On-chain approval after a 7-day timelock</dd>
+      </dl></section>
+      <section class="gov-rule"><h3>Voting window</h3>
+        <p>6,720 blocks (~14 days). Proposals that do not pass expire.</p>
+      </section>
+      <section class="gov-rule"><h3>Eligibility</h3>
+        <p>Registered validators submit and vote; quorum tracks recent validator activity.</p>
+      </section>
+    </div>
   </div>
 </div>
 
@@ -4652,13 +4672,51 @@ function _veldAssertActiveSignerSeed(seedHex) {
 // ═══════════════════════════════════════
 // RPC
 // ═══════════════════════════════════════
+// Classify only verified many-input, one-output self transfers. No signing.
+var historyConsolidationCache = new Map(), historyDetailQueue = [], historyDetailActive = 0;
+function historyDetailDrain() {
+  while (historyDetailActive < 2 && historyDetailQueue.length) {
+    historyDetailActive++; historyDetailQueue.shift()();
+  }
+}
+function historyIsConsolidation(t, address) {
+  if (!t || t.type !== 'self' || (typeof t.txid !== 'string' || t.txid.length !== 64 || /[^0-9a-f]/.test(t.txid)) ||
+      !Number.isSafeInteger(Number(t.block_height)) || Number(t.block_height) <= 0)
+    return Promise.resolve(false);
+  var key = address + ':' + t.txid + ':' + t.block_height;
+  var prior = historyConsolidationCache.get(key);
+  if (prior && prior.until > Date.now()) return prior.promise;
+  var entry = {until:Infinity};
+  entry.promise = new Promise(function(resolve) {
+    historyDetailQueue.push(function() {
+      Promise.resolve().then(function(){ return rpc('gettransactionrecent', [t.txid]); })
+      .then(function(tx) {
+        return !!(tx && tx.txid === t.txid && Number(tx.block_height) === Number(t.block_height) &&
+          tx.coinbase === false && Array.isArray(tx.vin) && tx.vin.length > 1 &&
+          Array.isArray(tx.vout) && tx.vout.length === 1 && tx.vout[0].address === address &&
+          Number(tx.vout[0].value) > 0);
+      }).catch(function(){ return false; }).then(function(yes) {
+        entry.until = Date.now() + (yes ? 300000 : 30000);
+        resolve(yes); historyDetailActive--; historyDetailDrain();
+      });
+    });
+  });
+  historyConsolidationCache.set(key, entry);
+  if (historyConsolidationCache.size > 128)
+    historyConsolidationCache.delete(historyConsolidationCache.keys().next().value);
+  historyDetailDrain(); return entry.promise;
+}
 function publicAddressHistory(address, limit) {
   if (!address) return Promise.resolve([]);
   var bounded = Math.max(1, Math.min(50, parseInt(limit || 50, 10) || 50));
   return rpc('getaddresshistory', [address, String(bounded)]).then(function(page) {
     if (!page || !Array.isArray(page.entries))
       throw new Error('Invalid address-history response');
-    return page.entries;
+    return Promise.all(page.entries.map(function(t) {
+      return historyIsConsolidation(t, address).then(function(yes) {
+        return yes ? Object.assign({}, t, {type:'consolidation'}) : t;
+      });
+    }));
   });
 }
 function rpc(method, params) {
@@ -9675,7 +9733,8 @@ function loadWalletAddr(addr) {
       near_miss_submission:'Near-miss submission',
       gov_proposal:'Governance Proposal',
       gov_vote:'Governance Vote', gov_other:'Governance',
-      sent:'Sent', received:'Received'
+      self:'Self-transfer', consolidation:'Consolidation',
+    sent:'Sent', received:'Received'
     };
     var _prettyType = function(s) {
       if (_typeLabel[s]) return _typeLabel[s];
@@ -12037,6 +12096,7 @@ function renderWalletRecentTxs() {
     btcveld_transfer:'btcVELD Transfer', btcveld_spv_mint:'btcVELD SPV Mint', btcveld_op:'btcVELD Operation',
     anchor_post:'BTC Anchor Post', btc_header_relay:'BTC Header Relay',
     fraud_proof:'Fraud Proof', slash_evidence:'Slash Evidence',
+    self:'Self-transfer', consolidation:'Consolidation',
     sent:'Sent', received:'Received'
   };
   var _prettyType = function(s) {
@@ -12194,6 +12254,8 @@ function renderHistory() {
     // security evidence — red
     fraud_proof:{label:'Fraud Proof',color:'#FF6B6B'},
     slash_evidence:{label:'Slash Evidence',color:'#FF6B6B'},
+    self:{label:'Self-transfer',color:'var(--muted)'},
+    consolidation:{label:'Consolidation',color:'var(--muted)'},
     sent:{label:'Sent',color:'var(--red)'},
     received:{label:'Received',color:'var(--em)'}
   };
