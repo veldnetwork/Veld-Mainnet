@@ -33,7 +33,7 @@ require("transform:translateZ(0);will-change:transform", "mobile nav uses the wa
 require("#mobile-nav .mob-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;",
         "mobile buttons use the wallet tab layout")
 require("--portal-nav-row:56px", "mobile tabs have a compact touch target")
-require("--portal-nav-safe:env(safe-area-inset-bottom,0px)", "navigation reserves the iPhone home-indicator area")
+require("--portal-nav-safe:min(8px,env(safe-area-inset-bottom,0px))", "navigation keeps compact bottom clearance without a full extra safe-area strip")
 require(".main{padding-bottom:calc(var(--portal-nav-total) + 18px)!important}", "page content clears the complete navbar")
 require("bottom:var(--portal-nav-total)", "More menu opens above the tabs and bottom safe area")
 if "box-shadow:0 96px 0 96px" in PORTAL:

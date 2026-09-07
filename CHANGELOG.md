@@ -2,6 +2,14 @@
 
 ### Deployed portal and hosted wallet updates
 
+- Remove the oversized blank strip below the portal's mobile tabs. Keep the
+  navbar anchored to the bottom, with compact clearance and matching page/menu spacing.
+
+- Report advertised peer roles through authenticated getpeerinfo and merge
+  current role reports in the topology collector. New miners no longer depend
+  on a saved address label; older exporters cannot overwrite a current role.
+  Preserve network identities, connections, consecutive labels and address privacy.
+
 - Match Consolidate now to the light-grey wallet actions in light mode. Replace
   the bare automatic-cleanup checkbox with a labelled switch, a separated settings
   row, and keyboard focus feedback. Preserve the default-off preference and consent.
