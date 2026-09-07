@@ -1356,14 +1356,11 @@ public:
         }
         if (parts.size() == 1 && parts[0] == "sw.js") {
             static const std::string sw = R"VLDSW(
+// Current documents and assets always come from the network.
+// No offline HTML or expired response is substituted after a failed request.
 const CACHE_PREFIX = 'veld-explorer-shell-';
-const CACHE = 'veld-explorer-shell-ui-20260903-navigation-fallback';
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE)
-      .then(cache => cache.addAll(['/', '/blocks']))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(
@@ -1372,30 +1369,8 @@ self.addEventListener('activate', event => {
   )).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  if (event.request.mode === 'navigate' || event.request.destination === 'document') {
-    event.respondWith((async () => {
-      const cache = await caches.open(CACHE);
-      const url = new URL(event.request.url);
-      const canonical = new Request(url.origin + url.pathname, {
-        method: 'GET', credentials: 'same-origin'
-      });
-      try {
-        const response = await fetch(event.request, {cache:'no-store'});
-        if (response.ok) {
-          await cache.put(canonical, response.clone());
-          return response;
-        }
-        const saved = await cache.match(canonical)
-          || (url.pathname === '/blocks' ? await cache.match('/blocks') : null)
-          || await cache.match('/');
-        return saved || response;
-      } catch (_) {
-        return await cache.match(canonical)
-          || (url.pathname === '/blocks' ? await cache.match('/blocks') : null)
-          || await cache.match('/');
-      }
-    })());
+  if (event.request.method === 'GET') {
+    event.respondWith(fetch(event.request, {cache: 'no-store'}));
   }
 });
 )VLDSW";
@@ -3615,6 +3590,9 @@ private:
                 active_requests_.fetch_sub(1, std::memory_order_acq_rel);
                 static const char kBusy[] =
                     "HTTP/1.1 503 Service Unavailable\r\n"
+                    "Content-Type: text/plain; charset=utf-8\r\n"
+                    "Cache-Control: no-store\r\n"
+                    "X-Content-Type-Options: nosniff\r\n"
                     "Content-Length: 24\r\n"
                     "Connection: close\r\n"
                     "Retry-After: 2\r\n"
@@ -3779,6 +3757,9 @@ private:
             if (!TakeRejectedRequestBudget_(socket_peer, "invalid-http")) {
                 static const char kInvalidLimited[] =
                     "HTTP/1.1 429 Too Many Requests\r\nContent-Length: 22\r\n"
+                    "Content-Type: text/plain; charset=utf-8\r\n"
+                    "Cache-Control: no-store\r\n"
+                    "X-Content-Type-Options: nosniff\r\n"
                     "Connection: close\r\nRetry-After: 60\r\n\r\n"
                     "rate limit, slow down\n";
                 (void)SendAll_(client_fd, kInvalidLimited,
@@ -3797,6 +3778,9 @@ private:
             if (!TakeRejectedRequestBudget_(socket_peer, "invalid-proxy")) {
                 static const char kProxyLimited[] =
                     "HTTP/1.1 429 Too Many Requests\r\nContent-Length: 22\r\n"
+                    "Content-Type: text/plain; charset=utf-8\r\n"
+                    "Cache-Control: no-store\r\n"
+                    "X-Content-Type-Options: nosniff\r\n"
                     "Connection: close\r\nRetry-After: 60\r\n\r\n"
                     "rate limit, slow down\n";
                 (void)SendAll_(client_fd, kProxyLimited,
@@ -3814,12 +3798,18 @@ private:
         if (!BeginExplorerAdmission_(proxy.identity, req, admission, busy)) {
             static const char kThrottled[] =
                 "HTTP/1.1 429 Too Many Requests\r\n"
+                "Content-Type: text/plain; charset=utf-8\r\n"
+                "Cache-Control: no-store\r\n"
+                "X-Content-Type-Options: nosniff\r\n"
                 "Content-Length: 22\r\n"
                 "Connection: close\r\n"
                 "Retry-After: 60\r\n\r\n"
                 "rate limit, slow down\n";
             static const char kBudgetBusy[] =
                 "HTTP/1.1 503 Service Unavailable\r\n"
+                "Content-Type: text/plain; charset=utf-8\r\n"
+                "Cache-Control: no-store\r\n"
+                "X-Content-Type-Options: nosniff\r\n"
                 "Content-Length: 26\r\n"
                 "Connection: close\r\n"
                 "Retry-After: 2\r\n\r\n"
@@ -4604,58 +4594,15 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
   if(sheet)sheet.addEventListener('click',function(event){if(event.target===sheet)closeSheet();});
   document.addEventListener('keydown',function(event){if(event.key==='Escape')closeSheet();});
   if(isIOS&&!standalone)setTimeout(show,1200);
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js?ui=20260903-navigation-fallback',{scope:'/',updateViaCache:'none'}).catch(function(){});}
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js?ui=20260907-current-web',{scope:'/',updateViaCache:'none'}).catch(function(){});}
 
-  var txPath=/^\/tx\/[0-9a-f]{64}$/i;
-  function markMempoolContext(){
+  // Use full document navigation so each route initializes current scripts.
+  window.__veldExplorerSoftTxNav = true;
+  if (/^\/tx\/[0-9a-f]{64}$/i.test(window.location.pathname)) {
     document.querySelectorAll('.nav-bar .nb-tab.active, .side-nav .sn-link.active').forEach(function(item){item.classList.remove('active');});
-    var mobile=document.querySelector('.nav-bar .nb-tab[href="/mempool"]');
-    var desktop=document.querySelector('.side-nav .sn-link[href="/mempool"]');
-    if(mobile)mobile.classList.add('active');
-    if(desktop)desktop.classList.add('active');
+    document.querySelectorAll('.nav-bar .nb-tab[href="/mempool"], .side-nav .sn-link[href="/mempool"]').forEach(function(item){item.classList.add('active');});
   }
-  function eligibleSoftPath(path){return path==='/mempool'||txPath.test(path);}
-  function resetContentScroll(){
-    window.scrollTo(0,0);
-    var wrap=document.querySelector('.wrap');
-    if(wrap&&typeof wrap.scrollTo==='function')wrap.scrollTo(0,0);
-  }
-  async function loadExplorerContent(url,push){
-    try{
-      var response=await fetch(url,{cache:'no-store',credentials:'same-origin',headers:{Accept:'text/html'}});
-      if(!response.ok||response.redirected){window.location.assign(response.url||url);return;}
-      var parsed=new DOMParser().parseFromString(await response.text(),'text/html');
-      var incoming=parsed.querySelector('.wrap');
-      var current=document.querySelector('.wrap');
-      if(!incoming||!current)throw new Error('Explorer content pane missing');
-      current.replaceChildren.apply(current,Array.from(incoming.childNodes).map(function(node){return document.importNode(node,true);}));
-      document.title=parsed.title||document.title;
-      var resolved=new URL(response.url||url,window.location.href);
-      if(push)history.pushState({veldExplorerSoftTxNav:true},'',resolved.pathname+resolved.search+resolved.hash);
-      markMempoolContext();
-      resetContentScroll();
-    }catch(_){window.location.assign(url);}
-  }
-  if(!window.__veldExplorerSoftTxNav){
-    window.__veldExplorerSoftTxNav=true;
-    var enteredMempoolInShell=false;
-    document.addEventListener('click',function(event){
-      var link=event.target.closest?event.target.closest('a[href]'):null;
-      if(!link)return;
-      var target=new URL(link.href,window.location.href);
-      var enteringMempool=target.origin===window.location.origin&&target.pathname==='/mempool'&&window.location.pathname!=='/mempool'&&link.matches('.nav-bar .nb-tab, .side-nav .sn-link');
-      var openingTransaction=window.location.pathname==='/mempool'&&txPath.test(target.pathname);
-      if(!enteringMempool&&!openingTransaction)return;
-      if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
-      event.preventDefault();
-      if(enteringMempool)enteredMempoolInShell=true;
-      loadExplorerContent(link.href,true);
-    });
-    window.addEventListener('popstate',function(){
-      if(eligibleSoftPath(window.location.pathname))loadExplorerContent(window.location.href,false);
-      else if(enteredMempoolInShell)window.location.reload();
-    });
-  }
+  window.addEventListener('pageshow',function(event){if(event.persisted)window.location.reload();});
 })();
 </script>)VLDPWA";
         return js;

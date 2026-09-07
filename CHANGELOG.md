@@ -2,6 +2,15 @@
 
 ### Deployed portal and hosted wallet updates
 
+- Render temporary Explorer page errors as an HTML retry page so mobile browsers
+  do not download a small untyped response. Retain rate limits, retry status,
+  security headers and existing API handling.
+- Load a complete current document when navigating to Mempool or transaction
+  details, so formatting and page scripts initialize on the first click.
+  Fetch Explorer and wallet documents and assets without browser caching,
+  remove legacy service-worker page caches, and stop serving expired API
+  responses after upstream errors. Keep the bounded five-second public API cache.
+
 - Shorten the homepage download instructions and update the Rules page's sync
   explanation. Document independent snapshot verification, restart behavior,
   and compiled chain identifiers with their matching RPC representations.
@@ -48,6 +57,9 @@
   Existing implicit automatic-cleanup settings do not enable the new option.
 
 ### Awaiting the next Windows client release
+
+- Add explicit text content types and no-store headers to the node Explorer's
+  rate-limit and busy responses. The hosted fix is deployed independently.
 
 - Place New pair code immediately beside Open portal in Windows Settings,
   with Copy code to their left when a code is available. This native layout

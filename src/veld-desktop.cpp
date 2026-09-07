@@ -2183,7 +2183,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   // All wallet documents, signer assets, and RPC reads are network-only.
   // If the origin is unavailable, fail closed instead of serving stale code.
-  if (e.request.method === 'GET') e.respondWith(fetch(e.request));
+  if (e.request.method === 'GET') e.respondWith(fetch(e.request, {cache:'no-store'}));
 });
 )";
             resp = "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\n"

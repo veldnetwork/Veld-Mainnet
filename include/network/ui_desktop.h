@@ -16125,7 +16125,7 @@ if ('serviceWorker' in navigator) {
     swControllerChanged = true;
     window.location.reload();
   });
-  navigator.serviceWorker.register('/sw.js?ui=wallet-305-mainnet-staking-lock', {updateViaCache:'none'})
+  navigator.serviceWorker.register('/sw.js?ui=20260907-current-web', {updateViaCache:'none'})
     .then(function(registration) { return registration.update(); })
     .catch(function(){});
 }
