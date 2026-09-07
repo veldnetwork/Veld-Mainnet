@@ -153,7 +153,7 @@ inline PayoutProof VerifyRedeemPayout(const btcspv::BtcHeaderChain& ch,
     H256 block_hash; std::memcpy(block_hash.data(), p + off, 32); off += 32;
     uint64_t dirs = btcspv::rd_le32(p + off); off += 4;
     uint8_t mlen = p[off++];
-    // H-1: reject non-canonical direction bits, matching
+    // Reject non-canonical direction bits, matching
     // ParseC1FundingProof/ParseMintSpvOp. Without this, every direction bit
     // above the branch length is a free bit, so one logical proof has many
     // valid byte encodings. Not a forgery path on its own (the root must still
@@ -334,7 +334,7 @@ inline FraudProof VerifyFraudulentSpend(const btcspv::BtcHeaderChain& ch, const 
     size_t off = 0;
     auto need = [&](size_t n){ return off + n <= len; };
     auto rd32 = [&](){ uint32_t v = btcspv::rd_le32(p + off); off += 4; return v; };
-    // H-1: `dirs` is now supplied so the canonical
+    // Supply `dirs` so the canonical
     // direction-bits rule that ParseC1FundingProof/ParseMintSpvOp enforce also
     // binds here — any bit above the branch length must be zero, otherwise one
     // logical proof has many valid byte encodings.

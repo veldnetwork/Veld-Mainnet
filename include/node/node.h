@@ -2075,7 +2075,7 @@ public:
         return reorg_durable_publication_restore_wire_;
     }
 
-    // Finding-4 process qualification uses the real node/RPC/P2P entrypoints,
+    // Work-admission process tests use the node, RPC, and P2P entry points,
     // but must be able to install one prerequisite tuple without running the
     // unbounded listener/startup lifecycle.  Every field below writes the same
     // production latch consumed by WorkCoordinatorConfiguration_; there is no
@@ -2123,7 +2123,7 @@ public:
             !state.canonical_tip_known, std::memory_order_release);
         test_work_local_runtime_open_.store(
             state.runtime_open, std::memory_order_release);
-        // The F4 gate controls local production/signing. Ordinary inbound
+        // The work-admission gate controls local production and signing. Ordinary inbound
         // block admission retains its independent Blockchain runtime policy.
         chain_.SetRuntimeAdmissionFn(
             [](uint64_t) noexcept { return true; });
@@ -2843,12 +2843,8 @@ public:
             // ultimately rejected candidate anchor for canonical high-water.
             auto transition = chain_.AcquireConsensusTransitionGuard();
             const uint64_t fin = final_height_.load(std::memory_order_acquire);
-            // R3: "configured" no longer exists as a separate concept — the
-            // constant it read is retired. Anchors are active exactly when the
-            // chain has finalized a real block. This endpoint previously
-            // computed the correct condition (configured && finality_active &&
-            // fin > 0) and reported it, while consensus enforced none of it;
-            // the rule now lives in consensus and this merely reports it.
+            // Report anchor admission from the same chain-derived warm-up
+            // and finalized-height conditions used by consensus.
             const bool configured      = fin_state_.AnchorWarmupComplete();
             const bool finality_active = fin_state_.FinalityActive();
             const bool admission_live  = configured && BtcVeldAnchorActive(fin);

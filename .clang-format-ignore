@@ -1,0 +1,4 @@
+vendor/**
+include/crypto/vendored*.h
+include/crypto/mldsa65_nist_kat.h
+include/network/*_js.h

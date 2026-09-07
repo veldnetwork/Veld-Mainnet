@@ -5,11 +5,9 @@
 
 namespace veld {
 
-// Coordinated consensus security upgrade at block 2880.
-// Any binary built from this candidate activates at that height automatically.
-// Release requires an authenticated pre-upgrade checkpoint, complete replay and
-// restart qualification, and a coordinated compatible rollout. No runtime or
-// per-node override exists. Zero remains the unscheduled/disabled sentinel.
+// Consensus upgrade activates at block 2880. Historical rules are retained
+// below that height. There is no runtime or per-node override; alternate
+// heights are restricted to isolated test builds. Zero disables activation.
 #if defined(VELD_CONSENSUS_SECURITY_TEST_HEIGHT)
 #if !defined(VELD_TEST_HOOKS) || defined(VELD_PUBLIC_RELEASE) || defined(VELD_PUBLIC_MAINNET)
 #error "Consensus security test height is restricted to isolated test builds"

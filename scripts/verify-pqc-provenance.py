@@ -83,7 +83,7 @@ FIXED_COVERAGE = {
     "scripts/rebuild-pqc-wasm.py",
     "scripts/rebuild-pqc-wasm.sh",
     "scripts/verify-pqc-provenance.py",
-    "tests/daybreak_pqc_provenance_tests.py",
+    "tests/pqc_provenance_tests.py",
     "tests/pqc_wasm_smoke.js",
     "third_party_licenses/Emscripten-LICENSE.txt",
 }

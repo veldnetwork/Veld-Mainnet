@@ -36,7 +36,7 @@ int main() {
               << HashToHex(finality.Digest()) << '\n'
               << GovernanceEngine::SerializeProposal(p) << '\n'
               << GovernanceEngine::BuildVoteOp(1, "fixture", VoteChoice::YES, 25, "", "") << '\n';
-    // Shared audited/candidate path immediately before the proposed activation.
+    // Shared legacy path immediately before consensus-upgrade activation.
     // Keep this independent of the candidate-only activation header.
     Block before_upgrade; before_upgrade.height = 1919;
     if (!validators.ProcessBlock(before_upgrade, [](const auto&) { return uint64_t{0}; })) return 1;

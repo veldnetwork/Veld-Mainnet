@@ -46,8 +46,10 @@ require(
     "desktop and mobile navigation must share page state",
 )
 for required in (
-    "#mobile-nav{display:flex!important;position:fixed;bottom:0",
-    "height:68px;min-height:68px;max-height:68px",
+    "#mobile-nav{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;bottom:0",
+    "--portal-nav-row:56px",
+    "--portal-nav-safe:min(8px,env(safe-area-inset-bottom,0px))",
+    "height:var(--portal-nav-total)",
     "#mobile-nav{display:none}#mobile-nav[hidden]{display:none!important}",
     ".app.unpaired .main{padding-bottom:20px!important}",
 ):

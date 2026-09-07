@@ -3007,7 +3007,7 @@ public:
 
     // `dataset_unavailable` (optional) distinguishes a TRANSIENT local VeldHash
     // dataset failure from a real proof-of-work reject. Callers that treat a
-    // false return as peer misbehaviour MUST pass it and branch on it; see F-4.
+    // false return as peer misbehaviour must pass it and check the result.
     static bool VerifyBlockPoW(const Block& block,
                                bool* dataset_unavailable = nullptr,
                                const CanonicalPowTarget* contextual_target = nullptr) {
@@ -4157,7 +4157,7 @@ public:
                 tag_str == "coinbase_exceeds_subsidy_cap" ||
                 tag_str == "nms_validation_failed" ||
                 tag_str == "bits_mismatch_lwma" ||
-                // F-4: a dataset-regeneration storm can emit this for every
+                // A dataset-regeneration storm can emit this for every
                 // in-flight block; roll it into the 5-minute summary rather
                 // than one stderr line per attempt.
                 tag_str == "pow_dataset_unavailable" ||
@@ -4763,7 +4763,7 @@ public:
                 return defer("pow_global_budget_exhausted");
             Block tmp = block;
             tmp.height = derived_height;
-            // F-4: a dataset-unavailable sentinel is a local transient, not a
+            // A dataset-unavailable sentinel is a local transient, not a
             // consensus verdict. Report it under its own tag so the dispatcher
             // credits no ban and does not cache the (valid) block as rejected.
             bool pow_dataset_unavailable = false;
@@ -5130,7 +5130,7 @@ public:
         // Local/RPC production is never allowed to register a stale template
         // as a side branch.  Its exact parent binding must be consumed only at
         // the canonical precommit sink; ordinary peer side branches continue
-        // through the bounded F2 quarantine independently.
+        // through the bounded side-chain quarantine independently.
         if (pow_admission.RequiresLocalWorkAdmission() &&
             !extends_current_tip) {
             return defer("local_work_parent_no_longer_canonical");
@@ -7656,7 +7656,7 @@ private:
         //        - total_supply_units_: incremental tracking.
         //        - nms_tally_:          rebuilt to the ancestor frame
         //                               (RebuildNmsTallyToHeight_) then advanced
-        //                               per alt block, same as forward ingest (F2).
+        //                               per alt block, same as forward ingestion.
         //
         //   2. Gate 5, blanket sigless-spend ban (runs when NO alt-engine
         //      overlay is armed): rejects any non-coinbase TX that spends an
@@ -7680,7 +7680,7 @@ private:
         // each accepted alt predecessor before validating its child, so
         // MedianTimePast() observes exactly the candidate parent's ancestry.
         // The co-mine pool payout IS recipient-
-        // gated on reorg (F2): nms_tally_ is reconstructed to the alt frame and
+        // gated on reorganization: nms_tally_ is reconstructed to the alt frame and
         // advanced per alt block, so ValidateExpectedPoolPayout reproduces the
         // alt chain's winners and a redirected pool is rejected — not merely
         // bounded to conserved totals.

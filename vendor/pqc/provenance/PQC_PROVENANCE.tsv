@@ -1,6 +1,6 @@
 sha256	role	origin	upstream_revision	upstream_path	upstream_sha256	patch	path
 59538d1aed02ee4fcd5e858d3633ebc848d3ee5a5dd9723f1247c26d952a54e7	distributed-source	Veld	-	-	-	-	.gitattributes
-f3991b57179891246efe8e7ba1137aadada136e32193e5ebd80d851324f93869	distributed-source	Veld	-	-	-	-	.gitignore
+17593331656b39fcd70460dbe609b1104a490dbb960a5f618dd10a1f40410de4	distributed-source	Veld	-	-	-	-	.gitignore
 2712c6e470f165ec2a628eec255abaae5b1653ea5d6ff19b2f4ba905462feec6	license-notice	Veld	-	-	-	-	THIRD_PARTY_NOTICES.md
 fe317df015a6cdfa6c6ca285f2dd0615720d40a2fa025f2b9a0058f2743bf667	build-controller	Veld	-	-	-	-	build/mainnet-v2-linux.sh
 bf451aab86a584723437fc55a9afd27194a923d5c8a4768d7e869ab40ee7d627	build-controller	Veld	-	-	-	-	build/mainnet-v2-windows.sh
@@ -13,8 +13,8 @@ dcac6e31e580896634ce481db20218c6187ba2508b95d2f18cc1cfc099ccf9d0	pinned-crypto-h
 bf995271d47654a972df770ad351f063771c9f678ae8c193b198061ed1cf30ff	kat-generator	Veld	-	-	-	-	scripts/generate-mldsa65-nist-kat.py
 2b1ed987e49d28bc9ca55eaf992e10926f11ad83174d95cd523b75b7cf1ba4d9	rebuild-tool	Veld	-	-	-	-	scripts/rebuild-pqc-wasm.py
 ba6e9bad42c60047a900e3ab2cd79d75a1e7ad0934c679f7bfcb50a6f8db24e6	rebuild-tool	Veld	-	-	-	-	scripts/rebuild-pqc-wasm.sh
-e57e218f639fa78026183d080c91b4c4d375ce6b97d1ade390174816e93dca64	verification-tool	Veld	-	-	-	-	scripts/verify-pqc-provenance.py
-01c5fc231955906cb45395fbe7cb43bede88f36f88d1a6b71a4187d4ccee71ad	regression-test	Veld	-	-	-	-	tests/daybreak_pqc_provenance_tests.py
+46cebb5008ff8ed5ea1dcb129ebae5afb52469d6f39ad52b8f59ddca493740ff	verification-tool	Veld	-	-	-	-	scripts/verify-pqc-provenance.py
+3b7ec2977d6f8b7dd2de982112e1db5e4ebdccd11cea50dbff830a01bd1f3cb1	regression-test	Veld	-	-	-	-	tests/pqc_provenance_tests.py
 7b82219bdad5e2a9558f7d22877a35c37eecc5e6b40424ff4fe697c486c2d1df	regression-test	Veld	-	-	-	-	tests/pqc_wasm_smoke.js
 620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86	license-notice	Veld	-	-	-	-	third_party_licenses/Emscripten-LICENSE.txt
 90d11b55fda3b600b4c79974bcbfada09f0ded97f4a84481d96b9d7571fd9f51	provenance-record	Veld	-	-	-	-	vendor/pqc/PQCLEAN_VERSION

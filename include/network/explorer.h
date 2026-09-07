@@ -3516,7 +3516,7 @@ private:
                         || route == "rich" || route == "block" || route == "tx";
         // A block page owns two decoded bodies plus cold-loader temporaries.
         // Reserve the whole Explorer memory pool for either block URL alias;
-        // see docs/security/3.0.5-explorer-memory-accounting.md.
+        // see docs/security/explorer-resource-limits.md.
         const uint32_t memory_units = route == "block" ? EXPLORER_MEMORY_UNITS_MAX
             : (history ? 16 : (heavy ? 8 : 4));
         const uint32_t work_units = history ? 16 : (heavy ? 8 : 1);

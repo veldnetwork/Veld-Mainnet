@@ -42,7 +42,7 @@
 #endif
 
 // `VELD_REGTEST_FIXED_DIFF` is also the externally reported executable
-// fingerprint for the disposable L3 consensus profile.  Do not let a
+// fingerprint for the disposable regression-test profile.  Do not let a
 // partial macro set compile into an artifact that getnetworkinfo and the
 // startup guard would misidentify as the complete four-part profile.
 #if defined(VELD_REGTEST_FIXED_DIFF) && \
@@ -86,12 +86,12 @@
 #error "VELD_PUBLIC_RELEASE cannot be combined with consensus test or bypass macros"
 #endif
 
-// The disposable fixed-difficulty L3 profile must never inherit reusable
+// The disposable fixed-difficulty test profile must never inherit reusable
 // btcVELD authority or custody identities.  Its build controller generates
 // isolated keys, supplies the matching Veld address and Bitcoin scriptPubKey as
 // quoted compile definitions, and seals the definitions and artifact digests
 // in external evidence.  Reject either seam in every public or non-regtest
-// profile, and reject an L3 btcVELD build that omits either value, so no
+// profile, and reject a btcVELD test build that omits either value, so no
 // artifact can silently fall back to a hardcoded test identity.
 #if defined(VELD_L3_DISPOSABLE_BTCVELD_AUTHORITY_ADDRESS) && \
     (!defined(VELD_BTCVELD_REGTEST) || \

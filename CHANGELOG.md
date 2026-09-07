@@ -1,4 +1,18 @@
-# Current source — 2026-09-07
+# Changelog
+
+Notable changes to published source. Hosted updates and signed client packages
+are tracked separately; publishing source does not release new binaries.
+
+## Unreleased
+
+### Repository maintenance
+
+- Organize developer, operator, release, and security documentation.
+- Use descriptive regression-test names and source comments.
+- Add contribution templates and shared formatting conventions.
+- Refresh the source-input manifest while retaining dependency bytes and pins.
+
+## Source maintenance - 2026-09-07
 
 ### Deployed portal and hosted wallet updates
 
@@ -95,7 +109,7 @@
   with Copy code to their left when a code is available. This native layout
   change is in source only; it is not part of the published 3.0.8 package.
 
-# Veld 3.0.8 — 2026-09-06
+## 3.0.8 - 2026-09-06
 
 - Fix startup after a signed snapshot's foreground chain advances while
   independent background validation is still pending.
@@ -103,19 +117,14 @@
   retain its original independent validation target and saved progress.
 - Fully verify the post-snapshot blocks during startup replay. Mining and
   endorsing remain paused until independent validation completes.
-- Retain the 3.0.7 Windows updater launcher correction and H2,880 activation.
+- Retain the 3.0.7 Windows updater launcher correction and block 2,880 activation.
 
-# Veld 3.0.7 — 2026-09-06
+## 3.0.7 - 2026-09-06
 
 - Restart Windows signed updates through Start Veld Node.bat with installed
   package verification, the installation working directory and literal paths.
 - Keep the terminal restart launcher and signed update version protections.
-- Retain consensus security activation at H2,880 from 3.0.6.
-
-# Changelog
-
-All notable public-source changes are recorded here. Signed binary identity is
-recorded separately from source-publication commits.
+- Retain consensus security activation at block 2,880 from 3.0.6.
 
 ## 3.0.6 - 2026-09-06
 

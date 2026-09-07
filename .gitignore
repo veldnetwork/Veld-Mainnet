@@ -57,8 +57,9 @@ vault.key
 .DS_Store
 Thumbs.db
 
-# Operator workspace
-/docs/
+# Local operational artifacts
+/.*-ops/
+/security-remediation/
 /output/
 /homepage/
 /marketing/
@@ -77,16 +78,6 @@ Thumbs.db
 /*.csv
 /*.html
 /*.json
-/*.md
-!/BUILDING.md
-!/CHANGELOG.md
-!/CONTRIBUTING.md
-!/README.md
-!/RELEASE_NOTES.md
-!/SECURITY.md
-!/THREAT_MODEL.md
-!/THIRD_PARTY_NOTICES.md
-!/TRADEMARKS.md
 /*.sha256
 /*.sh
 /*.txt

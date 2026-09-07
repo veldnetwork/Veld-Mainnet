@@ -621,8 +621,8 @@ public:
 
     static bool MarketSeedAnchorActive(uint64_t height) noexcept {
 #if defined(VELD_BTCVELD_REGTEST)
-        // The disposable L3 profile exercises the same one-time market-seed
-        // rule without compiling a public-release artifact.  All L3 nodes must
+        // The disposable test profile exercises the same one-time market-seed
+        // rule without compiling a public-release artifact.  All test nodes must
         // share this macro/profile; public releases use the explicit activation
         // constant below.
         return height >= 1;

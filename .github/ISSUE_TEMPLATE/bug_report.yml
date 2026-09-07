@@ -1,0 +1,35 @@
+name: Bug report
+description: Report incorrect behavior in a Veld application or node.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a suspected security vulnerability, use private vulnerability reporting instead.
+        Never include private keys, wallet seeds, passphrases, RPC tokens, or personal data.
+  - type: input
+    id: version
+    attributes:
+      label: Version or source commit
+      placeholder: Client version, Git commit, or hosted application URL
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: Operating system and browser, if applicable
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest useful example and relevant sanitized logs.
+    validations:
+      required: true

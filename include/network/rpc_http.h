@@ -203,7 +203,7 @@ public:
         activation_guard_refused_.store(false, std::memory_order_release);
         if (running_.load(std::memory_order_acquire) || thread_.joinable())
             return false;
-        // H-02 fail-closed: a mutating loopback JSON-RPC must never run unauthenticated — an
+        // Mutating loopback JSON-RPC requires authentication. An
         // empty token gates nothing. Refuse to bind unless a token is set.  An
         // isolated test binary may compile VELD_RPC_TEST_NO_AUTH and then opt in
         // at runtime; public-release identity compile-bans that capability.

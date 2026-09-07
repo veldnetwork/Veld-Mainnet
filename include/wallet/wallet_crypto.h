@@ -357,11 +357,9 @@ inline std::vector<uint8_t> ChaCha20Poly1305_EVP_Decrypt(
     return plain;
 }
 
-// ── M-10: vendored scrypt (RFC 7914) — memory-HARD wallet KDF for v5. PBKDF2-SHA256 is CPU-hard
-// but memoryless, so GPU/ASIC offline guessing of weak passwords scales cheaply. scrypt forces
-// ~128*N*r bytes of fast memory per guess. Implemented on the existing vendored PBKDF2/HMAC — NO
-// OpenSSL/Argon2 dependency, so the crypto stays vendored + reproducible. Correctness is PINNED
-// against the RFC 7914 test vectors.
+// Wallet format v5 uses scrypt (RFC 7914), with approximately 128*N*r bytes
+// of memory per password guess. This implementation uses the vendored
+// PBKDF2/HMAC primitives and is checked against the RFC test vectors.
 inline void _salsa20_8(uint8_t B[64]) {
     auto R = [](uint32_t a, uint32_t b) -> uint32_t { return (a << b) | (a >> (32 - b)); };
     uint32_t x[16], in[16];
@@ -460,7 +458,7 @@ inline constexpr uint8_t VELD_WALLET_VERSION_V1      = 0x01;
 inline constexpr uint8_t VELD_WALLET_VERSION_LEGACY  = 0x02;
 inline constexpr uint8_t VELD_WALLET_VERSION_V3      = 0x03;
 inline constexpr uint8_t VELD_WALLET_VERSION_V4      = 0x04;
-inline constexpr uint8_t VELD_WALLET_VERSION_V5      = 0x05;   // M-10: scrypt (memory-hard) KDF, ChaCha20-Poly1305 AEAD
+inline constexpr uint8_t VELD_WALLET_VERSION_V5      = 0x05;   // scrypt KDF and ChaCha20-Poly1305 AEAD
 inline constexpr uint8_t VELD_WALLET_VERSION_V6      = 0x06;
 inline constexpr uint8_t VELD_WALLET_VERSION_CURRENT = VELD_WALLET_VERSION_V6;
 

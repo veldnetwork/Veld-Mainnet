@@ -1,0 +1,17 @@
+name: Feature request
+description: Propose an improvement to Veld.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Explain who needs this and what they are trying to do.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the change and any alternatives considered.
+    validations:
+      required: true

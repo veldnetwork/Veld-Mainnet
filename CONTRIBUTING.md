@@ -38,6 +38,25 @@ test pass. Do not add production shortcuts or hidden activation switches.
 Security reports must follow [SECURITY.md](SECURITY.md). Do not open a public
 issue for a suspected vulnerability.
 
+## Coding style and organization
+
+Use descriptive names based on the behavior being implemented or tested.
+Comments should explain an invariant, tradeoff, or non-obvious operation.
+Issue numbers and review discussion belong in commits or pull requests;
+internal review labels and development-session notes do not belong in source.
+Keep protocol identifiers and serialized formats stable.
+
+Follow `.editorconfig` and the surrounding code. New C++ code uses four-space
+indentation and the checked-in `.clang-format` style. Format changed regions
+without mixing repository-wide formatting into functional patches. Do not
+format vendored code, generated cryptographic assets, or byte-pinned inputs;
+their exclusions are listed in `.clang-format-ignore` and `.editorconfig`.
+
+Keep public technical documentation in `docs/` and describe tests in
+[tests/README.md](tests/README.md). Store build output, runtime data, credentials,
+and operator evidence outside the checkout. Update the changelog when a change
+affects users or maintainers. Preserve historical release records.
+
 ## Licensing
 
 By contributing material you have the right to submit, you agree that it may be

@@ -2853,7 +2853,7 @@ int main(int argc, char* argv[]) {
         return node.ConnectedPeers();
     });
 
-    // H-02: the desktop's own loopback JSON-RPC (8334) is MUTATING (tx submission, admin
+    // The desktop's loopback JSON-RPC (8334) supports mutations (tx submission, admin
     // methods) — it must NEVER be served unauthenticated. Generate a strong ephemeral token
     // for THIS process (CSPRNG, same as the node) and require it on the RPC; the wallet UI,
     // running in the same process, uses the same token to call it. An external local process

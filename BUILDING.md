@@ -1,4 +1,4 @@
-# Veld 3.0.8 attested mainnet-v2 builds
+# Building Veld
 
 These instructions build unsigned candidates from source. They do not sign,
 package, publish, deploy, or authorize a mainnet launch. The build must begin
@@ -10,7 +10,8 @@ when Git metadata is present and re-check the exact identity after linking. A
 source archive must instead provide both
 `VELD_SOURCE_COMMIT` and `VELD_SOURCE_TREE` as lowercase 40-character object
 IDs. Those archive values are recorded as caller declarations and must be
-verified against the sealed source manifest before publication.
+verified against the corresponding Git tree before publication. See
+[Source identity](docs/source-identity.md).
 
 Every native production role is compiled with exactly these base profile
 definitions:
