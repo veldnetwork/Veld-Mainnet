@@ -1,0 +1,2 @@
+# Portal dependency used by the CLI identity and pairing checks.
+cryptography==50.0.1

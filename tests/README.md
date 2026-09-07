@@ -6,9 +6,11 @@ directory; fixture data is under [fixtures/](fixtures/).
 
 ## Portable source and web checks
 
-Install Python 3.10 or later and Node.js 18 or later. From a source checkout:
+Install Python 3.10 or later and Node.js 22 or later. In a Python virtual
+environment, install the portal test dependency and run the checks:
 
 ```sh
+python3 -m pip install -r tests/requirements.txt
 python3 tests/run_checks.py
 ```
 

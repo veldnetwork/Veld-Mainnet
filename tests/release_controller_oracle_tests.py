@@ -72,7 +72,7 @@ version = subprocess.run(
     stderr=subprocess.PIPE,
     check=False,
 )
-check(version.returncode == 0, "operator --version failed")
+check(version.returncode == 0, f"operator --version failed: {version.stderr.strip()}")
 version_header = (ROOT / "include/core/version.h").read_text(encoding="utf-8")
 source_version = re.search(r'CLIENT_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)"', version_header)
 check(source_version is not None, "canonical client version is missing")
@@ -91,7 +91,8 @@ deployment = subprocess.run(
     stderr=subprocess.PIPE,
     check=False,
 )
-check(deployment.returncode == 0, "operator --deployment-info failed")
+check(deployment.returncode == 0,
+      f"operator --deployment-info failed: {deployment.stderr.strip()}")
 info = json.loads(deployment.stdout)
 check(info["binary_role"] == "operator-portal", "wrong operator role")
 check(info["client_version"] == source_version.group(1),
