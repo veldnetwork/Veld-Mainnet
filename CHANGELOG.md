@@ -2,6 +2,10 @@
 
 ### Deployed portal and hosted wallet updates
 
+- Fit the portal's compact bottom navigation within the phone's safe area and
+  keep page content and the More menu above it. Move Log out from the header
+  into More, with access on mobile, desktop, and before the first machine is paired.
+
 - Number topology labels consecutively within each currently displayed role.
   Close numbering gaps as peers leave, and keep graph order consistent when
   switching paired machines. Saved registry indices no longer determine the
