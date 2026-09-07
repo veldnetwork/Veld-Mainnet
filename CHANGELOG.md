@@ -2,6 +2,16 @@
 
 ### Deployed portal and hosted wallet updates
 
+- Simplify wallet cleanup with optional help, a charcoal action button, and concise
+  output guidance. Include consolidation and other fee-bearing activity in Sent/Fees
+  and retain small fees in row and summary displays.
+- Use the same target-implied network hashrate estimate and precision in the wallet
+  and Explorer. Refresh the Explorer node count every five seconds independently
+  of block height, with bounded reads and explicit unavailable/stale handling.
+- Trim trailing zeros from Explorer fee totals. Display the mining card reward
+  as 3.13 VELD with its exact value in help, and distinguish Miner in green
+  and Vault in gold. Reward issuance and distribution amounts are unchanged.
+
 - Format wallet governance rules as wrapping cards on phones and a two-column
   layout on larger screens, preserving the existing rule text.
 - Label verified many-input, single-output self transfers as Consolidation in
