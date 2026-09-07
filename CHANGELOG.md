@@ -16,6 +16,9 @@ are tracked separately; publishing source does not release new binaries.
 
 ### Deployed portal and hosted wallet updates
 
+- Match light-mode action buttons throughout the wallet to the light-grey My
+  Wallet palette, including login, forms, governance, and installation controls.
+
 - Remove the oversized blank strip below the portal's mobile tabs. Keep the
   navbar anchored to the bottom, with compact clearance and matching page/menu spacing.
 

@@ -2093,10 +2093,38 @@ html[data-theme="light"] #page-staking .tier-platinum{color:#667080!important;-w
 html[data-theme="light"] #page-staking .diamond-prismatic{color:#2E8692!important;-webkit-text-fill-color:#2E8692!important}
 html[data-theme="light"] .balance-hero,html[data-theme="light"] .wallet-bal-hero,html[data-theme="light"] .bv-lp-hero{background:#fff!important;border:1px solid #cfd1d0!important;border-top-color:#cfd1d0!important;border-radius:10px!important;box-shadow:0 12px 30px rgba(18,21,20,.07)!important;animation:none!important}
 html[data-theme="light"] .wallet-bal-hero .balance-amount,html[data-theme="light"] .balance-amount#w-total-bal{background:none!important;-webkit-background-clip:initial!important;background-clip:initial!important;-webkit-text-fill-color:#121514!important;color:#121514!important;text-shadow:none!important}
-html[data-theme="light"] .btn-em,html[data-theme="light"] .btn-gold,html[data-theme="light"] #pwa-install-btn,html[data-theme="light"] .wallet-bal-hero .ar{background:#303832!important;color:#fff!important;border:1px solid #59645b!important;border-radius:9px!important;box-shadow:inset 0 1px rgba(255,255,255,.05)!important;filter:none!important}
-html[data-theme="light"] .btn-em:hover,html[data-theme="light"] .btn-gold:hover,html[data-theme="light"] #pwa-install-btn:hover,html[data-theme="light"] .wallet-bal-hero .ar:hover{background:#3a443c!important;border-color:#6a756d!important;box-shadow:none!important;filter:none!important}
-html[data-theme="light"] .wallet-bal-hero .ar .ic{background:transparent!important;color:#fff!important;box-shadow:none!important}
-html[data-theme="light"] .wallet-bal-hero .ar .lbl{color:#fff!important}
+/* Light-mode action buttons share the My Wallet palette. */
+html[data-theme="light"] .btn-em,
+html[data-theme="light"] .btn-gold,
+html[data-theme="light"] .wallet-bal-hero .ar,
+html[data-theme="light"] #height-mob,
+html[data-theme="light"] #height-mob.hm-login,
+html[data-theme="light"] #mobile-status .theme-tog,
+html[data-theme="light"] .pwa-sheet-close,
+html[data-theme="light"] body #pwa-install-banner #pwa-install-btn{
+  background:#dfe5e0!important;
+  color:#172119!important;
+  -webkit-text-fill-color:#172119!important;
+  border:1px solid #b9c7bb!important;
+  border-radius:9px!important;
+  box-shadow:none!important;
+  filter:none!important;
+}
+html[data-theme="light"] .btn-em:hover,
+html[data-theme="light"] .btn-gold:hover,
+html[data-theme="light"] .wallet-bal-hero .ar:hover,
+html[data-theme="light"] #height-mob:hover,
+html[data-theme="light"] #height-mob.hm-login:hover,
+html[data-theme="light"] #mobile-status .theme-tog:hover,
+html[data-theme="light"] .pwa-sheet-close:hover,
+html[data-theme="light"] body #pwa-install-banner #pwa-install-btn:hover{
+  background:#d3ddd5!important;
+  border-color:#91ad96!important;
+  box-shadow:none!important;
+  filter:none!important;
+}
+html[data-theme="light"] .wallet-bal-hero .ar .ic{background:transparent!important;color:#172119!important;box-shadow:none!important}
+html[data-theme="light"] .wallet-bal-hero .ar .lbl{color:#172119!important}
 html[data-theme="light"] .btn-ghost,html[data-theme="light"] .copy-btn,html[data-theme="light"] .pag-btn{background:#fafafa!important;color:#121514!important;border:1px solid #cfd1d0!important;border-radius:8px!important}
 html[data-theme="light"] input,html[data-theme="light"] select,html[data-theme="light"] textarea,html[data-theme="light"] .form-input,html[data-theme="light"] .bv-io{background:#fafafa!important;color:#121514!important;border:1px solid #cfd1d0!important;border-radius:9px!important;box-shadow:none!important}
 html[data-theme="light"] input::placeholder,html[data-theme="light"] textarea::placeholder{color:#696f6c!important;opacity:.82!important}
@@ -2108,7 +2136,6 @@ html[data-theme="light"] .modal,html[data-theme="light"] .pwa-sheet-card{backgro
 html[data-theme="light"] .bv-overview,html[data-theme="light"] .bv-redemption,html[data-theme="light"] .bv-tabs,html[data-theme="light"] .bv-address-layout,html[data-theme="light"] .bv-aside,html[data-theme="light"] .bv-rate,html[data-theme="light"] .bv-curve,html[data-theme="light"] .bv-launch-progress{background:#fafafa!important;border-color:#d2d4d3!important;color:#121514!important}
 html[data-theme="light"] #mobile-status{background:rgba(239,239,239,.98)!important;border-bottom:1px solid #d2d4d3!important;box-shadow:none!important}
 html[data-theme="light"] #mobile-status,html[data-theme="light"] #mobile-status *{color:#121514!important}
-html[data-theme="light"] #height-mob.hm-login,html[data-theme="light"] #height-mob{background:#303832!important;color:#fff!important;border:1px solid #59645b!important;box-shadow:none!important}
 html[data-theme="light"] #mobile-nav{background:rgba(239,239,239,.98)!important;border-top:1px solid #d2d4d3!important;box-shadow:none!important}
 html[data-theme="light"] .mob-tab{color:#4f5753!important}
 html[data-theme="light"] .mob-tab.active,html[data-theme="light"] .mob-tab.active .mob-icon{color:#168b4b!important;filter:none!important;transform:none!important}
