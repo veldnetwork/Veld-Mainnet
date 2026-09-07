@@ -6,8 +6,7 @@
   layout on larger screens, preserving the existing rule text.
 - Label verified many-input, single-output self transfers as Consolidation in
   wallet Activity and recent transactions. Preserve transfer amounts and fees;
-  ordinary self transfers remain distinct. No automatic cleanup or validator
-  exit policy changes.
+  ordinary self transfers remain distinct. Validator exit rules are unchanged.
 
 - Keep one full network topology chart visible on the portal Network tab.
   Restore the original chart layout and peer-class counts; remove the separate
@@ -27,6 +26,12 @@
 - Match the balance's VELD unit typography between light and dark themes.
 - Publish the hosted wallet stylesheet and compatibility overlay alongside
   the application source. These web updates do not change the client version.
+
+- Make wallet cleanup manual by default, with a visible automatic-cleanup opt-in
+  for this browser. Restore the fragmentation warning and Consolidate now action,
+  explain transaction fees and confirmation waits, and stop new automatic batches
+  after opt-out, wallet locking or switching, or another operation starting.
+  Existing implicit automatic-cleanup settings do not enable the new option.
 
 ### Awaiting the next Windows client release
 

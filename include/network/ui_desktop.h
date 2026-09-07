@@ -2813,6 +2813,21 @@ __VELD_DEPLOYMENT_BANNER_HTML__
       </div>
     </div>
 
+    <!-- Wallet cleanup is manual unless explicitly enabled in this browser. -->
+    <div class="card" id="w-cleanup-card" style="margin-top:14px;min-width:0">
+      <div class="card-title">Wallet cleanup <span id="w-utxo-dust-chip" style="display:none;font-weight:400"></span></div>
+      <p style="color:var(--muted);line-height:1.6;margin-bottom:12px">Consolidation combines spendable outputs into fewer outputs in your own wallet. Each cleanup transaction pays a network fee. Large cleanups may use several transactions, and funds being combined are unavailable until confirmed.</p>
+      <div id="w-utxo-consolidate" style="display:none;margin-bottom:12px" role="status"><span id="w-utxo-dust-msg" style="color:var(--gold);line-height:1.6;overflow-wrap:anywhere"></span></div>
+      <button class="btn" id="w-utxo-consolidate-btn" data-act-click="hconsolidate">Consolidate now</button>
+      <div id="w-utxo-consolidate-msg" aria-live="polite" style="margin-top:10px;overflow-wrap:anywhere"></div>
+      <label for="w-auto-consolidate" style="display:flex;align-items:center;gap:12px;margin-top:16px;min-height:44px;cursor:pointer;font-weight:600">
+        <input type="checkbox" id="w-auto-consolidate" data-act-change="hauto_consolidate" aria-describedby="w-auto-consolidate-help w-auto-consolidate-pref-status" style="width:20px;height:20px;flex:none;margin:0;accent-color:var(--em)">
+        <span>Automatic cleanup (optional)</span>
+      </label>
+      <p id="w-auto-consolidate-help" style="color:var(--muted);line-height:1.6;margin-top:8px">Off by default. Enabling this authorizes automatic cleanup transactions and their network fees for wallets you unlock in this browser. It runs while this wallet app is open. Turning it off stops new batches; a transaction already in progress may still complete.</p>
+      <div id="w-auto-consolidate-pref-status" role="status" style="color:var(--muted);line-height:1.6;margin-top:8px;overflow-wrap:anywhere">Manual cleanup is selected.</div>
+    </div>
+
     <!-- UTXOs + recent transactions -->
     <div class="row2" style="grid-template-columns:1fr 1fr">
       <div class="card">
@@ -9758,13 +9773,7 @@ function loadWalletAddr(addr) {
   // check for dust UTXOs to surface the
   // Consolidate prompt.
   try { loadDustUtxoCount(); } catch(_){}
-  // auto-consolidate-on-receive: after every balance
-  // refresh, if the wallet is fragmented past the threshold AND the
-  // keystore is unlocked AND no other op is running, start a
-  // background consolidation. This is the "never-fragment" universal
-  // fix: the user's UTXO set is kept under the mempool MAX_TX_SIZE
-  // ceiling silently, so they never hit the "send freezes" failure
-  // mode in the first place.
+  // Automatic cleanup requires an explicit saved opt-in.
   try { autoConsolidateMaybe(); } catch(_){}
 }
 
@@ -9780,12 +9789,15 @@ function loadWalletAddr(addr) {
 // 1-2 VELD UTXOs unable to send and unable to consolidate (the chip
 // never appeared for them).
 function loadDustUtxoCount() {
+  renderAutoConsolidatePreference();
   if (!currentAddr) return;
+  var address = currentAddr;
   var chip = document.getElementById('w-utxo-dust-chip');
   var row  = document.getElementById('w-utxo-consolidate');
   var msg  = document.getElementById('w-utxo-dust-msg');
   if (!chip || !row || !msg) return;
-  rpc('getdustutxocount', [currentAddr, '5.0']).then(function(d) {
+  rpc('getdustutxocount', [address, '5.0']).then(function(d) {
+    if (currentAddr !== address) return;
     var dust = parseInt(d && d.dust_count || 0, 10) || 0;
     var dustVeld = parseFloat(d && d.dust_value_veld || 0) || 0;
     var total = parseInt(d && d.total_count || 0, 10) || 0;
@@ -9811,66 +9823,65 @@ function loadDustUtxoCount() {
   });
 }
 
-// ============================================================================
-// AUTO-CONSOLIDATE-ON-RECEIVE
-// ============================================================================
-// Background task that keeps the wallet's UTXO count below the mempool
-// MAX_TX_SIZE ceiling (~180 PQ-signed inputs per TX). Without this,
-// long-running miners' wallets accumulate hundreds of small lottery-win
-// UTXOs (~1.7 VELD avg), and any non-trivial send eventually exceeds
-// the per-TX byte cap → send fails. Manual consolidation works but is
-// reactive; this version is preventive.
-//
-// Invariants the user can rely on:
-//   * Runs ONLY when the keystore is unlocked (no auto-action with a
-//     locked wallet — your key never gets used without you signing in).
-//   * Runs ONLY when no other operation is in flight (won't race a
-//     manual send/stake/vote — checks __opActiveAny()).
-//   * One in-flight batch at a time per wallet, gated by
-//     __autoConsolidateActive flag.
-//   * Strict opt-out via localStorage: window.localStorage.setItem(
-//     'veld_auto_consolidate', 'false') disables it permanently for
-//     this browser profile.
-//   * Soft-fails — any error logs to console and waits for the next
-//     trigger; does NOT pop a modal or interrupt the user.
-//
-// Trigger surface: called from the end of loadWalletAddr() (which
-// fires on unlock, after sends, after stakes, and on the wallet-tab
-// periodic refresh). So it naturally fires "on receive" — every
-// balance refresh is a chance for a new UTXO that nudged the count
-// over the threshold.
-//
-// Per-batch cap: 150 inputs (matches the manual consolidator's
-// 1.05-MB-per-TX safety margin under MAX_TX_SIZE).
-var __autoConsolidateActive  = false;
-var __autoConsolidateLastRun = 0;          // ms epoch of last run start
-// bumped re-trigger gap from 60s to 5min to give the chain
-// time to confirm prior consolidation outputs before scoring the wallet
-// as "still fragmented" again. With a 60s gap, every balance refresh
-// after a batch confirmed would re-evaluate dust count and potentially
-// re-trigger, blocking the user's spendable in pending TXs perpetually.
-// v2.7.2 — aggressive auto-consolidate. Operator policy: users should
-// never have to manually click Consolidate. Pinning the triggers to
-// the previous "deeply fragmented" thresholds (250 total / 50 dust)
-// meant wallets routinely reached a state where sends would fail
-// before auto-consolidate kicked in. New thresholds fire much earlier
-// so dust never builds up. The 5-minute min gap and per-batch cap
-// remain unchanged — those are pacing safety, not policy. Background
-// scheduler below also forces a tick every 30 minutes regardless of
-// balance-refresh triggers, so wallets that the user leaves idle
-// still get consolidated.
+// Optional automatic cleanup. Existing implicit/legacy settings do not opt in.
+// Preferences are browser-local; no private keys or preferences go to the node.
+var __autoConsolidateActive = false;
+var __autoConsolidateChecking = false;
+var __autoConsolidateLastRun = 0;
+var __autoConsolidatePreferenceRevision = 0;
+var __autoConsolidateStorageFailed = false;
+var AUTO_CONSOLIDATE_PREFERENCE = 'veld_auto_consolidate_opt_in_v1';
 var __autoConsolidateMinGapMs = 5 * 60 * 1000;
-var AUTO_CONSOLIDATE_TRIGGER_TOTAL = 20;   // v2.7.2: 250 → 20 (any moderate wallet auto-consolidates)
-var AUTO_CONSOLIDATE_TRIGGER_DUST  = 5;    // v2.7.2: 50 → 5 (any wallet with 5+ dust UTXOs auto-consolidates)
+var AUTO_CONSOLIDATE_TRIGGER_TOTAL = 20;
+var AUTO_CONSOLIDATE_TRIGGER_DUST = 5;
 var AUTO_CONSOLIDATE_THRESHOLD_VELD = '5.0';
-var AUTO_CONSOLIDATE_PER_BATCH      = 150;
+var AUTO_CONSOLIDATE_PER_BATCH = 150;
 
 function autoConsolidateEnabled() {
-  try {
-    var v = localStorage.getItem('veld_auto_consolidate');
-    return v === null ? true : (v !== 'false');
-  } catch(_) { return true; }
+  if (__autoConsolidateStorageFailed) return false;
+  try { return localStorage.getItem(AUTO_CONSOLIDATE_PREFERENCE) === 'true'; }
+  catch (_) { return false; }
 }
+
+function renderAutoConsolidatePreference() {
+  var enabled = autoConsolidateEnabled();
+  var input = document.getElementById('w-auto-consolidate');
+  var status = document.getElementById('w-auto-consolidate-pref-status');
+  if (input) input.checked = enabled;
+  if (status) status.textContent = __autoConsolidateStorageFailed
+    ? 'Could not save this setting. Automatic cleanup is off for this session. Retry before closing the app to save your choice.'
+    : (enabled ? 'Automatic cleanup is enabled in this browser. An unlocked wallet is required.' : 'Manual cleanup is selected. Automatic cleanup is off.');
+}
+
+function setAutoConsolidatePreference(enabled) {
+  __autoConsolidatePreferenceRevision++;
+  try {
+    localStorage.setItem(AUTO_CONSOLIDATE_PREFERENCE, enabled === true ? 'true' : 'false');
+    __autoConsolidateStorageFailed = false;
+  } catch (_) { __autoConsolidateStorageFailed = true; }
+  renderAutoConsolidatePreference();
+}
+
+function autoConsolidateContextReady(keyHex, address, revision, ownsLock) {
+  if (!autoConsolidateEnabled() || currentAddr !== address || !address ||
+      revision !== __autoConsolidatePreferenceRevision) return false;
+  var unlocked = (typeof __veldKey !== 'undefined' && __veldKey.get) ? __veldKey.get() : '';
+  if (!keyHex || keyHex.length !== 64 || unlocked !== keyHex) return false;
+  if (typeof __opLocks !== 'undefined' && __opLocks) {
+    for (var name in __opLocks) {
+      if (__opLocks[name] && !(ownsLock && name === 'consolidate')) return false;
+    }
+  }
+  return true;
+}
+
+window.addEventListener('storage', function(event) {
+  if (event.key === AUTO_CONSOLIDATE_PREFERENCE || event.key === null) {
+    __autoConsolidatePreferenceRevision++;
+    renderAutoConsolidatePreference();
+  }
+});
+setTimeout(renderAutoConsolidatePreference, 0);
 
 function autoConsolidateNotify(html) {
   var el = document.getElementById('auto-consolidate-status');
@@ -9893,127 +9904,78 @@ function autoConsolidateNotify(html) {
 }
 
 function autoConsolidateMaybe() {
-  if (!autoConsolidateEnabled())            return;
-  if (__autoConsolidateActive)              return;
+  if (!autoConsolidateEnabled() || __autoConsolidateActive || __autoConsolidateChecking) return;
   var now = Date.now();
   if (now - __autoConsolidateLastRun < __autoConsolidateMinGapMs) return;
-  if (!currentAddr)                         return;
+  var address = currentAddr;
+  var revision = __autoConsolidatePreferenceRevision;
   var keyHex = (typeof __veldKey !== 'undefined' && __veldKey.get) ? __veldKey.get() : '';
-  if (!keyHex || keyHex.length !== 64)      return;  // need unlocked keystore
-  // Don't race with any user-initiated op — `send`, `consolidate`,
-  // stake/unstake, gov, validator, etc. __opLocks is the wallet's
-  // shared lock map (ui_desktop.h:9428); read it directly since
-  // there's no public "is locked" helper.
-  var conflicts = ['send','consolidate','stake','unstake',
-                   'validator-register','validator-deregister'];
-  for (var ci = 0; ci < conflicts.length; ci++) {
-    if (typeof __opLocks !== 'undefined' && __opLocks && __opLocks[conflicts[ci]]) return;
-  }
+  if (!autoConsolidateContextReady(keyHex, address, revision, false)) return;
+  __autoConsolidateChecking = true;
   __autoConsolidateLastRun = now;
-  // gate on pending in/out. If the user already has a
-  // consolidation TX (or any TX) sitting in mempool, those inputs are
-  // locked from spending; firing another consolidation right now would
-  // (a) potentially fail because the inputs it'd want are pending-spent
-  // already, and (b) needlessly extend the user's "spendable < balance"
-  // window that's blocking their next send. Wait until the chain has
-  // settled the prior batches before considering another one.
-  rpc('getbalance', [currentAddr]).then(function(bal){
-    var pendingIn  = parseFloat(bal && bal.pending_in_veld  || 0) || 0;
-    var pendingOut = parseFloat(bal && bal.pending_out_veld || 0) || 0;
-    if (pendingIn > 0 || pendingOut > 0) {
-      // Something's mid-flight (either user's send, or a prior auto-
-      // consolidate batch). Defer.
-      return null;
-    }
-    return rpc('getdustutxocount', [currentAddr, AUTO_CONSOLIDATE_THRESHOLD_VELD]);
-  }).then(function(d){
-    if (!d) return;  // deferred
-    var total = parseInt(d && d.total_count || 0, 10) || 0;
-    var dust  = parseInt(d && d.dust_count  || 0, 10) || 0;
-    // Healthy wallet — nothing to do. With raised trigger thresholds
-    // (250 total OR 50 dust) only deeply fragmented wallets fire.
+  return Promise.resolve().then(function() {
+    return rpc('getbalance', [address]);
+  }).then(function(bal) {
+    if (!autoConsolidateContextReady(keyHex, address, revision, false)) return null;
+    if (!bal || typeof bal !== 'object') return null;
+    var pendingIn = Number(bal && bal.pending_in_veld);
+    var pendingOut = Number(bal && bal.pending_out_veld);
+    if (!Number.isFinite(pendingIn) || !Number.isFinite(pendingOut) || pendingIn !== 0 || pendingOut !== 0) return null;
+    return rpc('getdustutxocount', [address, AUTO_CONSOLIDATE_THRESHOLD_VELD]);
+  }).then(function(d) {
+    if (!d || !autoConsolidateContextReady(keyHex, address, revision, false)) return;
+    var total = Number(d.total_count), dust = Number(d.dust_count);
+    if (!Number.isSafeInteger(total) || !Number.isSafeInteger(dust) || total < 0 || dust < 0 || dust > total) return;
     if (total <= AUTO_CONSOLIDATE_TRIGGER_TOTAL && dust < AUTO_CONSOLIDATE_TRIGGER_DUST) return;
-    autoConsolidateRun(
-      keyHex, total,
-      total > 24 ? '0' : AUTO_CONSOLIDATE_THRESHOLD_VELD
-    );
-  }).catch(function(){});
+    return autoConsolidateRun(keyHex, address, revision, total, total > 24 ? '0' : AUTO_CONSOLIDATE_THRESHOLD_VELD);
+  }).catch(function() {}).then(function() { __autoConsolidateChecking = false; });
 }
 
-function autoConsolidateRun(keyHex, totalAtStart, thresholdVeld) {
+function autoConsolidateRun(keyHex, address, revision, totalAtStart, thresholdVeld) {
+  if (__autoConsolidateActive || !autoConsolidateContextReady(keyHex, address, revision, false)) return;
+  var guard = _veldAddrToHash160Hex(address);
+  if (!__opLock('consolidate', ['w-utxo-consolidate-btn'], 'Cleaning up…')) return;
   __autoConsolidateActive = true;
-  var allowed = [_veldAddrToHash160Hex(currentAddr)];
-  var guard   = _veldAddrToHash160Hex(currentAddr);
-  var sweptInputs = 0;
-  var batchN = 0;
-  var batchTxids = [];
+  var sweptInputs = 0, batchN = 0;
 
   function runBatch() {
+    // Recheck opt-in, unlocked identity and every operation lock before each batch.
+    if (!autoConsolidateContextReady(keyHex, address, revision, true)) return Promise.resolve();
     batchN++;
-    autoConsolidateNotify(
-      '<b>⟳ Auto-consolidating UTXOs</b> &middot; batch ' + batchN +
-      ' &middot; ' + sweptInputs + ' swept so far' +
-      (totalAtStart ? ' / ~' + totalAtStart + ' total' : '')
-    );
-    return signAndBroadcast(
-      'prepareconsolidatetx',
-      [currentAddr, String(AUTO_CONSOLIDATE_PER_BATCH), thresholdVeld],
-      keyHex,
-      null, guard, allowed,
-      function(i, n) {
-        autoConsolidateNotify(
-          '<b>⟳ Auto-consolidating</b> &middot; batch ' + batchN +
-          ' &middot; signing ' + i + '/' + n + '&hellip;' +
-          (sweptInputs ? '<br><span style="font-size:10.5px;opacity:.75">' +
-            sweptInputs + ' inputs swept in ' + (batchN-1) + ' prior batches</span>' : '')
-        );
-      }, ''
-    ).then(function(r){
-      var inputs = r.inputs_consolidated || (r.inputs && r.inputs.length) || 0;
-      if (inputs <= 0) return null;          // nothing left
+    autoConsolidateNotify('<b>Automatic cleanup</b> &middot; batch ' + batchN + ' &middot; ' + sweptInputs + ' inputs combined');
+    return Promise.resolve().then(function() {
+      if (!autoConsolidateContextReady(keyHex, address, revision, true)) return null;
+      return signAndBroadcast('prepareconsolidatetx', [address, String(AUTO_CONSOLIDATE_PER_BATCH), thresholdVeld],
+        keyHex, null, guard, [guard], function(i, n) {
+          autoConsolidateNotify('<b>Automatic cleanup</b> &middot; batch ' + batchN + ' &middot; signing ' + i + '/' + n);
+        }, '');
+    }).then(function(r) {
+      var inputs = r && (r.inputs_consolidated || (r.inputs && r.inputs.length)) || 0;
+      if (inputs <= 0) return;
       sweptInputs += inputs;
-      if (r.txid) batchTxids.push(r.txid);
-      // Inter-batch pause so the previous TX hits this node's mempool
-      // before the next prepareconsolidatetx queries spent-UTXOs.
-      return new Promise(function(resolve){ setTimeout(resolve, 800); })
-        .then(runBatch);
+      return new Promise(function(resolve) { setTimeout(resolve, 800); }).then(runBatch);
     });
   }
 
-  runBatch().then(function(){
-    if (sweptInputs > 0) {
-      autoConsolidateNotify(
-        '<b>✓ Auto-consolidate complete</b> &middot; ' + sweptInputs +
-        ' UTXOs merged across ' + batchTxids.length + ' TX(s).' +
-        '<br><span style="font-size:10.5px;opacity:.75">Future sends will be fast. ' +
-        'This banner will hide in 12 s.</span>'
-      );
-      setTimeout(function(){ autoConsolidateNotify(null); }, 12000);
-      try { if (currentAddr) loadWalletAddr(currentAddr); } catch(_){}
-    } else {
-      autoConsolidateNotify(null);
-    }
+  function finish() {
     __autoConsolidateActive = false;
-  }).catch(function(e){
-    try { console.warn('[auto-consolidate] halted:', e && e.message); } catch(_){}
+    __opUnlock('consolidate', ['w-utxo-consolidate-btn']);
     autoConsolidateNotify(null);
-    __autoConsolidateActive = false;
+    if (sweptInputs > 0 && currentAddr === address) {
+      var msg = document.getElementById('w-utxo-consolidate-msg');
+      if (msg) msg.textContent = 'Automatic cleanup submitted transactions combining ' + sweptInputs + ' inputs. Funds become spendable after confirmation.';
+      try { loadWalletAddr(address); } catch (_) {}
+    }
+  }
+  return Promise.resolve().then(runBatch).then(finish, function(e) {
+    try { console.warn('[auto-consolidate] halted:', e && e.message); } catch (_) {}
+    finish();
   });
 }
 
-// v2.7.2 — IDLE-WALLET PERIODIC TICK
-// The autoConsolidateMaybe() call at the end of loadWalletAddr() only
-// fires when the user is actively in the wallet (send, stake, vote,
-// unlock, tab refresh). A user who leaves the mining client open with
-// the Dashboard tab visible accumulates UTXOs all day without any
-// auto-consolidate firing, because loadWalletAddr() never gets called.
-// This 30-minute background tick guarantees that an idle wallet still
-// auto-consolidates as soon as the trigger thresholds are crossed.
-// All the same locks + gates inside autoConsolidateMaybe() still apply
-// (keystore unlocked, no other op in flight, no pending TX, min-gap),
-// so this tick can't race or duplicate work.
-setInterval(function(){
-  try { autoConsolidateMaybe(); } catch(_){}
+// An idle page also checks every 30 minutes, subject to the same explicit opt-in.
+setInterval(function() {
+  try { autoConsolidateMaybe(); } catch (_) {}
 }, 30 * 60 * 1000);
 
 // Consolidate-dust handler.
@@ -16210,6 +16172,7 @@ if ('serviceWorker' in navigator) {
   window.__veldActsInstalled = true;
   var ACTIONS = {
     change: {
+      hauto_consolidate: function(event){ setAutoConsolidatePreference(this.checked === true); },
       hcb0b1bc5: function(event){ handleKeystoreFileImport(this) },
       h3359778f: function(event){ updateTierPreview(); updateYieldProjection(); },
       h5d853ce4: function(event){ toggleStaySignedIn(this.checked) },
@@ -16704,6 +16667,7 @@ init();
   window.__veldActsInstalled = true;
   var ACTIONS = {
     change: {
+      hauto_consolidate: function(event){ setAutoConsolidatePreference(this.checked === true); },
       hcb0b1bc5: function(event){ handleKeystoreFileImport(this) },
       h3359778f: function(event){ updateTierPreview(); updateYieldProjection(); },
       h5d853ce4: function(event){ toggleStaySignedIn(this.checked) },
@@ -17169,6 +17133,7 @@ async function completeSetup(){
   window.__veldActsInstalled = true;
   var ACTIONS = {
     change: {
+      hauto_consolidate: function(event){ setAutoConsolidatePreference(this.checked === true); },
       hcb0b1bc5: function(event){ handleKeystoreFileImport(this) },
       h3359778f: function(event){ updateTierPreview(); updateYieldProjection(); },
       h5d853ce4: function(event){ toggleStaySignedIn(this.checked) },
