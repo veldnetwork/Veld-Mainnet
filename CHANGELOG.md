@@ -1,6 +1,11 @@
-# Current source — 2026-09-06
+# Current source — 2026-09-07
 
 ### Deployed portal and hosted wallet updates
+
+- Number topology labels consecutively within each currently displayed role.
+  Close numbering gaps as peers leave, and keep graph order consistent when
+  switching paired machines. Saved registry indices no longer determine the
+  chart labels; identity matching and connection data are preserved.
 
 - Follow address-history cursors in Activity so older sends remain visible in
   Sent/Fees after newer mining rewards. Retain small fees, show incomplete reads
