@@ -2,10 +2,10 @@
 
 `obsidian-moss-v1.css` is the current stylesheet served by the public wallet.
 Its SHA-256 is
-`4da187f9345a658c0999e6a644bfe4cf9edfacb7e8fbc1664a15eb5e3b49604c`.
+`bd5dbeb0adb2116ac3f786294422d684f45e205ad1981f1477ce540e2f61f18e`.
 The live asset uses the content-addressed name
-`obsidian-moss-4da187f9345a.css` so existing browser caches cannot retain the
-previous dark-theme balance-unit override.
+`obsidian-moss-bd5dbeb0adb2.css` so existing browser caches cannot retain the
+previous light-mode button colors.
 
 The application HTML and JavaScript live in
 [`include/network/ui_desktop.h`](../../include/network/ui_desktop.h).
@@ -14,7 +14,7 @@ The portal frontend lives in
 
 The public wallet's existing backend also uses a narrow nginx compatibility
 overlay. Its current source is
-[`veld-wallet-ui.conf`](../reverse-proxy/veld-wallet-ui.conf). It removes the
+[`veld-wallet-ui-current.conf`](../reverse-proxy/veld-wallet-ui-current.conf). It removes the
 old Auto-compound implementation and the old balance-unit override from that
 backend's HTML response. The source header already contains these changes;
 the overlay preserves the running backend while the web UI is updated.

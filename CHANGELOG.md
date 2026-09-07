@@ -13,6 +13,11 @@ are tracked separately; publishing source does not release new binaries.
 - Add regression coverage for worker allocation, wraparound, and random-source
   failure. Consensus rules, rewards, and the block-2,880 activation are unchanged.
 
+### Wallet
+
+- Include the current light-mode action-button palette in the desktop wallet
+  and retain the corresponding hosted stylesheet and proxy overlay.
+
 ### Repository maintenance
 
 - Organize developer, operator, release, and security documentation.
@@ -23,6 +28,9 @@ are tracked separately; publishing source does not release new binaries.
 ## Source maintenance - 2026-09-07
 
 ### Deployed portal and hosted wallet updates
+
+- Match light-mode action buttons throughout the wallet to the light-grey My
+  Wallet palette, including login, forms, governance, and installation controls.
 
 - Remove the oversized blank strip below the portal's mobile tabs. Keep the
   navbar anchored to the bottom, with compact clearance and matching page/menu spacing.
