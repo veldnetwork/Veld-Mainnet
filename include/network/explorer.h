@@ -2800,26 +2800,52 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="syncing">16. Syncing &amp; trust</h2>
-  <p>Veld 3.0.8 public-mainnet nodes can start from an <strong>official signed snapshot</strong> or perform a full IBD from genesis. Snapshot bytes are consensus-replayed locally before use and are bound to this deployment, genesis, launch-chain anchor, height, tip, and complete state schema.</p>
-  <p>A snapshot is an availability optimization, not a consensus authority. RPC, inbound P2P, explorer, mining, and validator signing remain quarantined while an independent genesis IBD downloads and validates every block and proof of work into a separate chainstate. Those services activate only after the independent chain reaches the exact snapshot tip and complete state digest.</p>
-  <p>If the signed snapshot is missing, stale, malformed, from a different chain, or fails validation, the client rejects it and falls back to ordinary peer synchronization. <code>--full-ibd</code> or <code>--no-snapshot</code> always selects validation from genesis without importing a snapshot.</p>
-  <p>Before validator finality activates, a fresh node relies on independently verified proof of work and the bounded reorganization horizon. After it observes a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that locally verified floor and rejects histories that conflict with it.</p>
+  <p>Veld validates the chain locally. An eligible clearnet start can use an <strong>official signed snapshot</strong>; otherwise, the node syncs from peers.</p>
+  <ul>
+    <li><strong>Before use:</strong> the node checks the snapshot signature, network identity and launch anchor, then rebuilds its stored state locally.</li>
+    <li><strong>Independent verification:</strong> a separate sync checks every block and proof of work from genesis. Mining, validator signing, RPC, the local explorer and inbound peer connections stay off until the snapshot height, block hash and complete state match.</li>
+    <li><strong>When complete:</strong> the node records the result and restarts once to enable its services. Mining still waits for normal peer synchronization.</li>
+  </ul>
+  <p><strong>At the tip does not mean fully verified.</strong> Independent validation can continue even when the displayed height matches the network.</p>
+  <details>
+    <summary>Sync options and trust</summary>
+    <p><code>--full-ibd</code> and <code>--no-snapshot</code> skip snapshot import. Previously imported data still requires validation; verified progress can be reused on restart. Tor-only mode syncs from peers without HTTPS snapshot downloads. If existing data fails startup checks, the node stops and reports the error.</p>
+    <p>A snapshot signature does not replace consensus checks. Before validator finality, nodes rely on verified proof of work and reorganization limits. Once a node verifies a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that checkpoint and rejects conflicting histories.</p>
+  </details>
 </div>
 
 )HTML";
-        // Bind the page to the exact chain it describes. The genesis hash is
-        // the chain's identity, so a Rules page can never be mistaken for one
-        // served by a different network. Deliberately the hash and not the
-        // profile name: the wording must read identically on every build.
+        // Render compiled identifiers with their matching RPC field names.
+        // The launch anchor distinguishes histories sharing the same genesis.
         std::ostringstream identity;
         identity << PAGE
                  << "<div class=\"card rule-card\">"
                     "<h2 id=\"chain-identity\">17. Chain identity</h2>"
-                    "<p>These rules describe the current launch-prep chain, whose genesis block is"
-                    " <code style=\"overflow-wrap:anywhere\">"
+                    "<p><strong>Network:</strong> <code>"
+                 << DEPLOYMENT_PROFILE_ID
+                 << "</code></p>";
+#if defined(VELD_PUBLIC_MAINNET)
+        identity << "<p><strong>Public mainnet launch:</strong> 2 September 2026.</p>";
+#endif
+        identity << "<p><strong>Genesis fingerprint:</strong>"
+                    "<code style=\"display:block;overflow-wrap:anywhere;white-space:normal\">"
                  << GENESIS_HASH
-                 << "</code>. A node that reports a different genesis is not"
-                     " this network, whatever a page says. The August 30 public network will publish a fresh genesis with the final signed release.</p></div>";
+                 << "</code></p>"
+                    "<details><summary>Verify a node's chain identity</summary>"
+                    "<p>Compare the <code>profile_id</code> and <code>genesis_fingerprint</code>"
+                    " fields from <code>getnetworkinfo</code> with the values above."
+                    " <code>getblockhash 0</code> displays the same genesis bytes in reverse order.</p>";
+#if defined(VELD_PUBLIC_MAINNET)
+        identity << "<p><strong>Launch-chain anchor (block "
+                 << SNAPSHOT_LAUNCH_ANCHOR_HEIGHT
+                 << "):</strong><code style=\"display:block;overflow-wrap:anywhere;white-space:normal\">"
+                 << SNAPSHOT_LAUNCH_ANCHOR_HASH
+                 << "</code>Check this with <code>getblockhash "
+                 << SNAPSHOT_LAUNCH_ANCHOR_HEIGHT
+                 << "</code>. Signed snapshots must match this launch history as well as the genesis fingerprint.</p>";
+#endif
+        identity << "<p>These identifiers confirm which chain is being checked; synchronization and independent validation must still complete.</p>"
+                    "</details></div>";
         return HttpResponse::HTML(
             HtmlWrapArcade("Rules", identity.str(), "rules"));
     }
