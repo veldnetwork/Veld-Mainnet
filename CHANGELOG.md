@@ -2,9 +2,11 @@
 
 ### Deployed portal and hosted wallet updates
 
-- Show the selected machine as This miner or This node with its reported
-  direct connections grouped by peer role. Keep the anonymous public network
-  overview separate so unrelated nodes are not mistaken for the selected miner.
+- Keep one full network topology chart visible on the portal Network tab.
+  Restore the original chart layout and peer-class counts; remove the separate
+  selected-machine chart and network-overview toggle.
+- Correct the collector registry for the operator-confirmed miners that the
+  legacy peer feed labeled as nodes because it omits role information.
 - Replace ambiguous inbound mapping Unavailable text with Not mapped,
   Not reported, or Not current as appropriate, and explain when outbound
   connections remain active. No router settings or miner processes change.
