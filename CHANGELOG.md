@@ -2,6 +2,12 @@
 
 ### Deployed portal and hosted wallet updates
 
+- Show the selected machine as This miner or This node with its reported
+  direct connections grouped by peer role. Keep the anonymous public network
+  overview separate so unrelated nodes are not mistaken for the selected miner.
+- Replace ambiguous inbound mapping Unavailable text with Not mapped,
+  Not reported, or Not current as appropriate, and explain when outbound
+  connections remain active. No router settings or miner processes change.
 - Add an Add machine action beside the portal's machine selector and in
   Settings, including installed PWA mode. Pairing retains existing machines
   and preserves the entered code through background status refreshes.
