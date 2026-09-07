@@ -2,6 +2,10 @@
 
 ### Deployed portal and hosted wallet updates
 
+- Shorten the homepage download instructions and update the Rules page's sync
+  explanation. Document independent snapshot verification, restart behavior,
+  and compiled chain identifiers with their matching RPC representations.
+
 - Simplify wallet cleanup with optional help, a charcoal action button, and concise
   output guidance. Include consolidation and other fee-bearing activity in Sent/Fees
   and retain small fees in row and summary displays.
