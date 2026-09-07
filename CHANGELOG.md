@@ -3,7 +3,15 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
-## Unreleased
+## 3.0.9 - 2026-09-07
+
+### Mining
+
+- Randomize each mining search's initial nonce so machines using the same
+  payout address can contribute independent work when their templates match.
+- Preserve all 64 nonce bits in mining results and progress reports.
+- Add regression coverage for worker allocation, wraparound, and random-source
+  failure. Consensus rules, rewards, and the block-2,880 activation are unchanged.
 
 ### Repository maintenance
 

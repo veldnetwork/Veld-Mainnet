@@ -23,6 +23,7 @@
 #include "../mining/veldhash.h"
 #include "../mining/genesis_pow.h"
 #include "../mining/preflight_selector.h"
+#include "../mining/nonce_search.h"
 #include "../consensus/staking.h"
 #include "../consensus/validators.h"
 #include "../consensus/btcveld_redeem_params.h"
@@ -188,7 +189,7 @@ struct MineBlockResult {
     double  elapsed_ms;
     uint64_t hashes_tried;
     std::string error;
-    uint32_t best_nonce{0};
+    uint64_t best_nonce{0};
     Hash256  best_hash{};
 };
 
@@ -501,7 +502,7 @@ inline MineBlockResult MineAndCommit(
 // current block height + best nonce/hash so the caller (VeldNode) can
 // publish them to tcp_server for the COMINE peer-handshake.
 using MiningProgressCb =
-    std::function<void(uint64_t height, uint32_t best_nonce, const Hash256& best_hash)>;
+    std::function<void(uint64_t height, uint64_t best_nonce, const Hash256& best_hash)>;
 
 using NmsBroadcastCb = std::function<void(const BlockHeader& )>;
 using MiningCandidatePreflight = std::function<bool(const Block&)>;
@@ -804,6 +805,12 @@ inline MineBlockResult MineOnly(
     mining::DatasetHandle ds_handle;
 #endif
 
+    uint64_t nonce_base = 0;
+    if (!mining::TryCreateMiningNonceBase(nonce_base)) {
+        result.error = "Mining search initialization failed: system randomness unavailable";
+        return result;
+    }
+
     unsigned N = num_threads > 0 ? num_threads : 1;
     if (N > 64) N = 64;
 
@@ -856,7 +863,7 @@ inline MineBlockResult MineOnly(
         uint64_t local_best_nonce = 0;
         uint64_t local_hashes = 0;
 
-        uint64_t nonce = worker_id;
+        uint64_t nonce = mining::MiningWorkerNonceStart(nonce_base, worker_id);
         while (!stop_local.load(std::memory_order_relaxed)) {
             if (stop && stop->load()) { stop_local = true; break; }
             if ((local_hashes & 63) == 0) {
@@ -870,7 +877,7 @@ inline MineBlockResult MineOnly(
             }
             if (header_generation.load(std::memory_order_acquire) != my_gen) {
                 rebuild_local();
-                nonce = worker_id;
+                nonce = mining::MiningWorkerNonceStart(nonce_base, worker_id);
                 continue;
             }
 
@@ -15223,7 +15230,7 @@ private:
                 MiningProgressCb progress_cb = nullptr;
                 if (tcp_server_) {
                     auto* tcp = tcp_server_.get();
-                    progress_cb = [tcp](uint64_t h, uint32_t n, const Hash256& bh) {
+                    progress_cb = [tcp](uint64_t h, uint64_t n, const Hash256& bh) {
                         tcp->UpdateMiningProgress(h, n, bh);
                     };
                 }

@@ -49,7 +49,7 @@ single profile to every test or add test hooks to a production build.
 
 | Area | Test families |
 | --- | --- |
-| Work and mining | `work_admission_*`, `local_work_*`, `mining_preflight_*`, `pow_*` |
+| Work and mining | `work_admission_*`, `local_work_*`, `mining_preflight_*`, `mining_nonce_*`, `pow_*` |
 | State and consensus | `security_consensus_*`, `snapshot_*`, `public_snapshot_*`, `staking_*`, `finality_*` |
 | btcVELD | `reserve_*`, `reopen_*`, `signing_policy_*`, `amm_market_seed_*` |
 | Network and RPC | `peer_*`, `rpc_*`, `connect_trust_*`, `trusted_proxy_*`, `punch_*` |

@@ -24,10 +24,10 @@ preserved. Validate against the complete expected response before applying
 it; account for the wallet's fresh per-response security nonce without
 removing or weakening its Content Security Policy.
 
-These hosted changes were deployed without a client version bump. The
-published Windows client remains 3.0.8. The Windows New pair code button
-layout in the current source is held for the next signed client release.
+These hosted changes were initially deployed without a client version bump.
+The 3.0.9 client package incorporates them and the Windows New pair code button
+layout correction alongside the mining update.
 
-The exact source for the existing signed client remains on GitHub's
-`release/3.0.8` branch. Current development source and web updates are on
-`main`; they do not retroactively change that release identity.
+The exact source for each signed client is retained on its release branch.
+Current development source and web updates are on `main`; they do not
+retroactively change an earlier release identity.

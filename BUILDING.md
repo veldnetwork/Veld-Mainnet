@@ -31,7 +31,7 @@ definitions are refused.
 
 The Linux `operator` role is the checked-in Python operations portal. Its
 controller byte-copies the reviewed source, verifies its Python bytecode and
-runtime dependencies, and requires its immutable 3.0.8/public-mainnet-v2
+runtime dependencies, and requires its immutable 3.0.9/public-mainnet-v2
 deployment identity. It is not a native consensus binary and therefore does
 not claim C++ preprocessor definitions.
 

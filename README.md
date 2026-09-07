@@ -24,7 +24,8 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
-The current client release is **3.0.8**. It includes the consensus upgrade
+The current client release is **3.0.9**. It includes independent mining searches
+for machines sharing a payout wallet and the consensus upgrade
 scheduled for **block 2,880**. Miners and node operators must use a compatible
 release before that height. See the [release notes](docs/release-notes.md).
 

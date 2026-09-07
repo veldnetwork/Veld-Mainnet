@@ -12,9 +12,9 @@ int main() {
 #error "version_identity_tests requires the public-mainnet profile"
 #endif
 
-    static_assert(std::string_view(CLIENT_VERSION) == "3.0.8",
+    static_assert(std::string_view(CLIENT_VERSION) == "3.0.9",
                   "public release version changed");
-    static_assert(std::string_view(CLIENT_USER_AGENT) == "/Veld:3.0.8/",
+    static_assert(std::string_view(CLIENT_USER_AGENT) == "/Veld:3.0.9/",
                   "P2P client identity changed independently");
 
     // Release identity is intentionally separate from consensus identity.
