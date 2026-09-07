@@ -1072,6 +1072,15 @@ html[data-theme="light"] .crumbs a{color:var(--cob-1)!important}
         "}\n"
         "document.getElementById(\'gsearch\').addEventListener(\'keydown\',function(e){if(e.key===\'Enter\')doSearch();});\n"
         "function fmt(n,dec){return parseFloat(n).toLocaleString(\'en-US\',{minimumFractionDigits:dec!==undefined?dec:2,maximumFractionDigits:dec!==undefined?dec:2});}\n"
+        R"JS(function fmtHashrate(h){
+  var n=Math.max(0,parseFloat(h)||0),unit='H/s';
+  if(n>=1e12){n/=1e12;unit='TH/s';}
+  else if(n>=1e9){n/=1e9;unit='GH/s';}
+  else if(n>=1e6){n/=1e6;unit='MH/s';}
+  else if(n>=1e3){n/=1e3;unit='KH/s';}
+  return fmt(n,2)+'<span class="u">'+unit+'</span>';
+}
+)JS"
         "function shortHash(h){return h?h.slice(0,8)+\'...\'+h.slice(-6):\'\';}\n"
         "function toggleExplorerMore(){var m=document.getElementById(\'explorer-more-menu\');m.style.display=m.style.display===\'block\'?\'none\':\'block\';}\n"
         "document.addEventListener(\'click\',function(e){var m=document.getElementById(\'explorer-more-menu\');if(m&&m.style.display===\'block\'&&!e.target.closest(\'#explorer-more-menu\')&&!e.target.closest(\'[data-act-click=\\\"ef4b2d1c3\\\"]\'))m.style.display=\'none\';});\n"
@@ -2385,7 +2394,7 @@ private:
 
         page << "<div class=\"stat-grid\">";
         page << "<div class=\"stat\"><div class=\"stat-label\">Block Height</div><div class=\"stat-value em\">" << height << "</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Block Reward</div><div class=\"stat-value gold\">" << std::fixed << std::setprecision(2) << reward << " VELD</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Block Reward</div><div class=\"stat-value gold\" title=\"Exact block reward: 3.13926940 VELD; displayed to two decimals without rounding\">" << std::fixed << std::setprecision(2) << (static_cast<double>(BLOCK_REWARD_UNITS / (VELD_UNITS / 100)) / 100.0) << " VELD</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Miner Share</div><div class=\"stat-value\">50%</div><div class=\"stat-sub\">of block reward</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Algorithm</div><div class=\"stat-value sm\">VeldHash</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Total Supply</div><div class=\"stat-value\">" << std::setprecision(2) << supply << "</div><div class=\"stat-sub\">/ 21,000,000 VELD</div></div>";
@@ -2395,9 +2404,9 @@ private:
         page << "<div class=\"card\" style=\"margin-top:18px\">";
         page << "<div class=\"card-title\">Coinbase Split</div>";
         page << "<div class=\"tbl-scroll\"><table class=\"tbl\"><thead><tr><th>Recipient</th><th>Share</th><th>Description</th></tr></thead><tbody>";
-        page << "<tr><td style=\"color:var(--em);font-weight:600\">Miner</td><td><strong>50%</strong></td><td>Direct reward to block finder</td></tr>";
+        page << "<tr><td style=\"color:var(--em)!important;-webkit-text-fill-color:var(--em)!important;font-weight:600\">Miner</td><td><strong>50%</strong></td><td>Direct reward to block finder</td></tr>";
         page << "<tr><td style=\"color:#4CB8FF;font-weight:600\">Co-Mining Pool</td><td><strong>20%</strong></td><td>Shared among uniformly drawn eligible near-miss miners every 100 blocks</td></tr>";
-        page << "<tr><td style=\"color:var(--gold);font-weight:600\">Vault</td><td><strong>20%</strong></td><td>Distributed to stakers every 480 blocks (daily)</td></tr>";
+        page << "<tr><td style=\"color:var(--gold)!important;-webkit-text-fill-color:var(--gold)!important;font-weight:600\">Vault</td><td><strong>20%</strong></td><td>Distributed to stakers every 480 blocks (daily)</td></tr>";
         page << "<tr><td style=\"color:#B07CFF;font-weight:600\">Validators</td><td><strong>10%</strong></td><td>Paid to active validators every 480 blocks (daily)</td></tr>";
         page << "</tbody></table></div></div>";
 
@@ -4726,8 +4735,33 @@ function doSearch(){var q=document.getElementById('gsearch').value.trim();if(!q)
 document.getElementById('gsearch-btn').addEventListener('click',doSearch);
 document.getElementById('gsearch').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});
 var knownH=0;
+var networkNodesPending = false, networkNodesAt = 0, explorerStatsPending = false;
+function refreshNetworkNodes() {
+  var el = document.getElementById('s-peers');
+  if (!el || document.hidden || networkNodesPending || Date.now() - networkNodesAt < 5000) return;
+  networkNodesPending = true; networkNodesAt = Date.now();
+  var controller = new AbortController(), timer = setTimeout(function() { controller.abort(); }, 5000);
+  return fetch('/api/v1/topology', {cache:'no-store', signal:controller.signal}).then(function(r) {
+    if (!r.ok) throw new Error('Topology unavailable');
+    return r.json();
+  }).then(function(t) {
+    var age = Date.now() / 1000 - Number(t && t.generated_at);
+    if (!t || !Array.isArray(t.nodes) || !Number.isFinite(age) || age < -5 || age > 120 ||
+        t.nodes.some(function(node) { return !node || node.id == null; })) throw new Error('Topology not current');
+    el.textContent = String(new Set(t.nodes.map(function(node) { return String(node.id); })).size);
+    el.title = 'Reported network identities. Collector refreshes about every 20 seconds; this display checks every 5 seconds.';
+  }).catch(function() { el.textContent = '—'; el.title = 'Current topology unavailable'; })
+    .then(function() { clearTimeout(timer); networkNodesPending = false; });
+}
+setInterval(refreshNetworkNodes, 5000);
+document.addEventListener('visibilitychange', function() { if (!document.hidden) { loadStats(); refreshNetworkNodes(); } });
+window.addEventListener('pageshow', function() { loadStats(); refreshNetworkNodes(); });
+
 function loadStats(){
-  fetch('/api/stats').then(function(r){if(!r.ok)throw new Error('stats unavailable');return r.json();}).then(function(d){
+  if(document.hidden || explorerStatsPending)return;
+  explorerStatsPending=true;
+  var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},5000);
+  return fetch('/api/stats',{cache:'no-store',signal:controller.signal}).then(function(r){if(!r.ok)throw new Error('stats unavailable');return r.json();}).then(function(d){
     var h=d.height||0;
     document.getElementById('s-height-big').textContent=h.toLocaleString();
     var sup=parseFloat(d.supply_veld||0);
@@ -4742,15 +4776,14 @@ function loadStats(){
     document.getElementById('s-mempool').textContent=(d.mempool_size||0);
     var mempoolKb=document.getElementById('s-mempool-kb');if(mempoolKb)mempoolKb.textContent=Math.round((d.mempool_bytes||0)/1024*10)/10;
     document.getElementById('s-supply').innerHTML=fmtInt(sup)+'<span class="u">VELD</span>';
-    var pe=document.getElementById('s-peers');if(pe)fetch('/api/v1/topology',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('topology unavailable');return r.json();}).then(function(t){var nodes=Array.isArray(t.nodes)?t.nodes:[];pe.textContent=new Set(nodes.map(function(node){return String(node.id);})).size||'—';}).catch(function(){pe.textContent='—';});
-    var hr=parseFloat(d.hashrate||0);
-    document.getElementById('s-hashrate').innerHTML=fmt(hr/1000,1)+'<span class="u">KH/s</span>';
+    refreshNetworkNodes();
+    document.getElementById('s-hashrate').innerHTML=fmtHashrate(d.hashrate);
     var pct=Math.max(0,Math.min(100,sup/21000000*100));
     var bar=document.getElementById('s-supply-bar');if(bar)bar.style.width=pct.toFixed(4)+'%';
     var pctEl=document.getElementById('s-supply-pct');if(pctEl)pctEl.textContent=pct.toFixed(3)+'% mined';
     var snum=document.getElementById('s-supply-num');if(snum)snum.textContent=fmt(sup,2)+' VELD mined';
     if(h>knownH){knownH=h;loadBlocks(h);}
-  }).catch(function(){});
+  }).catch(function(){}).then(function(){clearTimeout(timer);explorerStatsPending=false;});
 }
 function loadBlocks(h){
   var ps=[];
@@ -4797,19 +4830,8 @@ function loadBlocks(h){
   });
 }
 loadStats();
-(function(){
-  var _lastTip=-1,_lastHeavy=0;
-  function tick(){
-    var now=Date.now();
-    var heartbeat=(now-_lastHeavy)>=60000;
-    fetch('/api/stats').then(function(r){if(!r.ok)throw new Error('stats unavailable');return r.json();}).then(function(d){
-      var h=(d&&typeof d.height==='number')?d.height:-1;
-      if(h===-1)return;
-      if(h!==_lastTip||heartbeat){_lastTip=h;_lastHeavy=now;loadStats();}
-    }).catch(function(){});
-  }
-  setInterval(tick,2000);
-})();
+// Reuse the existing two-second stats cadence. Only a changed height loads blocks.
+setInterval(loadStats,2000);
 </script>
 )HTML";
 
@@ -5949,8 +5971,19 @@ loadStats();
                 difficulty = (double)0x00000808 / (double)mant * pow(256.0, (int)(0x1f - exp));
         }
         double hashrate_hps = 0.0;
-        if (difficulty > 0.0 && TARGET_BLOCK_TIME > 0) {
-            hashrate_hps = difficulty * 4294967296.0 / (double)TARGET_BLOCK_TIME;
+        if (bits != 0 && TARGET_BLOCK_TIME > 0) {
+            const uint32_t exp = bits >> 24;
+            const uint32_t mantissa = bits & 0x007fffff;
+            if (mantissa > 0 && exp >= 3) {
+                const int shift_exp = 256 - 8 * (static_cast<int>(exp) - 3);
+                if (shift_exp >= 0 && shift_exp < 1023) {
+                    const double expected_hashes =
+                        std::ldexp(1.0, shift_exp) /
+                        static_cast<double>(mantissa);
+                    hashrate_hps = expected_hashes /
+                        static_cast<double>(TARGET_BLOCK_TIME);
+                }
+            }
         }
         j << "\"best_block_hash\":\"" << HashToHex(chain_.TipCopy().GetHash()) << "\","
           << "\"difficulty\":" << std::setprecision(4) << difficulty << ","
@@ -6486,6 +6519,14 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
     }
 
     HttpResponse ServeMempoolPage() {
+        const auto format_fee = [](double value) {
+            std::ostringstream out;
+            out << std::fixed << std::setprecision(8) << value;
+            std::string text = out.str();
+            while (!text.empty() && text.back() == '0') text.pop_back();
+            if (!text.empty() && text.back() == '.') text.pop_back();
+            return text.empty() ? std::string("0") : text;
+        };
         auto pending = mempool_.GetAllTransactions();
         uint64_t tip = chain_.Height();
 
@@ -6582,8 +6623,8 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << "    <span class=\"it em\"><span class=\"dot\"></span><b>";
         if (total_bytes >= 1024) page << (total_bytes / 1024) << " KB";
         else                     page << total_bytes << " B";
-        page << "</b> &middot; <b>" << std::fixed << std::setprecision(4)
-             << ((double)total_fee_units / VELD_UNITS)
+        page << "</b> &middot; <b>"
+             << format_fee((double)total_fee_units / VELD_UNITS)
              << " VELD</b> pending fees</span>\n";
         page << "    <span class=\"it\"><span class=\"dot\"></span>density sorted</span>\n";
         page << "    <span class=\"it\"><span class=\"dot\"></span>tip h=" << tip << "</span>\n";
@@ -6594,13 +6635,13 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
         page << "<div class=\"grid2\">\n";
         page << "  <div class=\"tile gold span2\"><div class=\"l\">Lifetime fees collected &middot; chain-wide</div><div class=\"v\">"
-             << std::fixed << std::setprecision(4) << lifetime_fees_veld
+             << format_fee(lifetime_fees_veld)
              << "<span class=\"u\">VELD</span></div></div>\n";
         page << "  <div class=\"tile em\"><div class=\"l\">Transfers</div><div class=\"v\">"   << transfers  << "</div></div>\n";
         page << "  <div class=\"tile\"><div class=\"l\">Stake ops</div><div class=\"v\">"      << stake_ops  << "</div></div>\n";
         page << "  <div class=\"tile\"><div class=\"l\">Endorsements</div><div class=\"v\">"   << endorse_ops<< "</div></div>\n";
         page << "  <div class=\"tile\"><div class=\"l\">Mempool fees &middot; pending</div><div class=\"v\">"
-             << std::fixed << std::setprecision(4) << ((double)total_fee_units / VELD_UNITS)
+             << format_fee((double)total_fee_units / VELD_UNITS)
              << "<span class=\"u\">VELD</span></div></div>\n";
         page << "</div>\n";
 

@@ -2813,19 +2813,29 @@ __VELD_DEPLOYMENT_BANNER_HTML__
       </div>
     </div>
 
+    <style>
+#w-cleanup-card .cleanup-copy{color:var(--muted);line-height:1.5;margin:0 0 12px}
+#w-cleanup-card{overflow:visible!important}
+#w-cleanup-card .cleanup-auto{display:flex;align-items:center;gap:8px;margin-top:14px;position:relative}
+#w-cleanup-card .cleanup-auto label{display:flex;align-items:center;gap:10px;min-height:44px;margin:0;font-weight:600;cursor:pointer}
+#w-cleanup-card .help-tip{margin:0;flex:none;position:static}
+#w-cleanup-card .help-tip>summary{width:28px;height:28px;font-size:13px}
+#w-cleanup-card .help-tip[open]>.help-body{left:auto;right:0;width:280px;max-width:calc(100vw - 80px);font-size:13px;line-height:1.6}
+#w-utxo-consolidate-btn{background:#303832!important;border:1px solid #59645b!important;border-radius:9px!important;color:#eef2ed!important;-webkit-text-fill-color:#eef2ed!important;box-shadow:inset 0 1px rgba(255,255,255,.05)!important}
+#w-utxo-consolidate-btn:hover{background:#3a443c!important;border-color:#6a756d!important}
+    </style>
     <!-- Wallet cleanup is manual unless explicitly enabled in this browser. -->
     <div class="card" id="w-cleanup-card" style="margin-top:14px;min-width:0">
       <div class="card-title">Wallet cleanup <span id="w-utxo-dust-chip" style="display:none;font-weight:400"></span></div>
-      <p style="color:var(--muted);line-height:1.6;margin-bottom:12px">Consolidation combines spendable outputs into fewer outputs in your own wallet. Each cleanup transaction pays a network fee. Large cleanups may use several transactions, and funds being combined are unavailable until confirmed.</p>
-      <div id="w-utxo-consolidate" style="display:none;margin-bottom:12px" role="status"><span id="w-utxo-dust-msg" style="color:var(--gold);line-height:1.6;overflow-wrap:anywhere"></span></div>
+      <p class="cleanup-copy">Combine small outputs in your wallet. Network fees apply.</p>
+      <div id="w-utxo-consolidate" style="display:none;margin-bottom:12px" role="status"><span id="w-utxo-dust-msg" style="color:var(--muted);line-height:1.5;overflow-wrap:anywhere"></span></div>
       <button class="btn" id="w-utxo-consolidate-btn" data-act-click="hconsolidate">Consolidate now</button>
       <div id="w-utxo-consolidate-msg" aria-live="polite" style="margin-top:10px;overflow-wrap:anywhere"></div>
-      <label for="w-auto-consolidate" style="display:flex;align-items:center;gap:12px;margin-top:16px;min-height:44px;cursor:pointer;font-weight:600">
-        <input type="checkbox" id="w-auto-consolidate" data-act-change="hauto_consolidate" aria-describedby="w-auto-consolidate-help w-auto-consolidate-pref-status" style="width:20px;height:20px;flex:none;margin:0;accent-color:var(--em)">
-        <span>Automatic cleanup (optional)</span>
-      </label>
-      <p id="w-auto-consolidate-help" style="color:var(--muted);line-height:1.6;margin-top:8px">Off by default. Enabling this authorizes automatic cleanup transactions and their network fees for wallets you unlock in this browser. It runs while this wallet app is open. Turning it off stops new batches; a transaction already in progress may still complete.</p>
-      <div id="w-auto-consolidate-pref-status" role="status" style="color:var(--muted);line-height:1.6;margin-top:8px;overflow-wrap:anywhere">Manual cleanup is selected.</div>
+      <div class="cleanup-auto">
+        <label for="w-auto-consolidate"><input type="checkbox" id="w-auto-consolidate" data-act-change="hauto_consolidate" aria-describedby="w-auto-consolidate-help w-auto-consolidate-pref-status" style="width:20px;height:20px;flex:none;margin:0;accent-color:var(--em)"><span>Automatic cleanup</span></label>
+        <details class="help-tip"><summary aria-label="About automatic cleanup" title="About automatic cleanup">?</summary><div class="help-body" id="w-auto-consolidate-help">Off by default. Enabling this authorizes automatic cleanup and network fees for wallets you unlock in this browser while the app is open. Each transaction pays a fee; larger cleanups may need several transactions. Funds being combined become spendable after confirmation. Turning this off stops new batches; a transaction already in progress may still complete.</div></details>
+      </div>
+      <div id="w-auto-consolidate-pref-status" role="status" style="display:none;color:var(--muted);line-height:1.5;margin-top:8px;overflow-wrap:anywhere"></div>
     </div>
 
     <!-- UTXOs + recent transactions -->
@@ -8905,6 +8915,43 @@ function nav(page, el) {
 // ═══════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════
+// Shared with the Explorer: target-implied network estimate, not local miner speed.
+var walletNetworkRatePending = false, walletNetworkRateAt = 0;
+function formatNetworkRate(value) {
+  var rate = Number(value), unit = 'H/s';
+  if (!Number.isFinite(rate) || rate < 0) return '—';
+  if (rate >= 1e12) { rate /= 1e12; unit = 'TH/s'; }
+  else if (rate >= 1e9) { rate /= 1e9; unit = 'GH/s'; }
+  else if (rate >= 1e6) { rate /= 1e6; unit = 'MH/s'; }
+  else if (rate >= 1e3) { rate /= 1e3; unit = 'KH/s'; }
+  return rate.toFixed(2) + ' ' + unit;
+}
+function refreshWalletNetworkRate() {
+  var el = document.getElementById('d-hashrate');
+  if (!el || document.hidden || walletNetworkRatePending || Date.now() - walletNetworkRateAt < 5000) return;
+  walletNetworkRatePending = true; walletNetworkRateAt = Date.now();
+  var controller = new AbortController(), timer = setTimeout(function() { controller.abort(); }, 5000);
+  return fetch('/api/stats', {cache:'no-store', signal:controller.signal}).then(function(r) {
+    if (!r.ok) throw new Error('Network estimate unavailable');
+    return r.json();
+  }).catch(function() {
+    // Local desktop wallets may not expose the hosted Explorer route.
+    return rpc('getblockchaininfo').then(function(d) {
+      var work = Number(d && d.expected_hashes_per_block);
+      if (!Number.isFinite(work) || work <= 0) throw new Error('Network estimate unavailable');
+      return {hashrate:work / 180};
+    });
+  }).then(function(d) {
+    if (!d || !Number.isFinite(Number(d.hashrate)) || d.hashrate == null || Number(d.hashrate) < 0) throw new Error('Invalid network estimate');
+    el.textContent = formatNetworkRate(d.hashrate);
+    el.title = 'Network estimate from the current mining target and target block time. Changes in miner capacity appear as the chain adjusts.';
+  }).catch(function() { el.textContent = '—'; el.title = 'Network estimate temporarily unavailable'; })
+    .then(function() { clearTimeout(timer); walletNetworkRatePending = false; });
+}
+setInterval(refreshWalletNetworkRate, 5000);
+document.addEventListener('visibilitychange', function() { if (!document.hidden) refreshWalletNetworkRate(); });
+window.addEventListener('pageshow', refreshWalletNetworkRate);
+
 function loadDashboard() {
   rpc('getblockchaininfo').then(function(d) {
     _dashFailCount = 0;
@@ -8979,49 +9026,7 @@ function loadDashboard() {
       document.getElementById('d-dist-label').textContent = next ? 'blocks (~' + Math.round(next * 3) + 'min)' : 'blocks away';
     }).catch(function(){});
   }, 800);
-  // Hashrate estimation ( fix: use expected_hashes_per_block
-  // from getblockchaininfo rather than the missing `difficulty` field,
-  // and fall back to a single-block sample when chain is young so the
-  // dashboard isn't stuck on "—" during bringup).
-  setTimeout(function() {
-    rpc('getblockchaininfo').then(function(d) {
-      var h = d.blocks||d.height||0;
-      if (h < 1) return;
-      // expected_hashes_per_block is a decimal string (can exceed 2^53).
-      // parseFloat is precise enough for display — we're showing 2 sig figs.
-      var hpb = parseFloat(d.expected_hashes_per_block||'0') || 0;
-      if (!hpb) return;
-      var sample = Math.min(h, 10);
-      var p1 = rpc('getblockbyheight',[String(h)]).catch(function(){return null;});
-      var p2 = rpc('getblockbyheight',[String(Math.max(0, h - sample))]).catch(function(){return null;});
-      Promise.all([p1,p2]).then(function(r) {
-        if (!r[0] || !r[1] || !r[0].time || !r[1].time) {
-          // Fallback: assume the 180s target block time so the card still
-          // shows a number instead of a dash while the chain is young.
-          var est = hpb / 180;
-          showRate(est);
-          return;
-        }
-        var dt = r[0].time - r[1].time;
-        var blocks = Math.max(1, Math.min(h, sample));
-        var avgTime = Math.max(dt / blocks, 1);
-        // Hashrate = expected_hashes_per_block / avg_block_time
-        var hps = hpb / avgTime;
-        showRate(hps);
-      });
-    }).catch(function(){});
-    function showRate(hps) {
-      var label;
-      if (!isFinite(hps) || hps <= 0) label = '—';
-      else if (hps >= 1e12) label = (hps/1e12).toFixed(2) + ' TH/s';
-      else if (hps >= 1e9) label = (hps/1e9).toFixed(2) + ' GH/s';
-      else if (hps >= 1e6) label = (hps/1e6).toFixed(2) + ' MH/s';
-      else if (hps >= 1e3) label = (hps/1e3).toFixed(2) + ' KH/s';
-      else label = Math.round(hps) + ' H/s';
-      var el = document.getElementById('d-hashrate');
-      if (el) el.textContent = label;
-    }
-  }, 1000);
+  refreshWalletNetworkRate();
   // Activity feed loads only on wallet page visit, not on every dashboard poll
 }
 
@@ -9809,9 +9814,9 @@ function loadDustUtxoCount() {
       chip.innerHTML = '<span style="color:var(--gold)">' + n + ' ' + label + '</span> of ' + total + ' total';
       row.style.display = 'flex';
       if (fragmented && dust < 2) {
-        msg.innerHTML = total + ' UTXOs total &mdash; an AMM operation may need more than its 24-input safety envelope. Consolidate before swapping or changing liquidity.';
+        msg.textContent = total + ' separate outputs. Consolidating can help swaps and liquidity transactions complete.';
       } else {
-        msg.innerHTML = dust + ' UTXOs under 5 VELD (' + fmt(dustVeld, 4) + ' VELD total). Sweep them into one to fit future sends under the 180-input mempool cap.';
+        msg.textContent = dust + ' small outputs can be combined (' + fmt(dustVeld, 4) + ' VELD).';
       }
     } else {
       chip.style.display = 'none';
@@ -9844,13 +9849,14 @@ function autoConsolidateEnabled() {
 }
 
 function renderAutoConsolidatePreference() {
-  var enabled = autoConsolidateEnabled();
   var input = document.getElementById('w-auto-consolidate');
   var status = document.getElementById('w-auto-consolidate-pref-status');
-  if (input) input.checked = enabled;
-  if (status) status.textContent = __autoConsolidateStorageFailed
-    ? 'Could not save this setting. Automatic cleanup is off for this session. Retry before closing the app to save your choice.'
-    : (enabled ? 'Automatic cleanup is enabled in this browser. An unlocked wallet is required.' : 'Manual cleanup is selected. Automatic cleanup is off.');
+  if (input) input.checked = autoConsolidateEnabled();
+  if (status) {
+    status.style.display = __autoConsolidateStorageFailed ? 'block' : 'none';
+    status.textContent = __autoConsolidateStorageFailed
+      ? 'Could not save this setting. Automatic cleanup is off for this session. Retry before closing the app to save your choice.' : '';
+  }
 }
 
 function setAutoConsolidatePreference(enabled) {
@@ -12113,6 +12119,13 @@ function setHistoryPage(p) {
   window._histPage = Math.max(1, p|0);
   renderHistory();
 }
+function formatHistoryFee(value) {
+  var fee = Number(value);
+  if (!Number.isFinite(fee) || fee <= 0) return '0';
+  var text = fee.toFixed(8);
+  while (text.indexOf('.') !== -1 && text.endsWith('0')) text = text.slice(0, -1);
+  return text.endsWith('.') ? text.slice(0, -1) : text;
+}
 function renderHistory() {
   var search = (document.getElementById('h-search').value||'').toLowerCase();
   if (historyFilter === 'btcveld') { renderTokenHistory(search); return; }
@@ -12123,7 +12136,7 @@ function renderHistory() {
   var rewardTypes = ['vault_distribution','staking_distribution','endorsement_reward','endorsement_payout','comine_payout'];
   var transferTypes = ['received','amm_swap_b2v','amm_remove'];
   var data = historyData.filter(function(t) {
-    if (historyFilter === 'sent' && sentTypes.indexOf(t.type) === -1) return false;
+    if (historyFilter === 'sent' && sentTypes.indexOf(t.type) === -1 && !(Number(t.fee_veld) > 0)) return false;
     if (historyFilter === 'received' && rewardTypes.indexOf(t.type) === -1) return false;
     if (historyFilter === 'transfers' && transferTypes.indexOf(t.type) === -1) return false;
     if (historyFilter === 'coinbase' && t.type !== 'coinbase') return false;
@@ -12172,7 +12185,7 @@ function renderHistory() {
     data.length + ' transactions &nbsp;·&nbsp; '
     + '<span style="color:var(--em)">+'+fmt(totalIn,2)+' in</span> &nbsp;·&nbsp; '
     + '<span style="color:var(--red)">-'+fmt(totalOut,2)+' out</span> &nbsp;·&nbsp; '
-    + '<span style="color:var(--gold)">'+fmt(totalFees,2)+' VELD fees paid</span>'
+    + '<span style="color:var(--gold)">'+formatHistoryFee(totalFees)+' VELD fees paid</span>'
     + balLine
     + (totalPages > 1 ? ('&nbsp;·&nbsp; <span style="color:var(--muted2)">page ' + page + ' of ' + totalPages + '</span>') : '')
     + windowNote;
@@ -12236,7 +12249,7 @@ function renderHistory() {
       ? {label:'Network fee', color:'var(--gold)'}
       : (htypeMap[t.type] || {label:t.type||'tx', color:pos?'var(--em)':'var(--red)'});
     var feeCell = fee > 0
-      ? '<td style="color:var(--gold);font-size:11px">' + fmt(fee,3) + ' VELD</td>'
+      ? '<td style="color:var(--gold);font-size:11px">' + formatHistoryFee(fee) + ' VELD</td>'
       : '<td style="color:var(--muted);font-size:11px">—</td>';
     var isFeeOnly = feeOnlyTypes.indexOf(t.type) !== -1 || isNetworkFee;
     var amountCell;
@@ -15107,44 +15120,7 @@ function loadDashboardAdaptive() {
     }).catch(function(){});
   }, 1800);
 
-  // Hashrate for the Network Health card. The original
-  // `loadDashboard` fired this at line ~3567, but loadDashboardAdaptive
-  // (which replaces it at line ~6054) didn't — so d-hashrate stayed
-  // at "—". Now painted here in the same staggered pattern as the
-  // other NH tiles. Estimate = expected_hashes_per_block / avg_solve_time
-  // from a 10-block sample; falls back to hpb / TARGET_BLOCK_TIME on
-  // a young chain (avoids blank dash when h<10 but we still have bits).
-  setTimeout(function() {
-    rpc('getblockchaininfo').then(function(d) {
-      var h = d.blocks || d.height || 0;
-      if (h < 1) return;
-      var hpb = parseFloat(d.expected_hashes_per_block || '0') || 0;
-      if (!hpb) return;
-      var showRate = function(hps) {
-        var label;
-        if (!isFinite(hps) || hps <= 0)       label = '—';
-        else if (hps >= 1e12)                 label = (hps/1e12).toFixed(2) + ' TH/s';
-        else if (hps >= 1e9)                  label = (hps/1e9 ).toFixed(2) + ' GH/s';
-        else if (hps >= 1e6)                  label = (hps/1e6 ).toFixed(2) + ' MH/s';
-        else if (hps >= 1e3)                  label = (hps/1e3 ).toFixed(2) + ' KH/s';
-        else                                  label = Math.round(hps) + ' H/s';
-        var el = document.getElementById('d-hashrate');
-        if (el) el.textContent = label;
-      };
-      var sample = Math.min(h, 10);
-      var p1 = rpc('getblockbyheight', [String(h)]).catch(function(){return null;});
-      var p2 = rpc('getblockbyheight', [String(Math.max(0, h - sample))]).catch(function(){return null;});
-      Promise.all([p1, p2]).then(function(r) {
-        if (!r[0] || !r[1] || !r[0].time || !r[1].time) {
-          showRate(hpb / 180); return;
-        }
-        var dt = r[0].time - r[1].time;
-        var blocks = Math.max(1, Math.min(h, sample));
-        var avgTime = Math.max(dt / blocks, 1);
-        showRate(hpb / avgTime);
-      });
-    }).catch(function(){});
-  }, 2000);
+  refreshWalletNetworkRate();
 
   // fix: the "Recent Activity" card was stale because activity
   // was only loaded on wallet-page visit, never on the dashboard poll
