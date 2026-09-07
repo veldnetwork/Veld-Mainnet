@@ -34,7 +34,8 @@ jobs:
           node-version: '22'
           package-manager-cache: false
       - name: Install test dependencies
-        run: python -m pip install --only-binary=:all: -r tests/requirements.txt
+        run: |
+          python -m pip install --only-binary=:all: -r tests/requirements.txt
       - name: Run portable checks
         run: python tests/run_checks.py
       - name: Compile and run work-admission tests
