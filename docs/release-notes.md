@@ -1,7 +1,10 @@
 # Veld 3.1.0
 
-Prepared for `veld-public-mainnet-v2`. Publication is held until the scheduled
-block-2,880 upgrade has passed and the fleet's chain agreement is verified.
+Released on 8 September 2026 for `veld-public-mainnet-v2`, after the
+block-2,880 upgrade and sustained fleet chain agreement were verified.
+
+[Download the signed Windows client](https://veld.network/downloads/VeldClient-Windows-x64-3.1.0.zip)
+or inspect the [release source](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.0).
 
 ## Mining efficiency
 
@@ -35,7 +38,20 @@ genesis, addresses, and existing data directories are unchanged. The consensus
 upgrade remains at block 2,880. This release includes the earlier snapshot
 restart and signed updater repairs. Existing wallet styling is preserved.
 
-Use the signed updater when the release becomes available. Retain chain data
-and wallet backups. The updater's signature and version checks remain in force.
+Use the signed updater to install 3.1.0. Retain chain data and wallet backups.
+The updater's signature and version checks remain in force.
 See the [changelog](../CHANGELOG.md) for changes and the
 [upgrade specification](security/consensus-upgrade.md) for activation rules.
+
+## Verification
+
+Windows and Linux hashing passed all 28 frozen mainnet vectors from 3.0.9.
+Mining solution, cancellation, concurrent search, worker-policy, and portable
+checks passed. The fleet's low-memory verification build also matched all
+28 vectors and refused mining commands.
+
+Release signatures and downloaded artifact hashes were verified after website
+publication. These checks establish the tested release behavior and artifact
+identity; they are not a guarantee of error-free software. See
+[source and release identity](source-identity.md) for the exact commit, tree,
+and download checksum.

@@ -24,14 +24,16 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
-The current client release is **3.0.9**. It includes independent mining searches
-for machines sharing a payout wallet and the consensus upgrade
-scheduled for **block 2,880**. Miners and node operators must use a compatible
-release before that height. See the [release notes](docs/release-notes.md).
+The current client release is **3.1.0**. It improves CPU mining efficiency and
+worker controls while retaining independent searches for machines sharing a
+payout wallet. It includes the consensus upgrade activated at **block 2,880**.
+See the [release notes](docs/release-notes.md) and
+[download the signed client](https://veld.network/#download).
 
-`main` also includes maintenance changes awaiting the next client package.
-A source commit is not an announcement of a new signed binary release.
-[CHANGELOG.md](CHANGELOG.md) distinguishes hosted updates from packaged changes.
+The [`v3.1.0` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.0)
+identifies the exact source used for the release. `main` may contain later
+maintenance and documentation updates. [CHANGELOG.md](CHANGELOG.md)
+distinguishes hosted updates from packaged changes.
 
 | Property | Value |
 | --- | --- |

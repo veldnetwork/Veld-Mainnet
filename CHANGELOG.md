@@ -3,7 +3,11 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
-## 3.1.0 - Pending publication
+## 3.1.0 - 2026-09-08
+
+Published after the block-2,880 consensus upgrade and sustained fleet chain
+agreement were verified. Existing addresses, chain data, and reward allocation
+remain compatible.
 
 ### Mining
 

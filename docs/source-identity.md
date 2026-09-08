@@ -2,7 +2,7 @@
 
 ## Identify a checkout
 
-`main` contains ongoing maintenance. Release branches describe release source;
+`main` contains ongoing maintenance. Release tags and branches identify source;
 signed package manifests identify the binaries actually distributed. These
 identities are related but are not interchangeable.
 
@@ -24,6 +24,24 @@ archive matches it.
 Verify downloaded binaries using the official package manifest and signature.
 Building from source does not grant the official release signature. Different
 toolchains or paths can produce different binary hashes.
+
+## Veld 3.1.0
+
+The `v3.1.0` tag pins the source used for the Windows client and fleet build.
+Release-status documentation on `main` was updated after publication; it does
+not change the tagged source or signed binaries.
+
+| Field | Value |
+| --- | --- |
+| Source commit | `26b8aad93144fd7387c566882186f8d7d295ca69` |
+| Source tree | `4af87d9294f87f91e4858855995133ebaeea48bd` |
+| Windows ZIP SHA-256 | `0368590531009a29b6dc7ac68b755d3033459687ea04d53022107493ffa6be87` |
+
+The [corresponding source archive](https://veld.network/downloads/Veld-3.1.0-source.tar.gz)
+and [release identity](https://veld.network/downloads/RELEASE-IDENTITY-3.1.0.json)
+are published beside the signed client. The package contains its payload
+manifest and Veld release signature. These signatures are separate from
+Windows Authenticode.
 
 ## Network identity
 
