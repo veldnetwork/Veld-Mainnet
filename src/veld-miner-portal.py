@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 LOGGER = logging.getLogger(__name__)
 
-VELD_OPERATOR_VERSION = "3.1.0"
+VELD_OPERATOR_VERSION = "3.1.1"
 VELD_OPERATOR_PROFILE = "veld-public-mainnet-v2"
 
 MAX_MINING_WORKERS = 64

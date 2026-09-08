@@ -25,6 +25,15 @@ Verify downloaded binaries using the official package manifest and signature.
 Building from source does not grant the official release signature. Different
 toolchains or paths can produce different binary hashes.
 
+## Veld 3.1.1
+
+The `v3.1.1` release tag and
+[release identity record](https://veld.network/downloads/RELEASE-IDENTITY-3.1.1.json)
+identify the checkpoint update. The record binds the source commit and tree to
+the distributed artifacts. The
+[corresponding source archive](https://veld.network/downloads/Veld-3.1.1-source.tar.gz)
+is distributed beside the signed package after release qualification.
+
 ## Veld 3.1.0
 
 The `v3.1.0` tag pins the source used for the Windows client and fleet build.

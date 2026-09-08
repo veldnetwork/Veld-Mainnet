@@ -1,57 +1,44 @@
-# Veld 3.1.0
+# Veld 3.1.1
 
-Released on 8 September 2026 for `veld-public-mainnet-v2`, after the
-block-2,880 upgrade and sustained fleet chain agreement were verified.
+Checkpoint authority replacement and verified historical pinning for
+`veld-public-mainnet-v2`.
 
-[Download the signed Windows client](https://veld.network/downloads/VeldClient-Windows-x64-3.1.0.zip)
-or inspect the [release source](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.0).
+## Checkpoint protection
 
-## Mining efficiency
+This client enforces the verified block at height **2,800**. The pin participates
+in block admission, replay, synchronization, and reorganization anchoring.
+Independent fleet nodes confirmed the historical hash beyond the existing
+100-block reorganization horizon.
 
-- Reduce scratchpad and dataset initialization overhead while preserving the
-  exact VeldHash output and cryptographic byte stream.
-- Reduce integer square-root work without changing its result.
-- Preserve the exact header used by each worker during timestamp refreshes.
-- Retain completed hash counts when a search is canceled and finish the
-  progress sampler before publishing the final total.
-- Detect available Windows physical cores for worker defaults and presets,
-  with a conservative fallback when topology is unavailable.
-- Apply the supported 1–64 worker range consistently across the client and
-  portal. Portal adjustments use the saved count for the next node start.
+The public-mainnet client also trusts a replacement ML-DSA-65 signing key for
+the official checkpoint feed. The original encrypted signing key was preserved,
+but its unlock credential could not be recovered. The replacement keystore,
+saved unlock credential, signatures, and encrypted recovery backup were verified
+locally. Private signing material remains outside the fleet and public source.
 
-A worker is a software thread. Logical processors can run additional workers,
-but more workers do not always improve throughput because they share CPU and
-memory resources. Tune each machine independently. Presets use physical cores;
-custom counts allow additional logical threads within the supported limit.
+Downloaded checkpoint records remain advisory. They cannot move the compiled
+pin or replace proof-of-work, transaction, state, or snapshot validation. See
+[checkpoints and chain validation](checkpoints.md) for the pin, public-key
+fingerprints, and compatibility details.
 
-## Multiple machines
+## Updating and compatibility
 
-Retain the independent random search origins introduced in 3.0.9. Each computer
-runs its own miner, including when machines share a payout address. Portal
-pairing provides monitoring and controls; it does not pool the machines' work.
-Regression coverage includes different worker counts and independent processes.
+Use the signed updater or the [official Windows download](https://veld.network/#download).
+Keep existing chain data and wallet backups. Upgrading an already synchronized
+client does not require deleting its data or starting again from genesis.
 
-## Compatibility and updating
+Existing 3.1.0 clients do not trust signatures from the replacement checkpoint
+key and do not contain this historical pin. Install 3.1.1 to receive both changes.
+Older clients continue ordinary chain validation; the feed remains advisory.
 
-Coinbase allocation, staking eligibility, difficulty rules, protocol version 2,
-genesis, addresses, and existing data directories are unchanged. The consensus
-upgrade remains at block 2,880. This release includes the earlier snapshot
-restart and signed updater repairs. Existing wallet styling is preserved.
+The existing chain, mining algorithm, reward allocation, staking eligibility,
+difficulty rules, addresses, and protocol version 2 remain unchanged. This
+release retains the mining improvements in 3.1.0 and the upgrade activated at
+block 2,880. It does not schedule a new activation height.
 
-Use the signed updater to install 3.1.0. Retain chain data and wallet backups.
-The updater's signature and version checks remain in force.
-See the [changelog](../CHANGELOG.md) for changes and the
-[upgrade specification](security/consensus-upgrade.md) for activation rules.
-
-## Verification
-
-Windows and Linux hashing passed all 28 frozen mainnet vectors from 3.0.9.
-Mining solution, cancellation, concurrent search, worker-policy, and portable
-checks passed. The fleet's low-memory verification build also matched all
-28 vectors and refused mining commands.
-
-Release signatures and downloaded artifact hashes were verified after website
-publication. These checks establish the tested release behavior and artifact
-identity; they are not a guarantee of error-free software. See
-[source and release identity](source-identity.md) for the exact commit, tree,
-and download checksum.
+Release qualification covers checkpoint verification and rejection cases,
+compiled-pin boundaries, Windows and Linux builds, compiled genesis identity,
+production hash vectors, release signatures, and the signed updater handoff.
+Published artifacts are identified by their signed manifests and the
+[release identity record](https://veld.network/downloads/RELEASE-IDENTITY-3.1.1.json).
+See [source identity](source-identity.md) and the [changelog](../CHANGELOG.md).
