@@ -79,7 +79,7 @@ jobs:
           c++ -std=c++20 -O2 -pthread -Iinclude tests/mining_process_nonce_probe.cpp \
             -o "$RUNNER_TEMP/mining_process_nonce_probe"
           python tests/mining_process_nonce_tests.py "$RUNNER_TEMP/mining_process_nonce_probe"
-      - name: Verify active mining search accounting
+      - name: Verify mining accounting and checkpoint signatures
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -97,4 +97,10 @@ jobs:
             c++ -std=c++20 -O2 -pthread -Iinclude -Ivendor/pqc "tests/$test.cpp" "${objects[@]}" \
               -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"
+          done
+          for profile in VELD_PUBLIC_MAINNET VELD_PUBLIC_TESTNET; do
+            c++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -D"$profile" \
+              -Iinclude -Ivendor/pqc tests/signed_checkpoint_tests.cpp "${objects[@]}" \
+              -o "$RUNNER_TEMP/signed-checkpoints-$profile"
+            "$RUNNER_TEMP/signed-checkpoints-$profile" tests/fixtures/mainnet-checkpoint.json
           done

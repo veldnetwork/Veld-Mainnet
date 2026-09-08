@@ -50,6 +50,31 @@ snapshot availability. Never replace a checkpoint at an existing height with
 a different hash. Confirm the selected block on independent, fully validated
 nodes before signing, and select a block beyond the reorganization horizon.
 
-If the matching private key cannot be recovered, a replacement key requires
-an explicit key-rotation plan and a new client release. Generating another key
-does not make its signatures valid for existing clients.
+## Checkpoint authority replacement
+
+The next public-mainnet client uses a replacement ML-DSA-65 checkpoint key.
+Its public-key SHA-256 fingerprint is
+`240e7e72e393c831dff72f23fa7137a899fe729d83662ca6ffde3b7d35159a32`.
+Other network profiles retain their existing checkpoint key.
+
+The previous encrypted key was located in infrastructure backups, but its
+unlock credential could not be recovered. The replacement was generated in
+the operator's protected local signing environment on 8 September 2026. Its
+signatures, encrypted keystore, saved unlock credential, and encrypted recovery
+backup were verified before preparing the public key for this release.
+
+Released 3.1.0 clients still trust the previous public key, whose fingerprint
+is `10252e6942efdeec7f1f80292cb6b2119a95631ec07fe75b05ebde3262bd1c6e`.
+They reject signatures from the replacement key and continue ordinary chain
+validation because the downloaded feed is advisory. This source change does
+not activate the replacement in those already published binaries.
+
+Publish the replacement feed only with the client release that contains its
+public key. Before publication, verify the release identity, independent node
+agreement on the selected block, and the signed document with that client's
+verifier. Keep the compiled historical pin and signed-feed authority separate;
+a signed feed entry cannot move the compiled pin.
+
+The public test fixture contains a signature over block 2,800, independently
+rechecked on all three fleet nodes at height 3,110. It verifies the replacement
+key and field binding; it is not an activation of the public feed.
