@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SUITES = {
     "source": [
         "tests/portal_mobile_nav_tests.py",
+        "tests/portal_worker_limit_tests.py",
         "tests/topology_advertised_roles_tests.py",
         "tests/release_controller_oracle_tests.py",
         "tests/windows_node_gui_scroll_tests.py",
@@ -25,6 +26,7 @@ SUITES = {
         "tests/network_display_refresh_tests.js",
         "tests/portal_network_status_tests.js",
         "tests/portal_pair_machine_tests.js",
+        "tests/portal_worker_limit_tests.js",
         "tests/wallet_auto_consolidation_tests.js",
         "tests/wallet_governance_activity_tests.js",
         "tests/wallet_history_pagination_tests.js",

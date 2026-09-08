@@ -27,6 +27,7 @@
 #include "../include/core/version.h"
 #include "../include/core/hash.h"
 #include "../include/compat/platform.h"
+#include "../include/mining/worker_policy.h"
 #include "../include/crypto/release_verify.h"
 #include "../include/gui/node_gui_model.h"
 #include "../include/network/chainparams.h"
@@ -883,7 +884,7 @@ bool ParseMonitoringReply(const std::string& body, MonitoringReply& out) {
             if (payload->object.size() != 1) return false;
             if (!veld::node_gui::ParseUint(payload->Get("workers"),
                                            parsed.command.workers) ||
-                parsed.command.workers < 1 || parsed.command.workers > 256)
+                !veld::mining::ValidWorkerCount(parsed.command.workers))
                 return false;
         } else if (parsed.command.action == "sync.mode") {
             const auto* mode = payload->Get("mode");
@@ -920,8 +921,8 @@ std::string CanonicalPortalCommandPayload(
         command.action == "display.reference")
         return std::string("{\"enabled\":") +
             (command.enabled ? "true}" : "false}");
-    if (command.action == "mining.workers" && command.workers >= 1 &&
-        command.workers <= 256)
+    if (command.action == "mining.workers" &&
+        veld::mining::ValidWorkerCount(command.workers))
         return "{\"workers\":" + std::to_string(command.workers) + "}";
     if (command.action == "sync.mode" &&
         (command.mode == "full" || command.mode == "snapshot"))
@@ -1139,20 +1140,12 @@ std::wstring FormatByteRate(double bytes_per_second) {
     return FormatBytes(static_cast<uint64_t>(bytes_per_second + 0.5)) + L"/s";
 }
 
-unsigned EstimatedPhysicalThreads() {
-    const unsigned logical = std::max(1u, std::thread::hardware_concurrency());
-    return (logical >= 4 && logical % 2 == 0) ? logical / 2 : logical;
-}
-
 unsigned PresetThreadCount(int preset) {
-    const unsigned physical = EstimatedPhysicalThreads();
     // Presets are semantic capacity profiles.  They are evaluated on the
     // machine running the app, so the same choice behaves consistently on a
     // laptop, workstation, or server without embedding one developer PC's
     // worker counts in the interface.
-    if (preset == 0) return std::max(1u, (physical + 3u) / 4u);
-    if (preset == 2) return physical;
-    return std::max(1u, (physical * 3u + 3u) / 4u);
+    return veld::mining::PresetWorkerCount(veld::mining::DetectCpuCapacity(), preset);
 }
 
 const wchar_t* PresetCapacityLabel(int preset) {
@@ -2601,7 +2594,7 @@ private:
                 };
                 int threads = static_cast<int>(mining_thread_count_);
                 if (parse_int("mining_threads", 1, 256, threads))
-                    mining_thread_count_ = static_cast<unsigned>(threads);
+                    mining_thread_count_ = veld::mining::ClampWorkerCount(threads);
                 else {
                     int topology_role_index =
                         static_cast<int>(topology_role_index_);
@@ -5685,7 +5678,7 @@ private:
         } else if (page_ == Page::Settings &&
                    PtInRect(&preset_plus_button_, p)) {
             mining_preset_ = 3;
-            mining_thread_count_ = std::min(256u, mining_thread_count_ + 1);
+            mining_thread_count_ = veld::mining::ClampWorkerCount(mining_thread_count_ + 1);
             SaveSettings();
         } else if (page_ == Page::Settings && PtInRect(&tor_toggle_, p)) {
             const auto live = SnapshotState();

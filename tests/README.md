@@ -71,11 +71,30 @@ split, with one, seven, eight and sixteen workers. Both search tests link the C
 objects listed in `vendor/pqc/provenance/release-c-sources.txt`, as shown in the
 source-checks workflow.
 
+`mining_worker_policy_tests.cpp` checks worker bounds, physical-core presets,
+SMT/non-SMT/mixed-core masks, partial affinity and the native Windows detector.
+Its Windows affinity check changes only the disposable test process. The
+existing conservative estimate is retained when native topology is unavailable;
+no affinity or priority is changed in the running miner.
+
+`mining_process_nonce_probe.cpp` is a small standalone fixture. Compile it and
+pass its path to `mining_process_nonce_tests.py` to check the production random
+origin and worker partitioning in 24 independent processes. This validates a
+finite sample of searches rather than claiming that random collisions are
+mathematically impossible. The portal worker-limit tests check browser and
+server boundaries and saved next-start preferences.
+
 `mining_hash_vectors.cpp` checks full-size VeldHash outputs against the frozen
 3.0.9 fixture in `fixtures/veldhash-3.0.9-vectors.txt`. Compile it with
 `VELD_MAINNET_POW`, `VELD_PUBLIC_RELEASE`, and `VELD_PUBLIC_MAINNET`; pass the
 fixture path as its only argument. It requires a 1 GiB dataset. Do not substitute
 a reduced test dataset when checking compatibility with released hashes.
+
+The default leaves one physical core available for other node work. Eco and
+Balanced use 25% and 75% of detected physical cores, rounded up; Maximum uses one
+worker per physical core. Custom counts from 1 to 64 can use additional logical
+processors. These presets are capacity choices, not a measured hardware
+autotuner: compare sustained rates before assuming more workers are faster.
 
 The offline benchmark uses production parameters and reuses one virtual machine
 per worker as the active miner does:

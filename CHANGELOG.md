@@ -7,6 +7,13 @@ are tracked separately; publishing source does not release new binaries.
 
 ### Mining
 
+- Detect Windows physical cores within process affinity for worker defaults and
+  presets, with a conservative fallback when topology is unavailable.
+- Apply the miner's 1–64 worker limit consistently in the CLI, Windows settings
+  and portal. Show and adjust the saved next-start count separately from live
+  worker telemetry.
+- Test separate-process nonce searches and worker policies for SMT, non-SMT,
+  mixed-core and restricted-affinity configurations.
 - Fill mining scratch memory and datasets in complete stream blocks, preserving
   the existing byte stream and cryptographic implementation.
 - Start the integer square-root calculation at its first relevant bit while

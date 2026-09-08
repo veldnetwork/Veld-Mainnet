@@ -25,6 +25,7 @@
 #include "../mining/preflight_selector.h"
 #include "../mining/nonce_search.h"
 #include "../mining/work_header.h"
+#include "../mining/worker_policy.h"
 #include "../consensus/staking.h"
 #include "../consensus/validators.h"
 #include "../consensus/btcveld_redeem_params.h"
@@ -812,8 +813,7 @@ inline MineBlockResult MineOnly(
         return result;
     }
 
-    unsigned N = num_threads > 0 ? num_threads : 1;
-    if (N > 64) N = 64;
+    const unsigned N = mining::ClampWorkerCount(num_threads);
 
     std::atomic<bool>     stop_local{false};
     std::atomic<uint64_t> total_hashes_accum{0};
@@ -3788,9 +3788,7 @@ public:
     }
 
     void SetMiningThreads(unsigned n) {
-        if (n < 1) n = 1;
-        if (n > 64) n = 64;
-        mining_threads_ = n;
+        mining_threads_ = mining::ClampWorkerCount(n);
     }
     unsigned GetMiningThreads() const { return mining_threads_; }
 

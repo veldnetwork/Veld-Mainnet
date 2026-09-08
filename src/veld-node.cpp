@@ -2174,8 +2174,12 @@ int main(int argc, char* argv[]) {
                 std::cerr << "veld-node: --threads requires an integer value\n";
                 return 2;
             }
-            opt_mining_threads =
-                static_cast<unsigned>(parse_uint_arg("--threads", argv[++i]));
+            const auto requested_threads = parse_uint_arg("--threads", argv[++i]);
+            if (!veld::mining::ValidWorkerCount(requested_threads)) {
+                std::cerr << "veld-node: --threads requires an integer from 1 to 64\n";
+                return 2;
+            }
+            opt_mining_threads = static_cast<unsigned>(requested_threads);
 #endif
         }
         else if (arg == "--help" || arg == "-h") {
@@ -2204,7 +2208,7 @@ int main(int argc, char* argv[]) {
                       << "  --deployment-info    Print compiled role/transport/genesis identity without opening a datadir; exit\n"
                       << "  --verify-compiled-genesis  Verify the compiled memory-hard genesis PoW and exit\n"
 #ifndef VELD_FLEET_NO_MINE
-                      << "  --threads <N>        Parallel mining threads (default: estimated physical cores minus one)\n"
+                      << "  --threads <1..64>    Parallel mining workers (default: physical cores minus one; conservative fallback)\n"
 #endif
                       << "  --datadir <path>     Data directory\n"
 #ifndef VELD_FLEET_NO_MINE
@@ -3672,26 +3676,25 @@ int main(int argc, char* argv[]) {
 #endif
 
         if (opt_mine) {
-            unsigned hw_threads = std::max(1u, std::thread::hardware_concurrency());
-
-            unsigned physical_est = (hw_threads >= 4 && (hw_threads % 2) == 0)
-                                  ? (hw_threads / 2)
-                                  : hw_threads;
+            const auto capacity = veld::mining::DetectCpuCapacity();
             unsigned mine_threads;
             const char* tune_reason;
             if (opt_mining_threads > 0) {
                 mine_threads = opt_mining_threads;
                 tune_reason = "user --threads override";
             } else {
-                mine_threads = veld::DefaultMiningThreads(hw_threads);
-                tune_reason = "auto-tuned (physical_cores - 1 for memory-hard hashing)";
+                mine_threads = veld::mining::DefaultWorkerCount(capacity);
+                tune_reason = capacity.topology_detected
+                    ? "detected physical cores with one core reserved"
+                    : "conservative core estimate with one core reserved";
             }
             node.SetMiningThreads(mine_threads);
             std::cout << GREEN << "  Mining ready; hashing starts after sync.\n" << RESET;
             if (veld::DiagVerbose().load())
                 std::cout << "  Threads: " << mine_threads
-                          << " of ~" << physical_est << " physical / "
-                          << hw_threads << " logical (" << tune_reason << ")\n";
+                          << " of " << (capacity.topology_detected ? "" : "~")
+                          << capacity.physical << " physical / "
+                          << capacity.logical << " logical (" << tune_reason << ")\n";
 #ifdef VELD_REGTEST_FIXED_DIFF
             constexpr uint32_t mining_bits = 0x207fffff;
 #else
