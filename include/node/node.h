@@ -24,6 +24,7 @@
 #include "../mining/genesis_pow.h"
 #include "../mining/preflight_selector.h"
 #include "../mining/nonce_search.h"
+#include "../mining/work_header.h"
 #include "../consensus/staking.h"
 #include "../consensus/validators.h"
 #include "../consensus/btcveld_redeem_params.h"
@@ -822,39 +823,18 @@ inline MineBlockResult MineOnly(
     std::array<uint8_t, 32> winner_merkle_root{};
     std::mutex            best_mtx;
 
-    std::mutex            rollover_mtx;
-    std::atomic<uint64_t> shared_timestamp{candidate.header.timestamp};
-    std::atomic<uint32_t> header_generation{0};
-    std::array<uint8_t, 32> shared_merkle_root;
-    std::copy(candidate.header.merkle_root.begin(),
-              candidate.header.merkle_root.end(),
-              shared_merkle_root.begin());
+    mining::MiningWorkHeader work_header(candidate.header);
 
     auto worker_fn = [&](unsigned worker_id) {
-        std::vector<uint8_t> tb(88);
-        auto tw32 = [&](int offset, uint32_t v) {
-            tb[offset]   =  v        & 0xFF;
-            tb[offset+1] = (v >>  8) & 0xFF;
-            tb[offset+2] = (v >> 16) & 0xFF;
-            tb[offset+3] = (v >> 24) & 0xFF;
-        };
+        auto work = work_header.Read();
+        std::vector<uint8_t> tb = work.header.Serialize();
         auto tw64 = [&](int offset, uint64_t v) {
             for (int i = 0; i < 8; ++i) tb[offset + i] = (uint8_t)((v >> (i*8)) & 0xFF);
         };
-        uint32_t my_gen = 0;
         auto rebuild_local = [&]() {
-            tw32(0, candidate.header.version);
-            std::copy(candidate.header.prev_block_hash.begin(),
-                      candidate.header.prev_block_hash.end(),
-                      tb.begin() + 4);
-            std::copy(shared_merkle_root.begin(),
-                      shared_merkle_root.end(),
-                      tb.begin() + 36);
-            tw64(68, shared_timestamp.load());
-            tw32(76, candidate.header.bits);
-            my_gen = header_generation.load();
+            work = work_header.Read();
+            tb = work.header.Serialize();
         };
-        rebuild_local();
 
         mining::VeldHashVM tvm;
 
@@ -875,7 +855,7 @@ inline MineBlockResult MineOnly(
                     stop_local = true; break;
                 }
             }
-            if (header_generation.load(std::memory_order_acquire) != my_gen) {
+            if (work_header.Generation() != work.generation) {
                 rebuild_local();
                 nonce = mining::MiningWorkerNonceStart(nonce_base, worker_id);
                 continue;
@@ -930,12 +910,7 @@ inline MineBlockResult MineOnly(
                                       << " hash=" << HashToHex(h).substr(0, 16)
                                       << " — calling nms_cb\n";
                             std::cerr.flush();
-                            BlockHeader nms_hdr = candidate.header;
-                            nms_hdr.nonce     = nonce;
-                            nms_hdr.timestamp = shared_timestamp.load();
-                            std::copy(shared_merkle_root.begin(),
-                                      shared_merkle_root.end(),
-                                      nms_hdr.merkle_root.begin());
+                            const BlockHeader nms_hdr = work.WithNonce(nonce);
                             try { nms_cb(nms_hdr); } catch (...) {}
                         }
                     }
@@ -969,20 +944,8 @@ inline MineBlockResult MineOnly(
             nonce += N;
             constexpr uint64_t REFRESH_EVERY_HASHES = 65536ULL;
             if (local_hashes > 0 && (local_hashes % REFRESH_EVERY_HASHES) == 0) {
-                if (progress_counter) progress_counter->fetch_add(1, std::memory_order_relaxed);
-                std::lock_guard<std::mutex> lk(rollover_mtx);
-                if (header_generation.load() == my_gen) {
-                    uint64_t now_ts = (uint64_t)std::time(nullptr);
-                    uint64_t cur_ts = shared_timestamp.load();
-                    uint64_t new_ts = (now_ts > cur_ts) ? now_ts : (cur_ts + 1);
-                    shared_timestamp.store(new_ts);
-                    candidate.header.timestamp = new_ts;
-                    candidate.UpdateMerkleRoot();
-                    std::copy(candidate.header.merkle_root.begin(),
-                              candidate.header.merkle_root.end(),
-                              shared_merkle_root.begin());
-                    header_generation.fetch_add(1, std::memory_order_release);
-                }
+                work_header.RefreshTimestamp(work.generation,
+                    static_cast<uint64_t>(std::time(nullptr)));
             }
         }
 
@@ -1000,6 +963,13 @@ inline MineBlockResult MineOnly(
     for (auto& t : workers) if (t.joinable()) t.join();
 
     hashes = total_hashes_accum.load();
+    // Canceled searches also performed real work, including each worker's
+    // final partial progress batch. Preserve that exact count for telemetry.
+    result.hashes_tried = hashes;
+    result.best_nonce = best_nonce_found;
+    result.best_hash = best_hash_found;
+    result.elapsed_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start).count();
     if (!winner_found.load()) {
         return result;
     }
@@ -15285,14 +15255,17 @@ private:
                 std::cerr.flush();
                 auto mine_end = std::chrono::steady_clock::now();
                 double elapsed = std::chrono::duration<double>(mine_end - mine_start).count();
-                if (elapsed > 0.01 && result.hashes_tried > 0) {
-                    total_hashes_.store(round_total_base + result.hashes_tried,
-                                        std::memory_order_release);
-                    hashrate_.store((double)result.hashes_tried / elapsed,
-                                    std::memory_order_release);
-                }
                 stop_now.store(true);
                 if (mirror.joinable()) mirror.join();
+                // The sampler must finish before publishing the exact result;
+                // otherwise its last partial sample can overwrite this count.
+                if (result.hashes_tried > 0) {
+                    total_hashes_.store(round_total_base + result.hashes_tried,
+                                        std::memory_order_release);
+                    if (elapsed > 0.0)
+                        hashrate_.store((double)result.hashes_tried / elapsed,
+                                        std::memory_order_release);
+                }
                 if (!mining_.load() || !running_.load()) break;
                 if (!result.success) continue;
 

@@ -52,3 +52,36 @@ jobs:
           set -euo pipefail
           c++ -std=c++20 -O1 -pthread -Iinclude tests/mining_nonce_tests.cpp -o "$RUNNER_TEMP/mining_nonce_tests"
           "$RUNNER_TEMP/mining_nonce_tests"
+      - name: Verify mining primitives and concurrent work headers
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in mining_primitive_tests mining_work_header_tests mining_hash_vectors; do
+            c++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -DVELD_PUBLIC_MAINNET \
+              -Iinclude "tests/$test.cpp" -o "$RUNNER_TEMP/$test"
+            if [[ $test == mining_hash_vectors ]]; then
+              "$RUNNER_TEMP/$test" tests/fixtures/veldhash-3.0.9-vectors.txt
+            else
+              "$RUNNER_TEMP/$test"
+            fi
+          done
+      - name: Verify active mining search accounting
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          objects=()
+          index=0
+          while IFS= read -r source; do
+            [[ -n $source && $source != \#* ]] || continue
+            object="$RUNNER_TEMP/mining-pqc-$index.o"
+            cc -std=c11 -O2 -Ivendor/pqc -Ivendor/pqc/mldsa65 -c "$source" -o "$object"
+            objects+=("$object")
+            index=$((index + 1))
+          done < vendor/pqc/provenance/release-c-sources.txt
+          for test in mining_search_tests mining_solution_tests; do
+            c++ -std=c++20 -O2 -pthread -Iinclude -Ivendor/pqc "tests/$test.cpp" "${objects[@]}" \
+              -o "$RUNNER_TEMP/$test"
+            "$RUNNER_TEMP/$test"
+          done

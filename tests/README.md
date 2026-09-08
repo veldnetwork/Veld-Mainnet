@@ -56,6 +56,44 @@ single profile to every test or add test hooks to a production build.
 | Wallet and keys | `wallet_*`, `offline_signer_*`, `seed_*`, `desktop_rpc_*` |
 | Distribution | `pqc_*`, `version_identity_*`, `network_identity_*`, `updater_*`, `release_controller_*` |
 
+## Mining correctness and performance
+
+`mining_primitive_tests.cpp` compares stream buffering and integer square roots
+with the prior implementations, published known answers, and arithmetic bounds.
+`mining_work_header_tests.cpp` exercises concurrent timestamp refreshes and the
+identity of headers reported by workers. `mining_search_tests.cpp` runs the
+actual search loop in a disposable in-memory chain, including concurrent seven-
+and eight-worker groups and accounting for canceled searches. It does not open
+network connections or submit blocks.
+`mining_solution_tests.cpp` uses the existing fixed-difficulty test profile to
+check found blocks, including the exact hashed header and canonical coinbase
+split, with one, seven, eight and sixteen workers. Both search tests link the C
+objects listed in `vendor/pqc/provenance/release-c-sources.txt`, as shown in the
+source-checks workflow.
+
+`mining_hash_vectors.cpp` checks full-size VeldHash outputs against the frozen
+3.0.9 fixture in `fixtures/veldhash-3.0.9-vectors.txt`. Compile it with
+`VELD_MAINNET_POW`, `VELD_PUBLIC_RELEASE`, and `VELD_PUBLIC_MAINNET`; pass the
+fixture path as its only argument. It requires a 1 GiB dataset. Do not substitute
+a reduced test dataset when checking compatibility with released hashes.
+
+The offline benchmark uses production parameters and reuses one virtual machine
+per worker as the active miner does:
+
+```sh
+c++ -std=c++20 -O2 -DNDEBUG -pthread -Iinclude \
+  -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -DVELD_PUBLIC_MAINNET \
+  tests/mining_benchmark.cpp -o ../mining_benchmark
+../mining_benchmark --workers 7 --hashes 256 --trials 3
+```
+
+It prints completed hashes, elapsed time, dataset initialization time and a
+deterministic output checksum. `--profile` also measures initialization,
+execution and finalization separately. Compare repeated runs with identical
+worker counts, compiler options and machine load; timing one run does not
+establish a hardware-wide speedup. Benchmarking consumes CPU and memory but does
+not load wallets, change settings, connect to peers or publish work.
+
 ## Process and platform checks
 
 Python wrappers ending in `_process_tests.py` run separately built fixtures

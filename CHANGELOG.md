@@ -3,6 +3,22 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## Unreleased
+
+### Mining
+
+- Fill mining scratch memory and datasets in complete stream blocks, preserving
+  the existing byte stream and cryptographic implementation.
+- Start the integer square-root calculation at its first relevant bit while
+  preserving exact integer results.
+- Keep each worker's hashed header stable across timestamp refreshes, including
+  the header attached to a near-miss report.
+- Retain completed hash counts when a search is canceled, count only actual work,
+  and finish the progress sampler before publishing the exact final total.
+- Add production-size hash vectors, concurrent search tests, and an offline
+  benchmark. Coinbase allocation, staking eligibility, difficulty rules, and
+  the existing independent search origins are unchanged.
+
 ## 3.0.9 - 2026-09-07
 
 ### Mining

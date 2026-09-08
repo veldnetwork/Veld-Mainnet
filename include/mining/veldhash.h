@@ -4,6 +4,7 @@
 #include "../core/constants.h"
 #include "../core/pow_target.h"
 #include <array>
+#include <bit>
 #include <vector>
 #include <cstdint>
 #include <cstring>
@@ -448,9 +449,14 @@ inline int64_t VeldFixedMul(int64_t a, int64_t b) {
 }
 
 inline uint64_t VeldIntegerSqrt128(unsigned __int128 value) {
+    if (value == 0) return 0;
     unsigned __int128 result = 0;
-    unsigned __int128 bit = static_cast<unsigned __int128>(1) << 126;
-    while (bit > value) bit >>= 2;
+    const uint64_t high = static_cast<uint64_t>(value >> 64);
+    const unsigned top_bit = high != 0
+        ? 127u - static_cast<unsigned>(std::countl_zero(high))
+        : 63u - static_cast<unsigned>(std::countl_zero(static_cast<uint64_t>(value)));
+    // Start at the same highest power of four without shifting through leading zeros.
+    unsigned __int128 bit = static_cast<unsigned __int128>(1) << (top_bit & ~1u);
     while (bit != 0) {
         if (value >= result + bit) {
             value -= result + bit;
@@ -561,6 +567,22 @@ public:
 
     void fill(uint8_t* out, size_t len) {
         while (len > 0) {
+            if (block_off_ == 64 && len >= 64) {
+                // Process complete blocks in one call. Keep partial blocks buffered so
+                // mixed fill()/next64() calls consume exactly the same byte stream.
+                const size_t complete_bytes = len - (len % 64);
+                uint8_t iv[16];
+                iv[0] = static_cast<uint8_t>(counter_);
+                iv[1] = static_cast<uint8_t>(counter_ >> 8);
+                iv[2] = static_cast<uint8_t>(counter_ >> 16);
+                iv[3] = static_cast<uint8_t>(counter_ >> 24);
+                std::memcpy(iv + 4, nonce_, 12);
+                ::veld::vendored_crypto::chacha20_keystream(key_, iv, out, complete_bytes);
+                counter_ += static_cast<uint32_t>(complete_bytes / 64);
+                out += complete_bytes;
+                len -= complete_bytes;
+                continue;
+            }
             if (block_off_ >= 64) refill_();
             size_t avail = 64 - block_off_;
             size_t take = len < avail ? len : avail;
