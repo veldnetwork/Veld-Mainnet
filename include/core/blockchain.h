@@ -3558,19 +3558,14 @@ public:
     }
 
     static const std::unordered_map<uint64_t, std::string>& GetCheckpoints() {
-        auto rev_hex = [](const std::string& be) -> std::string {
-            if (be.size() != 64) return be;
-            std::string le(64, '0');
-            for (size_t i = 0; i < 32; ++i) {
-                le[i * 2]     = be[62 - i * 2];
-                le[i * 2 + 1] = be[63 - i * 2];
-            }
-            return le;
-        };
-
         static const std::unordered_map<uint64_t, std::string> checkpoints = {
+#if defined(VELD_PUBLIC_MAINNET)
+            // Public-mainnet-v2 history, verified against three fully synced
+            // nodes after more than MAX_REORG_DEPTH successor blocks.
+            // Hashes use the exact getblockhash / HashToHex byte order.
+            {2800, "cca5e8f37cfcf63cd2f9a9393e5bc90dd545ef65394a1d4d1aecceffa25e25fc"},
+#endif
         };
-        (void)rev_hex;
         return checkpoints;
     }
 

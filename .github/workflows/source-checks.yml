@@ -45,6 +45,16 @@ jobs:
           set -euo pipefail
           c++ -std=c++20 -O1 -pthread -Iinclude tests/work_admission_tests.cpp -o "$RUNNER_TEMP/work_admission_tests"
           "$RUNNER_TEMP/work_admission_tests"
+      - name: Verify compiled checkpoint boundaries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in VELD_PUBLIC_MAINNET VELD_PUBLIC_TESTNET; do
+            c++ -std=c++20 -O1 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -D"$profile" \
+              -Iinclude tests/compiled_checkpoint_tests.cpp -o "$RUNNER_TEMP/checkpoints-$profile"
+            "$RUNNER_TEMP/checkpoints-$profile"
+          done
       - name: Compile and run mining nonce tests
         if: runner.os == 'Linux'
         shell: bash
