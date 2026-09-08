@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('probe', type=Path)
 args = parser.parse_args()
 probe = args.probe.resolve()
-counts = (1, 4, 7, 8, 12, 16, 32, 64)
+counts = (1, 4, 7, 8, 12, 15, 16, 32, 64)
 
 def run(workers):
     result = subprocess.run([str(probe), str(workers)], check=True, capture_output=True, text=True, timeout=20)

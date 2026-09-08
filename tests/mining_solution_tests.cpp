@@ -29,7 +29,7 @@ int main() {
             miner.script_override.push_back(uint8_t(i + 1));
         miner.script_override.push_back(0x88);
         miner.script_override.push_back(0xac);
-        for (unsigned workers : {1u, 7u, 8u, 16u}) {
+        for (unsigned workers : {1u, 7u, 8u, 15u, 16u}) {
             const auto found = MineOnly(chain, mempool, miner, 0, nullptr, {}, workers);
             check(found.success && found.hashes_tried > 0, "fixture did not return a solution");
             const auto verified =
@@ -43,7 +43,7 @@ int main() {
             check(chain.Height() == 0 && chain.TipCopy().GetHash() == genesis.GetHash(),
                   "offline search committed a block");
         }
-        std::cout << "PASS 1/7/8/16-worker solution verification and unchanged coinbase split\n";
+        std::cout << "PASS 1/7/8/15/16-worker solution verification and unchanged coinbase split\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL " << error.what() << '\n';

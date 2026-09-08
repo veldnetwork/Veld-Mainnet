@@ -3,7 +3,7 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
-## Unreleased
+## 3.1.0 - Pending publication
 
 ### Mining
 
