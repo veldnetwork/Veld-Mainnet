@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Troubleshoot a Veld Node with no peers or CPU mining that remains in a safe waiting state."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Fix no peers or mining waiting"><meta property="og:description" content="Check node status, sync, peer transport, clock, firewall, and logs in a safe order."><meta property="og:url" content="https://veld.network/how-to/no-peers-or-mining/">
+<link rel="canonical" href="https://veld.network/how-to/no-peers-or-mining/"><title>No Peers or Mining Waiting | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Troubleshooting</div><h1>Fix no peers or mining waiting</h1>
+    <p class="lede">Work from the node’s own status in a safe order. Most waiting states protect canonical mining and should be diagnosed—not bypassed.</p>
+    <div class="guide-actions"><span class="guide-meta">Troubleshooting · About 10 minutes</span></div>
+    <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress"><a class="progress-item" href="#observe"><span class="progress-index">01</span><span class="progress-label">Observe</span></a><a class="progress-item" href="#peers"><span class="progress-index">02</span><span class="progress-label">Peers</span></a><a class="progress-item" href="#mining"><span class="progress-index">03</span><span class="progress-label">Mining</span></a><a class="progress-item" href="#logs"><span class="progress-index">04</span><span class="progress-label">Logs</span></a></nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="observe">
+      <p class="stage-label">01 / Observe</p><h2>Read the app before changing anything</h2>
+      <p>Open <strong>Overview</strong>, <strong>Blockchain</strong>, <strong>Network</strong>, and <strong>Mining</strong>. Record what each page reports.</p>
+      <ul class="checklist"><li>Is the node process Running or Stopped?</li><li>Is local status online?</li><li>Is local height increasing?</li><li>How many direct peers are connected?</li><li>What exact Mining status and detail are shown?</li><li>Does the Network page show Clearnet or Tor-only?</li></ul>
+      <div class="note"><strong>Do not use Task Manager activity as the verdict.</strong> A process can consume CPU and memory while still opening chain state, synchronizing, or safely waiting for peer confirmation.</div>
+    </section>
+
+    <section class="content-section" id="peers">
+      <p class="stage-label">02 / Peers</p><h2>Restore healthy peer connectivity</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Allow initial discovery time</h3><p>After a fresh start or transport change, wait for the Network page to populate before restarting again.</p></div></li>
+        <li class="step"><div><h3>Confirm the intended transport</h3><p>Tor-only preparation must succeed before Tor peers can connect. On Clearnet, outbound peers work even when no inbound mapping is available.</p></div></li>
+        <li class="step"><div><h3>Check ordinary internet access</h3><p>Resolve captive portals, disconnected VPNs, restrictive security software, or a network that blocks outbound connections.</p></div></li>
+        <li class="step"><div><h3>Check Windows time</h3><p>Enable automatic date, time, and time-zone synchronization. Excessive clock drift blocks safe mining and can disrupt peer agreement.</p></div></li>
+        <li class="step"><div><h3>Review the firewall scope</h3><p>Inbound TCP 8333 is optional and should be limited to the signed node executable on Private or Domain networks. Never expose RPC 8334, the local wallet, or the local explorer.</p></div></li>
+      </ol>
+      <div class="note"><strong>Outbound-only is a valid operating state.</strong> If direct peers are connected and the chain advances, the absence of inbound peers is not a failure.</div>
+    </section>
+
+    <section class="content-section" id="mining">
+      <p class="stage-label">03 / Mining</p><h2>Interpret the waiting state</h2>
+      <div class="status-list">
+        <div class="status-row"><strong>Synchronizing</strong><p>Wait for the Blockchain page to show Synchronized.</p></div>
+        <div class="status-row"><strong>Waiting for anchor</strong><p>No configured network anchor is connected. Restore peer connectivity and wait.</p></div>
+        <div class="status-row"><strong>Clock drift</strong><p>Correct the Windows clock and allow peer time checks to recover.</p></div>
+        <div class="status-row"><strong>Genesis mismatch</strong><p>Connected peers do not match this build’s genesis. Confirm the official current client and intended network; do not force acceptance.</p></div>
+        <div class="status-row"><strong>Waiting for peer tip</strong><p>Fresh canonical peer-tip confirmation is required.</p></div>
+        <div class="status-row"><strong>Below peer floor</strong><p>The configured peer confidence floor is not currently satisfied.</p></div>
+        <div class="status-row"><strong>Propagation</strong><p>The current tip is waiting for acknowledgement before new work is admitted.</p></div>
+        <div class="status-row"><strong>Reorg rebuild</strong><p>Derived chain state is being rebuilt safely. Let it finish.</p></div>
+        <div class="status-row"><strong>Work admission</strong><p>The node is waiting for safe canonical work admission.</p></div>
+        <div class="status-row"><strong>Mining error</strong><p>Open Logs and use the exact node-reported error for the next step.</p></div>
+      </div>
+      <div class="note"><strong>Never weaken admission checks to make “Hashing” appear.</strong> Mining against an unverified or stale tip wastes work and can create orphaned blocks.</div>
+    </section>
+
+    <section class="content-section" id="logs">
+      <p class="stage-label">04 / Logs</p><h2>Collect useful diagnostics</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Open Logs</h3><p>Read the newest local node output around the time the status changed.</p></div></li>
+        <li class="step"><div><h3>Use Copy diagnostics</h3><p>Capture version, node state, height, peers, sync mode, transport, and mining state together.</p></div></li>
+        <li class="step"><div><h3>Open the log folder when needed</h3><p>Use <strong>Open log folder</strong> to inspect the full local record. Review copied text before sharing because it can contain operational metadata.</p></div></li>
+        <li class="step"><div><h3>Restart once, cleanly</h3><p>If the app reports a transient startup error, stop the node, wait for it to exit, and start it once. Avoid repeated rapid restarts.</p></div></li>
+      </ol>
+      <div class="note"><strong>Keep identity files out of diagnostics.</strong> No support request needs <code>miner.key</code>, a <code>.veld-keys</code> file, its passphrase, or a private key.</div>
+    </section>
+
+    <section class="content-section"><h2>Actions to avoid</h2><ul class="plain-list"><li>Do not delete <code>veld-data</code> as a first troubleshooting step.</li><li>Do not replace chain state with files from another person.</li><li>Do not open RPC or local app ports to the internet.</li><li>Do not disable release signature checks.</li><li>Do not remove the mining identity unless a verified backup exists.</li></ul></section>
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/clearnet-or-tor/"><span>Previous guide</span><strong>Choose Clearnet or Tor-only</strong></a><a class="next-guide" href="/how-to/update-node/"><span>Next guide</span><strong>Update Veld Node safely</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current Veld Node attention states, Mining details, Network transport states, and diagnostics flow.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

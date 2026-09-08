@@ -1,6 +1,6 @@
 sha256	role	origin	upstream_revision	upstream_path	upstream_sha256	patch	path
 59538d1aed02ee4fcd5e858d3633ebc848d3ee5a5dd9723f1247c26d952a54e7	distributed-source	Veld	-	-	-	-	.gitattributes
-17593331656b39fcd70460dbe609b1104a490dbb960a5f618dd10a1f40410de4	distributed-source	Veld	-	-	-	-	.gitignore
+ae9dd7c125da78d85fcaf629efcccf47e4a5325e05216b3a702643da0cbd378e	distributed-source	Veld	-	-	-	-	.gitignore
 2712c6e470f165ec2a628eec255abaae5b1653ea5d6ff19b2f4ba905462feec6	license-notice	Veld	-	-	-	-	THIRD_PARTY_NOTICES.md
 ae19676d2c6bc538ab97c0dcd160f7babab4519da5ec3fb57a9c49054bebdb96	build-controller	Veld	-	-	-	-	build/mainnet-v2-linux.sh
 bf451aab86a584723437fc55a9afd27194a923d5c8a4768d7e869ab40ee7d627	build-controller	Veld	-	-	-	-	build/mainnet-v2-windows.sh

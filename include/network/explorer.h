@@ -2553,17 +2553,18 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 <div class="card rule-card">
   <h2>How Veld works</h2>
   <p style="color:var(--muted);font-size:13px;line-height:1.6">
-    A plain-English summary of the rules every Veld node enforces.
-    Full derivations, formulas, and edge-case behaviour are documented in the
-    <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a>.
+    Reviewed for Veld 3.1.0 on 8 September 2026. This summarizes the released
+    <a href="https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.0" style="color:var(--em);text-decoration:underline">consensus source</a>.
+    The <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a> provides background.
+    A protocol day is 480 blocks. Durations in days assume the 180-second target; actual elapsed time varies.
   </p>
   <div class="toc">
     <h3>Table of Contents</h3>
     <ul>
       <li><a href="#emission">1. Block reward &amp; emission</a></li>
-      <li><a href="#splits">2. Coinbase split (50 / 20 / 20 / 10)</a></li>
+      <li><a href="#splits">2. Coinbase split &amp; activation</a></li>
       <li><a href="#vault">3. Vault distribution math</a></li>
-      <li><a href="#caps">4. Vault drain protection</a></li>
+      <li><a href="#caps">4. Vault distribution limits</a></li>
       <li><a href="#whale">5. Concentration limit</a></li>
       <li><a href="#multiplier">6. Multiplier system</a></li>
       <li><a href="#stakelock">7. Stake lockup tiers</a></li>
@@ -2572,7 +2573,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
       <li><a href="#valbond">10. Validator bond, slashing &amp; yield escrow</a></li>
       <li><a href="#poolflush">11. Co-mining lottery</a></li>
       <li><a href="#governance">12. Governance</a></li>
-      <li><a href="#privacy">13. Privacy &amp; safety guarantees</a></li>
+      <li><a href="#privacy">13. Privacy &amp; safety</a></li>
       <li><a href="#difficulty">14. Difficulty retargeting</a></li>
       <li><a href="#btcveld">15. btcVELD &mdash; the Bitcoin peg</a></li>
       <li><a href="#syncing">16. Syncing &amp; trust</a></li>
@@ -2583,44 +2584,39 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="emission">1. Block reward &amp; emission</h2>
-  <p>The network produces a new block roughly every <strong>180 seconds</strong> and mints a fixed reward of <strong>3.13926940 VELD</strong> &mdash; flat, with no halving. That works out to about <strong>1,507 VELD per day</strong> across the network, or 550,000 VELD per year. That flat rate is mined all the way to the <strong>21,000,000 VELD</strong> hard cap in roughly <strong>38 years</strong> (21M &divide; 550K) &mdash; there is no premine and no separate reserve, every coin is issued through the block reward. Once the cap is reached, no more is ever created.</p>
+<p>Veld targets a block every <strong>180 seconds</strong>. The base subsidy is <strong>3.13926940 VELD</strong>, with no halving. A small rounding adjustment every 175,200 blocks gives 550,000 VELD per protocol year before the <strong>21,000,000 VELD hard cap</strong>; the last subsidy is limited by remaining issuance.</p>
+  <p>At target speed this is about 1,507 VELD per day and 38 years of issuance. These are estimates, not a fixed calendar schedule. There is no premine; new VELD is issued through block subsidy, which ends at the cap.</p>
 </div>
 
 <div class="card rule-card">
   <h2 id="splits">2. Where each block reward goes</h2>
-  <p>Ordinary block rewards split four ways. Every node enforces the exact outputs; every 100th block is the stated exception and routes its full subsidy to the vault.</p>
+  <p>Before staking activates at 10,000 VELD issued, ordinary block subsidies split <strong>50% to the miner and 50% to the vault</strong>. After activation, ordinary blocks use the split below. <strong>Every 100th block routes its full subsidy to the vault</strong> in both phases.</p>
   <table class="tbl-rules">
     <tr><th>Stream</th><th>Share</th><th>Goes to</th></tr>
     <tr><td style="color:var(--em);font-weight:600">Block winner</td><td style="color:var(--em)"><strong>50%</strong></td><td>Whoever solved this block&#39;s proof-of-work</td></tr>
     <tr><td style="color:#4CB8FF;font-weight:600">Co-mining pool</td><td style="color:#4CB8FF"><strong>20%</strong></td><td>Pays out to near-miss miners every 100 blocks (see &sect;11)</td></tr>
-    <tr><td style="color:var(--gold);font-weight:600">Vault</td><td style="color:var(--gold)"><strong>20%</strong></td><td>Pays out to stakers every 480 blocks (daily)</td></tr>
-    <tr><td style="color:#B07CFF;font-weight:600">Validator pool</td><td style="color:#B07CFF"><strong>10%</strong></td><td>Pays out to active validators every 480 blocks (daily)</td></tr>
+    <tr><td style="color:var(--gold);font-weight:600">Vault</td><td style="color:var(--gold)"><strong>20%</strong></td><td>Eligible staking distributions every 480 blocks</td></tr>
+    <tr><td style="color:#B07CFF;font-weight:600">Validator pool</td><td style="color:#B07CFF"><strong>10%</strong></td><td>Eligible endorsement distributions every 480 blocks</td></tr>
   </table>
   <p style="color:var(--muted);font-size:12px">During the subsidy era, transaction fees flow to the vault on top of its block share. Post-cap fee routing is 50% miner, 40% vault, and 10% validator pool.</p>
 </div>
 
 <div class="card rule-card">
   <h2 id="vault">3. How vault distributions work</h2>
-  <p>Staking activates once network supply reaches <strong>10,000 VELD</strong>. Until then the vault continues accumulating and no stake can be created.</p>
-  <p>Every <strong>480 blocks</strong> (~24 hours) the vault pays out a portion of its inflow during that cycle to every active staker. Your share is proportional to <span class="formula">your stake &times; your multiplier</span>, normalised against the rest of the active stakers.</p>
-  <p>Higher multipliers get a bigger slice; everyone else still gets paid. The full payout math is in the <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a>.</p>
+<p>Staking activates when canonical issued supply reaches <strong>10,000 VELD</strong>. The minimum ordinary stake is <strong>1,000 VELD</strong>.</p>
+  <p>Every <strong>480 blocks</strong>, the vault can distribute a budget to eligible stakes and validator yield escrow. Ordinary stake weight is <span class="formula">stake &times; mining multiplier &times; lockup multiplier</span>, with the combined multiplier capped at 3.00&times;.</p>
+  <p>The budget, concentration limit, recipient limits, fees, and integer rounding determine actual payments. A multiplier changes your relative weight; it does not promise a fixed yield or a payment in every cycle.</p>
 </div>
 
 <div class="card rule-card">
-  <h2 id="caps">4. Vault drain protection &mdash; vault never drains, always grows</h2>
-  <p>The vault is the network's long-term staking reserve. A consensus-enforced rule guarantees the vault holds a positive growth rate every cycle, even at scale:</p>
-  <ul>
-    <li><strong>Inflow cap:</strong> at most <strong>90%</strong> of the vault inflow during a cycle (~480 blocks of coinbase splits + transaction fees + every-100th-block bonuses) is paid to stakers. The remaining <strong>10%</strong> stays as principal &mdash; the vault grows by that 10% every cycle, forever.</li>
-    <li><strong>Backstop ceiling:</strong> never more than <strong>8%</strong> of the vault balance distributes in one cycle. (Defence-in-depth; the inflow cap binds first in normal operation.)</li>
-    <li><strong>Pool never freezes:</strong> distributions fire whenever there's at least one active staker.</li>
-  </ul>
-  <p style="color:var(--muted);font-size:12px">These limits are a hard guarantee enforced at consensus time. The multiplier system can only redistribute the cycle budget between stakers; it can never enlarge it. Because at most 90% of inflow leaves per cycle, the vault grows monotonically &mdash; an early-staker bonanza is impossible by design, and the post-emission-era fee economy inherits a substantial principal that funds stakers indefinitely.</p>
+  <h2 id="caps">4. Vault distribution limits</h2>
+<p>The distribution budget is bounded by both <strong>90% of the previous cycle’s vault inflow</strong> and <strong>8% of the spendable vault balance</strong>. The smaller limit applies, with transaction costs and payout rules also accounted for.</p>
+  <p>Undistributed funds remain in the vault. A cycle needs sufficient spendable funds and eligible payout weight; very small payments can round to zero. Multipliers cannot increase the budget. These limits restrict distributions but do not guarantee perpetual growth or future returns.</p>
 </div>
 
 <div class="card rule-card">
   <h2 id="whale">5. Concentration limit</h2>
-  <p>No single staker can receive more than <strong>75%</strong> of any one distribution cycle, no matter how big their stake or multiplier is. If their share would exceed 75%, the excess <em>stays in the vault for the next cycle</em> &mdash; it is never redistributed back to other stakers.</p>
-  <p style="color:var(--muted);font-size:12px">At realistic network scale (many active stakers) the limit is dormant: every staker's share is well under 75% and the full cycle distributes. The 75% number is set so a max-lockup staker still earns the full multiplier they were promised; the math is in the <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a>.</p>
+<p>No eligible recipient can receive more than <strong>75% of the cycle’s distribution budget</strong>. If its calculated share exceeds that cap, the excess stays in the vault; it is not redistributed to the other recipients in that cycle.</p>
 </div>
 
 <div class="card rule-card">
@@ -2656,7 +2652,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="minetier">8. Mining tier ladder</h2>
-  <p>Mining tiers reward consistent mining over time. A day counts as <strong>active</strong> for your address if you mined at least one block during it &mdash; it doesn't matter whether you found 1 or 100. Your tier is recomputed every block from a rolling window of recent days.</p>
+  <p>Mining tiers reward consistent mining over time. A 480-block protocol day counts as <strong>active</strong> for your address if you mined at least one canonical block during it &mdash; it doesn't matter whether you found 1 or 100. Your tier is recomputed every block from a rolling window of recent days.</p>
   <table class="tbl-rules tier-ladder">
     <tr><th>Tier</th><th>Requirement</th><th>Multiplier</th></tr>
     <tr><td>Base</td><td>Mine any block</td><td>1.00&times;</td></tr>
@@ -2671,14 +2667,14 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="endorse">9. Validators &amp; the validator pool</h2>
-  <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool collects <strong>10% of every block&#39;s reward</strong> and pays it out every <strong>480 blocks</strong> (daily) in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle.</p>
+  <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool collects <strong>10% of ordinary block subsidy after staking activation</strong> and pays it out every <strong>480 blocks</strong> in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle.</p>
   <ul>
-    <li><strong>System unlock.</strong> Staking first activates when issued supply reaches 10,000 VELD. After that, the validator subsystem unlocks when aggregate ordinary stake reaches <strong>10,000 VELD</strong>. Until then, no endorsements are accepted and the 10% pool accumulates.</li>
+    <li><strong>System unlock.</strong> Staking first activates when issued supply reaches 10,000 VELD. After that, the validator subsystem unlocks when aggregate ordinary stake reaches <strong>10,000 VELD</strong>. Before the aggregate-stake gate opens, no endorsements are accepted. The validator pool begins receiving its allocation only after staking activates.</li>
     <li><strong>Register on-chain.</strong> You submit a <span class="formula">VELD_VALIDATOR|REGISTER</span> transaction binding your ML-DSA-65 public key. A matching <span class="formula">DEREGISTER</span> exits cleanly.</li>
     <li><strong>Bond the minimum.</strong> Registration requires posting the minimum validator bond of <strong>10,000 VELD</strong> (see &sect;10) into the sigless custody vault. The live value is shown on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a>.</li>
     <li><strong>Stay online.</strong> Endorsement share is your count &divide; the network&#39;s count over the last 480 blocks &mdash; consistent uptime is what pays.</li>
   </ul>
-  <p style="color:var(--muted);font-size:12px">Endorsement is one of three independent reward streams: the <em>co-mining lottery</em> is a flat draw (&sect;11), the <em>vault</em> pays every staker (&sect;3), and only the <em>validator pool</em> is endorsement-gated. They do not overlap and you can earn from more than one.</p>
+  <p style="color:var(--muted);font-size:12px">Endorsement is one of three independent reward streams: the <em>co-mining lottery</em> is a flat draw (&sect;11), the <em>vault</em> distributes by eligible stake weight (&sect;3), and only the <em>validator pool</em> is endorsement-gated. They do not overlap and you can earn from more than one.</p>
 </div>
 
 <div class="card rule-card">
@@ -2696,24 +2692,20 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
   </table>
   <p>A conflicting locked-finality vote is the stronger <strong>finality-equivocation</strong> class. It returns <strong>0%</strong> to the offender, pays <strong>25%</strong> to the reporter, and sends <strong>75%</strong> to a provably unspendable burn output. The two schedules are intentionally distinct and are selected by the evidence type in consensus.</p>
   <h3>Yield escrow</h3>
-  <p>Idle collateral is wasteful, so the bonded principal <strong>also earns vault yield at the top lockup tier (1.5&times;)</strong>. Because it is paid at the 90-day tier rate, that yield is not paid out immediately &mdash; it is <strong>escrowed and vests on a rolling ~90-day delay</strong> (43,200 blocks), matching the multiplier it earns:</p>
+  <p>Bonded principal participates in vault distributions with a <strong>1.5&times; lockup weight</strong>. Because it is paid at the 90-day tier rate, that yield is not paid out immediately &mdash; it is <strong>escrowed and vests on a rolling ~90-day delay</strong> (43,200 blocks), matching the multiplier it earns:</p>
   <ul>
     <li>Vested yield is released to the validator on the normal settlement schedule.</li>
-    <li>If the validator is slashed, the still-<em>unvested</em> tail is clawed back along with the bond.</li>
-    <li>Already-vested income is kept &mdash; behave for years then slip once and you only forfeit the recent unvested tail around the offence, not your whole earning history.</li>
+    <li>Either slashing class confiscates the entire still-<em>unvested</em> yield, in addition to its applicable bond penalty.</li>
+    <li>Yield already released before the slash is not clawed back.</li>
   </ul>
   <p style="color:var(--muted);font-size:12px">Live custody-vault and yield-escrow balances, per-validator bond status (custodial / slashed), and the slashing-evidence ledger are all on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a>. Full vesting schedule and confiscation derivation are in the <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a>.</p>
 </div>
 
 <div class="card rule-card">
   <h2 id="poolflush">11. Co-mining lottery</h2>
-  <p>Mining doesn't have to win the block to pay you. The 20% co-mining pool collects on every block and pays out every <strong>100 blocks</strong> through a simple uniform lottery:</p>
-  <ul>
-    <li>Mine the chain. Your node automatically submits "near-misses" &mdash; hashes that came close to the target but didn't quite win the block.</li>
-    <li>Have the minimum stake locked at your mining address. (Same stake as for vault distributions, no double-lock.)</li>
-    <li>Submit at least one valid near-miss in the 100-block window &mdash; that's it.</li>
-  </ul>
-  <p>At the end of each window, five eligible miners are selected uniformly; the draw expands to 20 winners once at least 1,000 miners are eligible. Each eligible address has one entry regardless of near-miss count, and each window starts fresh. Randomness derivation and consensus enforcement are documented in the <a href="https://veld.network/whitepaper.pdf#co-mining-lottery" style="color:var(--em);text-decoration:underline">whitepaper</a>.</p>
+<p>After staking activates, the co-mining pool receives <strong>20% of ordinary block subsidies</strong>. A draw runs every <strong>100 blocks</strong>.</p>
+  <ul><li>Keep at least <strong>1,000 VELD of ordinary stake locked at the mining address</strong>. The same stake can qualify for vault distributions.</li><li>The client submits qualifying near-miss proofs automatically. At least one valid proof must be <strong>included in the canonical chain during the draw window</strong>; submission alone does not qualify.</li><li>Each eligible address gets one entry regardless of its near-miss count. Up to four near-miss records can be included per block.</li></ul>
+  <p>The draw selects up to five distinct addresses, or up to 20 when at least 1,000 addresses qualify. Each winner receives one slot; unfilled slots carry forward, subject to the protocol’s rounding rule. Finding a block or receiving a lottery payment is not guaranteed.</p>
 </div>
 
 <div class="card rule-card">
@@ -2723,43 +2715,43 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <div class="peg-item"><span class="k">Who participates</span><span class="v">Registered, recently active validators submit proposals and vote.</span></div>
     <div class="peg-item"><span class="k">Voting window</span><span class="v"><strong>6,720 blocks</strong>, approximately 14 days.</span></div>
     <div class="peg-item"><span class="k">General proposals</span><span class="v"><strong>51% yes.</strong> The quorum is seven votes when at least seven validators are recently active; below that it follows a majority of active validators.</span></div>
-    <div class="peg-item"><span class="k">Protocol upgrades</span><span class="v"><strong>67% yes</strong> with a hard minimum of ten votes, followed by a seven-day timelock.</span></div>
+    <div class="peg-item"><span class="k">Protocol upgrades</span><span class="v"><strong>67% yes</strong> with a hard minimum of ten votes, followed by a 3,360-block (approximately seven-day) timelock.</span></div>
   </div>
   <p>Passing a protocol-upgrade proposal records on-chain approval after the timelock. It does not automatically replace node binaries or mutate consensus parameters; a software upgrade still requires published source, signed artifacts, operator adoption, and an activation plan.</p>
 </div>
 
 <div class="card rule-card">
   <h2 id="privacy">13. Privacy &amp; safety</h2>
-  <ul>
-    <li><strong>Your private key never leaves your machine.</strong> The wallet signs every transaction locally; only the signed bytes go on the wire.</li>
-    <li><strong>No deep rewrites.</strong> A branch that would remove 100 or more blocks is rejected. Once validator finality and a locally observed Bitcoin anchor floor exist, those retained checkpoints add stronger limits.</li>
-    <li><strong>Vault drain protection.</strong> The 90% inflow cap (vault retains &ge;10% of every cycle's inflow as principal), 8% balance backstop, and 75% per-staker concentration limit collectively make vault drain impossible &mdash; the reserve grows monotonically.</li>
-    <li><strong>Coinbase maturity.</strong> Newly-mined VELD (including co-mining and validator-pool payouts) is spendable only after 100 confirmations. Stops reorg-and-spend attacks.</li>
-    <li><strong>Post-quantum signatures.</strong> Every transaction is signed with ML-DSA-65 (NIST FIPS 204), so a future quantum computer doesn&#39;t invalidate a single UTXO.</li>
+<ul>
+    <li><strong>Local signing.</strong> Wallet keys stay on the device; the wallet sends signed transaction bytes. Protect the device, passphrase, and encrypted backups.</li>
+    <li><strong>Reorganization limits.</strong> A branch removing 100 or more blocks is rejected. Qualified validator finality and a locally verified Bitcoin anchor can add stronger boundaries once activated and observed. They are not implied by block height or a dashboard label.</li>
+    <li><strong>Vault limits.</strong> The inflow, balance, and concentration caps in &sect;&sect;4–5 restrict distributions.</li>
+    <li><strong>Reward maturity.</strong> Coinbase-class rewards require 100 confirmations before spending. Ordinary transactions can still be affected by a reorganization before they are sufficiently confirmed.</li>
+    <li><strong>Signature security.</strong> Native transaction and finality signatures use ML-DSA-65. Address hashes, proof of work, and Bitcoin custody have their own security assumptions; this is not a guarantee against every future quantum attack.</li>
   </ul>
 </div>
 
 <div class="card rule-card">
   <h2 id="difficulty">14. Difficulty retargeting</h2>
-  <p>The chain aims at a <strong>180-second block time</strong>. Mining difficulty re-tunes itself once every <strong>144 blocks</strong> based on how fast the previous window of blocks was found. If miners are finding blocks too fast, difficulty rises; too slow, it falls. For the first 390 blocks after genesis the chain uses a faster 36-block window with a wider adjustment clamp, so a brand-new network settles to its real hashrate within hours no matter how many miners show up on day one.</p>
-  <p>Each standard retarget clamps the window's measured block time to between <strong>0.5&times; and 1.5&times;</strong> of target before adjusting, so difficulty can at most roughly double (or fall to about two-thirds) in one step &mdash; a hashrate spike or drop can never push the chain off balance suddenly. If the network briefly stalls, mining waits for the next 144-block retarget boundary &mdash; LWMA reads the previous window's timestamps and re-targets to the current hashrate without any special-case eased-bits rule.</p>
-  <p style="color:var(--muted);font-size:12px">The retarget algorithm is LWMA (Linear Weighted Moving Average) over a 144-block window. Full math, clamp rationale, and consensus-enforcement details are in the <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a>.</p>
+<p>Veld targets <strong>180 seconds per block</strong> using a <strong>144-block linear weighted moving average (LWMA)</strong>. Faster measured blocks raise difficulty; slower measured blocks lower it at the next retarget boundary.</p>
+  <p>The standard calculation bounds individual timing samples and clamps the weighted average to <strong>0.5&times;–1.5&times;</strong> of target. This limits each adjustment to approximately a doubling or a fall to two-thirds, subject to the proof-of-work limit and compact-target rounding.</p>
+  <p>The launch phase used shorter bootstrap windows. Standard retargeting now applies. Elapsed wall-clock time alone does not relax difficulty, and a change in hashrate can produce faster or slower blocks until subsequent retargets respond.</p>
 </div>
 
 <div class="card rule-card">
   <h2 id="btcveld">15. btcVELD &mdash; the Bitcoin peg</h2>
-  <div class="peg-status"><strong>Activation:</strong> btcVELD becomes available after seven qualified validators complete the finality warm-up. This is a one-time activation threshold; falling below seven later does not disable an active peg.</div>
+  <div class="peg-status"><strong>Activation:</strong> btcVELD becomes available after seven qualified validators complete the finality warm-up. This is a one-time qualification threshold; a later count drop alone does not deactivate it. A finality-liveness stall can stop new mint exposure. Existing completion and redemption paths retain their own validation rules.</div>
   <div class="peg-grid">
     <div class="peg-item"><span class="k">Backing</span><span class="v"><strong>1 btcVELD = 1 BTC</strong> held in peg custody.</span></div>
     <div class="peg-item"><span class="k">Custody</span><span class="v"><strong>10 BTC aggregate hard cap.</strong> There is no per-address or per-mint cap. Issuer-assisted headroom can be lower while the network work tier matures; permissionless SPV mints share only the 10 BTC ceiling. Live capacity is shown in the wallet.</span></div>
-    <div class="peg-item"><span class="k">Wrap</span><span class="v">A confirmed BTC deposit mints the same amount of btcVELD to the selected Veld address.</span></div>
-    <div class="peg-item"><span class="k">Redeem</span><span class="v">Burn btcVELD to receive the matching BTC at the Bitcoin address you choose.</span></div>
+    <div class="peg-item"><span class="k">Wrap</span><span class="v">A qualifying BTC deposit can mint matching btcVELD after the required confirmations, proof checks, and admission gates.</span></div>
+    <div class="peg-item"><span class="k">Redeem</span><span class="v">Request redemption to a supported Bitcoin address. Burn, settlement, confirmations, applicable fees, and redemption limits govern completion.</span></div>
   </div>
   <h3>Verification and safety</h3>
   <ul>
     <li><strong>Consensus enforcement.</strong> Every node validates each mint, transfer, redeem, custody limit, and daily redemption limit.</li>
     <li><strong>Bitcoin proofs.</strong> Nodes maintain verified Bitcoin headers and validate deposits with light-client proofs. Header relay transactions pay VELD fees and do not spend BTC.</li>
-    <li><strong>Solvency watchtower.</strong> New issuance pauses if custody can no longer be proven to cover btcVELD supply.</li>
+    <li><strong>Solvency watchtower.</strong> The issuer requires a fresh authenticated solvency heartbeat before authorizing new issuance. Nodes separately validate the on-chain mint and reserve rules.</li>
     <li><strong>Finality anchors.</strong> Once validator finality is active, confirmed Bitcoin anchors prevent reorganizations below the retained anchored checkpoint. Anchors spend ordinary Bitcoin network fees.</li>
   </ul>
   <h3>Liquidity</h3>
@@ -2785,7 +2777,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
   <details>
     <summary>Sync options and trust</summary>
     <p><code>--full-ibd</code> and <code>--no-snapshot</code> skip snapshot import. Previously imported data still requires validation; verified progress can be reused on restart. Tor-only mode syncs from peers without HTTPS snapshot downloads. If existing data fails startup checks, the node stops and reports the error.</p>
-    <p>A snapshot signature does not replace consensus checks. Before validator finality, nodes rely on verified proof of work and reorganization limits. Once a node verifies a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that checkpoint and rejects conflicting histories.</p>
+    <p>A snapshot signature does not replace consensus checks. Version 3.1.0 treats downloaded fleet checkpoints as advisory and has no compiled checkpoint pins. Before validator finality, nodes rely on verified proof of work and reorganization limits. Once a node verifies a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that checkpoint and rejects conflicting histories.</p>
   </details>
 </div>
 

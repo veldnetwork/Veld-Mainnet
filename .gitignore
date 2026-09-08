@@ -69,6 +69,7 @@ Thumbs.db
 /test/
 /scripts/*
 !/scripts/verify-pqc-provenance.py
+!/scripts/check-how-to.py
 !/scripts/rebuild-pqc-wasm.sh
 !/scripts/rebuild-pqc-wasm.py
 !/scripts/generate-mldsa65-nist-kat.py

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Pair Veld Node with the secure remote portal, understand shared health data and permitted controls, and disable access safely."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Set up Veld Node remote monitoring"><meta property="og:description" content="Pair the secure portal, understand remote operations, and disable access when finished."><meta property="og:url" content="https://veld.network/how-to/remote-monitoring/">
+<link rel="canonical" href="https://veld.network/how-to/remote-monitoring/"><title>Remote Monitoring | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Operations</div><h1>Set up remote monitoring</h1>
+    <p class="lede">Pair Veld Node with the secure portal, understand exactly what the portal can see and control, and disable remote access when it is no longer needed.</p>
+    <div class="guide-actions"><a class="button" href="https://portal.veld.network/" target="_blank" rel="noopener noreferrer">Open monitoring portal</a><span class="guide-meta">About 7 minutes</span></div>
+    <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress"><a class="progress-item" href="#enable"><span class="progress-index">01</span><span class="progress-label">Enable</span></a><a class="progress-item" href="#pair"><span class="progress-index">02</span><span class="progress-label">Pair</span></a><a class="progress-item" href="#control"><span class="progress-index">03</span><span class="progress-label">Control</span></a><a class="progress-item" href="#disable"><span class="progress-index">04</span><span class="progress-label">Disable</span></a></nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="enable">
+      <p class="stage-label">01 / Enable</p><h2>Turn on remote access deliberately</h2>
+      <p>In Veld Node, open <strong>Settings → Remote access</strong> and enable the toggle. The app creates a protected device credential and begins connecting to <code>portal.veld.network</code> over HTTPS.</p>
+      <div class="note"><strong>Enabling this sends operational health data off the computer.</strong> Leave it disabled if you do not want remote status or remote operations.</div>
+      <h3 style="margin-top:24px">Health data reported</h3>
+      <ul class="plain-list"><li>Device name and installed Veld version.</li><li>Height, sync lag, chain-data size, mempool size, and last-block age.</li><li>Hashrate, worker count, mining state, session hashes, and mined-block count.</li><li>Peer totals, inbound/outbound counts, peer roles, exact-tip count, and anonymized topology.</li><li>Selected sync, Tor, reachability, public-reference, and mining preferences.</li></ul>
+      <p style="margin-top:14px">Wallet keyfiles, private keys, and passphrases are not part of the monitoring report.</p>
+    </section>
+
+    <section class="content-section" id="pair">
+      <p class="stage-label">02 / Pair</p><h2>Use the one-time code</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Wait for the pair code</h3><p>Settings displays a temporary code in the format <code>ABCD-EFGH</code> and the message <strong>Open the portal and enter the one-time code</strong>.</p></div></li>
+        <li class="step"><div><h3>Open the official portal</h3><p>Use the app’s <strong>Open portal</strong> button or enter the exact HTTPS address yourself.</p><a class="url" href="https://portal.veld.network/" target="_blank" rel="noopener noreferrer">https://portal.veld.network/</a></div></li>
+        <li class="step"><div><h3>Enter the code once</h3><p>Use <strong>Copy code</strong> or type it into the signed-in portal. Do not post the code publicly or send it to another person.</p></div></li>
+        <li class="step"><div><h3>Confirm the app reports Connected</h3><p>Veld Node should show <strong>Connected. Remote operations are active.</strong></p></div></li>
+      </ol>
+      <div class="note"><strong>Treat the pair code as temporary access authority.</strong> Anyone who can use it before expiration may be able to attach the device to a portal account.</div>
+      <p class="instruction">To move the node to another account, use <strong>Settings → Remote access → New pair code</strong> locally and confirm revocation of the old pairing. For account creation, the 15-minute code lifecycle, and pairing troubleshooting, use <a href="/how-to/pair-veld-portal/">Pair Veld Node with the Portal</a>.</p>
+    </section>
+
+    <section class="content-section" id="control">
+      <p class="stage-label">03 / Control</p><h2>Understand what pairing authorizes</h2>
+      <p>A paired portal is not view-only, but it is not unattended remote control. It requests restricted, signed, time-limited commands. <strong>Every command requires a Yes approval in Veld Node on the paired computer</strong>, including the first command that establishes trust in a new pairing. Without local approval, no action is performed.</p>
+      <dl class="path-list">
+        <div class="path-row"><dt>Node</dt><dd>Start or stop the app-managed node process.</dd></div>
+        <div class="path-row"><dt>Mining</dt><dd>Save CPU-mining and worker-count preferences for the next app-managed start; do not assume the running workers changed immediately.</dd></div>
+        <div class="path-row"><dt>Network</dt><dd>Change Tor-only preference, inbound-reachability preference, and public-reference display.</dd></div>
+        <div class="path-row"><dt>Synchronization</dt><dd>Request Full IBD for the next start while the node is stopped. In the current Windows client, choose Signed snapshot locally on the Blockchain page; a Portal snapshot button is not proof that the command is supported or applied.</dd></div>
+        <div class="path-row"><dt>Updates</dt><dd>Check for or install a signed update through the normal authenticated updater.</dd></div>
+      </dl>
+      <ul class="checklist"><li>Protect the portal account with a unique password and its strongest available sign-in protection.</li><li>Review remote commands before using them on an actively mining node.</li><li>Expect some setting changes to require a stopped node or a next-start cycle.</li><li>Confirm command results in the local Veld Node interface.</li></ul>
+    </section>
+
+    <section class="content-section" id="disable">
+      <p class="stage-label">04 / Disable</p><h2>Turn access off when finished</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Disable Remote access in Settings</h3><p>Turn off the toggle on the node itself.</p></div></li>
+        <li class="step"><div><h3>Confirm the local status</h3><p>The app should report Remote access disabled. Portal reporting and command polling stop. Ordinary peer traffic and separately enabled public-reference requests are not disabled by this toggle.</p></div></li>
+        <li class="step"><div><h3>Review the portal device list</h3><p>Remove or revoke the device there as well if the portal account should no longer retain the pairing.</p></div></li>
+      </ol>
+      <div class="note"><strong>Disable locally after account loss or suspected compromise.</strong> Do not wait for remote access to be restored before stopping the report and command channel.</div>
+    </section>
+
+    <section class="content-section"><h2>Troubleshooting</h2><div class="trouble"><details><summary>The portal is unavailable</summary><p>Veld Node reports the failure and retries automatically. Local node, wallet, mining, and validation functions continue independently.</p></details><details><summary>The code expired</summary><p>Keep Remote access enabled and wait for a current code, then enter that code in the official portal.</p></details><details><summary>The portal shows stale status</summary><p>Confirm the node still reports Connected, check ordinary HTTPS connectivity, and verify the local clock.</p></details></div></section>
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/pair-veld-portal/"><span>Previous guide</span><strong>Pair Veld Node with the Portal</strong></a><a class="next-guide" href="/how-to/"><span>Guide library</span><strong>Browse all how-to guides</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against remote monitoring protocol 2, the current report fields, pairing state, and accepted command allowlist.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Create or import a Veld mining identity, configure CPU workers, start VeldHash mining, and verify live activity."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Start CPU mining with Veld Node"><meta property="og:description" content="Configure a protected identity and verify real VeldHash activity."><meta property="og:url" content="https://veld.network/how-to/start-cpu-mining/">
+<link rel="canonical" href="https://veld.network/how-to/start-cpu-mining/"><title>Start CPU Mining | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Mining</div><h1>Start CPU mining</h1>
+    <p class="lede">Protect the mining identity, select a worker profile that fits the computer, and verify that the node is producing real VeldHash work.</p>
+    <div class="guide-actions"><span class="guide-meta">Veld Node · About 8 minutes</span></div>
+    <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress"><a class="progress-item" href="#identity"><span class="progress-index">01</span><span class="progress-label">Identity</span></a><a class="progress-item" href="#configure"><span class="progress-index">02</span><span class="progress-label">Configure</span></a><a class="progress-item" href="#start"><span class="progress-index">03</span><span class="progress-label">Start</span></a><a class="progress-item" href="#verify"><span class="progress-index">04</span><span class="progress-label">Verify</span></a></nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="identity">
+      <p class="stage-label">01 / Identity</p><h2>Create or import the mining identity</h2>
+      <p>Stop the node before changing identity files. In <strong>Settings → Local paths</strong>, use one of the supported actions.</p>
+      <dl class="compare">
+        <div class="compare-row"><dt>Create identity</dt><dd>Generates a new protected mining identity when <code>miner.key</code> does not already exist.</dd></div>
+        <div class="compare-row"><dt>Import keyfile</dt><dd>Imports an encrypted Veld <code>.veld-keys</code> wallet file into the node’s identity flow.</dd></div>
+      </dl>
+      <ul class="checklist"><li>Use a strong passphrase and keep it separate from the identity file.</li><li>Record the mining address shown by the app.</li><li>Select <strong>Open data folder</strong> and back up the encrypted identity before mining funds accumulate. Successful sign-in creates or verifies the matching <code>.veld-keys</code> file beside <code>miner.key</code>; repeated logins reuse it. The same file and passphrase work in the wallet and node.</li><li>Never run two nodes from the same data folder at the same time.</li></ul>
+      <div class="note"><strong>Identity changes are disabled while the node runs.</strong> Stop it cleanly, make the change in Settings, and then use the app-managed start.</div>
+    </section>
+
+    <section class="content-section" id="configure">
+      <p class="stage-label">02 / Configure</p><h2>Choose CPU capacity</h2>
+      <p>In Settings, turn on <strong>CPU mining</strong> and choose a worker profile. The worker count controls how many CPU threads VeldHash uses.</p>
+      <dl class="path-list">
+        <div class="path-row"><dt>Eco</dt><dd>Uses one quarter of the detected physical cores, rounded up.</dd></div>
+        <div class="path-row"><dt>Balanced</dt><dd>Uses three quarters of the detected physical cores, rounded up.</dd></div>
+        <div class="path-row"><dt>Max</dt><dd>Uses one worker per detected physical core.</dd></div>
+        <div class="path-row"><dt>Custom</dt><dd>Select 1–64 workers. A worker is a CPU thread; custom counts can use more than one thread per physical core.</dd></div>
+      </dl>
+      <p>The initial default reserves one physical core where possible. Presets and custom counts are settings, not an automatic benchmark. Worker changes apply at the next app-managed start.</p><p>Compare steady hashrate after startup and dataset preparation at several nearby worker counts. More threads can reduce performance when memory bandwidth or cooling is the limit. Keep the fastest stable setting that leaves the computer responsive.</p>
+      <div class="note"><strong>Start conservatively.</strong> Veld Node reports real hashrate and worker activity, but it does not invent temperature, fan, or power readings that the operating system does not provide.</div>
+    </section>
+
+    <section class="content-section" id="start">
+      <p class="stage-label">03 / Start</p><h2>Start the node and let admission checks finish</h2>
+      <p>Use the app’s start control. Mining begins only after the chain and network satisfy the node’s safety checks.</p>
+      <div class="status-list">
+        <div class="status-row"><strong>Synchronizing</strong><p>The local chain is not fully validated yet.</p></div>
+        <div class="status-row"><strong>Waiting for peer tip</strong><p>Fresh canonical peer-tip confirmation is required.</p></div>
+        <div class="status-row"><strong>Propagation</strong><p>Mining is paused until the current tip is acknowledged.</p></div>
+        <div class="status-row"><strong>Hashing</strong><p>VeldHash workers are advancing current canonical work.</p></div>
+      </div>
+      <p>Other safe waiting states can report clock drift, unavailable anchors, a peer-floor requirement, or a derived-state rebuild. Read the detail shown on the Mining page before changing settings.</p>
+    </section>
+
+    <section class="content-section" id="verify">
+      <p class="stage-label">04 / Verify</p><h2>Confirm real mining activity</h2>
+      <p>Open the <strong>Mining</strong> page and verify the telemetry itself—not merely that a process exists.</p>
+      <ul class="checklist"><li><strong>Mining status</strong> reads Hashing.</li><li><strong>Total hashrate</strong> is nonzero and changes over time.</li><li><strong>CPU workers</strong> matches the selected profile or custom count.</li><li><strong>Hashes this session</strong> increases.</li><li><strong>Chain</strong> is Validated and <strong>Peers</strong> is Connected.</li><li>The displayed miner address is the backed-up identity you expect.</li></ul>
+      <div class="note"><strong>A running process is not proof of mining.</strong> Hashrate, worker count, advancing hash totals, synchronized chain state, and connected peers are the meaningful checks.</div>
+    </section>
+
+    <section class="content-section"><h2>Mining on several computers</h2><p>Run one client and a separate data folder on each computer. Version 3.1.0 gives each mining process its own search origin, including when computers use the same payout address. Tune workers on each computer independently and pair each machine through <strong>+ Add machine</strong> in the Portal. The Portal monitors the machines; it does not combine them into a mining pool.</p></section>
+    <section class="content-section"><h2>Mainnet rewards and timing</h2><p>The target block interval is approximately <strong>180 seconds</strong>, not a guaranteed wait. Ordinary blocks pay 50% of the subsidy directly to the winning miner; every 100th block sends its subsidy to the vault instead. Before staking activation, the remaining 50% of ordinary block subsidy goes to the vault. Later pool allocations depend on the on-chain activation rules. Running a miner does not guarantee finding a block.</p></section>
+    <section class="content-section"><h2>If mining does not start</h2><div class="trouble"><details><summary>Mining status says Node only</summary><p>CPU mining is disabled. Stop the node if necessary, enable CPU mining in Settings, select workers, and start it again.</p></details><details><summary>Mining stays on Synchronizing</summary><p>Complete chain validation first. Use the Blockchain page to follow local height and sync status.</p></details><details><summary>The Mining page reports an error</summary><p>Open Logs, use <strong>Copy diagnostics</strong>, and review the newest node-reported error without sharing wallet files or passphrases.</p></details></div></section>
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/first-sync/"><span>Previous guide</span><strong>Understand first synchronization</strong></a><a class="next-guide" href="/how-to/clearnet-or-tor/"><span>Next guide</span><strong>Choose Clearnet or Tor-only</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current Settings, Mining, Workers, and work-admission states in Veld Node.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

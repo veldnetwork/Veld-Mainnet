@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Choose between Clearnet and Tor-only Veld peer networking, configure inbound reachability, and verify the active transport."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Choose Clearnet or Tor-only networking"><meta property="og:description" content="Understand privacy and reachability tradeoffs before changing Veld Node networking."><meta property="og:url" content="https://veld.network/how-to/clearnet-or-tor/">
+<link rel="canonical" href="https://veld.network/how-to/clearnet-or-tor/"><title>Clearnet or Tor-only | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Network</div><h1>Choose Clearnet or Tor-only networking</h1>
+    <p class="lede">Understand what each transport changes, choose whether to attempt inbound reachability, and verify the mode after the next node start.</p>
+    <div class="guide-actions"><span class="guide-meta">Privacy guide · About 6 minutes</span></div>
+    <nav class="guide-progress" aria-label="Guide progress"><a class="progress-item" href="#compare"><span class="progress-index">01</span><span class="progress-label">Compare</span></a><a class="progress-item" href="#choose"><span class="progress-index">02</span><span class="progress-label">Choose</span></a><a class="progress-item" href="#verify"><span class="progress-index">03</span><span class="progress-label">Verify</span></a></nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="compare">
+      <p class="stage-label">01 / Compare</p><h2>Decide which tradeoff fits</h2>
+      <dl class="compare">
+        <div class="compare-row"><dt>Clearnet</dt><dd>The default. Veld connects directly to peers, so those peers can see the node’s public IP. It normally connects faster and can accept inbound P2P traffic when the network permits it.</dd></div>
+        <div class="compare-row"><dt>Tor-only</dt><dd>Routes Veld peer traffic through Tor to reduce direct IP exposure. Inbound clearnet mapping is disabled while this mode is selected.</dd></div>
+        <div class="compare-row"><dt>Clearnet outbound only</dt><dd>Uses direct outbound connections without requesting a router mapping. The node can validate, relay, and mine with outbound peers.</dd></div>
+      </dl>
+      <div class="note"><strong>Tor-only covers Veld peer traffic.</strong> It is not a device-wide VPN and does not route unrelated browser or operating-system traffic through Tor. The node disables direct HTTPS snapshot downloads in this mode and synchronizes through Tor peers.</div>
+    </section>
+
+    <section class="content-section" id="choose">
+      <p class="stage-label">02 / Choose</p><h2>Save the next-start preference</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Stop the node</h3><p>Transport controls are intentionally unavailable while the process runs. Stop it cleanly from Veld Node.</p></div></li>
+        <li class="step"><div><h3>Open Settings</h3><p>Use <strong>Tor-only privacy</strong> to choose the peer transport. Clearnet remains the default when this option is off.</p></div></li>
+        <li class="step"><div><h3>Choose inbound reachability for Clearnet</h3><p>If Tor-only is off, <strong>Attempt inbound reachability</strong> asks the router for a NAT-PMP, PCP, or UPnP mapping on the next start. If mapping is unavailable, the node continues safely with outbound peers.</p></div></li>
+        <li class="step"><div><h3>Start the node again</h3><p>The saved preferences apply to the next app-managed start. Tor preparation may take additional time on first use. Open <strong>Veld Node.exe</strong> directly to retain that preference: <strong>Start Veld Node.bat</strong> explicitly chooses Clearnet.</p></div></li>
+      </ol>
+      <div class="note"><strong>Never expose RPC or local wallet ports.</strong> Clearnet reachability concerns P2P TCP 8333. RPC 8334 and the local wallet and explorer remain local-only.</div>
+    </section>
+
+    <section class="content-section" id="verify">
+      <p class="stage-label">03 / Verify</p><h2>Confirm the active transport</h2>
+      <p>Open the <strong>Network</strong> page and read the Transport field after peers connect.</p>
+      <div class="status-list">
+        <div class="status-row"><strong>Tor only</strong><p>Peer traffic is using the Tor transport.</p></div>
+        <div class="status-row"><strong>Clearnet · automatic mapping</strong><p>The router mapping request succeeded.</p></div>
+        <div class="status-row"><strong>Clearnet · inbound verified</strong><p>An inbound clearnet peer has confirmed reachability.</p></div>
+        <div class="status-row"><strong>Clearnet · awaiting inbound</strong><p>Reachability was requested, but no inbound peer has confirmed it yet.</p></div>
+        <div class="status-row"><strong>Clearnet · outbound only</strong><p>The node is operating with outbound peers and no verified inbound path.</p></div>
+      </div>
+      <ul class="checklist"><li>Direct peer count is nonzero.</li><li>The displayed transport matches the saved preference.</li><li>Chain height begins advancing or remains at the exact tip.</li><li>Mining work admission sees connected peers if mining is enabled.</li></ul>
+    </section>
+
+    <section class="content-section"><h2>Common questions</h2><div class="trouble"><details><summary>Do I need inbound peers to mine?</summary><p>No. A node with healthy outbound peers can validate and mine. Inbound reachability improves network connectivity but is not required for normal operation.</p></details><details><summary>Why can’t I change Tor while the node runs?</summary><p>The app binds transport configuration to an app-managed process start so peer sockets cannot silently change underneath a running node.</p></details><details><summary>Tor preparation failed</summary><p>Review the local app log. You can stop the node, select Clearnet, and start again while investigating Tor setup.</p></details></div></section>
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/start-cpu-mining/"><span>Previous guide</span><strong>Start CPU mining</strong></a><a class="next-guide" href="/how-to/no-peers-or-mining/"><span>Next guide</span><strong>Fix no peers or mining waiting</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current transport, inbound mapping, firewall, and Network-page states in Veld Node.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

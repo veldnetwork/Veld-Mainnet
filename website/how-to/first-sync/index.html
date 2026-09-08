@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Understand Veld Node first synchronization, full IBD, eligible snapshot recovery, progress, and completion."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Understand your first Veld synchronization"><meta property="og:description" content="Read sync progress, choose a supported mode, and know when validation is complete."><meta property="og:url" content="https://veld.network/how-to/first-sync/">
+<link rel="canonical" href="https://veld.network/how-to/first-sync/"><title>First Synchronization | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Veld Node</div><h1>Understand your first synchronization</h1>
+    <p class="lede">Follow the local validation state, understand full IBD and eligible recovery, and wait for the node—not a public website—to declare synchronization complete.</p>
+    <div class="guide-actions"><span class="guide-meta">Node guide · About 6 minutes</span></div>
+    <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress"><a class="progress-item" href="#start"><span class="progress-index">01</span><span class="progress-label">Start</span></a><a class="progress-item" href="#read"><span class="progress-index">02</span><span class="progress-label">Read</span></a><a class="progress-item" href="#choose"><span class="progress-index">03</span><span class="progress-label">Choose</span></a><a class="progress-item" href="#complete"><span class="progress-index">04</span><span class="progress-label">Complete</span></a></nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="start">
+      <p class="stage-label">01 / Start</p><h2>Let the node open its local chain state</h2>
+      <p>Start Veld Node and open the <strong>Blockchain</strong> page. A new installation first opens the local database, connects to peers, and begins downloading and validating blocks.</p>
+      <div class="status-list">
+        <div class="status-row"><strong>Ready to start</strong><p>The node process is stopped.</p></div>
+        <div class="status-row"><strong>Opening chain state</strong><p>The process is running but local status is not ready yet.</p></div>
+        <div class="status-row"><strong>Downloading and validating</strong><p>Blocks are arriving and being checked.</p></div>
+        <div class="status-row"><strong>Synchronized</strong><p>The local validated height has reached the current target.</p></div>
+      </div>
+      <div class="note"><strong>Do not close the app because the first percentage moves slowly.</strong> Initial validation is disk- and CPU-intensive and can progress unevenly.</div>
+    </section>
+
+    <section class="content-section" id="read">
+      <p class="stage-label">02 / Read</p><h2>Understand the Blockchain page</h2>
+      <dl class="path-list">
+        <div class="path-row"><dt>Local height</dt><dd>The highest block this node has validated.</dd></div>
+        <div class="path-row"><dt>Network reference</dt><dd>A public estimate used only to draw visual progress. It is never a consensus or security input.</dd></div>
+        <div class="path-row"><dt>Remaining</dt><dd>The estimated block difference between local validation and the displayed reference.</dd></div>
+        <div class="path-row"><dt>Peer sources</dt><dd>Direct peers currently available to provide and confirm chain data.</dd></div>
+        <div class="path-row"><dt>Local data</dt><dd>The verified chain data stored in the client’s <code>veld-data</code> directory.</dd></div>
+      </dl>
+      <p>The progress estimate may change as the public reference advances. The node’s own validated state remains authoritative.</p>
+    </section>
+
+    <section class="content-section" id="choose">
+      <p class="stage-label">03 / Choose</p><h2>Use the supported synchronization mode</h2>
+      <dl class="compare">
+        <div class="compare-row"><dt>Full IBD</dt><dd>Validates every block from genesis on first use. This remains an explicit choice. Later starts can reuse authenticated local validation receipts and verify newer work while replaying consensus state.</dd></div>
+        <div class="compare-row"><dt>Signed snapshot</dt><dd>Selectable on fresh mainnet installations as well as updates. The node only imports an official, authenticated, compatible snapshot newer than the local chain. Imported state is replayed and remains quarantined until a separate genesis IBD matches the exact tip and state digest.</dd></div>
+      </dl>
+      <ul class="checklist"><li>Select <strong>Full IBD</strong> or <strong>Signed snapshot</strong> on the Blockchain page. A selection made while running applies on the next start.</li><li><strong>Selected</strong> is a preference, not proof that a snapshot was imported or validated. Check Logs and the node-reported state.</li><li>A missing, invalid, incompatible, or unnecessary snapshot falls back to ordinary peer synchronization. Never bypass a validation failure.</li><li>Tor-only disables HTTPS snapshot downloads and synchronizes through Tor peers.</li><li>An update alone does not erase the same mainnet installation's chain, identity, or valid receipts. Preserve the data folder. A mandatory migration or validation requirement still takes precedence.</li><li>Never download and install an unofficial chain-state folder.</li></ul>
+      <div class="note"><strong>A snapshot does not bypass validation.</strong> The node’s RPC, inbound peers, mining, validator signing, and local explorer remain locked until independent genesis verification succeeds. The public wallet website is a separate service. After a new snapshot is verified, the client records the result and restarts once to enable services. A receipt-backed restart can reuse verified work; normal peer synchronization must still complete.</div>
+    </section>
+
+    <section class="content-section" id="complete">
+      <p class="stage-label">04 / Complete</p><h2>Know when the node is ready</h2>
+      <p>Follow Blockchain progress, then confirm the Overview, Network, and Mining pages agree with the local node. The displayed <strong>Synchronized</strong> progress estimate alone does not prove that snapshot quarantine or mining admission has finished.</p>
+      <ul class="checklist"><li>The local node is online.</li><li>At least one peer is connected.</li><li>The local height is at the current target.</li><li>The exact-tip peer check is current.</li><li>Independent snapshot validation has completed, if a snapshot was imported.</li><li>Mining reports <strong>Hashing</strong> when CPU mining is enabled and all admission checks pass.</li></ul>
+      <div class="note"><strong>Process activity alone is not completion.</strong> CPU usage, memory use, or a running executable does not prove that the chain is synchronized.</div>
+    </section>
+
+    <section class="content-section"><h2>If progress appears stuck</h2><div class="trouble"><details><summary>No peers are connected</summary><p>Open the Network page, wait for initial discovery, and follow the no-peers troubleshooting guide if the count remains zero.</p></details><details><summary>The public reference is unavailable</summary><p>The node can still validate from peers. The reference is display-only and can be disabled in Settings.</p></details><details><summary>Mining says Synchronizing</summary><p>This is expected until the local chain is fully validated. Do not repeatedly restart the app; let synchronization finish.</p></details></div></section>
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/install-verify-node/"><span>Previous guide</span><strong>Install and verify Veld Node</strong></a><a class="next-guide" href="/how-to/start-cpu-mining/"><span>Next guide</span><strong>Start CPU mining</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current Blockchain page, full-IBD receipt, recovery eligibility, and mining admission flow.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

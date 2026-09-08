@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Download, authenticate, extract, and safely start the official Veld Node client on Windows."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Install and verify Veld Node"><meta property="og:description" content="Authenticate the first download and start the official Windows client."><meta property="og:url" content="https://veld.network/how-to/install-verify-node/">
+<link rel="canonical" href="https://veld.network/how-to/install-verify-node/"><title>Install and Verify Veld Node | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Veld Node</div><h1>Install and verify Veld Node</h1>
+    <p class="lede">Authenticate the first download, extract the client to a stable folder, and start the all-in-one node without weakening its release checks.</p>
+    <div class="guide-actions"><a class="button" href="/#download">Open official download</a><span class="guide-meta">Windows · About 10 minutes</span></div>
+    <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress"><a class="progress-item" href="#download"><span class="progress-index">01</span><span class="progress-label">Download</span></a><a class="progress-item" href="#verify"><span class="progress-index">02</span><span class="progress-label">Verify</span></a><a class="progress-item" href="#extract"><span class="progress-index">03</span><span class="progress-label">Extract</span></a><a class="progress-item" href="#start"><span class="progress-index">04</span><span class="progress-label">Start</span></a></nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="download">
+      <p class="stage-label">01 / Download</p><h2>Use the official release</h2>
+      <p>Download the Windows client only from the Veld website. Avoid copies sent through chat, file-sharing services, advertisements, or third-party download pages.</p>
+      <a class="url" href="https://veld.network/downloads/VeldClient-Windows-x64-3.1.0.zip">https://veld.network/downloads/VeldClient-Windows-x64-3.1.0.zip</a>
+      <ul class="checklist"><li>Supported system: Windows 10 or Windows 11, 64-bit.</li><li>Expected archive name: <code>VeldClient-Windows-x64-3.1.0.zip</code>.</li><li>Keep the download page open so you can compare its published SHA-256.</li></ul>
+    </section>
+
+    <section class="content-section" id="verify">
+      <p class="stage-label">02 / Verify</p><h2>Authenticate the first archive</h2>
+      <p>The verifier inside a newly downloaded archive cannot be its own first-install trust anchor. Compare the ZIP digest with the value published on the official download page or an independently authenticated release announcement.</p>
+      <ol class="step-list">
+        <li class="step"><div><h3>Open Windows PowerShell</h3><p>Run the following command using the real path to the downloaded ZIP:</p><code class="command">Get-FileHash -Algorithm SHA256 "C:\Users\&lt;your name&gt;\Downloads\VeldClient-Windows-x64-3.1.0.zip"</code></div></li>
+        <li class="step"><div><h3>Compare all 64 hexadecimal characters</h3><p>The computed SHA-256 must exactly match the ZIP SHA256 shown at <strong>veld.network</strong>. A partial match is not sufficient.</p></div></li>
+        <li class="step"><div><h3>Stop on any mismatch</h3><p>Delete the untrusted archive and obtain the published value through an independent trusted channel before trying again.</p></div></li>
+      </ol>
+      <div class="note"><strong>Do not bypass a hash or signature failure.</strong> The signed launcher and updater reject missing signatures, altered files, unlisted files, downgrades, and same-version replacements with a different node hash.</div>
+    </section>
+
+    <section class="content-section" id="extract">
+      <p class="stage-label">03 / Extract</p><h2>Put the client in a stable folder</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Extract the entire archive</h3><p>Right-click the ZIP, choose <strong>Extract All</strong>, and select a location you control. Do not run the app from inside the compressed ZIP viewer.</p></div></li>
+        <li class="step"><div><h3>Keep the folder together</h3><p>The executable, signed manifest, updater, supporting binaries, and <code>veld-data</code> directory belong together. Do not copy out only one executable.</p></div></li>
+        <li class="step"><div><h3>Avoid temporary or synchronized folders</h3><p>Use a stable local path. Moving or partially synchronizing the folder while the node runs can separate it from its data and identity files.</p></div></li>
+      </ol>
+    </section>
+
+    <section class="content-section" id="start">
+      <p class="stage-label">04 / Start</p><h2>Launch Veld Node</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Open Start Veld Node.bat</h3><p>Double-click <strong>Start Veld Node.bat</strong> in the extracted folder. It verifies the signed package, checks for signed updates, and opens Veld Node on <strong>Clearnet</strong>. Complete a required signed update before mining.</p></div></li>
+        <li class="step"><div><h3>Handle the clearnet firewall request</h3><p>On first clearnet use, Windows may request approval for inbound P2P traffic on TCP 8333. The rule is limited to the signed node executable on Private or Domain networks. Declining leaves the node able to use outbound peers.</p></div></li>
+        <li class="step"><div><h3>Confirm the Overview page opens</h3><p>The app shows local node status, chain height, peers, and mining configuration. Its Wallet button opens <strong>https://wallet.veld.network/</strong>; Open Explorer opens <strong>https://explorer.veld.network/</strong>.</p></div></li>
+      </ol>
+      <div class="note"><strong>RPC and local app ports are not opened to the network.</strong> Node control and loopback services remain local-only. Public Wallet and Explorer buttons use HTTPS, not exposed RPC. TCP 8333 is the clearnet P2P port. The batch launcher explicitly selects Clearnet; open <strong>Veld Node.exe</strong> directly to retain a configured Tor-only preference.</div>
+    </section>
+
+    <section class="content-section"><h2>Installation checklist</h2><ul class="checklist"><li>The ZIP came from <code>veld.network</code>.</li><li>The complete SHA-256 matched an authenticated published value.</li><li>The whole archive was extracted.</li><li><strong>Start Veld Node.bat</strong> opened the client on Clearnet without a release-verification failure.</li><li>The Overview page reports the local node state.</li></ul></section>
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/send-receive-veld/"><span>Previous guide</span><strong>Send and receive VELD safely</strong></a><a class="next-guide" href="/how-to/first-sync/"><span>Next guide</span><strong>Understand first synchronization</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current Windows package, signed-manifest policy, and Veld Node launch flow.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

@@ -12,6 +12,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = {
     "source": [
+        "scripts/check-how-to.py",
         "tests/portal_mobile_nav_tests.py",
         "tests/portal_worker_limit_tests.py",
         "tests/topology_advertised_roles_tests.py",

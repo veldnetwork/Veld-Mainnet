@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Create a Veld wallet locally, protect it with a strong passphrase, and verify an encrypted keyfile backup.">
+<meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Create and back up a Veld wallet"><meta property="og:description" content="Generate, protect, back up, and verify a Veld wallet."><meta property="og:url" content="https://veld.network/how-to/create-backup-wallet/">
+<link rel="canonical" href="https://veld.network/how-to/create-backup-wallet/">
+<title>Create and Back Up a Wallet | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a>
+<header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Wallet</div>
+    <h1>Create and back up a Veld wallet</h1>
+    <p class="lede">Generate the wallet on your device, protect it with a strong passphrase, and confirm that the encrypted backup can be recovered.</p>
+    <div class="guide-actions"><a class="button" href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Open Veld Wallet</a><span class="guide-meta">About 6 minutes</span></div>
+    <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress">
+      <a class="progress-item" href="#generate"><span class="progress-index">01</span><span class="progress-label">Generate</span></a>
+      <a class="progress-item" href="#protect"><span class="progress-index">02</span><span class="progress-label">Protect</span></a>
+      <a class="progress-item" href="#backup"><span class="progress-index">03</span><span class="progress-label">Back up</span></a>
+      <a class="progress-item" href="#verify"><span class="progress-index">04</span><span class="progress-label">Verify</span></a>
+    </nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="generate">
+      <p class="stage-label">01 / Generate</p><h2>Create the wallet locally</h2>
+      <p>Use a trusted, updated device and open only the official wallet address. The private key and encrypted keystore are created locally in the browser.</p>
+      <ol class="step-list">
+        <li class="step"><div><h3>Open the official wallet</h3><p>Confirm HTTPS and the exact hostname before continuing.</p><a class="url" href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">https://wallet.veld.network</a></div></li>
+        <li class="step"><div><h3>Open Settings</h3><p>Select <strong>Log in</strong>, or open <strong>More → Settings</strong> on mobile. A browser without an existing keystore offers creation and import choices.</p><p class="instruction">Wallet navigation: <kbd>Settings</kbd></p></div></li>
+        <li class="step"><div><h3>Select Create New Wallet</h3><p>The wallet generates a new private key and derives its Veld address on this device. Record the displayed address so you can verify future imports.</p><p class="instruction">Log in: <kbd>Create New Wallet</kbd></p></div></li>
+      </ol>
+      <div class="note"><strong>Your Veld address is public; your private key is not.</strong> Never paste the private key into chat, email, cloud notes, or a support request.</div>
+    </section>
+
+    <section class="content-section" id="protect">
+      <p class="stage-label">02 / Protect</p><h2>Set the keyfile passphrase</h2>
+      <p>The passphrase encrypts the wallet file. It is not a recovery seed: losing both the keyfile and private key cannot be fixed with the passphrase alone.</p>
+      <ul class="checklist"><li>Use at least 16 characters.</li><li>Prefer a password-manager value or <strong>Generate 128-bit multi-word passphrase</strong>.</li><li>Keep the passphrase separate from every copy of the keyfile.</li><li>Preserve spaces and capitalization exactly.</li></ul>
+      <div class="note"><strong>Do not photograph the private key.</strong> If you choose to retain a raw-key backup, keep it offline and physically separate from the encrypted file. The encrypted <code>.veld-keys</code> file is the normal recovery method.</div>
+    </section>
+
+    <section class="content-section" id="backup">
+      <p class="stage-label">03 / Back up</p><h2>Save more than one encrypted copy</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Download the keystore</h3><p>After entering and confirming the passphrase, select <strong>Save &amp; Download Keystore</strong>. The file normally downloads as:</p><code class="file-name">veld-wallet-V1234567.veld-keys</code></div></li>
+        <li class="step"><div><h3>Move one copy off the device</h3><p>Keep the original in a protected location and place a second encrypted copy on an external drive or other access-controlled backup.</p></div></li>
+        <li class="step"><div><h3>Store the passphrase separately</h3><p>A password manager or a physically separate offline record is appropriate. Do not store a text file containing the passphrase beside the keyfile.</p></div></li>
+      </ol>
+      <dl class="compare">
+        <div class="compare-row"><dt>Good separation</dt><dd>Encrypted keyfile on an external drive; passphrase in a password manager.</dd></div>
+        <div class="compare-row"><dt>Weak separation</dt><dd>Keyfile and a passphrase text file in the same folder or cloud account.</dd></div>
+      </dl>
+    </section>
+
+    <section class="content-section" id="verify">
+      <p class="stage-label">04 / Verify</p><h2>Prove the backup works</h2>
+      <p>A backup is not complete until it has been tested. Use a separate browser profile so the working wallet remains untouched.</p>
+      <ol class="step-list">
+        <li class="step"><div><h3>Open a separate browser profile</h3><p>Go to the official wallet, open Settings, and choose <strong>Import keystore file</strong>.</p></div></li>
+        <li class="step"><div><h3>Import the backup copy</h3><p>Select the copy stored in the backup location—not the original Downloads copy—and unlock it with the saved passphrase.</p></div></li>
+        <li class="step"><div><h3>Compare the complete address</h3><p>The derived Veld address must match the address recorded when the wallet was created. Lock or sign out of the verification profile afterward.</p></div></li>
+      </ol>
+      <div class="note"><strong>If the address differs or the file will not unlock, the backup is not verified.</strong> Return to the still-accessible wallet, use <strong>Wallet Settings → Save file</strong>, and test the fresh copy.</div>
+    </section>
+
+    <section class="content-section"><h2>Final checklist</h2><ul class="checklist"><li>At least two encrypted keyfile copies exist.</li><li>One copy is stored away from the primary device.</li><li>The passphrase is stored separately.</li><li>A backup copy successfully opens the expected address.</li><li>No key or passphrase was shared during the process.</li></ul></section>
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/"><span>Guide library</span><strong>All Veld how-to guides</strong></a><a class="next-guide" href="/how-to/import-keyfile/"><span>Next guide</span><strong>Import a keyfile</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current Veld Wallet creation, encryption, and export flow.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

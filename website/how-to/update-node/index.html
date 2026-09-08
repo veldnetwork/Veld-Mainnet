@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Check the signed Veld release feed, install an authenticated Veld Node update, and verify the restarted version."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Update Veld Node safely"><meta property="og:description" content="Use the signed updater, atomic installation, and rollback protections."><meta property="og:url" content="https://veld.network/how-to/update-node/">
+<link rel="canonical" href="https://veld.network/how-to/update-node/"><title>Update Veld Node Safely | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Maintenance</div><h1>Update Veld Node safely</h1>
+    <p class="lede">Use the built-in signed release flow so the node stops cleanly, authenticates every replacement, installs atomically, and retains rollback protection.</p>
+    <div class="guide-actions"><span class="guide-meta">Maintenance · About 5 minutes</span></div>
+    <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress"><a class="progress-item" href="#prepare"><span class="progress-index">01</span><span class="progress-label">Prepare</span></a><a class="progress-item" href="#check"><span class="progress-index">02</span><span class="progress-label">Check</span></a><a class="progress-item" href="#install"><span class="progress-index">03</span><span class="progress-label">Install</span></a><a class="progress-item" href="#confirm"><span class="progress-index">04</span><span class="progress-label">Confirm</span></a></nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="prepare">
+      <p class="stage-label">01 / Prepare</p><h2>Protect the identity before maintenance</h2>
+      <p>Updates are designed to leave wallet material alone, but every maintained node should have a verified identity backup.</p>
+      <ul class="checklist"><li>Open <strong>Settings → Local paths → Open data folder</strong>.</li><li>Confirm the encrypted <code>miner.key</code> and matching portable <code>.veld-keys</code> file are backed up. Current clients create a missing portable file after successful sign-in to a legacy encrypted mining identity; they do not create a different wallet.</li><li>Keep the passphrase separate from the file.</li><li>Finish any wallet action before starting the update.</li><li>Do not launch a second node from the same folder.</li></ul>
+      <div class="note"><strong>Wallet secrets never enter the updater.</strong> The update path works on signed release files and the app-managed node process, not on the private key.</div>
+    </section>
+
+    <section class="content-section" id="check">
+      <p class="stage-label">02 / Check</p><h2>Verify the signed release feed</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Open Settings</h3><p>Find <strong>Release and updates</strong>. The installed version is shown in this section.</p></div></li>
+        <li class="step"><div><h3>Select Check now</h3><p>The app checks the signed release feed without stopping the running node.</p></div></li>
+        <li class="step"><div><h3>Read the result</h3><p><strong>Latest signed release verified</strong> means no newer authenticated version is available. <strong>Signed update available</strong> enables the install action.</p></div></li>
+        <li class="step"><div><h3>Review the changelog</h3><p>Select <strong>View changelog</strong> before installing so behavior or operational changes are not a surprise.</p></div></li>
+      </ol>
+      <div class="note"><strong>“Signed feed could not be verified” is a stop condition.</strong> Retry later; do not replace files manually from an unverified download.</div>
+    </section>
+
+    <section class="content-section" id="install">
+      <p class="stage-label">03 / Install</p><h2>Let the app perform the replacement</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Select Update now</h3><p>The app first asks the exact packaged node process to stop cleanly. If it cannot stop safely, installation does not begin.</p></div></li>
+        <li class="step"><div><h3>Wait through verification</h3><p>The updater downloads the candidate release, verifies the pinned ML-DSA-65 signature and exact signed hashes, rejects extra or missing files, and enforces strict version ordering.</p></div></li>
+        <li class="step"><div><h3>Allow the atomic install to finish</h3><p>Replacement is staged before activation and keeps rollback material. Do not move, rename, or edit the client folder during this phase.</p></div></li>
+        <li class="step"><div><h3>Let Veld Node restart</h3><p>On success the app reports <strong>Signed update ready · restarting</strong> and reopens from the installed release.</p></div></li>
+      </ol>
+      <div class="note"><strong>A failed update should fail safely.</strong> If the app reports <strong>Update failed safely</strong>, leave the installation intact, restart Veld Node if needed, and retry after checking connectivity and Logs.</div>
+    </section>
+
+    <section class="content-section" id="confirm">
+      <p class="stage-label">04 / Confirm</p><h2>Verify the restarted node</h2>
+      <ul class="checklist"><li><strong>Release and updates</strong> shows the expected installed version.</li><li>Overview reports the local node online.</li><li>Blockchain opens the existing mainnet data folder, not an empty new one.</li><li>The saved Full IBD or Signed snapshot preference is retained. An update alone does not require deleting chain data or repeating a full download; mandatory migration or validation requirements still apply.</li><li>A reused receipt must still match the chain and identity. A newly imported snapshot stays quarantined until independent genesis validation succeeds.</li><li>Network peers reconnect.</li><li>The expected mining identity and address remain selected.</li><li>Mining returns to its valid state after synchronization and peer checks.</li></ul>
+      <p>Run <strong>Check now</strong> once more. The result should report the latest signed release as verified.</p>
+    </section>
+
+    <section class="content-section"><h2>Updater protections</h2><dl class="path-list"><div class="path-row"><dt>Signature required</dt><dd>A missing, malformed, or invalid release signature is rejected.</dd></div><div class="path-row"><dt>Exact manifest</dt><dd>Shipping files must match the signed list and hashes.</dd></div><div class="path-row"><dt>No downgrade</dt><dd>An older signed version cannot replace the installed version.</dd></div><div class="path-row"><dt>No same-version swap</dt><dd>A same-version manifest with a different node hash is rejected.</dd></div><div class="path-row"><dt>Atomic replacement</dt><dd>Files are staged and installed with rollback protection rather than overwritten piecemeal.</dd></div></dl></section>
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/no-peers-or-mining/"><span>Previous guide</span><strong>Fix no peers or mining waiting</strong></a><a class="next-guide" href="/how-to/pair-veld-portal/"><span>Next guide</span><strong>Pair Veld Node with the Portal</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current signed-feed check, safe-stop, updater, restart, and rollback behavior in Veld Node.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

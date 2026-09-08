@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Change the Veld Wallet passphrase, save a newly encrypted keyfile, and safely retire old backups."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Change your Veld Wallet passphrase"><meta property="og:description" content="Replace the browser keystore encryption and verify a fresh backup."><meta property="og:url" content="https://veld.network/how-to/change-wallet-passphrase/">
+<link rel="canonical" href="https://veld.network/how-to/change-wallet-passphrase/"><title>Change a Wallet Passphrase | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a>
+<header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Wallet</div>
+    <h1>Change your wallet passphrase</h1>
+    <p class="lede">Replace the encryption on the current browser keystore, save a fresh keyfile, and verify the new backup before retiring old copies.</p>
+    <div class="guide-actions"><a class="button" href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Open Veld Wallet</a><span class="guide-meta">About 5 minutes</span></div>
+    <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress">
+      <a class="progress-item" href="#unlock"><span class="progress-index">01</span><span class="progress-label">Unlock</span></a>
+      <a class="progress-item" href="#replace"><span class="progress-index">02</span><span class="progress-label">Replace</span></a>
+      <a class="progress-item" href="#save"><span class="progress-index">03</span><span class="progress-label">Save</span></a>
+      <a class="progress-item" href="#verify"><span class="progress-index">04</span><span class="progress-label">Verify</span></a>
+    </nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="unlock">
+      <p class="stage-label">01 / Unlock</p><h2>Prepare the current wallet</h2>
+      <p>Before changing anything, confirm that you can unlock the wallet and that at least one known-good backup exists. The change affects the keystore stored in this browser.</p>
+      <ul class="checklist"><li>Open only <code>https://wallet.veld.network</code>.</li><li>Unlock the address you intend to update.</li><li>Record the full Veld address for later comparison.</li><li>Keep the existing backup until the new one is verified.</li></ul>
+      <div class="note"><strong>This does not rewrite old files.</strong> Existing keyfile copies remain encrypted with the old passphrase until you securely remove or replace them. This does not change the on-chain address, update the node's <code>miner.key</code>, or revoke any already-exposed private key.</div>
+    </section>
+
+    <section class="content-section" id="replace">
+      <p class="stage-label">02 / Replace</p><h2>Replace the browser encryption</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Open Wallet Settings</h3><p>With the wallet unlocked, select <strong>Settings</strong>. The window title should read <strong>Wallet Settings</strong>.</p></div></li>
+        <li class="step"><div><h3>Select Change passphrase</h3><p>Under <strong>Wallets &amp; key</strong>, choose <strong>Change passphrase</strong>.</p><p class="instruction"><kbd>Wallet Settings</kbd> → <kbd>Change passphrase</kbd></p></div></li>
+        <li class="step"><div><h3>Enter and confirm the new passphrase</h3><p>Use at least 16 characters. A password-manager value or <strong>Generate 128-bit multi-word passphrase</strong> is recommended.</p></div></li>
+        <li class="step"><div><h3>Select Replace encryption</h3><p>Wait for the confirmation that the passphrase changed. If replacement fails, the wallet reports that the existing keystore was not replaced.</p></div></li>
+      </ol>
+      <div class="note"><strong>Store the new passphrase separately.</strong> Do not place it in the same folder, drive, message, or account as the encrypted keyfile.</div>
+    </section>
+
+    <section class="content-section" id="save">
+      <p class="stage-label">03 / Save</p><h2>Download a freshly encrypted keyfile</h2>
+      <p>Return to Wallet Settings and select <strong>Save file</strong>. This creates a new <code>.veld-keys</code> file using the replacement passphrase.</p>
+      <ol class="step-list">
+        <li class="step"><div><h3>Save the new file</h3><p>Keep its filename and download time clear so it cannot be confused with an older copy.</p><code class="file-name">veld-wallet-V1234567.veld-keys</code></div></li>
+        <li class="step"><div><h3>Copy it to the backup location</h3><p>Replace the intended encrypted backups, but do not erase the last known-good old copy yet.</p></div></li>
+      </ol>
+    </section>
+
+    <section class="content-section" id="verify">
+      <p class="stage-label">04 / Verify</p><h2>Test the new file before cleanup</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Use a separate browser profile</h3><p>Open the official wallet and select <strong>Import keystore file</strong>.</p></div></li>
+        <li class="step"><div><h3>Unlock with the new passphrase</h3><p>Select the newly saved file. The old passphrase should not be needed for this copy.</p></div></li>
+        <li class="step"><div><h3>Compare the complete address</h3><p>The imported address must match the address recorded before the change.</p></div></li>
+        <li class="step"><div><h3>Retire old copies deliberately</h3><p>Only after successful verification should old keyfiles and old-passphrase records be securely removed from the locations you control.</p></div></li>
+      </ol>
+      <div class="note"><strong>Do not delete the only working recovery copy.</strong> If the fresh file fails, return to the unlocked wallet, repeat <strong>Save file</strong>, and test again.</div>
+    </section>
+
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/import-keyfile/"><span>Previous guide</span><strong>Import a keyfile</strong></a><a class="next-guide" href="/how-to/send-receive-veld/"><span>Next wallet guide</span><strong>Send and receive VELD safely</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current Veld Wallet passphrase-rotation and export flow.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

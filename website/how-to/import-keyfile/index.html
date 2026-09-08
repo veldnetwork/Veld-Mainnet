@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Find an encrypted Veld keyfile, import it into the official Veld Wallet, and verify the wallet address.">
+<meta name="robots" content="index,follow">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Import a keyfile into the Veld Wallet">
+<meta property="og:description" content="Find the encrypted file, import it locally, and confirm the expected Veld address.">
+<meta property="og:url" content="https://veld.network/how-to/import-keyfile/">
+<link rel="canonical" href="https://veld.network/how-to/import-keyfile/">
+<title>Import a Keyfile | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a>
+<header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Wallet</div>
+    <h1>Import a keyfile into the Veld Wallet</h1>
+    <p class="lede">Find the encrypted file, import it safely, and confirm that the wallet address is the one you expect.</p>
+    <div class="guide-actions"><a class="button" href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Open Veld Wallet</a><span class="guide-meta">About 5 minutes</span></div>
+    <nav class="guide-progress" aria-label="Guide progress">
+      <a class="progress-item" href="#find"><span class="progress-index">01</span><span class="progress-label">Find file</span></a>
+      <a class="progress-item" href="#import"><span class="progress-index">02</span><span class="progress-label">Import</span></a>
+      <a class="progress-item" href="#verify"><span class="progress-index">03</span><span class="progress-label">Verify</span></a>
+    </nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="find">
+      <p class="stage-label">01 / Find file</p>
+      <h2>First, find your keyfile</h2>
+      <p>A Veld keyfile is an encrypted file containing the signing identity for an address. Browser-wallet files normally end in <code>.veld-keys</code>.</p>
+      <div class="subsection">
+        <h3>If the wallet was created in a browser</h3>
+        <p>Check the device’s Downloads folder or the browser’s Downloads history. The filename normally looks like:</p>
+        <code class="file-name">veld-wallet-V1234567.veld-keys</code>
+        <dl class="path-list">
+          <div class="path-row"><dt>Windows</dt><dd><code>C:\Users\&lt;your name&gt;\Downloads</code></dd></div>
+          <div class="path-row"><dt>macOS</dt><dd><code>/Users/&lt;your name&gt;/Downloads</code></dd></div>
+          <div class="path-row"><dt>Linux</dt><dd><code>/home/&lt;your name&gt;/Downloads</code></dd></div>
+          <div class="path-row"><dt>iPhone or iPad</dt><dd><strong>Files → Browse → Downloads</strong>. Check iCloud Drive and On My iPhone/iPad.</dd></div>
+          <div class="path-row"><dt>Android</dt><dd>Open <strong>Files</strong> or <strong>My Files</strong>, then <strong>Downloads</strong>.</dd></div>
+        </dl>
+        <p>If the wallet is still unlocked, open <strong>Wallet Settings</strong> and select <strong>Save file</strong> to download a fresh encrypted copy.</p>
+      </div>
+      <div class="subsection">
+        <h3>If the identity was created by Veld Node</h3>
+        <p>Open Veld Node, go to <strong>Settings → Local paths</strong>, and select <strong>Open data folder</strong>. Look for:</p>
+        <code class="file-name">veld-data\veld-wallet-V1234567.veld-keys</code>
+        <code class="file-name">veld-data\miner.key</code>
+        <p>Use the <code>.veld-keys</code> file when present. The wallet can also read the encrypted <code>miner.key</code> identity file. After successful encrypted-identity sign-in, the current node creates the portable file if missing, including for legacy miners. It reuses a matching existing file instead of creating another wallet on each login. The same file and passphrase work in Veld Wallet and Veld Node.</p>
+      </div>
+      <div class="note"><strong>Keep the file private.</strong> Encryption protects the contents, but the keyfile is still a private credential. Never send it to support or another person.</div>
+    </section>
+
+    <section class="content-section" id="import">
+      <p class="stage-label">02 / Import</p>
+      <h2>Import the keyfile</h2>
+      <p>Have the exact keyfile passphrase ready and use only <code>https://wallet.veld.network</code>. Decryption and identity validation happen locally in the browser.</p>
+      <ol class="step-list">
+        <li class="step"><div><h3>Open the official wallet</h3><p>Confirm the address bar shows HTTPS and the exact Veld Wallet hostname.</p><a class="url" href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">https://wallet.veld.network</a></div></li>
+        <li class="step"><div><h3>Open Wallet Settings</h3><p>Select <strong>Log in</strong>, or open <strong>More → Settings</strong> on mobile. A fresh browser shows creation and import choices.</p><p class="instruction">Wallet navigation: <kbd>Settings</kbd></p></div></li>
+        <li class="step"><div><h3>Select Import keystore file</h3><p>Choose the <code>.veld-keys</code> or encrypted <code>miner.key</code> file from the device picker. Files larger than 4 MiB are rejected.</p><p class="instruction">Log in: <kbd>Import keystore file</kbd></p><div class="note"><strong>Seeing Unlock instead?</strong> This browser already stores a keystore. Back it up before signing out or replacing it.</div></div></li>
+        <li class="step"><div><h3>Enter the file’s passphrase</h3><p>For a wallet file, enter the password and select <strong>Unlock</strong>. For an encrypted <code>miner.key</code>, enter its passphrase and select <strong>Decrypt &amp; Import</strong>. Passphrases are case-sensitive.</p></div></li>
+      </ol>
+    </section>
+
+    <section class="content-section" id="verify">
+      <p class="stage-label">03 / Verify</p>
+      <h2>Verify the wallet address</h2>
+      <p>After the wallet opens, compare the displayed Veld address with the address you expected before sending, staking, registering, or signing anything.</p>
+      <ul class="checklist"><li>The address begins with <code>V</code>.</li><li>The first and last characters match your known address.</li><li>The complete address matches when copied and compared.</li><li>The keyfile remains backed up separately from its passphrase.</li></ul>
+      <div class="note"><strong>If the address is different, stop.</strong> Do not move funds. Lock the wallet and confirm that you selected the correct file.</div>
+    </section>
+
+    <section class="content-section" id="troubleshooting">
+      <h2>Troubleshooting</h2>
+      <div class="trouble">
+        <details><summary>I cannot find a .veld-keys file</summary><p>Look in the node's data folder for <code>veld-wallet-&lt;first 8 address characters&gt;.veld-keys</code>. If missing, sign in to that encrypted identity using the current client and check Logs. Preserve both files if a conflict or write failure is reported; do not delete or replace the identity to force startup. If the browser wallet is accessible, use <strong>Wallet Settings → Save file</strong>.</p></details>
+        <details><summary>The wallet says “Wrong password or corrupt keystore”</summary><p>Confirm that the passphrase belongs to this exact file and preserve capitalization and spaces. Use another known-good backup rather than modifying the file.</p></details>
+        <details><summary>Does importing move my VELD?</summary><p>No. Funds remain on-chain at the same address. Importing gives this browser the encrypted signing identity needed to use that address.</p></details>
+      </div>
+    </section>
+
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/create-backup-wallet/"><span>Previous guide</span><strong>Create and back up a wallet</strong></a><a class="next-guide" href="/how-to/change-wallet-passphrase/"><span>Next guide</span><strong>Change your wallet passphrase</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current Veld Wallet and Veld Node identity flow.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

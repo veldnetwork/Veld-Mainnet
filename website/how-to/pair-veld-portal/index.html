@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Create or sign in to a Veld Portal account, pair Veld Node with its one-time code, and verify the secure remote connection."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Pair Veld Node with the Veld Portal"><meta property="og:description" content="Use the one-time code in Veld Node to connect the machine to your Veld Portal account."><meta property="og:url" content="https://veld.network/how-to/pair-veld-portal/">
+<link rel="canonical" href="https://veld.network/how-to/pair-veld-portal/"><title>Pair Veld Node with the Portal | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Portal</div><h1>Pair Veld Node with the Portal</h1>
+    <p class="lede">Connect one Veld Node installation to your Portal account with its temporary pairing code, then confirm the machine is online before leaving the computer.</p>
+    <div class="guide-actions"><a class="button" href="https://portal.veld.network/" target="_blank" rel="noopener noreferrer">Open Veld Portal</a><span class="guide-meta">About 5 minutes</span></div>
+    <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress"><a class="progress-item" href="#account"><span class="progress-index">01</span><span class="progress-label">Account</span></a><a class="progress-item" href="#enable"><span class="progress-index">02</span><span class="progress-label">Enable</span></a><a class="progress-item" href="#pair"><span class="progress-index">03</span><span class="progress-label">Pair</span></a><a class="progress-item" href="#verify"><span class="progress-index">04</span><span class="progress-label">Verify</span></a></nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="account">
+      <p class="stage-label">01 / Account</p><h2>Open the official Portal</h2>
+      <p>Pair only through the exact HTTPS address below. You can use the node computer or another device you trust.</p>
+      <a class="url" href="https://portal.veld.network/" target="_blank" rel="noopener noreferrer">https://portal.veld.network/</a>
+      <ol class="step-list">
+        <li class="step"><div><h3>Confirm the address</h3><p>Check that the browser shows <code>portal.veld.network</code> over HTTPS before entering an account name, password, or pairing code.</p></div></li>
+        <li class="step"><div><h3>Create an account or log in</h3><p>New operators should enter an account name and password, then select <strong>Create account</strong>. Returning operators should select <strong>Log in</strong>.</p><ul><li>Account names are 3 to 48 characters.</li><li>Passwords must be at least 12 characters.</li><li>Use a unique password and store it in a trusted password manager.</li></ul></div></li>
+        <li class="step"><div><h3>Leave the Portal ready</h3><p>A new account displays <strong>Pair your first machine</strong>. If already paired, select <strong>+ Add machine</strong> on Overview or <strong>Add machine</strong> in Settings. This works in the browser and installed Portal.</p></div></li>
+      </ol>
+      <div class="note"><strong>The Portal never needs a wallet keyfile or wallet passphrase.</strong> Do not enter either one into the Portal or send one to anyone claiming to help with pairing.</div>
+    </section>
+
+    <section class="content-section" id="enable">
+      <p class="stage-label">02 / Enable</p><h2>Generate the code in Veld Node</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Open Settings</h3><p>On the node computer, open Veld Node and select <strong>Settings</strong>.</p></div></li>
+        <li class="step"><div><h3>Enable Remote access</h3><p>Turn on the <strong>Remote access</strong> toggle. The status first reads <strong>Connecting to the secure portal...</strong> while the protected device credential is prepared.</p></div></li>
+        <li class="step"><div><h3>Wait for the one-time code</h3><p>The status changes to <strong>Open the portal and enter the one-time code.</strong> A code in the format <code>ABCD-EFGH</code> appears beside it.</p></div></li>
+      </ol>
+      <dl class="path-list"><div class="path-row"><dt>Code lifetime</dt><dd>15 minutes. Veld Node replaces an expired unclaimed code automatically while Remote access remains enabled.</dd></div><div class="path-row"><dt>Copy safely</dt><dd>Use <strong>Copy code</strong> when the Portal is open on the same computer. Otherwise type it directly on the trusted device.</dd></div><div class="path-row"><dt>Connection trouble</dt><dd>If Veld Node reports that the Portal is unavailable, leave it open; the app retries automatically.</dd></div></dl>
+      <div class="note"><strong>Treat the code as temporary access authority.</strong> Anyone who submits it before expiration can attach this machine to their own Portal account.</div>
+    </section>
+
+    <section class="content-section" id="pair">
+      <p class="stage-label">03 / Pair</p><h2>Claim the machine from the Portal</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Enter the complete code</h3><p>Type or paste all eight characters and the hyphen into the <strong>PAIR CODE</strong> field.</p></div></li>
+        <li class="step"><div><h3>Select Pair machine</h3><p>The Portal checks that the code exists, has not expired, and is still unclaimed. A successful claim opens the paired machine view.</p></div></li>
+        <li class="step"><div><h3>Stop if the machine is unexpected</h3><p>The device selector should show the computer you intended to pair. Do not continue issuing commands if the machine name or status is unfamiliar.</p></div></li>
+      </ol>
+      <p class="instruction">Pairing one machine does not expose or automatically pair any other Veld installation. Repeat this process from each additional machine.</p>
+    </section>
+
+    <section class="content-section" id="verify">
+      <p class="stage-label">04 / Verify</p><h2>Confirm both ends of the connection</h2>
+      <ul class="checklist"><li>Veld Node reports that monitoring is connected. Open the Portal to enroll signed control; the first action asks you to trust this pairing locally, and each action requires approval on the computer.</li><li>The temporary code is no longer shown in Veld Node.</li><li>The Portal device selector shows the expected machine.</li><li>The Portal status reads <strong>Online</strong> and its height, peers, and other operational values begin updating.</li><li>Refresh once if the new machine takes a few seconds to appear.</li></ul>
+      <div class="note"><strong>Pairing authorizes remote operations, not just viewing.</strong> The Portal can request restricted operational commands. <strong>Each command requires approval on the node computer</strong>; pairing does not enable unattended control. Review the next guide before relying on it away from the machine.</div>
+      <p style="margin-top:16px"><a href="/how-to/remote-monitoring/">Continue to remote monitoring and controls →</a></p>
+      <h3 style="margin-top:28px">Get a new code or change Portal accounts</h3>
+      <p>On the node computer, select <strong>Settings → Remote access → New pair code</strong> and confirm the local reset warning. This removes the machine from its previous Portal account and revokes that pairing's command access. Keep Remote access enabled, sign in to the intended Portal account, and claim the fresh code. Switching Remote access off and on is not an account reset.</p>
+      <h3 style="margin-top:28px">If you need to undo the pairing</h3>
+      <p style="margin-top:8px">Turn off <strong>Remote access</strong> locally to stop reports and remote commands immediately. To unlink the account as well, open Portal <strong>Settings</strong> and use <strong>Remove</strong> for that machine.</p>
+    </section>
+
+    <section class="content-section"><h2>Troubleshooting</h2><div class="trouble"><details><summary>“Enter the complete pairing code”</summary><p>Enter four characters, the hyphen, and the final four characters. Use the current code exactly as Veld Node displays it.</p></details><details><summary>“Code is invalid or expired”</summary><p>Return to Veld Node Settings and use the current code. An unclaimed code is replaced after 15 minutes. If the machine is still attached to an old account, use <strong>New pair code</strong> locally.</p></details><details><summary>“Account name is unavailable”</summary><p>Choose a different account name, or use <strong>Log in</strong> if the account is already yours.</p></details><details><summary>“Too many pairing attempts”</summary><p>Stop retrying, confirm the current code locally, and wait before trying once more. The Portal limits repeated claims to protect enrollment.</p></details><details><summary>The Portal says Offline after pairing</summary><p>Confirm that Remote access remains enabled, Veld Node is still running, and the local status reports monitoring connected or signed control enrolled. Ordinary node and mining operation continue if the Portal itself is temporarily unavailable.</p></details></div></section>
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/update-node/"><span>Previous guide</span><strong>Update Veld Node safely</strong></a><a class="next-guide" href="/how-to/remote-monitoring/"><span>Next guide</span><strong>Set up remote monitoring</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current Veld Node remote-access state, 15-minute pairing-code lifecycle, Portal account flow, device-claim checks, and connected-state reporting.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>

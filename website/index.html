@@ -380,7 +380,7 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— 01 MINE</div>
         <h3>Run the client</h3>
-        <p>Download Veld Node and open <strong>Veld Node</strong>. The app validates the chain, manages your mining identity, and starts VeldHash mining when synchronization completes. The winning miner receives 50% of the block reward directly at their address.</p>
+        <p>Download Veld Node and open <strong>Veld Node</strong>. The app validates the chain, manages your mining identity, and starts VeldHash mining when synchronization completes. Ordinary blocks pay 50% of the subsidy to the winning miner; every 100th block routes its subsidy to the vault.</p>
         <div class="meta"><span class="k">Block reward:</span> 3.1393 VELD · ~<span class="k">180s</span> cadence</div>
       </div>
       <div class="hc">
@@ -392,25 +392,25 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— 03 VALIDATE</div>
         <h3>Endorse blocks, sign for rewards</h3>
-        <p>Once staking is active, bond 10,000 VELD and register your ML-DSA-65 public key. Your daemon endorses new blocks, and the endorsement pool pays active validators every 480 blocks.</p>
+        <p>Once staking is active and aggregate ordinary stake reaches 10,000 VELD, register your ML-DSA-65 public key with a separate 10,000 VELD validator bond. Your daemon endorses new blocks, and the endorsement pool pays active validators every 480 blocks.</p>
         <div class="meta"><span class="k">Endorsement pool:</span> 10% of ordinary block rewards after staking activation</div>
       </div>
       <div class="hc">
         <div class="n">— 04 CO-MINE</div>
         <h3>Get paid for near-misses</h3>
-        <p>Mining contributes even when a hash does not win the block. Qualifying near-misses can place active miners into the co-mining draw, where the pool is shared among selected participants. The client handles submission automatically—run it, stay connected, and let the network account for your work.</p>
+        <p>After staking activates, lock at least 1,000 VELD at your mining address and keep mining. A valid near-miss included on-chain in the 100-block window gives that address one entry in the co-mining draw. The client submits near-misses automatically; submission and rewards are not guaranteed.</p>
         <div class="meta"><span class="k">Co-mine pool:</span> 20% of ordinary block rewards after staking activation</div>
       </div>
       <div class="hc" style="border-color:rgba(255,216,74,.2)">
         <div class="n" style="color:var(--gold);text-shadow:0 0 10px rgba(255,216,74,.25)">— 05 PROVIDE</div>
         <h3>Provide pool liquidity</h3>
-        <p>After btcVELD completes its one-time seven-validator activation, pool VELD with 1:1 Bitcoin-backed btcVELD and earn the fee retained by each swap. The entire pool fee accrues to liquidity providers; there is no protocol cut, and liquidity removal remains available.</p>
-        <div class="meta"><span class="k">Swap fee:</span> 0.30%–1.00% four-band · <span class="k">100%</span> to providers · <span class="k">exit</span> always open</div>
+        <p>After btcVELD completes its one-time seven-validator activation, pool VELD with 1:1 Bitcoin-backed btcVELD and earn the fee retained by each swap. The entire pool fee accrues to liquidity providers; there is no protocol cut. Liquidity removal follows the pool’s reserve, transaction, and activation rules.</p>
+        <div class="meta"><span class="k">Swap fee:</span> 0.30%–1.00% four-band · <span class="k">100%</span> to providers · <span class="k">LP shares</span> track your reserve share</div>
       </div>
       <div class="hc" style="border-color:rgba(76,184,255,.2)">
         <div class="n" style="color:var(--blue);text-shadow:0 0 10px rgba(76,184,255,.25)">— 06 VERIFY</div>
         <h3>Run your own full node</h3>
-        <p>Don't trust, verify. The same client that mines runs a full P2P node: it independently validates every block, native transaction and finality signatures, and every coinbase split. Nothing about the chain's state depends on a central server you have to trust.</p>
+        <p>Don't trust, verify. The same client that mines runs a full P2P node: it independently validates every block, native transaction and finality signatures, and every coinbase split. Snapshot signatures and public dashboards do not replace the node’s own consensus validation.</p>
         <div class="meta"><span class="k">RAM:</span> ~1.2 GB (VeldHash dataset) · <span class="k">Disk:</span> grows with chain history</div>
       </div>
     </div>
@@ -462,8 +462,8 @@ input,textarea,[contenteditable]{cursor:text}
         <div class="split-legend">
           <div class="sl miner"><span class="sw" style="background:#32F06E;box-shadow:0 0 8px rgba(50,240,110,.5)"></span><span class="lbl">Miner<small>Block-winner direct</small></span><span class="pct">50%</span></div>
           <div class="sl comine"><span class="sw" style="background:#4CB8FF;box-shadow:0 0 8px rgba(76,184,255,.5)"></span><span class="lbl">Co-mining pool<small>Near-miss payouts</small></span><span class="pct">20%</span></div>
-          <div class="sl vault"><span class="sw" style="background:#FFD84A;box-shadow:0 0 8px rgba(255,216,74,.5)"></span><span class="lbl">Vault<small>Stakers, daily</small></span><span class="pct">20%</span></div>
-          <div class="sl endorse"><span class="sw" style="background:#B07CFF;box-shadow:0 0 8px rgba(176,124,255,.5)"></span><span class="lbl">Endorsement<small>Validators, daily</small></span><span class="pct">10%</span></div>
+          <div class="sl vault"><span class="sw" style="background:#FFD84A;box-shadow:0 0 8px rgba(255,216,74,.5)"></span><span class="lbl">Vault<small>Stakers, every 480 blocks</small></span><span class="pct">20%</span></div>
+          <div class="sl endorse"><span class="sw" style="background:#B07CFF;box-shadow:0 0 8px rgba(176,124,255,.5)"></span><span class="lbl">Endorsement<small>Validators, every 480 blocks</small></span><span class="pct">10%</span></div>
         </div>
         <div style="margin-top:14px;font-size:12.5px;color:var(--text-muted);font-family:var(--font-mono);line-height:1.7">Before activation, ordinary blocks split 50% miner / 50% vault.<br>+ every 100th block routes <span style="color:var(--gold)">100% to the vault</span>.<br>+ all TX fees flow to the vault during emission.</div>
       </div>
@@ -471,7 +471,7 @@ input,textarea,[contenteditable]{cursor:text}
 
     <div style="margin-top:48px">
       <div class="section-label" style="margin-bottom:10px">Staking lockup tiers</div>
-      <p style="color:var(--text-dim);font-size:14px;max-width:640px">Longer commitments earn more. The lockup multiplier stacks with your mining tier.</p>
+      <p style="color:var(--text-dim);font-size:14px;max-width:640px">Longer lockups increase your share multiplier, which combines with your mining tier up to 3.00×. A protocol day is 480 blocks; all day-based durations are estimates at the 180-second target, and actual elapsed time varies.</p>
       <div class="tiers">
         <div class="tier"><div class="t">Base</div><div class="d">7 days</div><div class="m">1.00<span class="x">×</span></div></div>
         <div class="tier"><div class="t">Short</div><div class="d">14 days</div><div class="m">1.10<span class="x">×</span></div></div>
@@ -541,7 +541,7 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— STEP 01</div>
         <h3>Download &amp; extract</h3>
-        <p>Grab <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">VeldClient-Windows-x64.zip</code> from below. Extract anywhere on your PC. No install or administrator access is required, and your node syncs from the network&rsquo;s relay anchors on first run.</p>
+        <p>Grab <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">VeldClient-Windows-x64-3.1.0.zip</code> from below. Extract to a stable local folder. The portable client validates a signed snapshot when eligible, or synchronizes from peers. Windows may request approval for its optional inbound P2P firewall rule.</p>
       </div>
       <div class="hc">
         <div class="n">— STEP 02</div>
@@ -551,7 +551,7 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— STEP 03</div>
         <h3>Leave it running</h3>
-        <p>The node syncs with peers, then mining starts automatically. Mining auto-tunes across available physical cores while reserving roughly one core for the system. Close the window to stop. Everything you earn lands at your address directly.</p>
+        <p>Mining starts after chain validation and peer checks finish. The default reserves one physical core where possible. Choose Eco, Balanced, Max, or a custom worker count in Settings, then compare steady hashrate to find the best setting for your machine.</p>
       </div>
     </div>
 
@@ -573,10 +573,10 @@ input,textarea,[contenteditable]{cursor:text}
         <h3 style="color:var(--gold)">Validator setup</h3>
         <p>Extra requirements if you want to endorse blocks for a share of the endorsement pool:</p>
         <ul style="margin-top:10px;padding-left:0;list-style:none;font-size:13.5px;color:var(--text-dim);line-height:1.85">
-          <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Stake the validator minimum on a single address (10,000 VELD)</li>
+          <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Wait for staking and aggregate ordinary stake activation, then post a 10,000 VELD validator registration bond</li>
           <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Register pubkey via wallet's Validators tab</li>
           <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Keep the node online 24/7 to endorse every block</li>
-          <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Payouts cadence: every 480 blocks (daily)</li>
+          <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Payout cadence: every 480 blocks (about one day at target)</li>
         </ul>
       </div>
     </div>
@@ -617,12 +617,12 @@ input,textarea,[contenteditable]{cursor:text}
 
     <div class="dl hud">
       <div class="dl-left">
-                <h3>Veld Node 3.0.8</h3>
-                <p style="color:var(--em);font-weight:600">Consensus security upgrade at block 2,880. Miners and node operators must update before that height.</p>
+                <h3>Veld Node 3.1.0</h3>
+                <p style="color:var(--em);font-weight:600">Faster CPU mining and improved worker controls. Includes the consensus upgrade activated at block 2,880.</p>
         <p>For Windows 10 / 11. Extract the download and double-click <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">Start Veld Node.bat</code>. The app guides you through setup and sync.</p>
       </div>
       <div class="dl-right">
-        <a class="dl-btn" href="https://veld.network/downloads/VeldClient-Windows-x64-3.0.8.zip">↓ &nbsp; Download</a>
+        <a class="dl-btn" href="https://veld.network/downloads/VeldClient-Windows-x64-3.1.0.zip">↓ &nbsp; Download</a>
       </div>
 
       <div class="dl-steps">
@@ -636,13 +636,13 @@ input,textarea,[contenteditable]{cursor:text}
         </div>
         <div class="s">
           <div class="n">3</div>
-          <div class="txt"><strong>Verify</strong> (optional) in PowerShell: <code>Get-FileHash -Algorithm SHA256 .\VeldClient-Windows-x64.zip</code> — match the ZIP SHA256 below.</div>
+          <div class="txt"><strong>Verify</strong> (optional) in PowerShell: <code>Get-FileHash -Algorithm SHA256 .\VeldClient-Windows-x64-3.1.0.zip</code> — match the ZIP SHA256 below.</div>
         </div>
       </div>
       <div class="dl-meta">
-        <div class="hash"><span class="hash-label">ZIP SHA256</span>d5a4813572281aacb883414d735a50de0fb70a6234767eff8355bb869d7b8760</div>
-        <div class="hash"><span class="hash-label">EXE SHA256</span>1dc23e2754cd9f56844613e3b5e2eae8e579aaf37e91f1113a421dad5f7e8a13</div>
-        <div><a href="https://veld.network/downloads/SHA256SUMS.txt" style="color:var(--text-muted);text-decoration:underline">signed manifest</a> · <a href="https://veld.network/downloads/CHANGES.txt" style="color:var(--text-muted);text-decoration:underline">release notes</a> · <a href="https://veld.network/downloads/Veld-3.0.8-H2880-source.tar.gz" style="color:var(--text-muted);text-decoration:underline">source code</a></div>
+        <div class="hash"><span class="hash-label">ZIP SHA256</span>0368590531009a29b6dc7ac68b755d3033459687ea04d53022107493ffa6be87</div>
+        <div class="hash"><span class="hash-label">EXE SHA256</span>dc7dcdd58fb525ca412a9e808cec96144390041b9d1f4a46ba1167a7f8e8a217</div>
+        <div><a href="https://veld.network/downloads/SHA256SUMS.txt" style="color:var(--text-muted);text-decoration:underline">signed manifest</a> · <a href="https://veld.network/downloads/CHANGES.txt" style="color:var(--text-muted);text-decoration:underline">release notes</a> · <a href="https://veld.network/downloads/Veld-3.1.0-source.tar.gz" style="color:var(--text-muted);text-decoration:underline">source code</a></div>
       </div>
     </div>
 

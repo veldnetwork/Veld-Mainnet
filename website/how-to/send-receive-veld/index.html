@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Receive VELD at the correct address, review a send carefully, and verify confirmation in the Veld Wallet or explorer."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Send and receive VELD safely"><meta property="og:description" content="Use receive addresses, review transaction details, and verify confirmation."><meta property="og:url" content="https://veld.network/how-to/send-receive-veld/">
+<link rel="canonical" href="https://veld.network/how-to/send-receive-veld/"><title>Send and Receive VELD | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a class="button" href="/#download">Download</a></nav></div></header>
+<main id="guide">
+  <header class="guide-hero">
+    <div class="breadcrumb"><a href="/how-to/">How-to</a> / Wallet</div><h1>Send and receive VELD safely</h1>
+    <p class="lede">Share the correct receive address, review every send before signing, and confirm the transaction without exposing your keyfile or private key.</p>
+    <div class="guide-actions"><a class="button" href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Open Veld Wallet</a><span class="guide-meta">About 7 minutes</span></div>
+    <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress"><a class="progress-item" href="#receive"><span class="progress-index">01</span><span class="progress-label">Receive</span></a><a class="progress-item" href="#enter"><span class="progress-index">02</span><span class="progress-label">Enter</span></a><a class="progress-item" href="#review"><span class="progress-index">03</span><span class="progress-label">Review</span></a><a class="progress-item" href="#confirm"><span class="progress-index">04</span><span class="progress-label">Confirm</span></a></nav>
+  </header>
+  <div class="shell"><article class="article">
+    <section class="content-section" id="receive">
+      <p class="stage-label">01 / Receive</p><h2>Share the address, never the key</h2>
+      <p>A Veld address begins with <code>V</code> and is safe to share. A private key, keyfile, or passphrase is never required to receive funds.</p>
+      <ol class="step-list">
+        <li class="step"><div><h3>Open the wallet and select Receive</h3><p>Unlock the intended wallet, then use the <strong>Receive</strong> action on the Balance page.</p></div></li>
+        <li class="step"><div><h3>Copy the address or show its QR code</h3><p>Use the wallet’s copy control or let the sender scan the displayed QR code.</p></div></li>
+        <li class="step"><div><h3>Verify what the sender received</h3><p>Compare the beginning and end of the address through a second channel, especially for a first payment or large amount.</p></div></li>
+      </ol>
+      <div class="note"><strong>Clipboard malware can replace copied addresses.</strong> Always compare the address after pasting. For a new recipient, consider a small test payment first.</div>
+    </section>
+
+    <section class="content-section" id="enter">
+      <p class="stage-label">02 / Enter</p><h2>Prepare the send</h2>
+      <p>Open <strong>Send VELD</strong> and unlock the keystore so signing stays local. Avoid manually entering a raw private key unless recovery requires it.</p>
+      <dl class="path-list">
+        <div class="path-row"><dt>From Address</dt><dd>The unlocked wallet that will spend the funds.</dd></div>
+        <div class="path-row"><dt>To Address</dt><dd>Paste, scan, or choose a previously verified address from <strong>Book</strong>.</dd></div>
+        <div class="path-row"><dt>Amount</dt><dd>Enter an exact amount or use the 25%, 50%, 75%, or Max helpers. Leave room for the displayed network fee.</dd></div>
+        <div class="path-row"><dt>Memo</dt><dd>Optional, limited to 80 bytes, and stored publicly on-chain. Never put secrets or personal data in it.</dd></div>
+      </dl>
+    </section>
+
+    <section class="content-section" id="review">
+      <p class="stage-label">03 / Review</p><h2>Check the transaction before signing</h2>
+      <p>Select <strong>Review &amp; send</strong>, then slow down. Support cannot cancel a network-accepted transfer. A recipient can send a separate refund, but that does not reverse the original transaction.</p>
+      <ul class="checklist"><li>The complete recipient address matches the intended destination.</li><li>The amount and decimal placement are correct.</li><li>The fee estimate is acceptable.</li><li>The source wallet has enough spendable balance.</li><li>The memo contains nothing private.</li></ul>
+      <div class="note"><strong>If anything is unexpected, cancel.</strong> Clear the form and obtain the recipient address again rather than editing around a suspicious value.</div>
+    </section>
+
+    <section class="content-section" id="confirm">
+      <p class="stage-label">04 / Confirm</p><h2>Verify broadcast and confirmation</h2>
+      <ol class="step-list">
+        <li class="step"><div><h3>Sign and broadcast</h3><p>Approve the reviewed transaction. The wallet signs locally and submits it to the network.</p></div></li>
+        <li class="step"><div><h3>Check wallet history</h3><p>Use the Sent/Fees or Received history view to see the transaction and its block status.</p></div></li>
+        <li class="step"><div><h3>Confirm independently when needed</h3><p>Open the public explorer and search the transaction or address. Do not share a private key to prove payment.</p><a class="url" href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">https://explorer.veld.network</a></div></li>
+      </ol>
+      <div class="note"><strong>Pending is not the same as lost.</strong> Wait for network confirmation before retrying. A block confirmation can change during a chain reorganization; check that the transaction remains on the canonical chain. Re-sending can create a second payment if the first was already accepted.</div>
+    </section>
+
+    <section class="content-section"><h2>Safety checklist</h2><ul class="checklist"><li>Use the official wallet hostname.</li><li>Confirm pasted addresses after every copy.</li><li>Use a small test amount for a new high-value destination.</li><li>Never place secrets in the public memo field.</li><li>Never share a keyfile, passphrase, or private key to receive support.</li></ul></section>
+    <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/change-wallet-passphrase/"><span>Previous wallet guide</span><strong>Change your wallet passphrase</strong></a><a class="next-guide" href="/how-to/install-verify-node/"><span>Next guide</span><strong>Install and verify Veld Node</strong></a></nav>
+    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.0. Verified against the current Veld Wallet receive, send, fee-estimation, and history flow.</p>
+  </article></div>
+</main>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+</body>
+</html>
