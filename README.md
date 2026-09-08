@@ -24,14 +24,14 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
-This source targets **3.1.1**. It pins verified public-mainnet history at
+The current signed client release is **3.1.1**. It pins verified public-mainnet history at
 block **2,800** and replaces the signed-checkpoint authority. It retains the
 mining improvements in 3.1.0 and the consensus upgrade activated at **block 2,880**.
 See the [release notes](docs/release-notes.md) and
 [download the signed client](https://veld.network/#download).
 
 The [`v3.1.1` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.1)
-identifies the release source once published. Signed package manifests identify
+identifies the published release source. Signed package manifests identify
 the distributed binaries. `main` may contain later maintenance and documentation updates. [CHANGELOG.md](CHANGELOG.md)
 distinguishes hosted updates from packaged changes.
 

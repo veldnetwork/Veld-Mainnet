@@ -32,7 +32,15 @@ The `v3.1.1` release tag and
 identify the checkpoint update. The record binds the source commit and tree to
 the distributed artifacts. The
 [corresponding source archive](https://veld.network/downloads/Veld-3.1.1-source.tar.gz)
-is distributed beside the signed package after release qualification.
+is published beside the signed package. The release was qualified and
+published on 8 September 2026. Later documentation changes on `main` do not
+change the tagged source or signed artifacts.
+
+| Field | Value |
+| --- | --- |
+| Source commit | `8cfb6595c1fc0ad67d0e50ca2050423a2e513505` |
+| Source tree | `3478d00949dc3790de213fda26c5ad9543529f31` |
+| Windows ZIP SHA-256 | `2b70f2891dcee5d2eaa960671bc5c596cc85611b30667bbcbc7bc8e9ebeeab26` |
 
 ## Veld 3.1.0
 

@@ -3,6 +3,13 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## Hosted and source documentation - 2026-09-08
+
+- Record the published 3.1.1 source, binary identities, and accepted checkpoint
+  feed. Refresh the homepage download metadata and hosted checkpoint rules.
+- Update the embedded rules wording in source for the next signed client
+  package. The existing 3.1.1 tag and signed binaries remain unchanged.
+
 ## 3.1.1 - 2026-09-08
 
 ### Checkpoints

@@ -2553,8 +2553,8 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 <div class="card rule-card">
   <h2>How Veld works</h2>
   <p style="color:var(--muted);font-size:13px;line-height:1.6">
-    Reviewed for Veld 3.1.0 on 8 September 2026. This summarizes the released
-    <a href="https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.0" style="color:var(--em);text-decoration:underline">consensus source</a>.
+    Reviewed for Veld 3.1.1 on 8 September 2026. This summarizes the released
+    <a href="https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.1" style="color:var(--em);text-decoration:underline">consensus source</a>.
     The <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a> provides background.
     A protocol day is 480 blocks. Durations in days assume the 180-second target; actual elapsed time varies.
   </p>
@@ -2777,7 +2777,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
   <details>
     <summary>Sync options and trust</summary>
     <p><code>--full-ibd</code> and <code>--no-snapshot</code> skip snapshot import. Previously imported data still requires validation; verified progress can be reused on restart. Tor-only mode syncs from peers without HTTPS snapshot downloads. If existing data fails startup checks, the node stops and reports the error.</p>
-    <p>A snapshot signature does not replace consensus checks. Version 3.1.0 treats downloaded fleet checkpoints as advisory and has no compiled checkpoint pins. Before validator finality, nodes rely on verified proof of work and reorganization limits. Once a node verifies a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that checkpoint and rejects conflicting histories.</p>
+    <p>A snapshot signature does not replace consensus checks. Version 3.1.1 enforces the verified historical block at height 2,800. A chain that conflicts with that block is rejected. Downloaded signed checkpoints remain advisory and cannot move this compiled pin. Before validator finality, nodes rely on verified proof of work and reorganization limits. Once a node verifies a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that checkpoint and rejects conflicting histories.</p>
   </details>
 </div>
 

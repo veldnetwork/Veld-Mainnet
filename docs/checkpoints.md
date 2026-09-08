@@ -1,13 +1,13 @@
 # Checkpoints and chain validation
 
-## Veld 3.1.0 compatibility
+## Previous client: Veld 3.1.0
 
 Veld 3.1.0 downloads signed fleet checkpoints on clearnet and verifies them
 against its compiled ML-DSA-65 public key. These records are advisory. They
 do not authorize a reorganization or replace proof-of-work validation.
 Tor-only clients do not download the HTTPS feed.
 
-The released client contains no compiled Veld block pins. Qualified validator
+The 3.1.0 client contains no compiled Veld block pins. Qualified validator
 finality and locally observed Bitcoin anchor floors are separate mechanisms
 with their own activation and verification requirements. A signed snapshot
 also remains subject to independent validation from genesis.
@@ -32,9 +32,9 @@ Other build profiles retain their own history without this public-mainnet pin.
 This change does not remove proof-of-work, transaction, state, or snapshot
 validation. A download server cannot move the compiled pin.
 
-The change takes effect in 3.1.1 clients built from this source. It has not
-been added to the already published 3.1.0 binaries. Release qualification must
-verify the source and binaries and recheck independent fleet agreement.
+The change is active in the signed 3.1.1 release. It has not been added to
+3.1.0 binaries. Windows and Linux qualification, signed package verification,
+and independent fleet agreement were checked before publication.
 
 ## Signed fleet feed
 
@@ -76,5 +76,14 @@ verifier. Keep the compiled historical pin and signed-feed authority separate;
 a signed feed entry cannot move the compiled pin.
 
 The public test fixture contains a signature over block 2,800, independently
-rechecked on all three fleet nodes at height 3,110. It verifies the replacement
-key and field binding; it is not an activation of the public feed.
+rechecked on all three fleet nodes at height 3,110. It tests the replacement
+key and field binding. A separately signed public record was published on
+8 September 2026 after the 3.1.1 client became available. All three upgraded
+fleet nodes accepted that record and matched its block hash.
+
+The compiled pin has no expiry and remains active through restarts. The signed
+record also has no age-based expiry in 3.1.1. Clearnet clients refresh the feed
+every five minutes; a network failure does not remove the compiled pin. New
+enforced heights require a qualified client update. New advisory records
+require independent block verification, local signing, and verified public
+readback. Future records are not automatically signed by the fleet.
