@@ -1,6 +1,6 @@
 # Checkpoints and chain validation
 
-## Released client
+## Veld 3.1.0 compatibility
 
 Veld 3.1.0 downloads signed fleet checkpoints on clearnet and verifies them
 against its compiled ML-DSA-65 public key. These records are advisory. They
@@ -12,9 +12,9 @@ finality and locally observed Bitcoin anchor floors are separate mechanisms
 with their own activation and verification requirements. A signed snapshot
 also remains subject to independent validation from genesis.
 
-## Prepared for the next client release
+## Veld 3.1.1 historical pin
 
-The public-mainnet build pins the following historical block:
+The 3.1.1 public-mainnet build pins the following historical block:
 
 | Height | Hash (`getblockhash` byte order) |
 | --- | --- |
@@ -32,9 +32,9 @@ Other build profiles retain their own history without this public-mainnet pin.
 This change does not remove proof-of-work, transaction, state, or snapshot
 validation. A download server cannot move the compiled pin.
 
-The change takes effect only in a new client built from this source. It has
-not been added to the already published 3.1.0 binaries. Before release, verify
-the source and binaries, recheck fleet agreement, and announce the update.
+The change takes effect in 3.1.1 clients built from this source. It has not
+been added to the already published 3.1.0 binaries. Release qualification must
+verify the source and binaries and recheck independent fleet agreement.
 
 ## Signed fleet feed
 
@@ -52,7 +52,7 @@ nodes before signing, and select a block beyond the reorganization horizon.
 
 ## Checkpoint authority replacement
 
-The next public-mainnet client uses a replacement ML-DSA-65 checkpoint key.
+The 3.1.1 public-mainnet client uses a replacement ML-DSA-65 checkpoint key.
 Its public-key SHA-256 fingerprint is
 `240e7e72e393c831dff72f23fa7137a899fe729d83662ca6ffde3b7d35159a32`.
 Other network profiles retain their existing checkpoint key.

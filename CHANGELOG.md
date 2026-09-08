@@ -3,6 +3,23 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## 3.1.1 - 2026-09-08
+
+### Checkpoints
+
+- Pin the independently verified public-mainnet block at height 2,800 in
+  block admission, replay, synchronization, and reorganization anchoring.
+- Replace the public-mainnet ML-DSA-65 checkpoint verification key after the
+  original signing credential could not be recovered. Other network profiles
+  retain their existing key and checkpoint history.
+- Verify signed checkpoint field binding, invalid-signature rejection,
+  compiled-pin boundaries, and network-profile isolation.
+
+Downloaded checkpoints remain advisory. The compiled historical pin is enforced
+by 3.1.1; existing 3.1.0 binaries do not gain the pin or replacement public key.
+This update retains the existing chain, proof of work, rewards, staking rules,
+protocol version, and block-2,880 activation. No new activation height is set.
+
 ## 3.1.0 - 2026-09-08
 
 Published after the block-2,880 consensus upgrade and sustained fleet chain
