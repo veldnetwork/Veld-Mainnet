@@ -337,6 +337,8 @@ if [[ $role == gui ]]; then
   cp "$artifact" "$output/Veld Node.exe"
   cp "$src/pkg/Start Veld Node.bat" "$output/Start Veld Node.bat"
   cp "$src/pkg/veld-update.ps1" "$output/veld-update.ps1"
+  cp "$src/pkg/veld-repair.ps1" "$output/veld-repair.ps1"
+  cp "$src/pkg/Repair Veld Update.bat" "$output/Repair Veld Update.bat"
   cp "$src/pkg/tor-setup.ps1" "$output/tor-setup.ps1"
   cmp "$artifact" "$output/Veld Node.exe"
   sha256sum "$output/bin/veld-node.exe" "$artifact" \

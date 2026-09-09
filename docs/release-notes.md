@@ -1,3 +1,23 @@
+## 3.1.6 - Consolidated Windows updater repair
+
+Fixes a race between update handoff and the transaction lock. Commit now
+waits for the installing process to finish preparing the transaction.
+Healthy slow archive downloads can continue beyond 30 seconds, with bounded
+total and idle deadlines and retries for transient failures. Signature,
+checksum, path, archive-size and downgrade protections remain enforced.
+
+Settings update checks and installs recover interrupted transactions under
+the existing exclusive lock. Failed installs display the helper's actual
+reason. A signed Repair Veld Update helper lets a fresh complete package
+update an existing installation while preserving its data directory.
+
+The GUI identifies the node from its selected installation, and the Logs
+view renders connection diagnostics in plain language. Warnings, unknown
+events, and the complete raw log remain available.
+
+Includes the 3.1.4 static Windows runtime and 3.1.5 local-chain preservation
+fixes. There are no changes to network consensus or activation heights.
+
 ## 3.1.5 - Preserve local synchronization progress
 
 Windows startup now limits automatic signed snapshot import to a fresh

@@ -65,7 +65,35 @@ function Abort-Update([string]$Message) {
     exit 1
 }
 
+function New-UpdateHttpClient([Net.Http.HttpClientHandler]$Handler) {
+    return [Net.Http.HttpClient]::new($Handler, $true)
+}
+
+function Test-RetryableDownloadError([Exception]$Failure) {
+    for ($depth = 0; $null -ne $Failure -and $depth -lt 8; $depth++) {
+        if ($Failure -is [OperationCanceledException] -or
+            $Failure -is [Net.Http.HttpRequestException] -or
+            $Failure.Message -like '*transient release download*' -or
+            $Failure.Message -like '*download ended before declared length*') {
+            return $true
+        }
+        $Failure = $Failure.InnerException
+    }
+    return $false
+}
+
 function Fetch([string]$Name, [string]$Destination) {
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try { Fetch-Once $Name $Destination; return }
+        catch {
+            if ($attempt -eq 3 -or -not (Test-RetryableDownloadError $_.Exception)) { throw }
+            Write-Host ('   [update] Download interrupted; retrying ' + $Name + ' (' + $attempt + '/2).')
+            Start-Sleep -Seconds (2 * $attempt)
+        }
+    }
+}
+
+function Fetch-Once([string]$Name, [string]$Destination) {
     $maximum = switch -CaseSensitive ($Name) {
         $RemoteManifestName { $MaxManifestDownloadBytes; break }
         $RemoteSignatureName { $MaxSignatureDownloadBytes; break }
@@ -91,22 +119,34 @@ function Fetch([string]$Name, [string]$Destination) {
         $handler = [Net.Http.HttpClientHandler]::new()
         $handler.AllowAutoRedirect = $false
         $handler.AutomaticDecompression = [Net.DecompressionMethods]::None
-        $client = [Net.Http.HttpClient]::new($handler, $true)
+        $client = New-UpdateHttpClient $handler
         $client.Timeout = [Threading.Timeout]::InfiniteTimeSpan
-        $deadline = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(30))
+        # A healthy slow download can exceed 30 seconds. Keep a separate
+        # 30-second connection/read idle bound and a finite total archive cap.
+        $totalSeconds = if ($Name -ceq $RemoteZipName) { 600 } else { 90 }
+        $deadline = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds($totalSeconds))
         $uri = [Uri]::new($Base + '/' + $Name)
         if ($uri.Scheme -cne 'https' -or -not $uri.IsAbsoluteUri) {
             throw 'release downloads require an absolute HTTPS URI'
         }
         $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, $uri)
-        $response = $client.SendAsync(
-            $request, [Net.Http.HttpCompletionOption]::ResponseHeadersRead,
-            $deadline.Token).GetAwaiter().GetResult()
+        $request.Headers.CacheControl = [Net.Http.Headers.CacheControlHeaderValue]::new()
+        $request.Headers.CacheControl.NoCache = $true
+        $headerDeadline = [Threading.CancellationTokenSource]::CreateLinkedTokenSource($deadline.Token)
+        try {
+            $headerDeadline.CancelAfter(30000)
+            $response = $client.SendAsync(
+                $request, [Net.Http.HttpCompletionOption]::ResponseHeadersRead,
+                $headerDeadline.Token).GetAwaiter().GetResult()
+        } finally { $headerDeadline.Dispose() }
         $status = [int]$response.StatusCode
         if ($status -ge 300 -and $status -lt 400) {
             throw ('release download redirect refused: HTTP ' + $status)
         }
         if (-not $response.IsSuccessStatusCode) {
+            if ($status -eq 408 -or $status -eq 429 -or $status -ge 500) {
+                throw ('transient release download failure: HTTP ' + $status)
+            }
             throw ('release download failed: HTTP ' + $status)
         }
         $declared = $response.Content.Headers.ContentLength
@@ -125,9 +165,13 @@ function Fetch([string]$Name, [string]$Destination) {
         $buffer = [byte[]]::new(65536)
         [uint64]$received = 0
         while ($true) {
-            $count = $stream.ReadAsync(
-                $buffer, 0, $buffer.Length,
-                $deadline.Token).GetAwaiter().GetResult()
+            $readDeadline = [Threading.CancellationTokenSource]::CreateLinkedTokenSource($deadline.Token)
+            try {
+                $readDeadline.CancelAfter(30000)
+                $count = $stream.ReadAsync(
+                    $buffer, 0, $buffer.Length,
+                    $readDeadline.Token).GetAwaiter().GetResult()
+            } finally { $readDeadline.Dispose() }
             if ($count -eq 0) { break }
             if ($received -gt [uint64]$maximum -or
                 [uint64]$count -gt ([uint64]$maximum - $received)) {
@@ -137,6 +181,9 @@ function Fetch([string]$Name, [string]$Destination) {
             $received += [uint64]$count
         }
         if ($received -eq 0) { throw ('empty download: ' + $Name) }
+        if ($null -ne $declared -and $received -ne [uint64]$declared) {
+            throw ('download ended before declared length: ' + $Name)
+        }
         $output.Flush($true)
     }
     catch {
@@ -610,7 +657,7 @@ function Read-TransactionState() {
     return $text.Substring(0, $text.Length - 1)
 }
 
-function Open-TransactionLock() {
+function Open-TransactionLock([int]$WaitSeconds = 0) {
     $lockPath = Join-Path $Transaction 'active.lock'
     Assert-SafeInstallPath $lockPath 'update transaction lock' | Out-Null
     if ([IO.File]::Exists($lockPath)) {
@@ -619,11 +666,19 @@ function Open-TransactionLock() {
     elseif ([IO.Directory]::Exists($lockPath)) {
         throw 'update transaction lock is a directory'
     }
-    try {
-        return [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate,
-            [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-    }
-    catch { throw 'another updater/recovery process owns the install transaction' }
+    $lockDeadline = (Get-Date).AddSeconds($WaitSeconds)
+    do {
+        try {
+            return [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate,
+                [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        }
+        catch [IO.IOException] {
+            if ((Get-Date) -ge $lockDeadline) {
+                throw 'another updater/recovery process owns the install transaction'
+            }
+            Start-Sleep -Milliseconds 100
+        }
+    } while ($true)
 }
 
 function Get-VerifiedPackage([string]$Stage) {
@@ -881,7 +936,9 @@ function Invoke-TransactionRecovery() {
 }
 
 function Invoke-TransactionCommit([int]$LauncherPid) {
-    $lock = Open-TransactionLock
+    # The child can run before Install publishes HANDOFF and releases its
+    # lock. Wait for that short handoff instead of treating it as failure.
+    $lock = Open-TransactionLock -WaitSeconds 30
     $committed = $false
     $rolledBack = $false
     $discardPrepared = $false
@@ -955,7 +1012,12 @@ if ($Mode -eq 'Commit') {
 }
 
 if (Test-Path -LiteralPath $Transaction) {
-    Abort-Update 'an update transaction needs recovery before feed access'
+    if ($Mode -in @('Check', 'Install')) {
+        try { Invoke-TransactionRecovery }
+        catch { Abort-Update ('interrupted update recovery failed: ' + $_.Exception.Message) }
+    } else {
+        Abort-Update 'an update transaction needs recovery before feed access; close Veld and run Start Veld Node.bat or Repair Veld Update.bat'
+    }
 }
 
 if ($Mode -eq 'Watch') {
@@ -1170,7 +1232,7 @@ try {
     $commitArguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath +
         '" -Mode Commit -InstallDir "' + $InstallDir + '" -ParentPid ' + $parentPid +
         ' -Distribution ' + $Distribution
-    Start-Process -FilePath 'powershell.exe' -ArgumentList $commitArguments `
+    Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $commitArguments `
         -WindowStyle Hidden | Out-Null
     Write-TransactionState 'HANDOFF'
     $TransactionLock.Dispose()
