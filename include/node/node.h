@@ -14463,7 +14463,7 @@ private:
 
         if (!chain_.NmsBondSatisfied(miner_script, NextInclusionHeight(chain_.Height()))) {
             std::cerr << "  [nms] skip: NMS bond not satisfied (need >= "
-                      << (MinimumStakeAtHeight(NextInclusionHeight(chain_.Height())) / VELD_UNITS) << " VELD staked under miner addr)\n";
+                      << (NMS_MIN_BOND_UNITS / VELD_UNITS) << " VELD staked under miner addr)\n";
             std::cerr.flush();
             return;
         }

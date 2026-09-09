@@ -14883,20 +14883,20 @@ function loadCominingPage() {
   loadCominingEligibility();
 }
 
-// Decide whether the current wallet is qualified to receive NMS credit
-// (holds >= minimum stake) and mirror that into the #cm-elig-* card. We
-// don't need to call a new RPC — getbalance already tells us staked VELD
-// and getstakinginfo exposes the effective minimum stake for this height.
+// Show the co-mining stake requirement independently of ordinary staking.
+// Meeting this floor is one condition for an accepted near-miss submission.
 function loadCominingEligibility() {
   var addr = (typeof currentAddr === 'string' && currentAddr) ? currentAddr : null;
   var card = document.getElementById('cm-elig-card');
   var body = document.getElementById('cm-elig-body');
   var minEl = document.getElementById('cm-minstake');
   if (!card || !body) return;
-  // Always refresh the min-stake copy from getstakinginfo so bringup→mainnet
-  // raises don't go stale in the UI.
+  // Missing policy data is unknown, never an ordinary-staking fallback.
   rpc('getstakinginfo').then(function(si) {
-    var minv = (si && typeof si === 'object') ? (si.min_stake_veld || 10) : 10;
+    var minv = si && si.co_mining_min_stake_veld;
+    if (typeof minv !== 'number' || !Number.isFinite(minv) || minv <= 0) {
+      throw new Error('Co-mining policy unavailable');
+    }
     if (minEl) minEl.textContent = fmt(minv, 0) + ' VELD';
     if (!addr) {
       card.style.borderLeftColor = 'var(--muted)';
@@ -14908,11 +14908,11 @@ function loadCominingEligibility() {
       // Same closing sentence either way: the stake that buys lottery
       // eligibility is the same stake that earns vault distributions.
       var dualUse = '<div style="font-size:12px;color:var(--muted2);margin-top:8px">The same stake also earns you vault distributions &mdash; no double-lock.</div>';
-      if (staked + 1e-8 >= minv) {
+      if (Math.round(staked * 1e8) >= Math.round(minv * 1e8)) {
         card.style.borderLeftColor = 'var(--em)';
         body.innerHTML =
-          '<div style="color:var(--em);font-weight:600;font-size:14px;margin-bottom:6px">&#x2713; Qualified</div>' +
-          '<div style="font-size:12px">Your mining address holds <strong>' + fmt(staked, 2) + ' VELD</strong> staked &mdash; above the ' + fmt(minv, 0) + '-VELD minimum. Near-miss submissions from this address will be accepted by the network and counted toward the lottery.</div>' +
+          '<div style="color:var(--em);font-weight:600;font-size:14px;margin-bottom:6px">&#x2713; Stake threshold met</div>' +
+          '<div style="font-size:12px">Your mining address holds <strong>' + fmt(staked, 2) + ' VELD</strong> staked and meets the ' + fmt(minv, 0) + '-VELD co-mining minimum. A valid near-miss must still be included on-chain in the draw window.</div>' +
           dualUse;
       } else {
         card.style.borderLeftColor = 'var(--gold)';
@@ -14927,8 +14927,9 @@ function loadCominingEligibility() {
       body.innerHTML = '<span style="color:var(--muted)">Could not read your balance.</span>';
     });
   }).catch(function(){
-    if (minEl) minEl.textContent = '10 VELD';
-    body.innerHTML = '<span style="color:var(--muted)">Select a wallet to see your lottery eligibility.</span>';
+    if (minEl) minEl.textContent = 'Unavailable';
+    card.style.borderLeftColor = 'var(--muted)';
+    body.innerHTML = '<span style="color:var(--muted)">Could not verify the co-mining requirement. Refresh after updating the connected node.</span>';
   });
 }
 

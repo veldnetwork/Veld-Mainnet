@@ -5530,6 +5530,7 @@ private:
             j << "\"total_staked_veld\":" << (double)total_stake / VELD_UNITS << ",";
             j << "\"vault_balance_veld\":" << (double)vault_units / VELD_UNITS << ",";
             j << "\"min_stake_veld\":" << (double)(staking_ ? staking_->GetEffectiveMinStake(NextInclusionHeight(chain_.Height())) : MinimumStakeAtHeight(NextInclusionHeight(chain_.Height()))) / VELD_UNITS << ",";
+            j << "\"co_mining_min_stake_veld\":" << (double)NMS_MIN_BOND_UNITS / VELD_UNITS << ",";
             j << "\"max_stake_veld\":" << (double)MAX_STAKE_UNITS / VELD_UNITS << ",";
             j << "\"lockup_blocks\":" << STAKE_LOCKUP_BLOCKS << ",";
             j << "\"distribution_interval\":" << VAULT_DISTRIBUTION_INTERVAL << ",";

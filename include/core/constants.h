@@ -772,6 +772,7 @@ inline constexpr uint64_t ASERT_ACTIVATION_HEIGHT = PROTOCOL_UPGRADE_HEIGHT;
 #endif
 inline constexpr uint32_t ASERT_HALF_LIFE = 2700;
 
+// Independent of the ordinary-staking activation schedule.
 constexpr uint64_t       NMS_MIN_BOND_UNITS         = MIN_STAKE_UNITS;
 constexpr bool           OPTION_B_CONSENSUS_GATE_ENABLED = true;
 constexpr uint64_t VAULT_BLOCK_INTERVAL      = 100;

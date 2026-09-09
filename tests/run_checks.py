@@ -28,6 +28,7 @@ SUITES = {
         "tests/windows_wallet_portal_ui_tests.py",
     ],
     "web": [
+        "tests/wallet_co_mining_eligibility_tests.js",
         "tests/security_scan_closure_script_syntax_tests.js",
         "tests/security_scan_closure_wallet_tests.js",
         "tests/security_state_migration_wallet_tests.js",

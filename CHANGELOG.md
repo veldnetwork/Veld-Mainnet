@@ -3,6 +3,17 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## 3.1.3 - 2026-09-09
+
+- Keep the co-mining lottery minimum at 1,000 VELD across block 3,840.
+- Separate wallet co-mining eligibility from the 500 VELD ordinary-staking minimum.
+- Reject lottery eligibility for stakes even one atomic unit below 1,000 VELD.
+- Preserve the previously scheduled ASERT and migration activation at block 3,840.
+
+This correction supersedes 3.1.2. Miners and node operators must update again
+before block 3,840. The initial 3.1.2 implementation incorrectly lowered the
+co-mining requirement with ordinary staking.
+
 ## 3.1.2 - 2026-09-09
 
 ### Consensus activation at block 3,840
