@@ -347,9 +347,9 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         min_stake_override_ = units;
     }
-    uint64_t GetEffectiveMinStake() const {
+    uint64_t GetEffectiveMinStake(uint64_t inclusion_height = 0) const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return min_stake_override_ > 0 ? min_stake_override_ : MIN_STAKE_UNITS;
+        return min_stake_override_ > 0 ? min_stake_override_ : MinimumStakeAtHeight(inclusion_height);
     }
 
     void SetTotalSupply(uint64_t units) noexcept {
@@ -683,7 +683,7 @@ private:
         const uint64_t amount = op.amount_units;
         if (amount == 0 || amount > MAX_STAKE_UNITS) return invalid();
 
-        uint64_t effective_min_stake = min_stake_override_ > 0 ? min_stake_override_ : MIN_STAKE_UNITS;
+        uint64_t effective_min_stake = min_stake_override_ > 0 ? min_stake_override_ : MinimumStakeAtHeight(height);
         if (op.action == CanonicalStakeOp::Action::LOCK &&
             amount < effective_min_stake) return invalid();
         if (op.action == CanonicalStakeOp::Action::LOCK &&

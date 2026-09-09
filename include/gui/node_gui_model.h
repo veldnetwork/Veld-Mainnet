@@ -24,6 +24,19 @@ struct ChainStats {
 };
 
 struct MiningStats {
+    bool daemon_identity_known{false};
+    uint64_t daemon_pid{0};
+    uint64_t daemon_network_magic{0};
+    uint64_t protocol_height{0};
+    uint64_t asert_height{0};
+    uint64_t migration_height{0};
+    uint64_t security_height{0};
+    uint64_t verification_height{0};
+    uint64_t verification_target{0};
+    bool ibd_complete{false};
+    bool historical_validated{false};
+    std::string daemon_version;
+    std::string daemon_profile;
     bool mining_configured{false};
     bool mining_ready{false};
     bool mining_active{false};
@@ -425,12 +438,39 @@ inline bool ParseMiningStats(const std::string& body, MiningStats& out,
     }
     const auto* address = root.Get("miner_address");
     if (!address || address->kind != btc_buy::JsonValue::Kind::String ||
-        address->text.size() < 20 || address->text.size() > 128) {
+        (address->text.size() < 20 &&
+         (parsed.mining_configured || !address->text.empty())) ||
+        address->text.size() > 128) {
         error = "mining status has an invalid address";
         return false;
     }
     parsed.work_state = work_state->text;
     parsed.miner_address = address->text;
+    if (const auto* daemon = root.Get("daemon")) {
+        const auto* version = daemon->Get("version");
+        const auto* profile = daemon->Get("profile");
+        if (daemon->kind != btc_buy::JsonValue::Kind::Object ||
+            !version || version->kind != btc_buy::JsonValue::Kind::String ||
+            version->text.empty() || version->text.size() > 32 ||
+            !profile || profile->kind != btc_buy::JsonValue::Kind::String ||
+            profile->text.empty() || profile->text.size() > 64 ||
+            !ParseUint(daemon->Get("pid"), parsed.daemon_pid) || parsed.daemon_pid == 0 ||
+            !ParseUint(daemon->Get("network_magic"), parsed.daemon_network_magic) ||
+            !ParseUint(daemon->Get("protocol_height"), parsed.protocol_height) ||
+            !ParseUint(daemon->Get("asert_height"), parsed.asert_height) ||
+            !ParseUint(daemon->Get("migration_height"), parsed.migration_height) ||
+            !ParseUint(daemon->Get("security_height"), parsed.security_height) ||
+            !ParseUint(daemon->Get("verification_height"), parsed.verification_height) ||
+            !ParseUint(daemon->Get("verification_target"), parsed.verification_target) ||
+            !ParseBool(daemon->Get("ibd_complete"), parsed.ibd_complete) ||
+            !ParseBool(daemon->Get("historical_validated"), parsed.historical_validated)) {
+            error = "invalid daemon identity or verification status";
+            return false;
+        }
+        parsed.daemon_identity_known = true;
+        parsed.daemon_version = version->text;
+        parsed.daemon_profile = profile->text;
+    }
     out = std::move(parsed);
     return true;
 }

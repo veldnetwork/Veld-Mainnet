@@ -148,8 +148,20 @@ int main() {
                 "203.0.113." + std::to_string((i % 250) + 1);
             CHECK(Status(Request(burst_port, "GET", "", spoof)) == 200);
         }
-        CHECK(Status(Request(burst_port, "GET", "",
-                             "192.0.2.251")) == 429);
+        // Real request time replenishes tokens. Do not require the exact
+        // 31st request to be refused regardless of elapsed wall-clock time.
+        const auto burst_start=std::chrono::steady_clock::now();
+        bool limited=false;
+        for(unsigned n=0;n<64 && !limited;++n) {
+            const int status=Status(Request(burst_port,"GET","","192.0.2.251"));
+            CHECK(status==200 || status==429);
+            limited=status==429;
+        }
+        std::cout << "Observed throttling after "
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now()-burst_start).count()
+                  << " ms of request/response scheduling\n";
+        CHECK(limited);
         CHECK(burst_server.TestRateIdentityCount() == 1);
         burst_server.Stop();
     }

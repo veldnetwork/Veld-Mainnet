@@ -1,44 +1,68 @@
-# Veld 3.1.1
+# Veld 3.1.2
 
-Checkpoint authority replacement and verified historical pinning for
-`veld-public-mainnet-v2`.
+Veld 3.1.2 schedules the next coordinated network upgrade and improves client
+recovery. Activation is scheduled for **block 3,840** on
+`veld-public-mainnet-v2`. Miners and node operators must install the signed
+3.1.2 update before that height.
 
-## Checkpoint protection
+## Network upgrade at block 3,840
 
-This client enforces the verified block at height **2,800**. The pin participates
-in block admission, replay, synchronization, and reorganization anchoring.
-Independent fleet nodes confirmed the historical hash beyond the existing
-100-block reorganization horizon.
+- Adjust difficulty after every block using ASERT, with a 180-second target and
+  a 2,700-second half-life. Block intervals will continue to vary.
+- Lower the minimum ordinary stake and co-mining eligibility stake from 1,000
+  to 500 VELD at the same inclusion height. Validator bonds, maximum stake,
+  maturity, lockups, and the established reward allocation remain unchanged.
+- Apply one state-aware coinbase policy to direct admission, alternate branches,
+  independent replay, and mining preflight. Preserve exact effective subsidy
+  plus authenticated fees, required categories, and the supply cap.
+- Apply the existing fee-only allocation consistently when the supply cap has
+  been reached, including at periodic vault boundaries.
+- Activate the coordinated validator, governance, and retained-state migration
+  with the same settlement boundary. Existing block-2,880 rules remain intact.
 
-The public-mainnet client also trusts a replacement ML-DSA-65 signing key for
-the official checkpoint feed. The original encrypted signing key was preserved,
-but its unlock credential could not be recovered. The replacement keystore,
-saved unlock credential, signatures, and encrypted recovery backup were verified
-locally. Private signing material remains outside the fleet and public source.
+Block 3,840 is a 480-block settlement boundary. Historical blocks retain their
+applicable rules. A compatible client is required before the announced height;
+older clients can remain connected but will not enforce the new rules.
+See [coinbase accounting](consensus/coinbase-policy.md) for the historical
+compatibility boundary and exact allocations.
 
-Downloaded checkpoint records remain advisory. They cannot move the compiled
-pin or replace proof-of-work, transaction, state, or snapshot validation. See
-[checkpoints and chain validation](checkpoints.md) for the pin, public-key
-fingerprints, and compatibility details.
+## Client recovery and diagnostics
 
-## Updating and compatibility
+- Preserve independent verification progress using protected atomic writes and
+  refresh saved progress when a reorganization replaces its block.
+- Finish interrupted snapshot quarantine and cleanup safely across restarts.
+  Independent validation from genesis remains mandatory before mining resumes.
+- Issue validation receipts for non-mining nodes and separate payout addresses,
+  and serialize receipt creation with canonical chain transitions.
+- Restore finality journals with explicit expiry handling while authenticating
+  every retained record.
+- Correct the Windows stop/restart lifecycle for an already-running daemon and
+  bound repeated recovery relaunches before requesting inspection.
+- Distinguish deliberately paused wallet/RPC access during snapshot verification
+  from an actual port-binding failure.
+- Report GUI and daemon identity separately, retain unknown status explicitly,
+  and record diagnostic transitions and anonymous connection reasons.
 
-Use the signed updater or the [official Windows download](https://veld.network/#download).
-Keep existing chain data and wallet backups. Upgrading an already synchronized
-client does not require deleting its data or starting again from genesis.
+## Updating
 
-Existing 3.1.0 clients do not trust signatures from the replacement checkpoint
-key and do not contain this historical pin. Install 3.1.1 to receive both changes.
-Older clients continue ordinary chain validation; the feed remains advisory.
+Use the signed updater or the
+[official download](https://veld.network/#download). The package manifest
+authenticates the release version and every installed payload file.
 
-The existing chain, mining algorithm, reward allocation, staking eligibility,
-difficulty rules, addresses, and protocol version 2 remain unchanged. This
-release retains the mining improvements in 3.1.0 and the upgrade activated at
-block 2,880. It does not schedule a new activation height.
+Keep wallet backups and existing chain data. A routine upgrade does not require
+deleting the data directory. Allow any required independent verification to
+finish; a caught-up foreground height does not mean background verification is
+complete. Do not repeatedly force-restart a client that is making progress.
 
-Release qualification covers checkpoint verification and rejection cases,
-compiled-pin boundaries, Windows and Linux builds, compiled genesis identity,
-production hash vectors, release signatures, and the signed updater handoff.
-Published artifacts are identified by their signed manifests and the
-[release identity record](https://veld.network/downloads/RELEASE-IDENTITY-3.1.1.json).
-See [source identity](source-identity.md) and the [changelog](../CHANGELOG.md).
+Checkpoint protection from 3.1.1 and the mainnet chain identity are retained.
+The original unexpected process stop reported by one miner is not explained by
+the available photographs; these changes address the verified recovery and
+diagnostic defects, without attributing that stop to an unproven cause.
+
+## Release qualification
+
+Local Windows and Linux tests cover disk-backed admission, replay and
+reorganization across the activation boundary, signed snapshot recovery with
+full proof-of-work verification, process-crash recovery, and client lifecycle
+checks. These isolated tests establish the tested behavior; they do not predict
+every operating condition or certify the future mainnet activation.

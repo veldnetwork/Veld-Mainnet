@@ -340,6 +340,7 @@ REM exponential backoff (1s, 5s, 15s, 30s, 60s, 60s...). User
 REM can break out with Ctrl+C twice (first interrupts the exe,
 REM second exits the loop before the next restart).
 set _restart_count=0
+set _recovery_restart_count=0
 set _restart_delay=1
 :restart_loop
 echo.
@@ -380,10 +381,16 @@ REM batch job (Y/N)?", and the window would never close.
 if !_exit_code! EQU -1073741510 goto :user_stop
 if !_exit_code! EQU 3221225786  goto :user_stop
 REM Exit code 75 = node requested clean restart (chain replay handles it).
-REM Exit code 76 is reserved for a snapshot/background-validation mismatch that
-REM requires explicit operator recovery. Signed snapshot imports are quarantined
-REM until independent genesis IBD matches exactly.
+REM A durable snapshot rejection also requests 75. Startup retains the rejected
+REM data and resumes ordinary peer IBD. Exit 76 means safe automatic recovery
+REM could not be established and requires inspection.
 if !_exit_code! EQU 75 (
+    set /a _recovery_restart_count+=1
+    if !_recovery_restart_count! GTR 3 (
+        echo   [stopped] Repeated recovery restarts require operator inspection.
+        echo   [stopped] Your chain data and local log have been preserved.
+        goto :final_exit
+    )
     echo   [restart] Clean restart requested.
     set _restart_count=0
     set _restart_delay=1
@@ -391,7 +398,7 @@ if !_exit_code! EQU 75 (
 )
 if !_exit_code! EQU 76 (
     echo   [stopped] Validation recovery requires operator inspection.
-    echo   [stopped] No chain data was moved and no snapshot was imported.
+    echo   [stopped] Retained chain data requires inspection before retrying.
     goto :final_exit
 )
 echo   [restart] Crash detected. Restarting in !_restart_delay!s ^(Ctrl+C to abort^)...

@@ -198,6 +198,8 @@ fi
 sha256sum "$artifact" | tee "$output/binary-sha256.txt"
 "$artifact" --version | tee "$output/runtime-version.txt"
 "$artifact" --deployment-info | tee "$output/deployment-info.txt"
+python3 "$src/scripts/verify-release-version.py" --root "$src" \
+  --deployment-info "$output/deployment-info.txt"
 grep -F 'veld-public-mainnet-v2' "$output/deployment-info.txt"
 case "$role" in
   node)
@@ -230,7 +232,6 @@ case "$role" in
     ;;
   operator)
     grep -F '"binary_role":"operator-portal"' "$output/deployment-info.txt"
-    grep -F '"client_version":"3.1.1"' "$output/deployment-info.txt"
     grep -F '"public_gettxhistory_compiled":false' "$output/deployment-info.txt"
     grep -F '"snapshot_bootstrap_compiled":false' "$output/deployment-info.txt"
     grep -F '"upnp_compiled":false' "$output/deployment-info.txt"

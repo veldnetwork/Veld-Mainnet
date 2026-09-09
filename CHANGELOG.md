@@ -3,6 +3,34 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## 3.1.2 - 2026-09-09
+
+### Consensus activation at block 3,840
+
+- Introduce per-block ASERT difficulty adjustment with a 180-second target and
+  a 2,700-second half-life.
+- Coordinate the ordinary/co-mining minimum stake reduction to 500 VELD with
+  validator, governance, and retained-state migration on a 480-block boundary.
+- Unify state-aware coinbase validation after activation and preserve historical
+  validation before it, including exact authenticated fee conservation.
+- Resolve fee-only coinbase precedence at periodic vault boundaries without
+  changing the existing allocations or supply cap.
+
+### Recovery and monitoring
+
+- Make independent verification progress durable across file contention and
+  branch changes, and serialize canonical validation receipts.
+- Complete snapshot quarantine and cleanup after interrupted recovery.
+- Authenticate finality journal rows before pruning expired entries.
+- Correct Windows daemon stop tracking and bound recovery restart loops.
+- Distinguish verification-related RPC pauses from port-binding failures.
+- Separate GUI/daemon identities and unavailable status from zero-valued
+  telemetry; retain diagnostic transitions and connection reasons.
+- Verify each built role's version against the canonical source declaration.
+
+Production activation is scheduled at block 3,840. Update before that height.
+See [release notes](docs/release-notes.md) for compatibility and update guidance.
+
 ## Hosted and source documentation - 2026-09-08
 
 - Record the published 3.1.1 source, binary identities, and accepted checkpoint

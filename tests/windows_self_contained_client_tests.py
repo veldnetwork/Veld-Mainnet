@@ -74,8 +74,8 @@ for staged in (
     'cp "$src/pkg/tor-setup.ps1" "$output/tor-setup.ps1"',
 ):
     check(staged in build, f"GUI build does not stage {staged}")
-check('"%VELD_WINDOWED%" --clearnet --node' in launcher,
-      "Windows launcher does not force the requested clearnet mode")
+check('"%VELD_WINDOWED%" --node' in launcher and '--clearnet' not in launcher,
+      "Windows launcher must preserve the user's saved network preference")
 check("veld-reachability.ps1" not in launcher,
       "minimal GUI launcher still requires the optional reachability helper")
 check("bin\\veld-node-gui.exe" not in launcher,

@@ -89,7 +89,7 @@ exit /b 0
 
 :launch
 
-start "" /D "%VELD_HOME%" "%VELD_WINDOWED%" --clearnet --node "%VELD_NODE%" --datadir "%VELD_HOME%veld-data"
+start "" /D "%VELD_HOME%" "%VELD_WINDOWED%" --node "%VELD_NODE%" --datadir "%VELD_HOME%veld-data"
 exit /b 0
 
 :missing

@@ -1,0 +1,7 @@
+#pragma once
+#include "isolated_regtest_profile.h"
+#define VELD_TEST_HOOKS 1
+#define VELD_TEST_GOV_GATE 1
+#define VELD_TEST_STAKE_OUTPOINT_BACKING 1
+#define VELD_SECURITY_STATE_MIGRATION_TEST_HEIGHT 2880
+#define VELD_LOCAL_TEST_NETWORK 1

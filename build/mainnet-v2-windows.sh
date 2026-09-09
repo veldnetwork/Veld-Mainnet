@@ -202,6 +202,8 @@ if [[ $role == gui ]]; then
   "$trusted_wallet" --deployment-info |
     tee "$output/trusted-desktop-deployment-info.txt"
   for report in trusted-node-deployment-info trusted-desktop-deployment-info; do
+    "$pqc_python" "$src/scripts/verify-release-version.py" --root "$src" \
+      --deployment-info "$output/$report.txt"
     grep -F '"profile_id":"veld-public-mainnet-v2"' "$output/$report.txt"
     grep -F '"storage_backend":"leveldb"' "$output/$report.txt"
   done
@@ -339,6 +341,8 @@ if [[ $role == gui ]]; then
 else
   "$artifact" --version | tee "$output/runtime-version.txt"
   "$artifact" --deployment-info | tee "$output/deployment-info.txt"
+  "$pqc_python" "$src/scripts/verify-release-version.py" --root "$src" \
+    --deployment-info "$output/deployment-info.txt"
   grep -F 'veld-public-mainnet-v2' "$output/deployment-info.txt"
 fi
 case "$role" in

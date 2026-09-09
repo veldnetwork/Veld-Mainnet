@@ -38,6 +38,9 @@ jobs:
           python -m pip install --only-binary=:all: -r tests/requirements.txt
       - name: Run portable checks
         run: python tests/run_checks.py
+      - name: Verify native mining launcher recovery limits
+        if: runner.os == 'Windows'
+        run: python tests/windows_mining_restart_tests.py
       - name: Compile and run work-admission tests
         if: runner.os == 'Linux'
         shell: bash
@@ -62,6 +65,16 @@ jobs:
           set -euo pipefail
           c++ -std=c++20 -O1 -pthread -Iinclude tests/mining_nonce_tests.cpp -o "$RUNNER_TEMP/mining_nonce_tests"
           "$RUNNER_TEMP/mining_nonce_tests"
+      - name: Verify scheduled release profiles
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in VELD_PUBLIC_MAINNET VELD_PUBLIC_TESTNET; do
+            c++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -D"$profile" \
+              -Iinclude tests/release_activation_tests.cpp -o "$RUNNER_TEMP/release-activation-$profile"
+            "$RUNNER_TEMP/release-activation-$profile"
+          done
       - name: Verify mining primitives and concurrent work headers
         if: runner.os == 'Linux'
         shell: bash
@@ -98,9 +111,89 @@ jobs:
               -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"
           done
+          for test in coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests; do
+            c++ -std=c++20 -O1 -pthread -Iinclude -Ivendor/pqc "tests/$test.cpp" "${objects[@]}" \
+              -lssl -lcrypto -o "$RUNNER_TEMP/$test"
+            "$RUNNER_TEMP/$test"
+          done
           for profile in VELD_PUBLIC_MAINNET VELD_PUBLIC_TESTNET; do
             c++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -D"$profile" \
               -Iinclude -Ivendor/pqc tests/signed_checkpoint_tests.cpp "${objects[@]}" \
               -o "$RUNNER_TEMP/signed-checkpoints-$profile"
             "$RUNNER_TEMP/signed-checkpoints-$profile" tests/fixtures/mainnet-checkpoint.json
           done
+  coinbase-integration:
+    name: Consensus and recovery runtime (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: admission and replay
+            fixture: coinbase_chain_integration_tests
+            members: ''
+          - name: scheduled block 3840 admission and replay
+            fixture: coinbase_chain_integration_tests
+            defines: '-DVELD_PROTOCOL_UPGRADE_TEST_HEIGHT=3840'
+            members: ''
+          - name: supply cap
+            fixture: coinbase_cap_admission_tests
+            members: ''
+          - name: finality certificates
+            fixture: coinbase_builder_metadata_tests
+            members: '7'
+          - name: large finality certificates
+            fixture: coinbase_builder_metadata_tests
+            members: '2000'
+          - name: snapshot recovery storage
+            fixture: snapshot_recovery_tests
+            members: ''
+          - name: snapshot recovery validator evidence
+            fixture: snapshot_recovery_finality_tests
+            members: ''
+          - name: expired finality journal authentication
+            fixture: finality_journal_expiry_tests
+            members: ''
+          - name: background verification restart progress
+            fixture: background_validation_progress_tests
+            members: ''
+          - name: snapshot restart and receipt consistency
+            fixture: snapshot_restart_consistency_tests
+            members: ''
+          - name: connection diagnostics
+            fixture: connection_diagnostics_tests
+            members: ''
+          - name: snapshot disabled recovery barriers
+            fixture: snapshot_disabled_recovery_tests
+            members: ''
+          - name: rejected snapshot startup barrier
+            fixture: snapshot_startup_barrier_tests
+            members: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libleveldb-dev libssl-dev
+      - name: Verify direct, alternate-branch and durable replay state
+        shell: bash
+        run: |
+          set -euo pipefail
+          objects=()
+          index=0
+          while IFS= read -r source; do
+            [[ -n $source && $source != \#* ]] || continue
+            object="$RUNNER_TEMP/coinbase-pqc-$index.o"
+            cc -std=c11 -O2 -Ivendor/pqc -Ivendor/pqc/mldsa65 -c "$source" -o "$object"
+            objects+=("$object")
+            index=$((index + 1))
+          done < vendor/pqc/provenance/release-c-sources.txt
+          c++ -std=c++20 -O1 -pthread -DVELD_USE_LEVELDB -Iinclude -Ivendor/pqc ${{ matrix.defines }} \
+            "tests/${{ matrix.fixture }}.cpp" "${objects[@]}" \
+            -lleveldb -lssl -lcrypto -o "$RUNNER_TEMP/${{ matrix.fixture }}"
+          sudo unshare --net bash -eu -c 'ip link set lo up; exec runuser -u "$1" -- "$2" "$3" ${4:+"$4"}' \
+            _ "$(id -un)" "$RUNNER_TEMP/${{ matrix.fixture }}" "$RUNNER_TEMP/fixture-state" '${{ matrix.members }}'
+      - name: Verify private fixture exclusion from public profiles
+        if: matrix.fixture == 'coinbase_cap_admission_tests'
+        run: python3 tests/coinbase_fixture_profile_tests.py --compiler c++ --output-dir "$RUNNER_TEMP/coinbase-profiles"

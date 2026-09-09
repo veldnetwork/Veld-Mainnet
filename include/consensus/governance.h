@@ -1,5 +1,6 @@
 #pragma once
 #include "security_upgrade.h"
+#include "security_state_migration.h"
 
 #include "../core/constants.h"
 #include "../core/canonical_numeric.h"
@@ -191,6 +192,7 @@ public:
         // The persisted counter is informational and is not restored here.
         next_id_ = 1;
         security_upgrade_active_ = false;
+        state_migration_active_ = false;
         PruneOrphanedKVLocked();
     }
 
@@ -204,11 +206,12 @@ public:
         std::unordered_map<std::string, uint64_t>  last_proposal_block;
         std::unordered_map<std::string, uint64_t>  last_vote_block;
         bool security_upgrade_active = false;
+        bool state_migration_active = false;
     };
     StateSnapshot SnapshotState() const {
         std::lock_guard<std::mutex> lock(mutex_);
         return StateSnapshot{ next_id_, proposals_, last_proposal_block_,
-                              last_vote_block_, security_upgrade_active_ };
+                              last_vote_block_, security_upgrade_active_, state_migration_active_ };
     }
     void RestoreState(const StateSnapshot& s) {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -217,12 +220,14 @@ public:
         last_proposal_block_  = s.last_proposal_block;
         last_vote_block_      = s.last_vote_block;
         security_upgrade_active_ = s.security_upgrade_active;
+        state_migration_active_ = s.state_migration_active;
     }
 
     Hash256 GovernanceDigest() const {
         std::lock_guard<std::mutex> lock(mutex_);
         namespace sd = ::veld::state_digest;
         std::vector<uint8_t> body;
+        if (state_migration_active_) sd::put_len_prefixed(body, "GOV_FRAMED_PROPOSALS_v2");
         if (security_upgrade_active_) sd::put_len_prefixed(body, "GOV_BOUND_VOTES_v2");
         sd::put_u64_le(body, next_id_);
         std::vector<uint64_t> ids;
@@ -992,6 +997,35 @@ public:
           << sig_hex;
         return o.str();
     }
+    // UTF-8 byte lengths frame every signed field; the timestamp has no
+    // consensus meaning and is canonically zero in P2. Existing vote identities
+    // and rounds are untouched by this proposal-format transition.
+    static std::string BuildProposalChallenge(
+            ProposalType type, const std::string& proposer,
+            const std::string& title, const std::string& description,
+            uint64_t signed_height, bool typed_marker, bool framed) {
+        if (!framed)
+            return (signed_height >= BATCH2_HARDENING_HEIGHT ? GovChainIdPrefix() : "") +
+                "GOV_PROPOSAL:" + (typed_marker ? ProposalTypeName(type) + ":" : "") +
+                title + "|" + description + ":@" + std::to_string(signed_height);
+        std::string out = GovChainIdPrefix() + "GOV_PROPOSAL_V2:";
+        for (const auto& field : {ProposalTypeName(type), proposer, title,
+                                  description, std::to_string(signed_height)})
+            out += std::to_string(field.size()) + ":" + field;
+        return out;
+    }
+
+    static std::string BuildFramedProposalOp(
+            ProposalType type, const std::string& proposer,
+            const std::string& title, const std::string& description,
+            uint64_t signed_height, const std::string& pubkey_hex,
+            const std::string& sig_hex) {
+        std::string out = BuildProposalOp(type, proposer, title, description,
+                                         0, signed_height, pubkey_hex, sig_hex);
+        out.insert(std::string(GOV_PREFIX).size() + 1, "2");
+        return out;
+    }
+
     static bool CanonicalIdentity(const std::string& value) {
         return value.size() == 64 && std::all_of(value.begin(), value.end(),
             [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
@@ -1072,6 +1106,7 @@ public:
                       bool persist = true) {
         std::lock_guard<std::mutex> lock(mutex_);
         bool state_mutated = false;
+        state_migration_active_ = SecurityStateMigrationActive(block_height);
         if (ConsensusSecurityUpgradeActive(block_height) && !security_upgrade_active_) {
             // Verify reconstruction before any migration mutation. Old derived KV
             // rows without creation identities cannot authorize a new-format vote.
@@ -1250,6 +1285,8 @@ private:
             if (fields.size() < 3) return false;
 
             const std::string& op = fields[1];
+            const bool framed = SecurityStateMigrationActive(block_height);
+            if ((op == "P" && framed) || (op == "P2" && !framed)) return false;
             if (op == "P" && fields.size() == 9) {
                 const std::string& proposer      = fields[2];
                 const std::string  title         = Base64UrlDecode(fields[3]);
@@ -1266,7 +1303,8 @@ private:
                     timestamp, signed_height, pubkey_hex, sig_hex,
                     ProposalCreationIdentity(txid, output_index));
             }
-            if (op == "P" && fields.size() == 10) {
+            if ((op == "P" || op == "P2") && fields.size() == 10) {
+                if (op == "P2" && fields[6] != "0") return false;
                 ProposalType type;
                 if (!ParseProposalType(fields[2], type)) return false;
                 const std::string& proposer      = fields[3];
@@ -1330,19 +1368,9 @@ private:
                                  const std::string& creation_identity) {
         if (block_height > signed_height + GOV_SIG_REPLAY_WINDOW_BLOCKS) return false;
         if (signed_height > block_height + 1) return false;
-        std::string challenge;
-        if (signed_height >= BATCH2_HARDENING_HEIGHT) {
-            challenge = GovChainIdPrefix()
-                      + "GOV_PROPOSAL:"
-                      + (typed_marker ? ProposalTypeName(type) + ":" : "")
-                      + title + "|" + description
-                      + ":@" + std::to_string(signed_height);
-        } else {
-            challenge = "GOV_PROPOSAL:"
-                      + (typed_marker ? ProposalTypeName(type) + ":" : "")
-                      + title + "|" + description
-                      + ":@" + std::to_string(signed_height);
-        }
+        const std::string challenge = BuildProposalChallenge(
+            type, proposer, title, description, signed_height, typed_marker,
+            SecurityStateMigrationActive(block_height));
         if (!VerifyGovSig(pubkey_hex, sig_hex, challenge)) return false;
         if (PubKeyHexToAddress(pubkey_hex) != proposer) return false;
         if (title.size() == 0) return false;
@@ -1465,6 +1493,7 @@ private:
 
 private:
     bool security_upgrade_active_{false};
+    bool state_migration_active_{false};
     const Blockchain&      chain_;
     const StakingLedger&   staking_;
     const ValidatorRegistry* validators_;

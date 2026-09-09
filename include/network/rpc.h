@@ -226,7 +226,6 @@ struct ValidatorEndorsementTarget {
 inline bool ExtractValidatorEndorsementTarget(
         const Transaction& tx,
         std::optional<ValidatorEndorsementTarget>& target) {
-    static const std::string prefix{"VELD_VALIDATOR|ENDORSE|"};
     target.reset();
     for (const auto& output : tx.outputs) {
         const auto& script = output.script_pubkey;
@@ -251,33 +250,17 @@ inline bool ExtractValidatorEndorsementTarget(
         const std::string payload(
             script.begin() + static_cast<ptrdiff_t>(cursor),
             script.begin() + static_cast<ptrdiff_t>(cursor + payload_size));
-        if (payload.rfind(prefix, 0) != 0) continue;
+        if (!HasEndorsementWirePrefix(payload)) continue;
 
         if (target || output.value != 0 ||
             cursor + payload_size != script.size() ||
             BuildOpReturnScript(payload) != script)
             return false;
-        const size_t height_end = payload.find('|', prefix.size());
-        if (height_end == std::string::npos || height_end == prefix.size())
-            return false;
-        const size_t hash_begin = height_end + 1;
-        const size_t hash_end = payload.find('|', hash_begin);
-        if (hash_end == std::string::npos ||
-            hash_end - hash_begin != 64 || hash_end + 1 >= payload.size() ||
-            payload.find('|', hash_end + 1) != std::string::npos)
-            return false;
+        EndorsementWire wire;
+        if (!ParseEndorsementWire(payload, wire)) return false;
         ValidatorEndorsementTarget parsed;
-        try {
-            parsed.height = ParseCanonicalRpcU64OrThrow(
-                payload.substr(prefix.size(), height_end - prefix.size()),
-                "endorsement height");
-        } catch (...) {
-            return false;
-        }
-        const std::string hash_text =
-            payload.substr(hash_begin, hash_end - hash_begin);
-        if (!IsCanonicalRpcLowerHex(hash_text, 64)) return false;
-        parsed.hash = HexToHash(hash_text);
+        parsed.height = wire.height;
+        parsed.hash = HexToHash(wire.hash);
         target = parsed;
     }
     return true;
@@ -1596,6 +1579,9 @@ private:
                 {"gov_vote_version", JB::Number((uint64_t)(
                     ConsensusSecurityUpgradeActive(chain_.Height() == UINT64_MAX
                         ? UINT64_MAX : chain_.Height() + 1) ? 2 : 1))},
+                {"gov_proposal_version", JB::Number((uint64_t)(
+                    SecurityStateMigrationActive(NextInclusionHeight(chain_.Height())) ? 2 : 1))},
+                {"security_state_migration_height", JB::Number(SECURITY_STATE_MIGRATION_HEIGHT)},
                 {"consensus_security_upgrade_height",
                     JB::Number(CONSENSUS_SECURITY_UPGRADE_HEIGHT)},
             });
@@ -3590,7 +3576,7 @@ private:
                                (op_string.rfind(PFX_RSV1, 0) == 0) ||
                                (!btcveld::reserve::TRANSITION_V1_REQUIRED &&
                                 op_string.rfind(PFX_MSPV, 0) == 0) ||
-                               (op_string.rfind(PFX_ENDR, 0) == 0);
+                               HasEndorsementWirePrefix(op_string);
             if (!known)
                 throw std::invalid_argument(
                     "op_string must begin with VELD_BHDR|, VELD_ANCHOR|, "
@@ -3604,6 +3590,12 @@ private:
                 throw std::invalid_argument(
                     "op_string length outside its canonical relay-family range");
 
+            if (HasEndorsementWirePrefix(op_string)) {
+                EndorsementWire wire;
+                if (!ParseEndorsementWire(op_string, wire) ||
+                    wire.attributed != SecurityStateMigrationActive(NextInclusionHeight(chain_.Height())))
+                    throw std::invalid_argument("endorsement format is not valid for the next block; prepare again");
+            }
             auto fund_script = AddressToScript(fund_addr);
             if (fund_script.empty())
                 throw std::invalid_argument("Invalid fund address: " + fund_addr);
@@ -5370,7 +5362,7 @@ private:
             j << "{\"max_multiplier\":" << LOCKUP_MAX_MULTIPLIER << ","
               << "\"min_stake_veld\":" << LOCKUP_REFERENCE_MIN_VELD << ","
               << "\"max_stake_veld\":" << LOCKUP_REFERENCE_MAX_VELD << ","
-              << "\"effective_min_stake_veld\":" << (double)MIN_STAKE_UNITS/VELD_UNITS << ","
+              << "\"effective_min_stake_veld\":" << (double)MinimumStakeAtHeight(NextInclusionHeight(chain_.Height()))/VELD_UNITS << ","
               << "\"effective_max_stake_veld\":" << (double)MAX_STAKE_UNITS/VELD_UNITS << ","
               << "\"tiers\":[";
             for (int i = 0; i < 4; ++i) {
@@ -5537,7 +5529,7 @@ private:
             j << "\"current_supply_veld\":" << chain_.TotalSupplyVeld() << ",";
             j << "\"total_staked_veld\":" << (double)total_stake / VELD_UNITS << ",";
             j << "\"vault_balance_veld\":" << (double)vault_units / VELD_UNITS << ",";
-            j << "\"min_stake_veld\":" << (double)(staking_ ? staking_->GetEffectiveMinStake() : MIN_STAKE_UNITS) / VELD_UNITS << ",";
+            j << "\"min_stake_veld\":" << (double)(staking_ ? staking_->GetEffectiveMinStake(NextInclusionHeight(chain_.Height())) : MinimumStakeAtHeight(NextInclusionHeight(chain_.Height()))) / VELD_UNITS << ",";
             j << "\"max_stake_veld\":" << (double)MAX_STAKE_UNITS / VELD_UNITS << ",";
             j << "\"lockup_blocks\":" << STAKE_LOCKUP_BLOCKS << ",";
             j << "\"distribution_interval\":" << VAULT_DISTRIBUTION_INTERVAL << ",";
@@ -6298,17 +6290,10 @@ private:
                 throw std::runtime_error("signed_height is ahead of chain tip");
             if (tip > signed_height + GOV_SIG_REPLAY_WINDOW_BLOCKS)
                 throw std::runtime_error("signed_height too stale; re-sign against current tip");
-            //  genesis-bind the challenge to match the on-chain
-            // ApplyProposalFromChain path (BATCH2_HARDENING_HEIGHT=0 ⇒ always
-            // prefixed). Single source: GovChainIdPrefix() is the same fn the
-            // consensus path calls, so pre-check and on-chain never diverge.
-            std::string challenge = GovernanceEngine::GovChainIdPrefix() +
-                                    "GOV_PROPOSAL:" +
-                                    (typed_marker
-                                        ? GovernanceEngine::ProposalTypeName(proposal_type) + ":"
-                                        : "") +
-                                    title + "|" + description +
-                                    ":@" + std::to_string(signed_height);
+            const bool framed = SecurityStateMigrationActive(NextInclusionHeight(tip));
+            const std::string challenge = GovernanceEngine::BuildProposalChallenge(
+                proposal_type, address, title, description, signed_height,
+                typed_marker, framed);
             if (!GovernanceEngine::VerifyGovSig(pubkey_hex, sig_hex, challenge))
                 throw std::runtime_error("Invalid signature");
             if (GovernanceEngine::PubKeyHexToAddress(pubkey_hex) != address)
@@ -6316,7 +6301,9 @@ private:
             const bool proposal_pending =
                 mempool_.HasPendingOpReturn("VELD_GOV|P|" + address + "|") ||
                 mempool_.HasPendingOpReturn("VELD_GOV|P|general|" + address + "|") ||
-                mempool_.HasPendingOpReturn("VELD_GOV|P|protocol_upgrade|" + address + "|");
+                mempool_.HasPendingOpReturn("VELD_GOV|P|protocol_upgrade|" + address + "|") ||
+                mempool_.HasPendingOpReturn("VELD_GOV|P2|general|" + address + "|") ||
+                mempool_.HasPendingOpReturn("VELD_GOV|P2|protocol_upgrade|" + address + "|");
             if (proposal_pending)
                 throw std::runtime_error(
                     "A governance proposal from this address is already "
@@ -6325,7 +6312,11 @@ private:
                     std::to_string(TARGET_BLOCK_TIME) +
                     " seconds) before submitting another.");
             uint64_t ts = (uint64_t)std::time(nullptr);
-            std::string payload = typed_marker
+            std::string payload = framed
+                ? GovernanceEngine::BuildFramedProposalOp(
+                    proposal_type, address, title, description, signed_height,
+                    pubkey_hex, sig_hex)
+                : typed_marker
                 ? GovernanceEngine::BuildProposalOp(
                     proposal_type, address, title, description, ts,
                     signed_height, pubkey_hex, sig_hex)
@@ -6713,7 +6704,7 @@ private:
                 lockup_tier = static_cast<uint8_t>(tier);
             }
 
-            uint64_t eff_min_stake = staking_ ? staking_->GetEffectiveMinStake() : MIN_STAKE_UNITS;
+            uint64_t eff_min_stake = staking_ ? staking_->GetEffectiveMinStake(NextInclusionHeight(chain_.Height())) : MinimumStakeAtHeight(NextInclusionHeight(chain_.Height()));
             if (amount_units < eff_min_stake)
                 throw std::runtime_error(
                     "Amount below minimum stake of " +
@@ -6885,6 +6876,13 @@ private:
                     " VELD. Newly staked funds unlock in " +
                     std::to_string(blocks_remaining) + " blocks.");
             }
+
+            const uint64_t inclusion_height = NextInclusionHeight(current_height);
+            const uint64_t minimum = staking_->GetEffectiveMinStake(inclusion_height);
+            if (!StakeUnlockPreservesMinimum(staked, mature, amount_units, minimum))
+                throw std::runtime_error(
+                    "Unstake fully or leave at least " +
+                    std::to_string(minimum / VELD_UNITS) + " VELD staked");
 
             auto script = AddressToScript(address);
             uint64_t fee = MIN_TX_FEE;
@@ -7656,6 +7654,10 @@ private:
             candidate.header.version = PROTOCOL_VERSION;
             candidate.header.prev_block_hash = work_subject.parent_hash;
             candidate.header.timestamp = (uint64_t)std::time(nullptr);
+#if defined(VELD_ASERT_TESTCHAIN)
+            if (const auto supplied = asert_qualification::candidate_time.load())
+                candidate.header.timestamp = supplied;
+#endif
             candidate.header.bits = chain_.ComputeNextBits();
             candidate.header.nonce = 0;
 
@@ -7792,6 +7794,9 @@ private:
                     else
                         outputs[0].second += endorse_cut;
                 }
+                if (ProtocolUpgradeActive(candidate.height))
+                    return Blockchain::BuildCanonicalCoinbase(
+                        candidate.height, total_supply_now, fees, miner_script);
                 return Transaction::CreateProportionalCoinbase(
                     outputs, "Veld block " + std::to_string(candidate.height));
             };
@@ -7800,7 +7805,8 @@ private:
             // mempool/AMM and Bitcoin-header dependency ordering is the shared
             // deterministic priority order; excluded trials remain in mempool.
             auto full_preflight = [&](const Block& trial) {
-                try { return mining_template_preflight_fn_(trial); }
+                try { return chain_.ValidateMiningCoinbase(trial) &&
+                             mining_template_preflight_fn_(trial); }
                 catch (...) { return false; }
             };
             const std::vector<Transaction> mandatory_txs;

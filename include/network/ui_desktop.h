@@ -5591,7 +5591,43 @@ function _veldBroadcastExactSigned(signedHex, expectedSeedHex) {
   });
 }
 
-function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2PKHGuardHash160, allowedP2PKHHash160s, onSignProgress, expectedOpReturnHex) {
+// A consolidation must reduce the number of owned outputs. Derive progress
+// from the reviewed bytes; RPC display fields never authorize another signature.
+function _veldConsolidationProgress(prep, ownerScript) {
+  var tx = _veldParseUnsignedTx(prep.unsigned_tx_hex);
+  if (tx.inputs.length < 2 || tx.inputs.length > 150 ||
+      tx.outputs.length < 1 || tx.outputs.length >= tx.inputs.length)
+    throw new Error('Refusing to sign: consolidation must reduce owned UTXO count.');
+  var outputUnits = 0n;
+  tx.outputs.forEach(function(output) {
+    if (output.script_pubkey_hex !== ownerScript || BigInt(output.value_units_str) <= 0n)
+      throw new Error('Refusing to sign: consolidation outputs must return value to this wallet.');
+    outputUnits += BigInt(output.value_units_str);
+  });
+  return {inputs: tx.inputs.length, reduction: tx.inputs.length - tx.outputs.length,
+          output_units: outputUnits.toString()};
+}
+
+function _veldConsolidationBudget(maxBatches) {
+  if (!Number.isSafeInteger(maxBatches) || maxBatches < 1 || maxBatches > 64)
+    throw new Error('Invalid consolidation batch limit.');
+  var batches = 0, fees = 0n;
+  var maxFees = BigInt(maxBatches) * BigInt(VELD_MIN_TX_FEE_UNITS);
+  return Object.freeze({
+    remaining: function() { return maxBatches - batches; },
+    reserve: function(feeUnits) {
+      var fee = BigInt(feeUnits);
+      if (fee !== BigInt(VELD_MIN_TX_FEE_UNITS) || fee < 0n ||
+          batches >= maxBatches || fees + fee > maxFees)
+        throw new Error('Consolidation signing budget reached. Start another run to continue.');
+      // Reserve before signing; a failed broadcast cannot refund a signature.
+      ++batches;
+      fees += fee;
+    }
+  });
+}
+
+function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2PKHGuardHash160, allowedP2PKHHash160s, onSignProgress, expectedOpReturnHex, consolidationBudget) {
   _veldRequireSelfCustodySigner('transaction signing');
   // Self-custody signing only. Private keys never go to the RPC endpoint;
   // signed-local sessions use the loopback app and PWA sessions retain the
@@ -5634,7 +5670,10 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
     var ownerHash160 = _veldAddrToHash160Hex(identity.address);
     if (!ownerHash160) throw new Error('Refusing to sign: locally-derived wallet address is invalid.');
     var ownerPrevSpk = '76a914' + ownerHash160.toLowerCase() + '88ac';
+    var budget = prepareMethod === 'prepareconsolidatetx'
+      ? (consolidationBudget || _veldConsolidationBudget(1)) : null;
     return rpc(prepareMethod, params).then(function(prep) {
+    var consolidation = budget ? _veldConsolidationProgress(prep, ownerPrevSpk) : null;
     if (Array.isArray(expectedOutputs) && expectedOutputs.length > 0) {
       _veldVerifyUnsignedTxOutputs(prep, expectedOutputs);
     }
@@ -5660,6 +5699,7 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
     // then inject signatures.  This may perform bounded local RPC reads for
     // fragmented wallets, so the existing signing-progress UI remains active.
     return _veldAuthenticatePreparedPrevouts(prep, VELD_MIN_TX_FEE_UNITS).then(function() {
+      if (budget) budget.reserve(VELD_MIN_TX_FEE_UNITS);
       return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, keyHex, onSignProgress);
     })
       .then(function(signedHex) {
@@ -5716,6 +5756,11 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
       // an object (shouldn't happen), wrap it.
       var result = (prep && typeof prep === 'object') ? Object.assign({}, prep) : {};
       result.txid = _txid_str;
+      if (consolidation) {
+        result.verified_consolidation_inputs = consolidation.inputs;
+        result.verified_consolidation_reduction = consolidation.reduction;
+        result.verified_consolidation_output_units = consolidation.output_units;
+      }
       return result;
     });
       });
@@ -9885,6 +9930,13 @@ var __autoConsolidateLastRun = 0;
 var __autoConsolidatePreferenceRevision = 0;
 var __autoConsolidateStorageFailed = false;
 var AUTO_CONSOLIDATE_PREFERENCE = 'veld_auto_consolidate_opt_in_v1';
+// One finite allowance per unlocked page; scheduler ticks do not renew it.
+var __autoConsolidateSigningBudget = null;
+function _veldAutomaticConsolidationBudget() {
+  if (!__autoConsolidateSigningBudget)
+    __autoConsolidateSigningBudget = _veldConsolidationBudget(8);
+  return __autoConsolidateSigningBudget;
+}
 var __autoConsolidateMinGapMs = 5 * 60 * 1000;
 var AUTO_CONSOLIDATE_TRIGGER_TOTAL = 20;
 var AUTO_CONSOLIDATE_TRIGGER_DUST = 5;
@@ -9960,6 +10012,7 @@ function autoConsolidateNotify(html) {
 
 function autoConsolidateMaybe() {
   if (!autoConsolidateEnabled() || __autoConsolidateActive || __autoConsolidateChecking) return;
+  if (__autoConsolidateSigningBudget && __autoConsolidateSigningBudget.remaining() === 0) return;
   var now = Date.now();
   if (now - __autoConsolidateLastRun < __autoConsolidateMinGapMs) return;
   var address = currentAddr;
@@ -9987,6 +10040,8 @@ function autoConsolidateMaybe() {
 }
 
 function autoConsolidateRun(keyHex, address, revision, totalAtStart, thresholdVeld) {
+  var signingBudget = _veldAutomaticConsolidationBudget();
+  if (signingBudget.remaining() === 0) return;
   if (__autoConsolidateActive || !autoConsolidateContextReady(keyHex, address, revision, false)) return;
   var guard = _veldAddrToHash160Hex(address);
   if (!__opLock('consolidate', ['w-utxo-consolidate-btn'], 'Cleaning up…')) return;
@@ -9996,6 +10051,7 @@ function autoConsolidateRun(keyHex, address, revision, totalAtStart, thresholdVe
   function runBatch() {
     // Recheck opt-in, unlocked identity and every operation lock before each batch.
     if (!autoConsolidateContextReady(keyHex, address, revision, true)) return Promise.resolve();
+    if (signingBudget.remaining() === 0) return Promise.resolve();
     batchN++;
     autoConsolidateNotify('<b>Automatic cleanup</b> &middot; batch ' + batchN + ' &middot; ' + sweptInputs + ' inputs combined');
     return Promise.resolve().then(function() {
@@ -10003,9 +10059,9 @@ function autoConsolidateRun(keyHex, address, revision, totalAtStart, thresholdVe
       return signAndBroadcast('prepareconsolidatetx', [address, String(AUTO_CONSOLIDATE_PER_BATCH), thresholdVeld],
         keyHex, null, guard, [guard], function(i, n) {
           autoConsolidateNotify('<b>Automatic cleanup</b> &middot; batch ' + batchN + ' &middot; signing ' + i + '/' + n);
-        }, '');
+        }, '', signingBudget);
     }).then(function(r) {
-      var inputs = r && (r.inputs_consolidated || (r.inputs && r.inputs.length)) || 0;
+      var inputs = r && r.verified_consolidation_inputs || 0;
       if (inputs <= 0) return;
       sweptInputs += inputs;
       return new Promise(function(resolve) { setTimeout(resolve, 800); }).then(runBatch);
@@ -10086,6 +10142,7 @@ function doConsolidateUtxos() {
   var totalInputsSwept = 0;
   var totalVeldConsolidated = 0;
   var batchTxids = [];
+  var signingBudget = _veldConsolidationBudget(64);
 
   function paint(text, cls) {
     if (!msg) return;
@@ -10156,7 +10213,7 @@ function doConsolidateUtxos() {
       __opUnlock('consolidate', ['w-utxo-consolidate-btn']);
       return;
     }
-    var batchesTotal = Math.ceil(dustCount / PER_BATCH);
+    var batchesTotal = Math.min(64, Math.ceil(dustCount / PER_BATCH));
 
     // Run one batch and chain into the next via Promise composition.
     function runBatch(n) {
@@ -10172,10 +10229,10 @@ function doConsolidateUtxos() {
         'prepareconsolidatetx',
         [currentAddr, String(PER_BATCH), DUST_THRESHOLD_VELD],
         keyHex,
-        null, guard, allowed, null, ''
+        null, guard, allowed, null, '', signingBudget
       ).then(function(r) {
-        var inputs = r.inputs_consolidated || (r.inputs && r.inputs.length) || 0;
-        var outAmt = (r.total_output != null) ? (parseFloat(r.total_output) / 1e8) : 0;
+        var inputs = r.verified_consolidation_inputs;
+        var outAmt = Number(r.verified_consolidation_output_units) / 1e8;
         var txid = r && r.txid ? r.txid : '';
         if (inputs <= 0) {
           // Server says nothing left to consolidate at this threshold.
@@ -10193,7 +10250,7 @@ function doConsolidateUtxos() {
         return new Promise(function(resolve) {
           setTimeout(resolve, 300);
         }).then(function() {
-          if (n >= batchesTotal) return null;
+          if (n >= batchesTotal || signingBudget.remaining() === 0) return null;
           return runBatch(n + 1);
         });
       });
@@ -10210,7 +10267,8 @@ function doConsolidateUtxos() {
       paint(
         '&#x2713; Consolidated ' + totalInputsSwept.toLocaleString() +
         ' dust UTXOs into ' + batchTxids.length + ' TX(s) totalling '
-        + fmt(totalVeldConsolidated, 4) + ' VELD.' + firstTxLink,
+        + fmt(totalVeldConsolidated, 4) + ' VELD.' +
+        (signingBudget.remaining() === 0 ? ' Run limit reached; click Consolidate again to continue.' : '') + firstTxLink,
         'alert-ok'
       );
       __opUnlock('consolidate', ['w-utxo-consolidate-btn']);
@@ -13556,6 +13614,22 @@ function stakingActivationErrorText() {
     remaining.toFixed(2) + ' VELD remains.';
 }
 
+function _veldRenderStakingCountdown(label, blocks) {
+  if (!label) return;
+  if (!Number.isSafeInteger(blocks) || blocks < 0 ||
+      blocks > Math.floor(Number.MAX_SAFE_INTEGER / 3)) {
+    label.textContent = '—';
+    return;
+  }
+  label.textContent = blocks + ' blocks ';
+  var estimate = document.createElement('span');
+  estimate.style.color = 'var(--muted)';
+  estimate.style.fontSize = '11px';
+  estimate.style.fontWeight = 'normal';
+  estimate.textContent = '(~' + (blocks * 3) + ' min)';
+  label.appendChild(estimate);
+}
+
 function loadStakingPage() {
   rpc('getstakinginfo').then(function(d) {
     var active = d.staking_active === true || d.staking_active === 'true';
@@ -13589,13 +13663,8 @@ function loadStakingPage() {
     // protocol target (180s) since that's the long-run convergence point
     // — actual production drifts above target during easy difficulty.
     {
-      var nb = (d.next_distribution_in != null) ? d.next_distribution_in : null;
-      var lbl = document.getElementById('sk-next');
-      if (nb == null) { lbl.textContent = '—'; }
-      else {
-        var mins = Math.round(nb * 3);  // 180s per block = 3 minutes
-        lbl.innerHTML = nb + ' blocks <span style="color:var(--muted);font-size:11px;font-weight:normal">(~' + mins + ' min)</span>';
-      }
+      _veldRenderStakingCountdown(document.getElementById('sk-next'),
+                                  d.next_distribution_in);
     }
     // APY estimate: (net payout per daily 480-block cycle * 365 cycles/year) / total staked
     if (active && staked > 0 && vault > 0) {
@@ -14324,6 +14393,14 @@ function govShowToast(msg, type) {
   } catch(_) { /* best-effort */ }
 }
 
+function _veldGovernanceProposalChallenge(prefix, type, address, title, description, height, framed) {
+  if (!framed) return prefix + 'GOV_PROPOSAL:' + type + ':' + title + '|' + description + ':@' + String(height);
+  var fields = [type, address, title, description, String(height)];
+  return prefix + 'GOV_PROPOSAL_V2:' + fields.map(function(field) {
+    return String(new TextEncoder().encode(field).length) + ':' + field;
+  }).join('');
+}
+
 function govSubmitProposal() {
   var res = document.getElementById('gov-submit-res');
   if (!govSystemActive) {
@@ -14366,7 +14443,10 @@ function govSubmitProposal() {
       // sig, RPC pre-check, and on-chain verify all use one identical string.
       var govPrefix = (info && typeof info.gov_chain_prefix === 'string') ? info.gov_chain_prefix : '';
       if (!govPrefix) throw new Error('Node did not return gov_chain_prefix — update veld-node before submitting governance.');
-      var challenge = govPrefix + 'GOV_PROPOSAL:' + proposalType + ':' + title + '|' + desc + ':@' + String(signedH);
+      var framedProposal = info.gov_proposal_version === 2;
+      if (info.gov_proposal_version !== undefined && info.gov_proposal_version !== 1 && !framedProposal)
+        throw new Error('Unsupported governance proposal format; update the wallet.');
+      var challenge = _veldGovernanceProposalChallenge(govPrefix, proposalType, addr, title, desc, signedH, framedProposal);
       var sigHex = veldCrypto.signMessage ? veldCrypto.signMessage(keyHex, challenge) : veldCrypto.sign(keyHex, challenge);
       proposalIntent = {
         type: proposalType,
@@ -14376,7 +14456,8 @@ function govSubmitProposal() {
         signedHeight: String(signedH),
         pubkey: String(pubHex),
         signature: String(sigHex),
-        requestedAt: proposalRequestedAt
+        requestedAt: proposalRequestedAt,
+        marker: framedProposal ? 'P2' : 'P'
       };
       return rpc('preparegovproposal', [addr, proposalType, title, desc, pubHex, sigHex, String(signedH)]);
     }).then(function(prep) {
@@ -14388,14 +14469,16 @@ function govSubmitProposal() {
       _veldAssertAllP2PKHOutputsInAllowed(prep, [_veldAddrToHash160Hex(addr)]);
       var payload = _veldGetSingleCanonicalOpReturnPayload(prep);
       var fields = payload.split('|');
-      if (!proposalIntent || fields.length !== 10 || fields[0] !== 'VELD_GOV' || fields[1] !== 'P' ||
+      if (!proposalIntent || fields.length !== 10 || fields[0] !== 'VELD_GOV' || fields[1] !== proposalIntent.marker ||
           fields[2] !== proposalIntent.type || fields[3] !== proposalIntent.address ||
           fields[4] !== proposalIntent.title64 || fields[5] !== proposalIntent.description64 ||
           fields[7] !== proposalIntent.signedHeight || fields[8] !== proposalIntent.pubkey ||
           fields[9] !== proposalIntent.signature || !/^(?:0|[1-9][0-9]*)$/.test(fields[6]))
         throw new Error('Refusing to sign: governance proposal instruction differs from what you approved.');
       var proposalTs = Number(fields[6]), nowTs = Math.floor(Date.now() / 1000);
-      if (!Number.isSafeInteger(proposalTs) || proposalTs < proposalIntent.requestedAt - 5 || proposalTs > nowTs + 5)
+      if (!Number.isSafeInteger(proposalTs) || (proposalIntent.marker === 'P2'
+          ? fields[6] !== '0'
+          : proposalTs < proposalIntent.requestedAt - 5 || proposalTs > nowTs + 5))
         throw new Error('Refusing to sign: governance proposal timestamp is not the current local request time.');
       _veldVerifyInputSighashes(prep, [],
         '76a914' + _veldAddrToHash160Hex(addr).toLowerCase() + '88ac');

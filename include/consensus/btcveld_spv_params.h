@@ -132,6 +132,23 @@ inline btcspv::BtcCheckpoint BtcVeldCheckpoint() {
     btcspv::BtcCheckpoint cp;
     cp.chain_work = btcspv::U256::Zero();   // relative fork-choice from the checkpoint; baseline irrelevant
 #if defined(VELD_BTCVELD_REGTEST)
+#if defined(VELD_FIRST_ACTIVATION_NETWORK)
+#if !defined(VELD_LOCAL_TEST_NETWORK) || !defined(VELD_TEST_HOOKS) || !defined(VELD_TEST_CHAIN_BUILD) || !defined(VELD_REGTEST_FIXED_DIFF) || defined(VELD_PUBLIC_RELEASE) || defined(VELD_PUBLIC_MAINNET) || defined(VELD_PUBLIC_TESTNET)
+#error "first activation Bitcoin checkpoint requires the isolated local regtest profile"
+#endif
+    // The integration driver pins a real, buried Core regtest checkpoint at a
+    // retarget boundary. A current checkpoint keeps the unmodified freshness
+    // height/time predicate meaningful on a freshly generated private chain.
+    static_assert(VELD_FIRST_ACTIVATION_BTC_CHECKPOINT_HEIGHT % 2016 == 0);
+    cp.height = VELD_FIRST_ACTIVATION_BTC_CHECKPOINT_HEIGHT;
+    cp.bits = VELD_FIRST_ACTIVATION_BTC_CHECKPOINT_BITS;
+    cp.time = VELD_FIRST_ACTIVATION_BTC_CHECKPOINT_TIME;
+    { auto hb = BtcVeldHex_(VELD_FIRST_ACTIVATION_BTC_CHECKPOINT_HASH);
+      if (hb.size() != 32) throw std::runtime_error("invalid isolated Bitcoin checkpoint");
+      std::copy(hb.begin(), hb.end(), cp.hash.begin()); }
+    static const uint32_t p10[10] = VELD_FIRST_ACTIVATION_BTC_CHECKPOINT_PREV10;
+    for (int i = 0; i < 10; ++i) cp.prev10_times[i] = p10[i];
+#else
     // Real Bitcoin Core regtest genesis (deterministic across every regtest datadir):
     // display hash 0f9188f1…2206, time 1296688602, bits 0x207fffff. cp.hash is the
     // INTERNAL (LE) block hash so a submitted block-1 header connects (its prev ==
@@ -140,6 +157,7 @@ inline btcspv::BtcCheckpoint BtcVeldCheckpoint() {
     { auto hb = BtcVeldHex_("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f");
       for (size_t i = 0; i < 32 && i < hb.size(); ++i) cp.hash[i] = hb[i]; }
     for (int i = 0; i < 10; ++i) cp.prev10_times[i] = cp.time;
+#endif
 #else
     // Release refresh : real mainnet-BTC checkpoint at retarget boundary 957600
     // (display hash 00000000000000000000c1294b131fbf6d489c74e52c13e905f003ad9ccb9ba2).

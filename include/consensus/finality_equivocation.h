@@ -461,6 +461,25 @@ public:
     // existing collector untouched.
     bool Restore(const std::vector<uint8_t>& encoded,
                  const PairValidator& validate_pair) {
+        return RestoreJournal_(encoded, validate_pair, std::nullopt, 0, {});
+    }
+
+    // Journal housekeeping may omit expired signed pairs after membership has
+    // aged out. Such rows never become evidence capabilities. Every live row
+    // still requires the caller's exact retained-membership authentication.
+    bool RestoreJournalAtTip(const std::vector<uint8_t>& encoded,
+                             const PairValidator& validate_pair,
+                             uint64_t canonical_tip, uint32_t network_id,
+                             const Hash256& genesis_hash) {
+        return RestoreJournal_(encoded, validate_pair, canonical_tip,
+                               network_id, genesis_hash);
+    }
+
+private:
+    bool RestoreJournal_(const std::vector<uint8_t>& encoded,
+                         const PairValidator& validate_pair,
+                         std::optional<uint64_t> canonical_tip,
+                         uint32_t network_id, const Hash256& genesis_hash) {
         if (!validate_pair || encoded.size() < 8 + 32) return false;
         static constexpr uint8_t MAGIC[4] = {'V', 'E', 'J', '1'};
         if (!std::equal(encoded.begin(), encoded.begin() + 4, MAGIC))
@@ -505,6 +524,37 @@ public:
                 const auto first = DecodeSignedVoteWire(first_wire);
                 const auto second = DecodeSignedVoteWire(second_wire);
                 if (!first || !second) return false;
+                const OffenseKey key{first->epoch_id,
+                                     PubkeyCommit(first->pubkey_hex)};
+                if (have_previous_key && !(previous_key < key)) return false;
+                previous_key = key;
+                have_previous_key = true;
+
+                if (canonical_tip && *canonical_tip > first->target.height &&
+                    *canonical_tip - first->target.height >
+                        FINALITY_EQUIV_EVIDENCE_WINDOW) {
+                    if (!EquivocationClaimsWellFormed(*first, *second,
+                                                     *canonical_tip) ||
+                        !(first->target.hash < second->target.hash) ||
+                        EncodeSignedVoteWire(*first) != first_wire ||
+                        EncodeSignedVoteWire(*second) != second_wire)
+                        return false;
+                    std::vector<uint8_t> raw_key;
+                    if (!FromHexBytes(first->pubkey_hex, raw_key) ||
+                        raw_key.size() != dilithium::PUBKEY_BYTES)
+                        return false;
+                    dilithium::PublicKey public_key{};
+                    std::copy(raw_key.begin(), raw_key.end(), public_key.begin());
+                    for (const auto* vote : {&*first, &*second}) {
+                        if (!dilithium::Verify(public_key,
+                                VotePreimage(network_id, genesis_hash,
+                                    vote->epoch_id, vote->set_root, vote->phase,
+                                    vote->round, vote->source, vote->target),
+                                vote->signature))
+                            return false;
+                    }
+                    continue;
+                }
                 const auto evidence = validate_pair(*first, *second);
                 if (!evidence) return false;
 
@@ -515,14 +565,8 @@ public:
                     !std::equal(stored.second.begin(), stored.second.end(),
                                 second_wire.begin()))
                     return false;  // journal pair itself was not canonical
-                const OffenseKey key{evidence->Epoch(),
-                                     evidence->SignerCommit()};
-                if (have_previous_key && !(previous_key < key))
-                    return false;  // canonical journal order is strict
                 if (!restored.emplace(key, std::move(stored)).second)
                     return false;  // one offense per signer per epoch
-                previous_key = key;
-                have_previous_key = true;
             }
         } catch (...) {
             return false;
@@ -531,7 +575,7 @@ public:
 
         std::lock_guard<std::mutex> lock(mutex_);
         records_.swap(restored);
-        bytes_charged_ = static_cast<size_t>(count) *
+        bytes_charged_ = records_.size() *
                          PAIR_STORAGE_CHARGE_BYTES;
         return true;
     }

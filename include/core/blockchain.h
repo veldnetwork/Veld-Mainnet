@@ -1,8 +1,11 @@
 #pragma once
+#include "../consensus/endorsement_wire.h"
 
 #include "block.h"
 #include "chain_work.h"
+#include "asert.h"
 #include "constants.h"
+#include "coinbase_allocation.h"
 #include "script.h"
 #include "marker_composition.h"
 #include "stake_marker.h"
@@ -960,6 +963,19 @@ public:
     static bool TryComputeNextBitsForParent_(
             uint64_t parent_height, HeaderAt&& header_at,
             uint32_t& out_bits) {
+        if (ASERT_ACTIVATION_HEIGHT != 0 && parent_height >= ASERT_ACTIVATION_HEIGHT - 1) {
+            constexpr uint64_t reference_height = ASERT_ACTIVATION_HEIGHT - 1;
+            const auto* parent = header_at(parent_height);
+            const auto* reference = header_at(reference_height);
+            if (!parent || !reference || parent->timestamp > INT64_MAX ||
+                reference->timestamp > INT64_MAX - TARGET_BLOCK_TIME) return false;
+            const int64_t elapsed = static_cast<int64_t>(parent->timestamp) -
+                static_cast<int64_t>(reference->timestamp);
+            if (elapsed > INT64_MAX - TARGET_BLOCK_TIME) return false;
+            return CalculateASERTBits(reference->bits, elapsed + TARGET_BLOCK_TIME,
+                parent_height - reference_height, TARGET_BLOCK_TIME,
+                ASERT_HALF_LIFE, out_bits);
+        }
 #ifdef VELD_REGTEST_FIXED_DIFF
         CanonicalPowTarget fixed;
         if (!DecodeCanonicalVeldTarget(VELD_POW_LIMIT_BITS, fixed)) return false;
@@ -1043,7 +1059,10 @@ public:
     struct BranchHeaderWindow {
         uint64_t first_height{0};
         std::vector<BlockHeader> headers;
+        std::optional<BlockHeader> asert_reference;
         const BlockHeader* At(uint64_t height) const noexcept {
+            if (ASERT_ACTIVATION_HEIGHT != 0 && height == ASERT_ACTIVATION_HEIGHT - 1 && asert_reference)
+                return &*asert_reference;
             if (height < first_height) return nullptr;
             const uint64_t offset = height - first_height;
             if (offset >= headers.size()) return nullptr;
@@ -1067,6 +1086,10 @@ public:
         if (parent_it == block_tree_.end()) return false;
         const uint64_t parent_height = parent_it->second.height;
         const uint64_t first = parent_height > 144 ? parent_height - 144 : 0;
+        uint64_t stop_height = first;
+        constexpr uint64_t reference_height = ASERT_ACTIVATION_HEIGHT - 1;
+        const bool needs_reference = ASERT_ACTIVATION_HEIGHT != 0 && parent_height >= reference_height;
+        if (needs_reference) stop_height = std::min(first, reference_height);
         std::vector<BlockHeader> reverse;
         reverse.reserve(static_cast<size_t>(parent_height - first + 1));
         std::string cursor = parent_hex;
@@ -1078,6 +1101,13 @@ public:
             if (expected_height < chain_.size() &&
                 HashToHex(chain_[expected_height].GetHash()) == cursor) {
                 header = chain_[expected_height].header;
+                // Once candidate ancestry reaches the active chain, its older
+                // reference is proven shared; never assume that before this match.
+                if (needs_reference && reference_height <= expected_height &&
+                    reference_height < chain_.size()) {
+                    out.asert_reference = chain_[reference_height].header;
+                    stop_height = std::min(first, expected_height);
+                }
             } else {
                 auto stored = block_store_.find(cursor);
                 if (stored == block_store_.end() ||
@@ -1087,8 +1117,10 @@ public:
             }
             if (header.prev_block_hash != tree->second.prev_hash)
                 return false;
-            reverse.push_back(header);
-            if (expected_height == first) break;
+            if (expected_height >= first) reverse.push_back(header);
+            if (needs_reference && expected_height == reference_height)
+                out.asert_reference = header;
+            if (expected_height == stop_height) break;
             const std::string next = HashToHex(tree->second.prev_hash);
             auto predecessor = block_tree_.find(next);
             if (predecessor == block_tree_.end() ||
@@ -1432,11 +1464,12 @@ public:
         catch (...) { return 0; }
     }
 
-    bool NmsBondSatisfied(const std::vector<uint8_t>& miner_script) const {
+    bool NmsBondSatisfied(const std::vector<uint8_t>& miner_script,
+                          uint64_t inclusion_height) const {
         if (!nms_stake_query_) return true;
         std::string addr = ScriptToAddress(miner_script);
         if (addr.empty()) return false;
-        return nms_stake_query_(addr) >= NMS_MIN_BOND_UNITS;
+        return nms_stake_query_(addr) >= MinimumStakeAtHeight(inclusion_height);
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -1732,6 +1765,7 @@ public:
                 uint64_t endorsed_height = 0;
                 std::string endorsed_hash;
                 std::string endorsed_sig;
+                std::string explicit_endorser;
                 for (const auto& op : btx.outputs) {
                     const auto& sp = op.script_pubkey;
                     if (sp.size() < 2 || sp[0] != 0x6A) continue;
@@ -1749,6 +1783,18 @@ public:
                     // another family's payload from being credited an endorsement —
                     // a single-output cross-protocol composition. Honest-chain
                     // identical: every real endorsement is prefix-emitted.
+                    if (SecurityStateMigrationActive(h) && HasEndorsementWirePrefix(opd)) {
+                        EndorsementWire wire;
+                        is_endorse = true;
+                        if (ParseEndorsementWire(opd, wire) && wire.attributed) {
+                            canonical_endorsed_height = true;
+                            endorsed_height = wire.height;
+                            endorsed_hash = wire.hash;
+                            endorsed_sig = wire.signature;
+                            explicit_endorser = wire.address;
+                        }
+                        break;
+                    }
                     if (opd.rfind("VELD_VALIDATOR|ENDORSE", 0) == 0) {
                         is_endorse = true;
                         auto ppos = opd.find("VELD_VALIDATOR|ENDORSE|");
@@ -1792,6 +1838,7 @@ public:
                 sender_script.insert(sender_script.end(), pkh.begin(), pkh.end());
                 sender_script.push_back(0x88); sender_script.push_back(0xAC);
                 std::string addr = ScriptToAddress(sender_script);
+                if (!explicit_endorser.empty()) addr = explicit_endorser;
                 if (addr.empty()) continue;
                 // Credit only addresses in the active validator set at this
                 // height. The registry is deterministically rebuilt on replay.
@@ -2849,7 +2896,7 @@ public:
             if (script == pool_excl)    continue;
             if (script == endorse_excl) continue;
             if (block_height >= BATCH2_HARDENING_HEIGHT) {
-                if (!NmsBondSatisfied(script)) continue;
+                if (!NmsBondSatisfied(script, block_height)) continue;
             }
             uniform_eligible.push_back({script_hex, std::move(script)});
         }
@@ -3076,9 +3123,10 @@ public:
 #endif
     }
 
-    bool ValidateTransactionLocking(const Transaction& tx, bool allow_coinbase = false) const {
+    bool ValidateTransactionLocking(const Transaction& tx, bool allow_coinbase = false,
+                                    bool* permanent_failure = nullptr) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        return ValidateTransaction(tx, allow_coinbase);
+        return ValidateTransaction(tx, allow_coinbase, permanent_failure);
     }
 
     // Re-check only the parts of a previously authenticated mempool root that
@@ -3254,7 +3302,16 @@ public:
             : MempoolCanonicalInputResult::INVALID;
     }
 
-    bool ValidateTransaction(const Transaction& tx, bool allow_coinbase = false) const {
+    bool ValidateTransaction(const Transaction& tx, bool allow_coinbase = false,
+                             bool* permanent_failure = nullptr) const {
+        // Only an immutable P2PKH authentication failure may enter a permanent
+        // negative cache. Unclassified failures remain retryable after a tip,
+        // UTXO, lock-time, or covenant-state change.
+        if (permanent_failure) *permanent_failure = false;
+        const auto reject_permanently = [&]() {
+            if (permanent_failure) *permanent_failure = true;
+            return false;
+        };
         // Block validation must enforce the same context-free transaction
         // structure as mempool admission.  Without this, a zero-input,
         // zero-value OP_RETURN transaction (and malformed input/output/script
@@ -3512,27 +3569,27 @@ public:
             size_t pos = 0;
             std::vector<uint8_t> sig_bytes_with_hashtype;
             std::vector<uint8_t> pubkey_bytes;
-            if (!read_pushdata2(ss, pos, sig_bytes_with_hashtype)) return false;
-            if (!read_pushdata2(ss, pos, pubkey_bytes)) return false;
-            if (pubkey_bytes.size() != 1952) return false;
-            if (sig_bytes_with_hashtype.empty()) return false;
-            if (pos != ss.size()) return false;
+            if (!read_pushdata2(ss, pos, sig_bytes_with_hashtype)) return reject_permanently();
+            if (!read_pushdata2(ss, pos, pubkey_bytes)) return reject_permanently();
+            if (pubkey_bytes.size() != 1952) return reject_permanently();
+            if (sig_bytes_with_hashtype.empty()) return reject_permanently();
+            if (pos != ss.size()) return reject_permanently();
 
             // On-wire signature layout:
             //   [scheme_id (1B)] [raw 3309-byte ML-DSA-65 sig] [SIGHASH_ALL (1B)]
             // Validate length, isolate the raw signature, and dispatch using the
             // explicit scheme identifier. Unknown schemes fail closed.
-            if (sig_bytes_with_hashtype.size() != 3311) return false;
+            if (sig_bytes_with_hashtype.size() != 3311) return reject_permanently();
             uint8_t scheme_id = sig_bytes_with_hashtype.front();
-            if (scheme_id != ::veld::SCHEME_ID_MLDSA65) return false;
-            if (sig_bytes_with_hashtype.back() != 0x01) return false;
+            if (scheme_id != ::veld::SCHEME_ID_MLDSA65) return reject_permanently();
+            if (sig_bytes_with_hashtype.back() != 0x01) return reject_permanently();
 
             Secp256k1PubKey pubkey;
             std::copy(pubkey_bytes.begin(), pubkey_bytes.end(), pubkey.begin());
 
             Hash160 actual_hash = Hash160Compute(pubkey);
             for (int j = 0; j < 20; ++j)
-                if (actual_hash[j] != expected_hash[j]) return false;
+                if (actual_hash[j] != expected_hash[j]) return reject_permanently();
 
             Secp256k1SigDER sig_bytes(sig_bytes_with_hashtype.begin() + 1,
                                       sig_bytes_with_hashtype.end() - 1);
@@ -3540,7 +3597,7 @@ public:
             // Compute sighash with the same scheme_id binding the
             // signer used (matches BuildScriptSig at signing time).
             Hash256 sighash = ComputeSighash(tx, (uint32_t)i, script_pubkey, scheme_id);
-            if (!Verify(pubkey, sighash, sig_bytes)) return false;
+            if (!Verify(pubkey, sighash, sig_bytes)) return reject_permanently();
         }
 
         {
@@ -3666,7 +3723,7 @@ public:
                ::veld::IsCanonicalMarkerOpReturn(out.script_pubkey, payload);
     }
 
-    static bool ValidateCoinbaseOutputs(const Block& block) {
+    bool ValidateCoinbaseOutputs(const Block& block) const {
         if (block.transactions.empty()) return false;
         const auto& cb = block.transactions[0];
         if (!cb.IsCoinbase()) return false;
@@ -3688,7 +3745,11 @@ public:
         uint64_t vault_floor = (total_out * 10) / 100;
         auto     vault_script = AddressToScript(VaultAddressAtHeight(block.height));
 
-        bool is_vault_block = (block.height > 0 && block.height % VAULT_BLOCK_INTERVAL == 0);
+        const uint64_t parent_supply = total_supply_units_.load();
+        const bool upgraded_fee_only = ProtocolUpgradeActive(block.height) &&
+            parent_supply == MAX_SUPPLY_UNITS;
+        bool is_vault_block = !upgraded_fee_only &&
+            (block.height > 0 && block.height % VAULT_BLOCK_INTERVAL == 0);
         if (is_vault_block) {
             uint64_t vault_received = 0;
             auto endorse_script = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
@@ -3871,6 +3932,61 @@ public:
         return projected_stake_utxos <= MAX_TRANSACTION_INPUTS;
     }
 
+    enum class CoinbaseAdmissionPath { Direct, Replay };
+
+    static size_t MaximumCoinbaseOutputs(uint64_t height) {
+        // The upgraded wire envelope accommodates the existing bounded QC
+        // fragments and at most one output for each monetary category.
+        static_assert(MAX_FINALITY_MARKER_OUTPUTS + 4 <= MAX_TRANSACTION_OUTPUTS);
+        return ProtocolUpgradeActive(height) ? MAX_FINALITY_MARKER_OUTPUTS + 4 : 200;
+    }
+
+    // Call with the candidate parent installed and the chain lock held. Historical
+    // admission rules are retained; the coordinated upgrade uses one policy on
+    // every path, with authenticated fees replacing fixed reward-multiple caps.
+    bool ValidateCoinbasePolicy(const Block& block,
+            CoinbaseAdmissionPath path = CoinbaseAdmissionPath::Direct) const {
+        if (block.height == 0) return true;
+        if (!ValidateCoinbaseOutputs(block) ||
+            !ValidateCanonicalCoinbaseSplit(block)) return false;
+        // Historical replay did not apply the direct-ingress output ceiling.
+        // Preserve that history while giving preflight the complete direct rule.
+        if ((ProtocolUpgradeActive(block.height) || path == CoinbaseAdmissionPath::Direct) &&
+            block.transactions[0].outputs.size() > MaximumCoinbaseOutputs(block.height))
+            return false;
+        return ProtocolUpgradeActive(block.height) ||
+            path == CoinbaseAdmissionPath::Replay || ValidateLegacyMinerCaps(block);
+    }
+
+    bool ValidateMiningCoinbase(const Block& block) const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        if (chain_.empty() || block.height != chain_.back().height + 1 ||
+            block.header.prev_block_hash != chain_.back().GetHash()) return false;
+        return ValidateCoinbasePolicy(block);
+    }
+
+    static Transaction BuildCanonicalCoinbase(uint64_t height,
+            uint64_t parent_supply, uint64_t fees,
+            const std::vector<uint8_t>& miner_script,
+            const std::vector<std::vector<uint8_t>>& metadata = {}) {
+        const auto allocation = ComputeCoinbaseAllocation(
+            height, ExpectedBlockSubsidy(height), parent_supply, fees);
+        if (!allocation) throw std::invalid_argument("invalid coinbase accounting");
+        Transaction coinbase = Transaction::CreateProportionalCoinbase({
+            {miner_script, allocation->miner},
+            {AddressToScript(PoolAddressAtHeight(height)), allocation->pool},
+            {AddressToScript(VaultAddressAtHeight(height)), allocation->vault},
+            {AddressToScript(EndorsementPoolAddressAtHeight(height)), allocation->endorsement}},
+            "Veld block " + std::to_string(height));
+        // The zero-value representation is either the empty marker or finality
+        // metadata, never a mixture of the two.
+        if (!metadata.empty() && coinbase.TotalOutput() == 0)
+            coinbase.outputs.clear();
+        for (const auto& script : metadata)
+            coinbase.outputs.emplace_back(0, script);
+        return coinbase;
+    }
+
     bool ValidateCanonicalCoinbaseSplit(const Block& block) const {
 #ifndef VELD_MAINNET_POW
         (void)block;
@@ -3903,6 +4019,8 @@ public:
                 if (inp.IsCoinbase()) continue;
                 auto utxo = GetUTXONoLock(inp.prev_tx_hash, inp.prev_out_index);
                 if (utxo) {
+                    if (utxo->value > MAX_SUPPLY_UNITS ||
+                        tx_in > MAX_SUPPLY_UNITS - utxo->value) return false;
                     tx_in += utxo->value;
                 } else {
                     this_tx_resolved   = false;
@@ -3910,8 +4028,11 @@ public:
                     break;
                 }
             }
-            if (this_tx_resolved && tx_in > tx_out)
-                actual_tx_fees += (tx_in - tx_out);
+            if (this_tx_resolved && tx_in > tx_out) {
+                const uint64_t fee = tx_in - tx_out;
+                if (actual_tx_fees > MAX_SUPPLY_UNITS - fee) return false;
+                actual_tx_fees += fee;
+            }
         }
 
         // the permissive branch let a SINGLE
@@ -3925,6 +4046,8 @@ public:
         // transaction the per-tx validator rejects regardless.
         if (!all_utxos_resolved) return false;
         const uint64_t tx_fees = actual_tx_fees;
+        if (total_supply_at_parent > MAX_SUPPLY_UNITS ||
+            actual_tx_fees > MAX_SUPPLY_UNITS - effective_reward) return false;
         if (total_out != effective_reward + actual_tx_fees) return false;
 
         const auto vault_script =
@@ -3997,46 +4120,13 @@ public:
             }
         }
 
-        uint64_t exp_pool, exp_vault, exp_endorse, exp_miner;
-        const bool is_pre_activation =
-            (total_supply_at_parent < STAKING_UNLOCK_SUPPLY);
-
-        if (effective_reward == 0) {
-            const uint64_t v = (tx_fees * 40) / 100;
-            const uint64_t e = (tx_fees * 10) / 100;
-            const uint64_t m = tx_fees - v - e;
-            exp_pool    = 0;
-            exp_vault   = v;
-            exp_endorse = e;
-            exp_miner   = m;
-        } else if (block.height > 0 &&
-                   (block.height % VAULT_BLOCK_INTERVAL) == 0) {
-            // every VAULT_BLOCK_INTERVAL-th block routes
-            // the ENTIRE reward to the vault, ALWAYS — this MUST be checked BEFORE
-            // is_pre_activation. The miner (node.h) and ValidateCoinbaseOutputs both
-            // build and require the all-to-vault output before evaluating the
-            // pre-activation branch.
-            exp_pool    = 0;
-            exp_vault   = effective_reward + tx_fees;
-            exp_endorse = 0;
-            exp_miner   = 0;
-        } else if (is_pre_activation) {
-            const uint64_t m = (effective_reward * 50) / 100;
-            const uint64_t v = effective_reward - m;
-            exp_pool    = 0;
-            exp_vault   = v + tx_fees;
-            exp_endorse = 0;
-            exp_miner   = m;
-        } else {
-            const uint64_t p = (effective_reward * 20) / 100;
-            const uint64_t v = (effective_reward * 20) / 100;
-            const uint64_t e = (effective_reward * 10) / 100;
-            const uint64_t m = effective_reward - p - v - e;
-            exp_pool    = p;
-            exp_vault   = v + tx_fees;
-            exp_endorse = e;
-            exp_miner   = m;
-        }
+        const auto allocation = ComputeCoinbaseAllocation(
+            block.height, base_reward, total_supply_at_parent, tx_fees);
+        if (!allocation) return false;
+        const uint64_t exp_pool = allocation->pool;
+        const uint64_t exp_vault = allocation->vault;
+        const uint64_t exp_endorse = allocation->endorsement;
+        const uint64_t exp_miner = allocation->miner;
 
         if (sum_pool    != exp_pool)    return false;
         if (sum_vault   != exp_vault)   return false;
@@ -4539,7 +4629,8 @@ public:
                 }
             }
         }
-        if (block.transactions[0].outputs.size() > 200) return reject("coinbase_too_many_outputs");
+        if (block.transactions[0].outputs.size() > MaximumCoinbaseOutputs(block.height))
+            return reject("coinbase_too_many_outputs");
         {
             std::unordered_set<std::string> seen_txids;
             seen_txids.reserve(block.transactions.size());
@@ -4961,11 +5052,8 @@ public:
         }
 
         if (!skip_pow && !is_alt_chain && blk.height > 0 &&
-            !ValidateCoinbaseOutputs(blk))
-            return reject("coinbase_outputs_invalid");
-        if (!skip_pow && !is_alt_chain && blk.height > 0 &&
-            !ValidateCanonicalCoinbaseSplit(blk))
-            return reject("coinbase_split_not_canonical");
+            !ValidateCoinbasePolicy(blk))
+            return reject("coinbase_policy_invalid");
 
         if constexpr (OPTION_B_CONSENSUS_GATE_ENABLED) {
             if (!skip_pow) {
@@ -5002,7 +5090,7 @@ public:
                         return reject("nms_duplicate_in_block");
                     if (!is_alt_chain && NmsPayloadSeen(nms_rec->raw))
                         return reject("nms_duplicate_cross_block");
-                    if (!is_alt_chain && !NmsBondSatisfied(miner_script))
+                    if (!is_alt_chain && !NmsBondSatisfied(miner_script, blk.height))
                         return reject("nms_insufficient_bond");
                 }
             }
@@ -5256,7 +5344,9 @@ public:
             // Re-run tip-dependent checks under the unique lock. Another thread
             // may have changed whether this block was classified as an extension
             // during the earlier lock-free validation pass.
-            if (!ValidateMinerCaps(blk)) return false;
+            if (!skip_pow || ProtocolUpgradeActive(blk.height)) {
+                if (!ValidateCoinbasePolicy(blk)) return false;
+            } else if (!ValidateLegacyMinerCaps(blk)) return false;
             // These deterministic gates depend on parent state and are safe to
             // evaluate twice. Persisted replay uses skip_pow=true and remains
             // outside this path.
@@ -5268,12 +5358,6 @@ public:
                 if (!ValidateExpectedBondMovements(blk)) return false;
                 if (!ValidateExpectedBondYieldSettlement(blk)) return false;
 
-                // Recheck emission against the consistent parent UTXO and supply
-                // state before committing the block.
-                if (blk.height > 0 && !ValidateCoinbaseOutputs(blk))
-                    return false;
-                if (blk.height > 0 && !ValidateCanonicalCoinbaseSplit(blk))
-                    return false;
                 {
                     uint64_t cb_out = blk.transactions[0].TotalOutput();
                     uint64_t fees_in_block = 0;
@@ -6663,7 +6747,7 @@ private:
     std::function<uint64_t(const std::string&)> staked_for_addr_;
     std::function<uint64_t(const std::string&, uint64_t)>
         mature_stake_for_addr_;
-    std::function<uint64_t()> effective_min_stake_;
+    std::function<uint64_t(uint64_t)> effective_min_stake_;
     std::function<std::unordered_map<std::string, uint64_t>()> all_active_stakes_;
     std::function<bool(const Block&)> stake_block_validator_;
 public:
@@ -6674,7 +6758,7 @@ public:
             std::function<uint64_t(const std::string&, uint64_t)> fn) {
         mature_stake_for_addr_ = std::move(fn);
     }
-    void SetEffectiveMinStakeFn(std::function<uint64_t()> fn) {
+    void SetEffectiveMinStakeFn(std::function<uint64_t(uint64_t)> fn) {
         effective_min_stake_ = std::move(fn);
     }
     void SetAllActiveStakesFn(
@@ -6700,9 +6784,9 @@ public:
         return mature_stake_for_addr_
             ? mature_stake_for_addr_(addr, height) : 0;
     }
-    uint64_t GetEffectiveMinStakeUnits() const {
+    uint64_t GetEffectiveMinStakeUnits(uint64_t inclusion_height) const {
         return effective_min_stake_
-            ? effective_min_stake_() : MIN_STAKE_UNITS;
+            ? effective_min_stake_(inclusion_height) : MinimumStakeAtHeight(inclusion_height);
     }
     size_t GetActiveStakeAddressCount() const {
         if (!all_active_stakes_) return 0;
@@ -7477,9 +7561,9 @@ private:
             if (pow_verified) *pow_verified = true;
         }
 
-        if (blk.height > 0 && !ValidateCoinbaseOutputs(blk)) return reject_log("coinbase_outputs");
-        if (blk.height > 0 && !ValidateCanonicalCoinbaseSplit(blk))
-            return reject_log("coinbase_split_not_canonical");
+        if (blk.height > 0 &&
+            !ValidateCoinbasePolicy(blk, CoinbaseAdmissionPath::Replay))
+            return reject_log("coinbase_policy_invalid");
         if (blk.height > 0 && !ValidateProtocolCustodyFunding(blk))
             return reject_log("protocol_custody_funding_invalid");
 
@@ -7614,7 +7698,7 @@ private:
                     return reject_log("nms_duplicate_in_block_vbfr");
                 if (NmsPayloadSeen(nms_rec->raw))
                     return reject_log("nms_duplicate_cross_block_vbfr");
-                if (!NmsBondSatisfied(miner_script))
+                if (!NmsBondSatisfied(miner_script, blk.height))
                     return reject_log("nms_insufficient_bond_vbfr");
             }
         }
@@ -8736,8 +8820,10 @@ public:
         return times[times.size() / 2];
     }
 
-    // Defense-in-depth structural ceiling for coinbase output count and value.
-    bool ValidateMinerCaps(const Block& block) const {
+    // Historical tip-only backstop. The coordinated upgrade replaces these
+    // fixed value limits with the exact parent-state policy above. Do not apply
+    // this legacy predicate retroactively to historical alternate branches.
+    bool ValidateLegacyMinerCaps(const Block& block) const {
         if (block.transactions.empty()) return false;
         constexpr uint64_t COINBASE_BACKSTOP_MULTIPLE = 6;
         const uint64_t per_out_ceiling =

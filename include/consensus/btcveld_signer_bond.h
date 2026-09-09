@@ -1,4 +1,6 @@
 #pragma once
+#include "security_state_migration.h"
+#include "redeem_archive.h"
 // btcVELD redemption signer bond and slash covenant.
 //
 // The redemption signer set controls Bitcoin custody and posts VELD collateral
@@ -90,9 +92,91 @@ public:
         return sd::sha256_domain("VELD_BTCVELD_REDEEM_REQUEST_v2", body);
     }
 
+    void SetArchiveBackend(RedeemArchive::Read read, RedeemArchive::Write write) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        archive_.SetBackend(std::move(read), std::move(write));
+    }
+
+    // Called on the parent state before token verification, on every replay
+    // path. The historical state is archived before any authority is retired.
+    void BeginBlock(uint64_t height) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!SecurityStateMigrationActive(height)) {
+            if (state_migration_active_)
+                throw std::runtime_error("redeem migration requires parent snapshot restoration");
+            return;
+        }
+        if (!archive_.Available())
+            throw std::runtime_error("redeem migration requires persistent archive storage");
+        if (state_migration_active_) return;
+        RedeemArchive::Root next = archive_root_;
+        for (const auto& [addr, signer] : signers_) {
+            std::vector<uint8_t> wire;
+            state_digest::put_len_prefixed(wire, signer.veld_addr);
+            state_digest::put_u64_le(wire, signer.bonded_sats);
+            state_digest::put_u64_le(wire, signer.locked_sats);
+            state_digest::put_u8(wire, signer.active ? 1 : 0);
+            archive_.Insert(next, RedeemArchive::Key(4, addr), BytesString_(wire));
+        }
+        std::vector<uint8_t> insurance;
+        state_digest::put_u64_le(insurance, insurance_fund_sats_);
+        archive_.Insert(next, RedeemArchive::Key(5, std::string("legacy-insurance")),
+                        BytesString_(insurance));
+        for (const auto& id : consumed_payouts_)
+            archive_.Insert(next, RedeemArchive::Key(2, id), "");
+        for (const auto& id : consumed_fraud_spends_)
+            archive_.Insert(next, RedeemArchive::Key(3, id), "");
+        for (const auto& [id, request] : requests_)
+            if (Closed_(request))
+                archive_.Insert(next, RedeemArchive::Key(1, id), EncodeRequest_(request));
+        // Nothing above changed rollback state. Storage failure leaves the
+        // complete historical parent intact; unreferenced immutable rows are inert.
+        archive_root_ = next;
+        state_migration_active_ = true;
+        insurance_fund_sats_ = 0;
+        consumed_payouts_.clear();
+        consumed_fraud_spends_.clear();
+        for (auto it = signers_.begin(); it != signers_.end();) {
+            it->second.active = false;
+            if (it->second.locked_sats == 0) it = signers_.erase(it);
+            else ++it; // settlement-only bookkeeping for existing non-reserve requests
+        }
+        for (auto it = requests_.begin(); it != requests_.end();) {
+            if (Closed_(it->second)) {
+                reserve_backed_requests_.erase(it->first);
+                it = requests_.erase(it);
+            } else ++it;
+        }
+    }
+
+    // Terminal requests have no remaining honor/default transition. Keep their
+    // exact values and nullifiers forever in the archive, outside hot snapshots.
+    // The caller invokes this only after payout/default compensation succeeds.
+    void FinishBlock() {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!state_migration_active_) return;
+        for (auto it = requests_.begin(); it != requests_.end();) {
+            if (!Closed_(it->second)) { ++it; continue; }
+            archive_.Insert(archive_root_, RedeemArchive::Key(1, it->first),
+                            EncodeRequest_(it->second));
+            reserve_backed_requests_.erase(it->first);
+            it = requests_.erase(it);
+        }
+        for (const auto& id : consumed_payouts_)
+            archive_.Insert(archive_root_, RedeemArchive::Key(2, id), "");
+        for (const auto& id : consumed_fraud_spends_)
+            archive_.Insert(archive_root_, RedeemArchive::Key(3, id), "");
+        consumed_payouts_.clear();
+        consumed_fraud_spends_.clear();
+        for (auto it = signers_.begin(); it != signers_.end();) {
+            if (it->second.locked_sats == 0) it = signers_.erase(it);
+            else ++it;
+        }
+    }
+
     bool Register(const std::string& addr, uint64_t bond_sats) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        if (addr.empty() || bond_sats == 0) return false;
+        if (state_migration_active_ || addr.empty() || bond_sats == 0) return false;
         SignerBond& s = signers_[addr];
         if (s.bonded_sats > UINT64_MAX - bond_sats) return false;
         s.veld_addr = addr; s.bonded_sats += bond_sats;
@@ -100,6 +184,7 @@ public:
     }
     bool Activate(const std::string& addr) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (state_migration_active_) return false;
         auto it = signers_.find(addr);
         if (it == signers_.end() || it->second.bonded_sats == 0) return false;
         it->second.active = true; return true;
@@ -159,6 +244,10 @@ public:
             throw std::runtime_error(
                 "conflicting btcVELD redemption request replay");
         }
+
+        if (state_migration_active_ &&
+            archive_.Get(archive_root_, RedeemArchive::Key(1, canonical.request_id)))
+            throw std::runtime_error("closed btcVELD redemption request replay");
 
         if (reserve_backed_without_bond) {
             auto inserted = requests_.emplace(
@@ -229,9 +318,14 @@ public:
     std::optional<RedeemRequest> GetCopy(const H256& id) const {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         const auto it = requests_.find(id);
-        return it == requests_.end()
-            ? std::nullopt
-            : std::optional<RedeemRequest>(it->second);
+        if (it != requests_.end()) return it->second;
+        if (!state_migration_active_) return std::nullopt;
+        const auto wire = archive_.Get(archive_root_, RedeemArchive::Key(1, id));
+        if (!wire) return std::nullopt;
+        const RedeemRequest request = DecodeRequest_(*wire);
+        if (request.request_id != id || !Closed_(request))
+            throw std::runtime_error("redeem archive request identity/status mismatch");
+        return request;
     }
 
     std::optional<RedeemRequest> FindOpenByCommitmentCopy(
@@ -256,11 +350,13 @@ public:
 
     bool IsConsumedPayout(const H256& txid) const {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        return consumed_payouts_.count(txid) != 0;
+        return consumed_payouts_.count(txid) != 0 || (state_migration_active_ &&
+            archive_.Get(archive_root_, RedeemArchive::Key(2, txid)).has_value());
     }
     bool IsConsumedFraudSpend(const H256& txid) const {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        return consumed_fraud_spends_.count(txid) != 0;
+        return consumed_fraud_spends_.count(txid) != 0 || (state_migration_active_ &&
+            archive_.Get(archive_root_, RedeemArchive::Key(3, txid)).has_value());
     }
 
     bool MarkFulfilled(const H256& id, const H256& payout_txid, uint64_t paid_sats,
@@ -483,6 +579,7 @@ public:
     bool ConsumeFraudSpend(const H256& spend_txid) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         return !HashIsZero(spend_txid) && !IsConsumedPayout(spend_txid) &&
+               !IsConsumedFraudSpend(spend_txid) &&
                consumed_fraud_spends_.insert(spend_txid).second;
     }
 
@@ -541,6 +638,8 @@ public:
         signers_.clear(); requests_.clear(); consumed_payouts_.clear();
         consumed_fraud_spends_.clear(); reserve_backed_requests_.clear();
         insurance_fund_sats_ = 0;
+        archive_root_ = {};
+        state_migration_active_ = false;
     }
 
     struct StateSnapshot {
@@ -550,13 +649,15 @@ public:
         std::set<H256> consumed_fraud_spends;
         std::set<H256> reserve_backed_requests;
         uint64_t insurance_fund_sats = 0;
+        RedeemArchive::Root archive_root;
+        bool state_migration_active = false;
     };
     StateSnapshot SnapshotState() const {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         return StateSnapshot{signers_, requests_, consumed_payouts_,
                              consumed_fraud_spends_,
                              reserve_backed_requests_,
-                             insurance_fund_sats_};
+                             insurance_fund_sats_, archive_root_, state_migration_active_};
     }
     void RestoreState(const StateSnapshot& s) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -564,6 +665,8 @@ public:
         consumed_fraud_spends_ = s.consumed_fraud_spends;
         reserve_backed_requests_ = s.reserve_backed_requests;
         insurance_fund_sats_ = s.insurance_fund_sats;
+        archive_root_ = s.archive_root;
+        state_migration_active_ = s.state_migration_active;
     }
 
     H256 Digest() const {
@@ -571,9 +674,9 @@ public:
         namespace sd = ::veld::state_digest;
         std::vector<uint8_t> body;
 #if defined(VELD_PUBLIC_MAINNET) || defined(VELD_BTCVELD_REGTEST)
-        sd::put_u32_le(body, 3);
+        sd::put_u32_le(body, state_migration_active_ ? 4 : 3);
 #else
-        sd::put_u32_le(body, 2);
+        sd::put_u32_le(body, state_migration_active_ ? 4 : 2);
 #endif
         sd::put_u32_le(body, static_cast<uint32_t>(signers_.size()));
         for (const auto& [addr, s] : signers_) {
@@ -600,6 +703,10 @@ public:
             sd::put_bytes(body, request.data(), request.size());
 #endif
         sd::put_u64_le(body, insurance_fund_sats_);
+        if (state_migration_active_) {
+            sd::put_bytes(body, archive_root_.hash.data(), archive_root_.hash.size());
+            sd::put_u64_le(body, archive_root_.count);
+        }
         return sd::sha256_domain(sd::tags::REDEEM_BOND, body);
     }
 
@@ -613,6 +720,63 @@ private:
     std::set<H256> consumed_fraud_spends_;
     std::set<H256> reserve_backed_requests_;
     uint64_t insurance_fund_sats_ = 0;
+    RedeemArchive archive_; // backend configuration, never copied into rollback state
+    RedeemArchive::Root archive_root_;
+    bool state_migration_active_ = false;
+
+    static bool Closed_(const RedeemRequest& r) {
+        return r.status == ReqStatus::FULFILLED || r.status == ReqStatus::DEFAULTED;
+    }
+    static std::string BytesString_(const std::vector<uint8_t>& bytes) {
+        return std::string(bytes.begin(), bytes.end());
+    }
+    static std::string EncodeRequest_(const RedeemRequest& r) {
+        namespace sd = ::veld::state_digest;
+        std::vector<uint8_t> body;
+        sd::put_bytes(body, r.request_id.data(), r.request_id.size());
+        sd::put_u64_le(body, r.amount_sats); sd::put_len_prefixed(body, r.dest_spk);
+        sd::put_u64_le(body, r.request_height); sd::put_u64_le(body, r.deadline_height);
+        sd::put_u8(body, static_cast<uint8_t>(r.status));
+        sd::put_bytes(body, r.fulfilled_txid.data(), r.fulfilled_txid.size());
+        sd::put_len_prefixed(body, r.veld_recipient);
+        sd::put_bytes(body, r.request_commitment.data(), r.request_commitment.size());
+        sd::put_u64_le(body, r.btc_observed_height);
+        return BytesString_(body);
+    }
+    static RedeemRequest DecodeRequest_(const std::string& body) {
+        size_t at = 0;
+        auto take = [&](size_t size) {
+            if (size > body.size() - at)
+                throw std::runtime_error("truncated archived redemption");
+            const std::string value = body.substr(at, size);
+            at += size;
+            return value;
+        };
+        auto number = [&](size_t bytes) {
+            const std::string wire = take(bytes);
+            uint64_t value = 0;
+            for (size_t i = 0; i < bytes; ++i) value |= uint64_t(uint8_t(wire[i])) << (i * 8);
+            return value;
+        };
+        auto hash = [&]() {
+            H256 value{};
+            const std::string wire = take(value.size());
+            std::copy(wire.begin(), wire.end(), value.begin());
+            return value;
+        };
+        auto field = [&]() { return take(static_cast<size_t>(number(4))); };
+        RedeemRequest r;
+        r.request_id = hash(); r.amount_sats = number(8);
+        const std::string destination = field();
+        r.dest_spk.assign(destination.begin(), destination.end());
+        r.request_height = number(8); r.deadline_height = number(8);
+        r.status = static_cast<ReqStatus>(number(1)); r.fulfilled_txid = hash();
+        r.veld_recipient = field(); r.request_commitment = hash();
+        r.btc_observed_height = number(8);
+        if (at != body.size() || EncodeRequest_(r) != body)
+            throw std::runtime_error("noncanonical archived redemption");
+        return r;
+    }
 
     static uint64_t PctOf(uint64_t x, uint64_t bps) {
         const unsigned __int128 value =

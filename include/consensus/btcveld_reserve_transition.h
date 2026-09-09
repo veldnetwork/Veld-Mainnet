@@ -31,7 +31,7 @@ namespace veld {
 namespace btcveld {
 namespace reserve {
 
-#if defined(VELD_PUBLIC_MAINNET) || defined(VELD_BTCVELD_REGTEST)
+#if defined(VELD_PUBLIC_MAINNET) || defined(VELD_BTCVELD_REGTEST) || defined(VELD_ASERT_TESTCHAIN)
 inline constexpr bool TRANSITION_V1_REQUIRED = true;
 #else
 inline constexpr bool TRANSITION_V1_REQUIRED = false;
