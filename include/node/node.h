@@ -40,6 +40,7 @@
 #include "../crypto/veld_signing.h"
 #include "../crypto/ripemd160.h"
 #include "ibd_policy.h"
+#include "snapshot_recovery.h"
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
 #include "snapshot_manifest.h"
 #include "full_ibd_receipt.h"
@@ -403,14 +404,21 @@ inline MineBlockResult MineAndCommit(
         else
             cb_outputs[0].second += endorse_cut;
     }
-    Transaction coinbase = Transaction::CreateProportionalCoinbase(
-        cb_outputs, "Veld block " + std::to_string(candidate.height));
+    Transaction coinbase = ProtocolUpgradeActive(candidate.height)
+        ? Blockchain::BuildCanonicalCoinbase(candidate.height, supply_at_parent_sm,
+                                             total_tx_fees, miner_script)
+        : Transaction::CreateProportionalCoinbase(
+            cb_outputs, "Veld block " + std::to_string(candidate.height));
     candidate.transactions.push_back(coinbase);
 
     for (const auto& tx : mempool_txs_to_include)
         candidate.transactions.push_back(tx);
 
     candidate.UpdateMerkleRoot();
+    if (!chain.ValidateMiningCoinbase(candidate)) {
+        result.error = "mining coinbase failed parent-state validation";
+        return result;
+    }
 
     auto header_bytes = candidate.header.Serialize();
     Hash256 target = candidate.header.GetTarget();
@@ -538,6 +546,12 @@ inline MineBlockResult MineOnly(
     candidate.header.version        = PROTOCOL_VERSION;
     candidate.header.prev_block_hash = chain.Tip().GetHash();
     candidate.header.timestamp      = NextMiningTimestamp(chain);
+#if defined(VELD_ASERT_TESTCHAIN)
+    // Only template construction uses the historical test clock. Validation
+    // retains the normal median-time and future-time checks.
+    if (const auto supplied = asert_qualification::candidate_time.load())
+        candidate.header.timestamp = supplied;
+#endif
     const uint32_t expected_bits     = chain.ComputeNextBits();
     candidate.header.bits           = bits_override ? bits_override : expected_bits;
     candidate.header.nonce          = 0;
@@ -664,11 +678,14 @@ inline MineBlockResult MineOnly(
         else
             coinbase_outputs[0].second += vault_total;
         }
-        Transaction cb = Transaction::CreateProportionalCoinbase(
-            coinbase_outputs,
-            "Veld block " + std::to_string(candidate.height));
-        for (const auto& script : coinbase_metadata_scripts)
-            cb.outputs.push_back(TxOutput(0, script));
+        Transaction cb = ProtocolUpgradeActive(candidate.height)
+            ? Blockchain::BuildCanonicalCoinbase(candidate.height,
+                supply_at_parent_for_split, fees, miner_script, coinbase_metadata_scripts)
+            : Transaction::CreateProportionalCoinbase(coinbase_outputs,
+                "Veld block " + std::to_string(candidate.height));
+        if (!ProtocolUpgradeActive(candidate.height))
+            for (const auto& script : coinbase_metadata_scripts)
+                cb.outputs.push_back(TxOutput(0, script));
         return cb;
     };
 
@@ -714,6 +731,10 @@ inline MineBlockResult MineOnly(
     std::cerr.flush();
 
     candidate.UpdateMerkleRoot();
+    if (!chain.ValidateMiningCoinbase(candidate)) {
+        result.error = "mining coinbase failed parent-state validation";
+        return result;
+    }
 
     uint64_t min_ts = chain.MedianTimePast() + 1;
     if (candidate.header.timestamp < min_ts)
@@ -743,6 +764,31 @@ inline MineBlockResult MineOnly(
         return result;
     }
     auto start = std::chrono::steady_clock::now();
+#if defined(VELD_ASERT_TESTCHAIN) && defined(VELD_LIGHT_VERIFY)
+    // Serial on-demand full-parameter VeldHash is practical at the disposable
+    // target. The canonical admission path still independently checks the proof.
+    for (uint64_t attempts = 1; attempts <= 1000000; ++attempts) {
+        if (stop && stop->load()) { result.error = "test mining cancelled"; return result; }
+        const auto proof = mining::VeldHash(candidate.header.Serialize(),
+                                           candidate.height, mining_target);
+        if (!mining::g_veldhash_last_dataset_ok()) {
+            result.error = "test dataset unavailable"; return result;
+        }
+        if (proof < mining_target.bytes) {
+            result.success = true;
+            result.block = candidate;
+            result.hash = proof;
+            result.new_height = candidate.height;
+            result.hashes_tried = attempts;
+            result.elapsed_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - start).count();
+            return result;
+        }
+        ++candidate.header.nonce;
+    }
+    result.error = "test proof budget exhausted";
+    return result;
+#endif
     Hash256 found_hash;
     uint64_t hashes = 0;
 
@@ -789,7 +835,7 @@ inline MineBlockResult MineOnly(
     }
     std::atomic<bool> nms_broadcast_guard{false};
 
-#ifdef VELD_MAINNET_POW
+#if defined(VELD_MAINNET_POW) && !(defined(VELD_LOCAL_TEST_NETWORK) && defined(VELD_LIGHT_VERIFY))
     Hash256 ds_seed_loop = mining::ComputeEpochSeed(
         candidate.header.prev_block_hash, candidate.height,
         candidate.header.bits);
@@ -873,6 +919,12 @@ inline MineBlockResult MineOnly(
                 Hash256 per_hash_seed = mining::ComputeEpochSeed(
                     candidate.header.prev_block_hash, candidate.height,
                     candidate.header.bits);
+#if defined(VELD_LOCAL_TEST_NETWORK) && defined(VELD_LIGHT_VERIFY)
+                // The isolated network harness can compute the exact same
+                // dataset words through the existing light verifier. Keep the
+                // normal target, work lease, preflight, and commit checks.
+                tvm.SetLightKey(per_hash_seed);
+#else
                 mining::DatasetHandle ds =
                     mining::GlobalDataset().get_for_seed(per_hash_seed);
                 if (!ds.get()) {
@@ -880,6 +932,7 @@ inline MineBlockResult MineOnly(
                     break;
                 }
                 tvm.SetDataset(ds.get());
+#endif
                 tvm.Execute();
                 auto state = tvm.FinalizeRaw();
                 h = mining::Blake2b256(state.data(), state.size());
@@ -978,7 +1031,7 @@ inline MineBlockResult MineOnly(
     std::copy(winner_merkle_root.begin(), winner_merkle_root.end(),
               candidate.header.merkle_root.begin());
 
-#ifdef VELD_MAINNET_POW
+#if defined(VELD_MAINNET_POW) && !(defined(VELD_LOCAL_TEST_NETWORK) && defined(VELD_LIGHT_VERIFY))
     ds_handle = mining::DatasetHandle();
 #endif
     {
@@ -1107,7 +1160,7 @@ public:
         }
     };
 
-    static std::string EnsureDataDir(const std::string& d) {
+    static std::string EnsureDataDir(const std::string& d, uint32_t magic) {
         std::string path = d;
         std::replace(path.begin(), path.end(), '\\', '/');
         std::filesystem::create_directories(path);
@@ -1119,6 +1172,20 @@ public:
                 "public datadir network identity check failed: " + identity_error);
         }
 #endif
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+        // Consume rejection before storage handles exist. The transaction
+        // preserves every local security floor and resumes across process death.
+        std::string recovery_directory_error;
+        if (!channel::secure_file::EnsurePrivateDirectory(path, &recovery_directory_error))
+            throw std::runtime_error("snapshot recovery directory: " + recovery_directory_error);
+        snapshot_recovery::Prepare(path, magic, CreateGenesisBlock().GetHash());
+#else
+        (void)magic;
+        if (snapshot_recovery::Pending(path) ||
+            snapshot_recovery::Exists(std::filesystem::path(path) / snapshot_recovery::IMPORT))
+            throw std::runtime_error(
+                "snapshot recovery requires a recovery-capable build; data preserved for inspection");
+#endif
         std::filesystem::create_directories(path + "/blocks");
         std::filesystem::create_directories(path + "/db");
         return path;
@@ -1126,7 +1193,7 @@ public:
 
     explicit VeldNode(const NetworkConfig& config, const std::string& data_dir)
         : config_(config)
-        , data_dir_(EnsureDataDir(data_dir))
+        , data_dir_(EnsureDataDir(data_dir, config.magic))
         , chain_()
         , work_admission_coordinator_(
               work_admission::AdmissionCoordinator::Limits{
@@ -1152,7 +1219,13 @@ public:
         , storage_(data_dir_ + "/blocks", config.magic)
         , db_(data_dir_ + "/db")
         , rpc_(chain_, mempool_, storage_)
+#if defined(VELD_LOCAL_TEST_NETWORK)
+        , explorer_(chain_, mempool_, 0)
+#elif defined(VELD_ASERT_TESTCHAIN)
+        , explorer_(chain_, mempool_, static_cast<uint16_t>(config.port + 300))
+#else
         , explorer_(chain_, mempool_, CompiledPublicExplorerPort())
+#endif
         , running_(false)
         , mining_(false) {
         WireMainTokenConsensusDependencies_();
@@ -1393,11 +1466,11 @@ public:
                     (overlay && overlay->staking) ? *overlay->staking : staking_;
                 return staking.GetMatureStake(addr, height);
             });
-        chain_.SetEffectiveMinStakeFn([this]() -> uint64_t {
+        chain_.SetEffectiveMinStakeFn([this](uint64_t inclusion_height) -> uint64_t {
             const auto* overlay = Blockchain::alt_engine_overlay_;
             const StakingLedger& staking =
                 (overlay && overlay->staking) ? *overlay->staking : staking_;
-            return staking.GetEffectiveMinStake();
+            return staking.GetEffectiveMinStake(inclusion_height);
         });
         validators_.SetBlockKnownAtHeightQuery(
             [this](uint64_t h, const std::string& hash_hex) -> bool {
@@ -1417,7 +1490,11 @@ public:
         });
         governance_.SetValidators(&validators_);
 
-        if (config_.IsTestNetwork()) {
+        if (config_.IsTestNetwork()
+#if defined(VELD_ASERT_TESTCHAIN)
+            && false // Exercise canonical coinbase limits on the ASERT chain.
+#endif
+            ) {
             chain_.SetCoinbaseCapGrandfatherHeight(3100);
         } else {
             chain_.SetCoinbaseCapGrandfatherHeight(0);
@@ -1470,6 +1547,103 @@ public:
         snapshot_quarantine_only_ = enabled;
     }
     bool SnapshotQuarantineOnly() const { return snapshot_quarantine_only_; }
+    bool SnapshotRecoveryPending() const {
+        return snapshot_recovery::Pending(data_dir_);
+    }
+    void CompleteSnapshotRecovery(const std::string& receipt_name,
+                                  const Secp256k1PubKey& expected_identity) {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        CompleteSnapshotRecoveryLocked_(receipt_name, expected_identity);
+    }
+    bool PersistFullIbdReceiptAtTip(const RealKeyPair& operational_identity,
+                                   bool fleet,
+                                   snapshot_bootstrap::FullIbdReceipt& out,
+                                   std::string* error = nullptr) {
+        try {
+            auto transition = chain_.AcquireConsensusTransitionGuard();
+            if (!ChainFullyValidated() || FailStopRequired() ||
+                !AnchorSecurityImportSatisfiedLocked_() ||
+                IndependentValidationBase() || chain_.IsEmpty()) {
+                if (error) *error = "canonical history is not fully verified";
+                return false;
+            }
+            const auto* receipt_name = fleet
+                ? snapshot_bootstrap::FLEET_RECEIPT_FILENAME
+                : snapshot_bootstrap::RECEIPT_FILENAME;
+            const auto recovery = snapshot_recovery::Load(data_dir_);
+            if (recovery && recovery->phase == "complete") {
+                // Cleanup may have failed after the journal bound this exact
+                // receipt. Finish it before permitting any fresh signature.
+                CompleteSnapshotRecoveryLocked_(receipt_name,
+                    operational_identity.public_key);
+                return fleet
+                    ? snapshot_bootstrap::VerifyFleetIbdReceipt(data_dir_,
+                        operational_identity.public_key, out, error)
+                    : snapshot_bootstrap::VerifyFullIbdReceipt(data_dir_,
+                        operational_identity.public_key, out, error);
+            }
+            const auto tip = chain_.TipCopy();
+            RealKeyPair identity = operational_identity;
+            struct WipeIdentity {
+                RealKeyPair& key;
+                ~WipeIdentity() {
+                    compat::SecureZero(key.private_key.data(), key.private_key.size());
+                }
+            } wipe{identity};
+            identity.address = PubKeyToAddress(identity.public_key, false);
+            const auto hash = HashToHex(tip.GetHash());
+            const bool written = fleet
+                ? snapshot_bootstrap::WriteFleetIbdReceipt(
+                    data_dir_, identity, tip.height, hash, error)
+                : snapshot_bootstrap::WriteFullIbdReceipt(
+                    data_dir_, identity, tip.height, hash, error);
+            if (!written) return false;
+            // Keep admission serialized through recovery retirement. A newer
+            // block or reorg cannot split the signed height/hash observation.
+            CompleteSnapshotRecoveryLocked_(receipt_name, identity.public_key);
+            out.height = tip.height;
+            out.tip_hash = hash;
+            out.miner_address = identity.address;
+            return true;
+        } catch (const std::exception& failure) {
+            if (error) *error = failure.what();
+            return false;
+        }
+    }
+private:
+    void CompleteSnapshotRecoveryLocked_(const std::string& receipt_name,
+                                        const Secp256k1PubKey& expected_identity) {
+        if (!SnapshotRecoveryPending()) return;
+        if (!IsIBDComplete() || !ChainFullyValidated() ||
+            !AnchorSecurityImportSatisfiedLocked_() || FailStopRequired() ||
+            IndependentValidationBase())
+            throw std::runtime_error("snapshot recovery has not completed independent ordinary IBD");
+        snapshot_bootstrap::FullIbdReceipt receipt;
+        std::string error;
+        const bool valid = receipt_name == snapshot_bootstrap::RECEIPT_FILENAME
+            ? snapshot_bootstrap::VerifyFullIbdReceipt(
+                data_dir_, expected_identity, receipt, &error, true)
+            : receipt_name == snapshot_bootstrap::FLEET_RECEIPT_FILENAME &&
+                snapshot_bootstrap::VerifyFleetIbdReceipt(
+                    data_dir_, expected_identity, receipt, &error, true);
+        const auto transaction = snapshot_recovery::Load(data_dir_);
+        if (valid && transaction && transaction->phase == "complete") {
+            // Completion already committed while this receipt authenticated
+            // the rebuilt history. Only hash-bound namespace cleanup remains;
+            // a subsequently validated reorg must not invalidate that commit.
+            snapshot_recovery::Complete(data_dir_, receipt_name);
+            return;
+        }
+        if (!valid || receipt.height > chain_.Height() ||
+            HashToHex(chain_.GetBlock(receipt.height).GetHash()) != receipt.tip_hash)
+            throw std::runtime_error("recovery receipt does not authenticate the rebuilt chain: " + error);
+        RestoreRecoveredFinalityEvidenceLocked_();
+        snapshot_recovery::Complete(data_dir_, receipt_name);
+    }
+public:
+    void InheritSnapshotSecurityFloors(const snapshot_recovery::Floors& records) {
+        InheritAnchorLocalFloorForValidation_(records);
+    }
 #endif
 
     // Install the locally-observed Bitcoin-anchored floor (VLF1) for this
@@ -1486,16 +1660,21 @@ public:
     // reached C, all T/A/C hashes match, and replay reconstructed that
     // permanent floor (or a strictly higher one which subsumes it).
     bool AnchorSecurityImportSatisfied() const {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        return AnchorSecurityImportSatisfiedLocked_();
+    }
+private:
+    bool AnchorSecurityImportSatisfiedLocked_() const {
         if (anchor_floor_security_uncertain_.load(
                 std::memory_order_acquire) ||
             anchor_floor_repair_required_.load(
                 std::memory_order_acquire))
             return false;
-        auto transition = chain_.AcquireConsensusTransitionGuard();
         const auto status = EffectiveAnchorSecurityStatusNoTransition_();
         return status == EffectiveAnchorSecurityStatus::None ||
                status == EffectiveAnchorSecurityStatus::Satisfied;
     }
+public:
 
     // A durable block can contain a newly promoted BTC-authenticated floor.
     // If publishing the matching VLF1 record fails after that block's durable
@@ -1730,6 +1909,41 @@ public:
             throw std::logic_error("D-STATE ingest requires an empty node");
         PrepareAnchorSecurityBootstrap_();
         WireDB();
+    }
+    // Install a synthetic accounting parent for supply-cap admission fixtures.
+    // This does not create spendable funds or bypass descendant validation.
+    // Tests must keep every reorg ancestor at or above this parent; startup
+    // replay from genesis deliberately reconstructs the original supply.
+    bool TestSetCoinbaseAccountingParent(uint64_t supply) {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        if (running_.load() || tcp_server_ || chain_.IsEmpty()) return false;
+        const Block tip = chain_.TipCopy();
+        const uint64_t previous = chain_.TotalSupplyUnits();
+        const auto durable = db_.ReadChainTipExact();
+        if (supply < previous || supply > MAX_SUPPLY_UNITS ||
+            last_token_height_ != tip.height || last_module_supply_ != previous ||
+            staking_.SnapshotState().total_supply_units != previous ||
+            !durable || durable->height != tip.height ||
+            durable->tip_hash != HashToHex(tip.GetHash()) ||
+            durable->supply_units != previous ||
+            db_.ReadDurablePublicationPending() || db_.UtxoRecoveryRequired() ||
+            chain_.ReorgRecoveryFramePending() || DurableCommitFailStop() ||
+            FailStopRequired()) return false;
+        db::WriteBatch accounting;
+        accounting.Put("chain:supply", std::to_string(supply));
+        accounting.Put("tip:supply", std::to_string(supply));
+        if (!db_.GetIndexDB().Write(accounting))
+            throw std::runtime_error("coinbase fixture accounting write failed");
+        chain_.SetTotalSupplyForTesting(supply);
+        staking_.SetTotalSupply(supply);
+        last_module_supply_ = supply;
+        CaptureModuleCheckpoint_(tip.height, tip.GetHash(), supply, true);
+        const auto installed = db_.ReadChainTipExact();
+        if (!installed || installed->supply_units != supply ||
+            db_.GetIndexDB().Get("tip:supply") !=
+                std::optional<std::string>(std::to_string(supply)))
+            throw std::runtime_error("coinbase fixture accounting readback failed");
+        return true;
     }
     Block TestBuildDStateQualificationBlock(
             uint64_t expected_height,
@@ -2252,6 +2466,9 @@ public:
     }
 #endif
 
+#ifdef VELD_LOCAL_TEST_NETWORK
+    uint16_t TestLocalExplorerPort() const { return explorer_.Port(); }
+#endif
     StakingLedger& GetStaking() { return staking_; }
     ValidatorRegistry& GetValidators() { return validators_; }
 
@@ -2378,6 +2595,12 @@ public:
         // consume chain state.
         PrepareAnchorSecurityBootstrap_();
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+        if (SnapshotRecoveryPending()) {
+            full_ibd_ = true;
+            snapshot_fast_start_eligible_ = false;
+            snapshot_receipt_height_ = 0;
+            snapshot_receipt_tip_.clear();
+        }
         {
             const auto base = ReadIndependentValidationRequirement_();
             std::lock_guard<std::mutex> lock(background_validation_mutex_);
@@ -2439,19 +2662,22 @@ public:
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         if (tip && tip->height > 0 && background_validation_only_) {
             if (const auto prefix = ReadValidatedBackgroundPrefix_()) {
-                if (prefix->first > tip->height) {
-                    throw std::runtime_error(
-                        "validated background prefix exceeds the durable tip");
+                const auto stored_hash = prefix->first <= tip->height
+                    ? db_.GetHashAtHeight(prefix->first) : std::nullopt;
+                if (stored_hash && *stored_hash == prefix->second) {
+                    trusted_local_pow_through =
+                        std::max(trusted_local_pow_through, prefix->first);
+                } else {
+                    // The chain commit can survive a crash before its cache
+                    // refresh. A nonmatching cache grants no PoW exemption.
+                    trusted_local_pow_through = 0;
+                    std::cout << "  [background-ibd] saved progress belongs to "
+                                 "a replaced branch; verifying the current "
+                                 "history from genesis.\n";
                 }
-                const auto stored_hash = db_.GetHashAtHeight(prefix->first);
-                if (!stored_hash || *stored_hash != prefix->second) {
-                    throw std::runtime_error(
-                        "validated background prefix does not match the durable chain");
-                }
-                trusted_local_pow_through =
-                    std::max(trusted_local_pow_through, prefix->first);
                 background_prefix_persisted_height_.store(
                     prefix->first, std::memory_order_release);
+                background_prefix_persisted_tip_ = HexToHash(prefix->second);
             }
         }
 #endif
@@ -5168,6 +5394,21 @@ public:
                 return;
             }
         }
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+        if (v && SnapshotRecoveryPending()) {
+            if (!ChainFullyValidated()) {
+                SetIbdCompleteLatch_(false);
+                return;
+            }
+            try { RestoreRecoveredFinalityEvidence_(); }
+            catch (const std::exception& e) {
+                SetIbdCompleteLatch_(false);
+                std::cerr << "  [snapshot] Recovered validator evidence requires "
+                             "inspection: " << e.what() << "\n";
+                return;
+            }
+        }
+#endif
         SetIbdCompleteLatch_(v);
         if (v) {
             checkpoint_anchor_valid_.store(true, std::memory_order_release);
@@ -5233,6 +5474,8 @@ public:
         if (running_.load(std::memory_order_acquire))
             throw std::logic_error(
                 "snapshot fast-start eligibility must be set before Start");
+        if (v && SnapshotRecoveryPending())
+            throw std::runtime_error("snapshot fast start is disabled during fresh recovery");
         snapshot_fast_start_eligible_ = v;
         snapshot_receipt_height_ = v ? validated_height : 0;
         snapshot_receipt_tip_ = v ? validated_tip : std::string{};
@@ -5246,6 +5489,11 @@ public:
     }
     Hash256 ConsensusStateDigest() const {
         auto transition = chain_.AcquireConsensusTransitionGuard();
+        return ConsensusStateDigestLocked_();
+    }
+private:
+    // The caller holds the canonical transition guard across the whole tuple.
+    Hash256 ConsensusStateDigestLocked_() const {
         Hash256 tip_hash{};
         if (!chain_.IsEmpty()) tip_hash = chain_.TipCopy().GetHash();
         if constexpr (btcveld::reserve::TRANSITION_V1_REQUIRED)
@@ -5266,6 +5514,7 @@ public:
             btc_headers_.StateDigest(), anchors_.Digest(), amm_.Digest(),
             fin_state_.Digest(), bond_covenant_.Digest());
     }
+public:
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     struct SnapshotValidationBase {
         uint64_t height{0};
@@ -6527,6 +6776,10 @@ public:
     void ValidateStoredChainOnly(uint64_t expected_height,
                                  const std::string& expected_tip_hash,
                                  bool verify_historical_pow = true) {
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+        if (SnapshotRecoveryPending())
+            throw std::runtime_error("snapshot candidate validation is disabled during fresh recovery");
+#endif
         if (expected_height == 0 ||
             !SnapshotManifestIsHex64(expected_tip_hash)) {
             throw std::runtime_error(
@@ -6714,6 +6967,86 @@ public:
         return FinalityEvidencePersistStatus::NotCommitted;
     }
 
+    ::veld::finality::qc::FinalityEquivocationCollector::PairValidator
+    FinalityEvidenceValidator_(uint64_t tip) const {
+        namespace fq = ::veld::finality::qc;
+        return [this, tip](const fq::SignedVote& first,
+                           const fq::SignedVote& second)
+                -> std::optional<fq::ValidatedEquivocationEvidence> {
+            if (first.epoch_id != second.epoch_id ||
+                first.set_root != second.set_root ||
+                first.pubkey_hex != second.pubkey_hex)
+                return std::nullopt;
+            const auto retained = validators_.ResolveRetainedFinalityMember(
+                first.epoch_id, first.set_root, first.pubkey_hex);
+            if (!retained) return std::nullopt;
+            fq::SnapshotEntry member;
+            member.pubkey_commit = retained->pubkey_commit;
+            member.pubkey_hex = retained->pubkey_hex;
+            return fq::ValidateEquivocationPairForRetainedMember(
+                first, second, retained->epoch, retained->root, member,
+                tip, fq::NETWORK_ID, GenesisHashBytes_());
+        };
+    }
+    uint64_t IndependentValidationProgress() const {
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+        return independent_validation_height_.load(std::memory_order_acquire);
+#else
+        return 0;
+#endif
+    }
+
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    void RestoreRecoveredFinalityEvidence_() {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        RestoreRecoveredFinalityEvidenceLocked_();
+    }
+    void RestoreRecoveredFinalityEvidenceLocked_() {
+        namespace fq = ::veld::finality::qc;
+        const auto transaction = snapshot_recovery::Load(data_dir_);
+        if (!transaction) return;
+        const auto path = std::filesystem::path(data_dir_) /
+            (".snapshot-rejected-" + transaction->id) / "finality-equivocation.evj";
+        const auto body = ReadSecureControlFile_(path.string(),
+            fq::FinalityEquivocationCollector::MAX_ENCODED_JOURNAL_BYTES);
+        if (!body) {
+            if (transaction->present & (1U << 9))
+                throw std::runtime_error("preserved finality evidence disappeared");
+            return;
+        }
+        // The rejected namespace is immutable evidence. Authenticate it only
+        // after ordinary IBD has reconstructed retained validator membership;
+        // never trust membership or signatures merely because they were saved.
+        std::lock_guard<std::mutex> gate(fin_equivocation_gate_mu_);
+        fq::FinalityEquivocationCollector recovered;
+        const uint64_t tip = chain_.Height();
+        if (!recovered.RestoreJournalAtTip(
+                std::vector<uint8_t>(body->begin(), body->end()),
+                FinalityEvidenceValidator_(tip), tip, fq::NETWORK_ID,
+                GenesisHashBytes_()))
+            throw std::runtime_error("preserved finality evidence does not authenticate against the rebuilt chain");
+        recovered.PruneExpired(tip);
+        for (const auto& summary : recovered.ListSummaries(
+                 fq::FinalityEquivocationCollector::MAX_COMPLETED_PAIRS)) {
+            const auto evidence = recovered.FindById(summary.id);
+            if (!evidence) throw std::runtime_error("recovered evidence disappeared");
+            const auto result = fin_equivocation_collector_.Offer(*evidence);
+            using Result = fq::FinalityEquivocationCollector::OfferResult;
+            if (result == Result::FULL || result == Result::STORAGE_ERROR) {
+                fin_equivocation_journal_uncertain_ = true;
+                throw std::runtime_error("cannot retain all recovered finality evidence");
+            }
+        }
+        // Persist the union, including evidence received during fresh sync.
+        // A retry is idempotent; the original journal remains quarantined.
+        if (PersistFinalityEvidenceLocked_() != FinalityEvidencePersistStatus::Committed) {
+            fin_equivocation_journal_uncertain_ = true;
+            throw std::runtime_error("cannot durably restore finality evidence");
+        }
+        fin_equivocation_journal_uncertain_ = false;
+    }
+#endif
+
     // Startup is deliberately fail-closed for an existing malformed journal:
     // silently discarding a valid, slashable pair after restart would make
     // enforcement depend on uptime.  Missing means no evidence and is valid.
@@ -6737,32 +7070,14 @@ public:
 #endif
         const std::vector<uint8_t> encoded(body->begin(), body->end());
         const uint64_t tip = chain_.Height();
-        const auto validate_pair =
-            [this, tip](const fq::SignedVote& first,
-                        const fq::SignedVote& second)
-                -> std::optional<fq::ValidatedEquivocationEvidence> {
-                if (first.epoch_id != second.epoch_id ||
-                    first.set_root != second.set_root ||
-                    first.pubkey_hex != second.pubkey_hex)
-                    return std::nullopt;
-                const auto retained =
-                    validators_.ResolveRetainedFinalityMember(
-                        first.epoch_id, first.set_root,
-                        first.pubkey_hex);
-                if (!retained) return std::nullopt;
-                fq::SnapshotEntry member;
-                member.pubkey_commit = retained->pubkey_commit;
-                member.pubkey_hex = retained->pubkey_hex;
-                return fq::ValidateEquivocationPairForRetainedMember(
-                    first, second, retained->epoch, retained->root, member,
-                    tip, fq::NETWORK_ID, GenesisHashBytes_());
-            };
-        if (!fin_equivocation_collector_.Restore(encoded, validate_pair))
+        if (!fin_equivocation_collector_.RestoreJournalAtTip(
+                encoded, FinalityEvidenceValidator_(tip), tip, fq::NETWORK_ID,
+                GenesisHashBytes_()))
             throw std::runtime_error(
                 "finality equivocation journal is corrupt or no longer authenticates");
 
         fin_equivocation_journal_uncertain_ = false;
-        if (fin_equivocation_collector_.PruneExpired(tip) > 0) {
+        if (fin_equivocation_collector_.Encode() != encoded) {
             const auto persisted = PersistFinalityEvidenceLocked_();
             if (persisted != FinalityEvidencePersistStatus::Committed)
                 throw std::runtime_error(
@@ -7094,12 +7409,17 @@ public:
     }
 
     bool WriteValidatedBackgroundPrefix_(uint64_t height,
-                                         const Hash256& tip_hash) {
-        if (height == 0 || HashIsZero(tip_hash)) return false;
-        return DurableWriteControlFile_(
+                                         const Hash256& tip_hash,
+                                         std::string* error = nullptr) {
+        if (height == 0 || HashIsZero(tip_hash)) {
+            if (error) *error = "invalid verified height or tip";
+            return false;
+        }
+        return channel::secure_file::AtomicWriteText(
             ValidatedBackgroundPrefixPath_(),
             "schema=1\nheight=" + std::to_string(height) +
-            "\ntip_hash=" + HashToHex(tip_hash) + "\n");
+            "\ntip_hash=" + HashToHex(tip_hash) + "\n", error,
+            /*require_private_parent=*/true);
     }
 
     std::optional<std::pair<uint64_t, std::string>>
@@ -7267,47 +7587,10 @@ public:
         BumpValidationGeneration_();
         snapshot_background_verification_failed_.store(
             true, std::memory_order_release);
-        for (const auto& path : {
-                 IndependentValidationRequirementPath_(),
-                 SnapshotReplayRequirementPath_()}) {
-            std::error_code exists_ec;
-            const bool present = std::filesystem::exists(path, exists_ec);
-            if (exists_ec || !present) continue;
-            try {
-                DurableRemoveControlFile_(path);
-            } catch (const std::exception& e) {
-                std::cerr << "  [snapshot] FATAL: could not retire rejected "
-                             "validation state: " << e.what() << "\n";
-            }
-        }
-        {
-            std::lock_guard<std::mutex> lock(background_validation_mutex_);
-            snapshot_validation_base_.reset();
-        }
-        independent_validation_height_.store(0,
-                                             std::memory_order_release);
-        std::string canonical_reason;
-        for (char c : reason) {
-            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
-                c == '-' || c == '_') {
-                canonical_reason.push_back(c);
-            }
-        }
-        if (canonical_reason.empty() || canonical_reason.size() > 64)
-            canonical_reason = "background-chainstate-failed";
-        const std::string revoked_path =
-            snapshot_bootstrap::RevocationPath(data_dir_);
-        if (!DurableWriteControlFile_(
-                revoked_path,
-                "schema=1\nreason=" + canonical_reason + "\n")) {
-            std::cerr << "  [snapshot] FATAL: could not persist the "
-                         "fast-start revocation sentinel; local storage "
-                         "requires operator inspection.\n";
-        }
-        std::error_code receipt_ec;
-        std::filesystem::remove(
-            snapshot_bootstrap::ReceiptPath(data_dir_), receipt_ec);
-        (void)RequestSnapshotRecoveryOnRestart(canonical_reason);
+        // Persist replacement obligations first. Keep the rejected snapshot's
+        // original replay markers until the closed-database quarantine transaction.
+        snapshot_recovery::Request(data_dir_, reason);
+
     }
 #endif
 
@@ -7516,6 +7799,10 @@ public:
     }
 
     size_t LoadCheckpointsFromUrl() {
+#if defined(VELD_ASERT_TESTCHAIN)
+        return 0;
+#endif
+
         if (!tor_only_onion_.empty()) return 0;
 #ifdef VELD_PUBLIC_TESTNET
         // Testnet has no final-mainnet checkpoint control plane. V1 is
@@ -7618,12 +7905,30 @@ public:
     }
 private:
 
+    void WireRedeemArchive_(btcveld::SignerBondCovenant& covenant) {
+#ifdef VELD_USE_LEVELDB
+        covenant.SetArchiveBackend(
+            [this](const std::string& hash) {
+                return db_.GetIndexDB().Get("redeem:archive:v1:" + hash);
+            },
+            [this](const btcveld::RedeemArchive::Records& records) {
+                db::WriteBatch batch;
+                for (const auto& [hash, value] : records)
+                    batch.Put("redeem:archive:v1:" + hash, value);
+                return db_.GetIndexDB().Write(batch);
+            });
+#endif
+        // The flat-file fallback retains its entire index in RAM. It cannot
+        // satisfy this migration's storage contract; BeginBlock refuses it.
+    }
+
     void WireMainTokenConsensusDependencies_() {
         // These are stable VeldNode members. Install their addresses before
         // WireDB, replay, direct ingest, repair, qualification, or RPC setup
         // can expose the main token ledger to a consensus transition.
         onchain_tokens_.SetBtcHeaderChain(&btc_headers_);
         onchain_tokens_.SetBtcVeldRedeemCovenant(&bond_covenant_);
+        WireRedeemArchive_(bond_covenant_);
     }
 
     void WireFinalityVoteRpcSink_() {
@@ -7956,6 +8261,7 @@ private:
     std::atomic<uint64_t> independent_validation_height_{0};
     uint64_t            background_validation_target_height_{0};
     std::atomic<uint64_t> background_prefix_persisted_height_{0};
+    Hash256              background_prefix_persisted_tip_{};
     std::atomic<bool>     background_prefix_write_warning_logged_{false};
     BackgroundValidationObservation background_validation_observation_;
     void MaybeCaptureBackgroundValidationTarget_() {
@@ -7964,21 +8270,50 @@ private:
             return;
         }
 
+        // Block callbacks can overlap after admission. Serialize capture with
+        // canonical transitions so both the persisted prefix and the final
+        // observation describe one committed state, including across reorgs.
+        auto transition = chain_.AcquireConsensusTransitionGuard();
         const uint64_t height = chain_.Height();
-        if (height > 0 &&
-            (height <= 10 || height % 25 == 0 ||
-             height >= background_validation_target_height_) &&
-            height > background_prefix_persisted_height_.load(
-                         std::memory_order_acquire) &&
+        const auto saved_height = background_prefix_persisted_height_.load(
+            std::memory_order_acquire);
+        const bool replaced_prefix = saved_height > 0 &&
+            (height < saved_height || chain_.GetBlock(saved_height).GetHash() !=
+                                      background_prefix_persisted_tip_);
+        if (height == 0 && replaced_prefix) {
+            // A return to genesis leaves no positive validated prefix.
+            try {
+                DurableRemoveControlFile_(ValidatedBackgroundPrefixPath_());
+                background_prefix_persisted_height_.store(0, std::memory_order_release);
+                background_prefix_persisted_tip_ = {};
+            } catch (const std::exception& error) {
+                if (!background_prefix_write_warning_logged_.exchange(true))
+                    std::cerr << "  [background-ibd] WARN: could not retire "
+                                 "replaced restart progress: " << error.what() << '\n';
+            }
+        }
+        if (height > 0 && (replaced_prefix ||
+            ((height <= 10 || height % 25 == 0 ||
+              height >= background_validation_target_height_) &&
+             height > saved_height)) &&
             !chain_.IsEmpty()) {
             const Hash256 tip_hash = chain_.TipCopy().GetHash();
-            if (WriteValidatedBackgroundPrefix_(height, tip_hash)) {
+            std::string error;
+            if (WriteValidatedBackgroundPrefix_(height, tip_hash, &error)) {
                 background_prefix_persisted_height_.store(
                     height, std::memory_order_release);
+                background_prefix_persisted_tip_ = tip_hash;
+                if (background_prefix_write_warning_logged_.exchange(
+                        false, std::memory_order_acq_rel)) {
+                    std::cerr << "  [background-ibd] restart progress saving "
+                                 "resumed at height " << height << ".\n";
+                }
             } else if (!background_prefix_write_warning_logged_.exchange(
                            true, std::memory_order_acq_rel)) {
                 std::cerr << "  [background-ibd] WARN: could not persist "
-                             "restart progress; validation remains safe but "
+                             "restart progress at height " << height
+                          << ": " << error
+                          << "; validation remains safe but "
                              "more work may repeat after a restart.\n";
                 std::cerr.flush();
             }
@@ -7997,7 +8332,7 @@ private:
         observation.height = height;
         if (!chain_.IsEmpty()) observation.tip_hash = chain_.TipCopy().GetHash();
         if (height == background_validation_target_height_) {
-            observation.state_digest = ConsensusStateDigest();
+            observation.state_digest = ConsensusStateDigestLocked_();
             observation.reached = true;
         } else {
             observation.passed_target = true;
@@ -8665,6 +9000,9 @@ private:
             }
         }
 
+        const auto retained = snapshot_recovery::ReadFloors(
+            data_dir_, config_.magic, genesis_hash);
+        learned.insert(learned.end(), retained.begin(), retained.end());
         if (learned.empty()) return;
         std::sort(learned.begin(), learned.end(),
             [](const btcanchor::floor_store::Record& a,
@@ -9306,6 +9644,9 @@ private:
     }
 
     std::string BuildRedeemPageJson_(const std::vector<std::string>& params) {
+        // Serialize the page, commitment, and finality observations with the
+        // entire module transition, including preflight and rollback.
+        auto transition_guard = chain_.AcquireConsensusTransitionGuard();
         if (!redeem_index_healthy_.load(std::memory_order_acquire))
             throw std::runtime_error(
                 "btcVELD redeem index is degraded; restart/replay required");
@@ -10004,8 +10345,7 @@ private:
         if (r.status != fq::FinParseStatus::VALID ||
             r.decoded.qc.phase != fq::Phase::PRECOMMIT)
             return false;
-        out = r.decoded.qc;
-        return true;
+        return fq::ResolveDurableCarrierClaim(r.decoded.qc, fin_state_.snapshots, out);
     }
 
     void RetireDurableFinalityCarrier_(const Block& block) noexcept {
@@ -10207,6 +10547,11 @@ private:
 
 #ifdef VELD_TEST_HOOKS
 public:
+#if defined(VELD_DSTATE_QUALIFICATION) && defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    void TestCaptureBackgroundValidationTarget() {
+        MaybeCaptureBackgroundValidationTarget_();
+    }
+#endif
     bool TestPrecheckFinalityVoteWire(
             const std::vector<uint8_t>& wire) const {
         return PrecheckFinalityVoteWire_(wire);
@@ -10251,6 +10596,11 @@ public:
     bool TestFinalityEvidenceJournalUncertain() const {
         std::lock_guard<std::mutex> gate(fin_equivocation_gate_mu_);
         return fin_equivocation_journal_uncertain_;
+    }
+
+    // Direct read-only payout-page seam; it does not start RPC or networking.
+    std::string TestReadRedeemPage(const std::vector<std::string>& params = {}) {
+        return BuildRedeemPageJson_(params);
     }
 
     size_t TestFinalityAssemblerCount() const {
@@ -10408,6 +10758,7 @@ private:
             for (const auto& out : tx.outputs) {
                 std::string d = ParseOpReturn(out.script_pubkey);
                 if (d.rfind("VELD_SBOND|", 0) != 0) continue;
+                if (SecurityStateMigrationActive(b.height)) return false;
                 std::vector<std::string> f; { std::string cur; for (char c : d.substr(11)) { if (c=='|') { f.push_back(cur); cur.clear(); } else cur += c; } f.push_back(cur); }
                 if (f.size() == 3 && f[0] == "register" &&
                     !f[1].empty()) {
@@ -10560,6 +10911,7 @@ private:
                 cov.SetStatus(id, btcveld::ReqStatus::DEFAULTED);             // don't re-slash
             }
         }
+        cov.FinishBlock();
         return true;
     }
 
@@ -10789,6 +11141,7 @@ private:
             return false;
 #endif
         }
+        bond_covenant_.BeginBlock(block.height);
         if (!FeedBtcHeaders_(btc_headers_, block)) {
 #if defined(VELD_TEST_HOOKS) && defined(VELD_DSTATE_QUALIFICATION)
             return dstate_reject("btc-headers");
@@ -10905,7 +11258,8 @@ private:
         // of AllModuleSnapshots for failed/reorg replay rollback.
         if (publish_rpc_snapshots)
             ObserveExactAnchorSecurityReconstruction_(block.height);
-        UpdateFinality_(block.height, chain_mutex_already_held);
+        if (publish_rpc_snapshots)
+            UpdateFinality_(block.height, chain_mutex_already_held);
         if (!MaybeSnapshotEpoch_(block.height)) {
 #if defined(VELD_TEST_HOOKS) && defined(VELD_DSTATE_QUALIFICATION)
             return dstate_reject("epoch-snapshot");
@@ -11306,6 +11660,7 @@ private:
         if (!chain_.TryTip(tip) ||
             block.height != tip.height + 1 ||
             block.header.prev_block_hash != tip.GetHash()) return false;
+        if (!chain_.ValidateMiningCoinbase(block)) return false;
         uint64_t projected_supply = chain_.TotalSupplyUnits();
         if (!Blockchain::AdvanceCanonicalSupply(block, projected_supply))
             return false;
@@ -11336,6 +11691,7 @@ private:
         btc_headers_alt_    = std::make_unique<btcspv::BtcHeaderChain>(
                                   BtcVeldCheckpoint(), BtcVeldPowLimit(), 2016, 1209600, BtcVeldNoRetarget());
         bond_covenant_alt_  = std::make_unique<btcveld::SignerBondCovenant>();   // fork-aware redeem covenant (fresh)
+        WireRedeemArchive_(*bond_covenant_alt_);
         anchors_alt_        = std::make_unique<btcanchor::AnchorSet>();
         fin_state_alt_      = std::make_unique<
                                   ::veld::finality::qc::FinalityState>(
@@ -11445,6 +11801,7 @@ private:
             return false;
         alt_chain_hashes_[b.height] = b.GetHash();
         if (!ValidatorRegistry::HasValidRegisterMultiplicity(b)) return false;
+        bond_covenant_alt_->BeginBlock(b.height);
         if (!AdvanceModuleSupply_(b, alt_running_supply_)) return false;
         // btcVELD: keep the alt token ledger + AMM fork-aware (tokens first, so the
         // AMM's btcVELD legs resolve against the alt chain's balances).
@@ -14104,9 +14461,9 @@ private:
             return;
         }
 
-        if (!chain_.NmsBondSatisfied(miner_script)) {
+        if (!chain_.NmsBondSatisfied(miner_script, NextInclusionHeight(chain_.Height()))) {
             std::cerr << "  [nms] skip: NMS bond not satisfied (need >= "
-                      << (NMS_MIN_BOND_UNITS / VELD_UNITS) << " VELD staked under miner addr)\n";
+                      << (MinimumStakeAtHeight(NextInclusionHeight(chain_.Height())) / VELD_UNITS) << " VELD staked under miner addr)\n";
             std::cerr.flush();
             return;
         }

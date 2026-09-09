@@ -12,11 +12,15 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = {
     "source": [
+        "tests/security_scan_closure_wiring_tests.py",
+        "tests/security_scan_closure_extraction_tests.py",
         "scripts/check-how-to.py",
         "tests/portal_mobile_nav_tests.py",
         "tests/portal_worker_limit_tests.py",
+        "tests/portal_diagnostics_tests.py",
         "tests/topology_advertised_roles_tests.py",
         "tests/release_controller_oracle_tests.py",
+        "tests/release_version_tests.py",
         "tests/windows_node_gui_scroll_tests.py",
         "tests/windows_node_keyfile_interop_tests.py",
         "tests/windows_self_contained_client_tests.py",
@@ -24,10 +28,14 @@ SUITES = {
         "tests/windows_wallet_portal_ui_tests.py",
     ],
     "web": [
+        "tests/security_scan_closure_script_syntax_tests.js",
+        "tests/security_scan_closure_wallet_tests.js",
+        "tests/security_state_migration_wallet_tests.js",
         "tests/network_display_refresh_tests.js",
         "tests/portal_network_status_tests.js",
         "tests/portal_pair_machine_tests.js",
         "tests/portal_worker_limit_tests.js",
+        "tests/portal_diagnostics_tests.js",
         "tests/wallet_auto_consolidation_tests.js",
         "tests/wallet_governance_activity_tests.js",
         "tests/wallet_history_pagination_tests.js",

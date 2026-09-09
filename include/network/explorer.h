@@ -17,6 +17,8 @@
 #include "../network/trusted_proxy.h"
 #include "explorer_icons.h"
 #include "explorer_prevouts.h"
+#include "explorer_history_budget.h"
+#include "recent_lookup_progress.h"
 #include "receipt_source_slots.h"
 #include <string>
 #include <sstream>
@@ -1221,6 +1223,14 @@ public:
             activation_guard_refused_.store(true, std::memory_order_release);
             VELD_CLOSE_SOCKET(fd_); fd_ = veld::compat::kInvalidSocket; return false;
         }
+#ifdef VELD_LOCAL_TEST_NETWORK
+        sockaddr_in bound{};
+        socklen_t bound_size = sizeof(bound);
+        if (::getsockname(fd_, reinterpret_cast<sockaddr*>(&bound), &bound_size) != 0) {
+            VELD_CLOSE_SOCKET(fd_); fd_ = veld::compat::kInvalidSocket; return false;
+        }
+        port_ = ntohs(bound.sin_port);
+#endif
         if (::listen(fd_, 16) < 0) {
             VELD_CLOSE_SOCKET(fd_); fd_ = veld::compat::kInvalidSocket; return false;
         }
@@ -1565,15 +1575,10 @@ self.addEventListener('fetch', event => {
                 }
 
                 const uint64_t tip_before = chain_.Height();
-                Block tip_block_before;
-                try {
-                    tip_block_before = chain_.GetBlock(tip_before);
-                } catch (...) {
+                const std::string tip_hash_before = chain_.GetBlockHashAtHeight(tip_before);
+                if (tip_hash_before.empty())
                     return HttpResponse::JSON(
                         "{\"error\":\"canonical chain is not ready\"}", 503);
-                }
-                const std::string tip_hash_before =
-                    HashToHex(tip_block_before.GetHash());
 
                 uint64_t start = tip_before;
                 if (parts[3] != "latest") {
@@ -1591,23 +1596,24 @@ self.addEventListener('fetch', event => {
 
                 const uint64_t count = std::min<uint64_t>(limit_u64, start + 1);
                 const uint64_t end = start + 1 - count;
-                std::vector<Block> ascending;
+                std::vector<std::string> descending_summaries;
+                descending_summaries.reserve(static_cast<size_t>(count));
                 try {
-                    ascending = chain_.GetBlockRange(
-                        end, static_cast<size_t>(count));
+                    for (uint64_t offset = 0; offset < count; ++offset) {
+                        // Release each bounded body before reading the next one.
+                        const Block block = chain_.GetBlock(
+                            start - offset, EXPLORER_BLOCK_PAGE_BODY_BUDGET);
+                        descending_summaries.push_back(BlockToJSON_(block, false));
+                    }
                 } catch (...) {
                     return HttpResponse::JSON(
-                        "{\"error\":\"canonical block page is unavailable\"}", 503);
-                }
-                if (ascending.size() != static_cast<size_t>(count)) {
-                    return HttpResponse::JSON(
-                        "{\"error\":\"canonical block page is incomplete\"}", 503);
+                        "{\"error\":\"canonical block page unavailable or above display budget; use block RPC\"}", 503);
                 }
 
                 const uint64_t tip_after = chain_.Height();
                 std::string tip_hash_after;
                 try {
-                    tip_hash_after = HashToHex(chain_.GetBlock(tip_after).GetHash());
+                    tip_hash_after = chain_.GetBlockHashAtHeight(tip_after);
                 } catch (...) {
                     return HttpResponse::JSON(
                         "{\"error\":\"canonical chain changed during page assembly\"}",
@@ -1625,9 +1631,9 @@ self.addEventListener('fetch', event => {
                      << ",\"start\":" << start
                      << ",\"end\":" << end
                      << ",\"blocks\":[";
-                for (size_t i = ascending.size(); i > 0; --i) {
-                    if (i != ascending.size()) json << ",";
-                    json << BlockToJSON_(ascending[i - 1], false);
+                for (size_t i = 0; i < descending_summaries.size(); ++i) {
+                    if (i) json << ",";
+                    json << descending_summaries[i];
                 }
                 json << "]}";
                 return HttpResponse::JSON(json.str());
@@ -2049,7 +2055,7 @@ self.addEventListener('fetch', event => {
               << ",\"current_supply_veld\":" << (double)supply / VELD_UNITS
               << ",\"total_staked_veld\":" << total_staked_veld
               << ",\"vault_balance_veld\":" << vault_balance
-              << ",\"min_stake_veld\":" << (double)MIN_STAKE_UNITS / VELD_UNITS
+              << ",\"min_stake_veld\":" << (double)MinimumStakeAtHeight(NextInclusionHeight(height)) / VELD_UNITS
               << ",\"lockup_blocks\":" << STAKE_LOCKUP_BLOCKS
               << ",\"distribution_interval\":" << VAULT_DISTRIBUTION_INTERVAL
               << ",\"next_distribution_in\":" << next_dist
@@ -2219,9 +2225,9 @@ private:
         }
     }
 
-    std::string ClassifyUTXOSource(const UTXO& u) const {
+    std::string ClassifyUTXOSource(const UTXO& u, ExplorerHistoryBudget& budget) const {
         try {
-            Block blk = chain_.GetBlock(u.block_height);
+            Block blk = budget.Read(chain_, u.block_height);
             for (size_t i = 0; i < blk.transactions.size(); ++i) {
                 const auto& tx = blk.transactions[i];
                 if (tx.GetTxID() != u.tx_hash) continue;
@@ -2279,12 +2285,11 @@ private:
                 if (sender_addr == VAULT_ADDRESS) return "vault_payout";
                 if (sender_addr.empty() && !tx.inputs.empty()) {
                     try {
-                        Block prev_blk = chain_.GetBlock(0);
                         const auto& in = tx.inputs[0];
                         uint64_t start = u.block_height > 300 ? u.block_height - 300 : 0;
                         for (uint64_t bh = u.block_height; bh >= start; --bh) {
                             try {
-                                Block pbk = chain_.GetBlock(bh);
+                                Block pbk = budget.Read(chain_, bh);
                                 for (const auto& ptx : pbk.transactions) {
                                     if (ptx.GetTxID() == in.prev_tx_hash &&
                                         in.prev_out_index < ptx.outputs.size()) {
@@ -2298,11 +2303,11 @@ private:
                                         goto fallback_done;
                                     }
                                 }
-                            } catch (...) {}
+                            } catch (...) { return "unknown"; }
                             if (bh == 0) break;
                         }
                         fallback_done:;
-                    } catch (...) {}
+                    } catch (...) { return "unknown"; }
                 }
                 return "transfer_in";
             }
@@ -2342,6 +2347,8 @@ private:
     std::string                                cache_dir_;
     net::trusted_proxy::Configuration          trusted_proxy_;
     std::string                                proxy_configuration_error_;
+    std::mutex                                 tx_lookup_mutex_;
+    std::unordered_map<std::string, ExplorerLookupProgress> tx_lookup_progress_;
     mutable std::mutex                         richlist_cache_mu_;
     std::string                                richlist_cache_body_;
     std::chrono::steady_clock::time_point      richlist_cache_until_;
@@ -3506,11 +3513,12 @@ private:
         const bool history = route == "history" || route == "address-page";
         const bool heavy = history || route == "utxos" || route == "address-api"
                         || route == "rich" || route == "block" || route == "tx";
-        // A block page owns two decoded bodies plus cold-loader temporaries.
-        // Reserve the whole Explorer memory pool for either block URL alias;
-        // see docs/security/explorer-resource-limits.md.
-        const uint32_t memory_units = route == "block" ? EXPLORER_MEMORY_UNITS_MAX
-            : (history ? 16 : (heavy ? 8 : 4));
+        // Body-reading pages reserve the same conservative allocation used
+        // by block pages, including up to two decoded bodies and cold-loader
+        // temporaries. Each body has the 1 MiB Explorer display limit.
+        const bool reads_bodies = route == "block" || history || route == "tx";
+        const uint32_t memory_units = reads_bodies ? EXPLORER_MEMORY_UNITS_MAX
+            : (heavy ? 8 : 4);
         const uint32_t work_units = history ? 16 : (heavy ? 8 : 1);
         const uint64_t route_cap = history ? 60 : (heavy ? 600 : 1200);
         std::vector<ExplorerCharge> charges = {
@@ -5467,29 +5475,75 @@ setInterval(loadStats,2000);
                 << "</div>";
             return HttpResponse::HTML(HtmlWrapArcade("Invalid Transaction", err.str(), ""));
         }
-        uint64_t tip = chain_.Height();
-        uint64_t scan_from = tip > 500 ? tip - 500 : 0;
-        for (uint64_t h = tip; h >= scan_from; --h) {
+        const uint64_t tip = chain_.Height();
+        const auto tip_hash = chain_.GetBlockHashAtHeight(tip);
+        const uint64_t scan_from = tip > 500 ? tip - 500 : 0;
+        bool complete = false;
+        // A finite metadata cursor lets ordinary refreshes finish the original
+        // recent-history search without repeating an unbounded body walk.
+        std::unique_lock<std::mutex> lookup_lock(tx_lookup_mutex_, std::try_to_lock);
+        if (lookup_lock.owns_lock() && !tip_hash.empty()) {
+            auto it = tx_lookup_progress_.find(txid_hex);
+            if (it == tx_lookup_progress_.end()) {
+                if (tx_lookup_progress_.size() >= 128)
+                    tx_lookup_progress_.erase(tx_lookup_progress_.begin());
+                it = tx_lookup_progress_.emplace(
+                    txid_hex, ExplorerLookupProgress{}).first;
+            }
+            auto& progress = it->second;
+            const bool anchor_canonical = !progress.tip_hash.empty() &&
+                chain_.GetBlockHashAtHeight(progress.tip_height) == progress.tip_hash;
+            progress.ObserveTip(tip, tip_hash, anchor_canonical);
+            const auto unchanged = [&] {
+                return chain_.Height() == tip && chain_.GetBlockHashAtHeight(tip) == tip_hash;
+            };
+            ExplorerHistoryBudget budget;
             try {
-                Block blk = chain_.GetBlock(h);
-                for (const auto& tx : blk.transactions) {
-                    if (HashToHex(tx.GetTxID()) == txid_hex) {
+                for (;;) {
+                    const auto next = progress.Next();
+                    if (!next || *next < scan_from) {
+                        complete = unchanged() && progress.Complete();
+                        if (!complete) progress.RetryUnavailable();
+                        break;
+                    }
+                    if (budget.reads >= ExplorerHistoryBudget::MAX_READS) break;
+                    Block block;
+                    try { block = budget.Read(chain_, *next); }
+                    catch (...) {
+                        if (!unchanged()) { progress.tip_hash.clear(); break; }
+                        progress.MarkUnavailable(*next);
+                        continue;
+                    }
+                    if (!unchanged()) { progress.tip_hash.clear(); break; }
+                    for (const auto& tx : block.transactions) {
+                        if (HashToHex(tx.GetTxID()) != txid_hex) continue;
+                        if (!unchanged()) { progress.tip_hash.clear(); break; }
                         HttpResponse r;
                         r.status_code = 302;
                         r.status_text = "Found";
-                        r.headers["Location"] = "/block/height/" + std::to_string(h);
+                        r.headers["Location"] = "/block/height/" + std::to_string(*next);
                         r.body = "";
                         r.content_type = "text/html";
                         return r;
                     }
+                    if (!unchanged()) { progress.tip_hash.clear(); break; }
+                    progress.MarkAvailable(*next);
                 }
-            } catch (...) {}
-            if (h == 0) break;
+            } catch (...) {
+                // Budget exhaustion and unavailable/oversized bodies are
+                // incomplete searches, never evidence that a tx is absent.
+            }
         }
         std::ostringstream content;
         content << "<div class=\"card\"><div class=\"card-title\">Transaction</div>";
         content << "<div class=\"hash\" style=\"word-break:break-all;margin-bottom:16px;font-size:11px;color:var(--em)\">" << txid_hex << "</div>";
-        content << "<p style=\"color:var(--muted);font-size:12px\">Transaction not found in the last 500 blocks. It may be older or not yet confirmed.</p></div>";
+        if (complete) {
+            content << "<p>Transaction not found in the recent 501-block window. It may be older or not yet confirmed.</p>";
+        } else {
+            content << "<p>Transaction search is incomplete. <a href=\"/tx/" << txid_hex
+                    << "\">Continue search</a>. For blocks above the display limit, use transaction RPC with a block hint.</p>";
+        }
+        content << "</div>";
         // An unconfirmed transaction is reached from the mempool list. Keep the
         // mempool tab active so the persistent mobile shell does not visually
         // reset while the detail route loads. Confirmed transactions redirect
@@ -5605,6 +5659,18 @@ setInterval(loadStats,2000);
         }
 
         if (!utxos_list.empty()) {
+            ExplorerHistoryBudget source_budget;
+            std::unordered_map<std::string, std::string> source_labels;
+            const auto source_tip = chain_.Height();
+            const auto source_tip_hash = chain_.GetBlockHashAtHeight(source_tip);
+            for (const auto& u : utxos_list) {
+                const auto key = HashToHex(u.tx_hash);
+                if (!source_labels.count(key))
+                    source_labels.emplace(key, ClassifyUTXOSource(u, source_budget));
+            }
+            const bool sources_coherent = !source_tip_hash.empty() &&
+                chain_.Height() == source_tip &&
+                chain_.GetBlockHashAtHeight(source_tip) == source_tip_hash;
             size_t show_count = utxos_list.size();
             c << "<div class=\"card\" style=\"padding:14px 18px\">";
             c << "<div class=\"card-header\" style=\"display:flex;align-items:baseline;justify-content:space-between;padding:6px 4px 4px\">";
@@ -5616,9 +5682,9 @@ setInterval(loadStats,2000);
             for (size_t ui = 0; ui < show_count; ++ui) {
                 auto& u = utxos_list[ui];
                 std::string txid = HashToHex(u.tx_hash);
-                std::string source = ClassifyUTXOSource(u);
+                std::string source = sources_coherent ? source_labels.at(txid) : "unknown";
                 std::string ic_class = "ic-v";
-                std::string type_label = "Output";
+                std::string type_label = "Output (source unavailable)";
                 if      (source == "mining_reward")     { ic_class = "ic-b"; type_label = "Mining reward"; }
                 else if (source == "staking_reward")    { ic_class = "ic-s"; type_label = "Staking reward"; }
                 else if (source == "endorsement_reward"){ ic_class = "ic-p"; type_label = "Validator reward"; }
@@ -6104,7 +6170,7 @@ setInterval(loadStats,2000);
     <tbody>
 )HTML";
         {
-            double live_min_stake = (double)MIN_STAKE_UNITS / (double)VELD_UNITS;
+            double live_min_stake = (double)MinimumStakeAtHeight(NextInclusionHeight(chain_.Height())) / (double)VELD_UNITS;
             double live_max_stake = (double)MAX_STAKE_UNITS / (double)VELD_UNITS;
             page << "      <tr><td>Minimum Stake</td><td style=\"color:var(--em)\">"
                  << std::fixed << std::setprecision(0) << live_min_stake
@@ -6492,7 +6558,8 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             if (!text.empty() && text.back() == '.') text.pop_back();
             return text.empty() ? std::string("0") : text;
         };
-        auto pending = mempool_.GetAllTransactions();
+        const auto summary = mempool_.GetSummaryPage();
+        const auto& pending = summary.rows;
         uint64_t tip = chain_.Height();
 
         std::ostringstream page;
@@ -6513,40 +6580,20 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         std::vector<TxEntry> entries;
         entries.reserve(pending.size());
 
-        uint64_t total_bytes = 0;
-        uint64_t total_fee_units = 0;
+        const uint64_t total_bytes = summary.total_bytes;
+        const uint64_t total_fee_units = summary.total_fee_units;
         uint64_t stake_ops = 0;
         uint64_t endorse_ops = 0;
         uint64_t validator_ops = 0;
         uint64_t transfers = 0;
 
         for (const auto& tx : pending) {
-            auto raw = tx.Serialize();
-            total_bytes += raw.size();
-            uint64_t in_total = 0, out_total = tx.TotalOutput();
-            for (const auto& inp : tx.inputs) {
-                auto u = chain_.GetUTXO(inp.prev_tx_hash, inp.prev_out_index);
-                if (u) in_total += u->value;
-            }
-            uint64_t fee = in_total > out_total ? (in_total - out_total) : 0;
-            total_fee_units += fee;
-
             std::string tx_type = "Transfer";
             std::string ic_label = "XF";
             std::string op_class = "xfer";
             std::string badge    = "transfer";
             bool classified = false;
-            for (const auto& out : tx.outputs) {
-                const auto& sp = out.script_pubkey;
-                if (sp.size() < 2 || sp[0] != 0x6A) continue;
-                size_t off = 1, plen = 0;
-                if (sp[off] <= 75) { plen = sp[off++]; }
-                else if (sp[off] == 0x4C && sp.size() > off+1) { off++; plen = sp[off++]; }
-                else if (sp[off] == 0x4D && sp.size() > off+2) {
-                    off++; plen = sp[off] | (sp[off+1] << 8); off += 2;
-                }
-                if (off + plen > sp.size()) continue;
-                std::string pl(sp.begin()+off, sp.begin()+off+plen);
+            for (const auto& pl : tx.op_return_prefixes) {
                 if (pl.rfind("VELD_STAKE|LOCK",    0) == 0) { tx_type = "Stake lock";        ic_label = "ST"; op_class = "stake"; badge = "stake";     stake_ops++;     classified = true; break; }
                 if (pl.rfind("VELD_STAKE|UNLOCK",  0) == 0) { tx_type = "Stake unlock";      ic_label = "ST"; op_class = "stake"; badge = "unstake";   stake_ops++;     classified = true; break; }
                 if (pl.rfind("VELD_VALIDATOR|ENDORSE",  0)== 0) { tx_type = "Endorsement";   ic_label = "EN"; op_class = "cy";    badge = "endorse";   endorse_ops++;   classified = true; break; }
@@ -6570,9 +6617,9 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             }
             if (!classified) transfers++;
 
-            entries.push_back({HashToHex(tx.GetTxID()), tx_type, ic_label, op_class, badge,
-                               fee, out_total, raw.size(),
-                               tx.inputs.size(), tx.outputs.size()});
+            entries.push_back({tx.txid, tx_type, ic_label, op_class, badge,
+                               tx.fee, tx.output_units, tx.size,
+                               tx.input_count, tx.output_count});
         }
 
         std::sort(entries.begin(), entries.end(),
@@ -6583,7 +6630,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
         page << "<div class=\"hero\">\n";
         page << "  <div class=\"lbl\">Pending in mempool</div>\n";
-        page << "  <div class=\"num\">" << pending.size() << "</div>\n";
+        page << "  <div class=\"num\">" << summary.total_count << "</div>\n";
         page << "  <div class=\"meta\">\n";
         page << "    <span class=\"it em\"><span class=\"dot\"></span><b>";
         if (total_bytes >= 1024) page << (total_bytes / 1024) << " KB";
@@ -6591,7 +6638,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << "</b> &middot; <b>"
              << format_fee((double)total_fee_units / VELD_UNITS)
              << " VELD</b> pending fees</span>\n";
-        page << "    <span class=\"it\"><span class=\"dot\"></span>density sorted</span>\n";
+        page << "    <span class=\"it\"><span class=\"dot\"></span>fee sorted</span>\n";
         page << "    <span class=\"it\"><span class=\"dot\"></span>tip h=" << tip << "</span>\n";
         page << "  </div>\n";
         page << "</div>\n";
@@ -6602,15 +6649,15 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << "  <div class=\"tile gold span2\"><div class=\"l\">Lifetime fees collected &middot; chain-wide</div><div class=\"v\">"
              << format_fee(lifetime_fees_veld)
              << "<span class=\"u\">VELD</span></div></div>\n";
-        page << "  <div class=\"tile em\"><div class=\"l\">Transfers</div><div class=\"v\">"   << transfers  << "</div></div>\n";
-        page << "  <div class=\"tile\"><div class=\"l\">Stake ops</div><div class=\"v\">"      << stake_ops  << "</div></div>\n";
-        page << "  <div class=\"tile\"><div class=\"l\">Endorsements</div><div class=\"v\">"   << endorse_ops<< "</div></div>\n";
+        page << "  <div class=\"tile em\"><div class=\"l\">Transfers &middot; shown</div><div class=\"v\">"   << transfers  << "</div></div>\n";
+        page << "  <div class=\"tile\"><div class=\"l\">Stake ops &middot; shown</div><div class=\"v\">"      << stake_ops  << "</div></div>\n";
+        page << "  <div class=\"tile\"><div class=\"l\">Endorsements &middot; shown</div><div class=\"v\">"   << endorse_ops<< "</div></div>\n";
         page << "  <div class=\"tile\"><div class=\"l\">Mempool fees &middot; pending</div><div class=\"v\">"
              << format_fee((double)total_fee_units / VELD_UNITS)
              << "<span class=\"u\">VELD</span></div></div>\n";
         page << "</div>\n";
 
-        page << "<h3>Top by fee <span class=\"ct\">" << entries.size() << " pending</span></h3>\n";
+        page << "<h3>Top by fee <span class=\"ct\">" << entries.size() << " of " << summary.total_count << " pending</span></h3>\n";
 
         if (entries.empty()) {
             page << "<div class=\"note em\" style=\"text-align:center;padding:28px 14px;border-radius:16px;border-left:none;border:.5px solid rgba(34,197,94,.30)\">\n"

@@ -1,4 +1,5 @@
 #pragma once
+#include "snapshot_recovery.h"
 
 // Authenticated public-mainnet snapshot acquisition and publication.
 //
@@ -69,6 +70,8 @@ struct SnapshotCandidateValidation {
     bool passed{false};
     std::string consensus_state_sha256;
     std::string error;
+    uint32_t network_magic{MAINNET_MAGIC};
+    snapshot_recovery::Floors required_floors;
 };
 
 inline bool IsReparsePoint(const std::filesystem::path& path) {
@@ -397,6 +400,19 @@ inline bool PreparePublicSnapshot(const std::filesystem::path& data_dir,
                                   PreparedPublicSnapshot& out,
                                   std::string* error = nullptr) {
     out = PreparedPublicSnapshot{};
+    try {
+        std::string directory_error;
+        snapshot_recovery::Require(channel::secure_file::EnsurePrivateDirectory(
+            data_dir.string(), &directory_error), directory_error);
+        snapshot_recovery::ResumeImport(data_dir);
+        if (snapshot_recovery::Pending(data_dir)) {
+            if (error) *error = "snapshot acquisition disabled during fresh recovery";
+            return false;
+        }
+    } catch (const std::exception& e) {
+        if (error) *error = e.what();
+        return false;
+    }
     auto scratch = CreateExclusiveScratchRoot(data_dir);
     if (!scratch) {
         if (error) *error = "cannot create exclusive snapshot staging directory";
@@ -511,6 +527,15 @@ inline bool CommitPreparedPublicSnapshot(
         const PreparedPublicSnapshot& prepared,
         const SnapshotCandidateValidation& validation,
         std::string* error = nullptr) {
+    try {
+        if (snapshot_recovery::Pending(data_dir)) {
+            if (error) *error = "snapshot publication disabled during fresh recovery";
+            return false;
+        }
+    } catch (const std::exception& e) {
+        if (error) *error = e.what();
+        return false;
+    }
     if (!validation.passed ||
         !SnapshotManifestIsHex64(validation.consensus_state_sha256)) {
         if (error) *error = "snapshot candidate consensus validation did not pass";
@@ -555,54 +580,18 @@ inline bool CommitPreparedPublicSnapshot(
         if (error) *error = "cannot stage snapshot handoff: " + write_error;
         return false;
     }
-    const auto live_db = data_dir / "db";
-    const auto live_background = data_dir / ".background-chainstate-required";
-    const auto live_handoff = data_dir / ".snapshot-handoff";
-    std::array<uint8_t, 12> random{};
-    if (!compat::SecureRandom(random.data(), random.size())) {
-        if (error) *error = "cannot create snapshot quarantine identity";
-        return false;
-    }
-    const auto quarantine = data_dir / (".snapshot-preimport-" +
-        BytesToHex(random.data(), random.size()));
-    if (!std::filesystem::create_directory(quarantine, ec) || ec) {
-        if (error) *error = "cannot create snapshot rollback directory";
-        return false;
-    }
-    bool old_db_moved = false;
-    bool old_handoff_moved = false;
-    bool new_db_moved = false;
-    bool background_moved = false;
     try {
-        if (std::filesystem::exists(live_background))
-            throw std::runtime_error("a background-validation marker already exists");
-        if (std::filesystem::exists(live_db)) {
-            std::filesystem::rename(live_db, quarantine / "db");
-            old_db_moved = true;
-        }
-        if (std::filesystem::exists(live_handoff)) {
-            std::filesystem::rename(live_handoff, quarantine / "handoff");
-            old_handoff_moved = true;
-        }
-        std::filesystem::rename(staged_db, live_db);
-        new_db_moved = true;
-        std::filesystem::rename(staged_background, live_background);
-        background_moved = true;
-        std::filesystem::rename(handoff, live_handoff);
+        const auto local = snapshot_recovery::CaptureLocalState(
+            data_dir, validation.network_magic, HexToHash(prepared.manifest.genesis));
+        const auto expected = snapshot_recovery::Normalize(
+            validation.required_floors, validation.network_magic, HexToHash(prepared.manifest.genesis));
+        if (local.size() != expected.size() || !std::equal(local.begin(), local.end(),
+                expected.begin(), btcanchor::floor_store::ExactDuplicate))
+            throw std::runtime_error("local security floor changed or was not inherited by the candidate");
+        snapshot_recovery::PreserveFloors(data_dir, local);
+        snapshot_recovery::PublishImport(data_dir, prepared.scratch_root);
     } catch (const std::exception& exception) {
-        std::error_code rollback_error;
-        if (background_moved)
-            std::filesystem::rename(live_background, staged_background,
-                                    rollback_error);
-        if (new_db_moved)
-            std::filesystem::rename(live_db, staged_db, rollback_error);
-        if (old_handoff_moved)
-            std::filesystem::rename(quarantine / "handoff", live_handoff,
-                                    rollback_error);
-        if (old_db_moved)
-            std::filesystem::rename(quarantine / "db", live_db, rollback_error);
-        if (error) *error = std::string("snapshot publication failed: ") +
-                            exception.what();
+        if (error) *error = std::string("snapshot publication requires recovery: ") + exception.what();
         return false;
     }
     std::filesystem::remove_all(prepared.scratch_root, ec);
@@ -611,6 +600,15 @@ inline bool CommitPreparedPublicSnapshot(
 
 inline std::optional<SnapshotManifest> VerifyInstalledSnapshotHandoff(
         const std::filesystem::path& data_dir, std::string* error = nullptr) {
+    try {
+        if (snapshot_recovery::Pending(data_dir)) {
+            if (error) *error = "snapshot handoff is revoked pending fresh recovery";
+            return std::nullopt;
+        }
+    } catch (const std::exception& e) {
+        if (error) *error = e.what();
+        return std::nullopt;
+    }
     const auto handoff = data_dir / ".snapshot-handoff";
     const auto manifest_path = handoff / "manifest";
     const auto signature_path = handoff / "manifest.sig";

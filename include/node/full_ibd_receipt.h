@@ -112,17 +112,11 @@ inline bool WriteFullIbdReceipt(const std::string& datadir,
                                 uint64_t height,
                                 const std::string& tip_hash,
                                 std::string* error = nullptr) {
-    if (height == 0 || !IsLowerHex(tip_hash, 64) || miner.address.empty()) {
+    if (height == 0 || !IsLowerHex(tip_hash, 64) ||
+        miner.address != PubKeyToAddress(miner.public_key, false)) {
         if (error) *error = "full-IBD receipt inputs are not canonical";
         return false;
     }
-    std::error_code revoke_ec;
-    std::filesystem::remove(RevocationPath(datadir), revoke_ec);
-    if (revoke_ec) {
-        if (error) *error = "cannot clear prior snapshot revocation after full IBD";
-        return false;
-    }
-
     std::vector<uint8_t> key_file;
     if (!ReadProtectedFile(
             (std::filesystem::path(datadir) / "miner.key").string(),
@@ -162,12 +156,13 @@ inline bool WriteFullIbdReceipt(const std::string& datadir,
 inline bool VerifyFullIbdReceipt(const std::string& datadir,
                                  const Secp256k1PubKey& expected_pubkey,
                                  FullIbdReceipt& out,
-                                 std::string* error = nullptr) {
+                                 std::string* error = nullptr,
+                                 bool verify_for_recovery = false) {
     out = FullIbdReceipt{};
     std::error_code revoked_ec;
     const bool revoked = std::filesystem::exists(
         RevocationPath(datadir), revoked_ec);
-    if (revoked || revoked_ec) {
+    if (revoked_ec || (revoked && !verify_for_recovery)) {
         if (error) *error = revoked
             ? "snapshot eligibility was revoked after a failed verification"
             : "cannot determine snapshot revocation state";
@@ -313,17 +308,10 @@ inline bool WriteFleetIbdReceipt(const std::string& datadir,
                                  const std::string& tip_hash,
                                  std::string* error = nullptr) {
     if (height == 0 || !IsLowerHex(tip_hash, 64) ||
-        fleet_identity.address.empty()) {
+        fleet_identity.address != PubKeyToAddress(fleet_identity.public_key, false)) {
         if (error) *error = "fleet full-IBD receipt inputs are not canonical";
         return false;
     }
-    std::error_code revoke_ec;
-    std::filesystem::remove(RevocationPath(datadir), revoke_ec);
-    if (revoke_ec) {
-        if (error) *error = "cannot clear prior snapshot revocation after fleet full IBD";
-        return false;
-    }
-
     std::vector<uint8_t> key_file;
     if (!ReadProtectedFile(FleetKeyPath(datadir), 64 * 1024,
                            key_file, error)) {
@@ -375,12 +363,13 @@ inline bool WriteFleetIbdReceipt(const std::string& datadir,
 inline bool VerifyFleetIbdReceipt(const std::string& datadir,
                                   const Secp256k1PubKey& expected_pubkey,
                                   FullIbdReceipt& out,
-                                  std::string* error = nullptr) {
+                                  std::string* error = nullptr,
+                                  bool verify_for_recovery = false) {
     out = FullIbdReceipt{};
     std::error_code revoked_ec;
     const bool revoked = std::filesystem::exists(
         RevocationPath(datadir), revoked_ec);
-    if (revoked || revoked_ec) {
+    if (revoked_ec || (revoked && !verify_for_recovery)) {
         if (error) {
             *error = revoked
                 ? "snapshot eligibility was revoked after a failed verification"

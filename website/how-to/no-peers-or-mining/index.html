@@ -38,7 +38,7 @@
     <section class="content-section" id="mining">
       <p class="stage-label">03 / Mining</p><h2>Interpret the waiting state</h2>
       <div class="status-list">
-        <div class="status-row"><strong>Synchronizing</strong><p>Wait for the Blockchain page to show Synchronized.</p></div>
+        <div class="status-row"><strong>Synchronizing</strong><p>Allow chain validation and any independent snapshot verification to finish. The displayed Synchronized estimate alone does not mean mining is ready.</p></div>
         <div class="status-row"><strong>Waiting for anchor</strong><p>No configured network anchor is connected. Restore peer connectivity and wait.</p></div>
         <div class="status-row"><strong>Clock drift</strong><p>Correct the Windows clock and allow peer time checks to recover.</p></div>
         <div class="status-row"><strong>Genesis mismatch</strong><p>Connected peers do not match this build’s genesis. Confirm the official current client and intended network; do not force acceptance.</p></div>
@@ -56,7 +56,7 @@
       <p class="stage-label">04 / Logs</p><h2>Collect useful diagnostics</h2>
       <ol class="step-list">
         <li class="step"><div><h3>Open Logs</h3><p>Read the newest local node output around the time the status changed.</p></div></li>
-        <li class="step"><div><h3>Use Copy diagnostics</h3><p>Capture version, node state, height, peers, sync mode, transport, and mining state together.</p></div></li>
+        <li class="step"><div><h3>Use Copy diagnostics</h3><p>Capture both GUI and daemon versions, process state, height, peers, verification progress, sync mode, transport, and mining state together. Unavailable status is unknown and does not prove mining stopped.</p></div></li>
         <li class="step"><div><h3>Open the log folder when needed</h3><p>Use <strong>Open log folder</strong> to inspect the full local record. Review copied text before sharing because it can contain operational metadata.</p></div></li>
         <li class="step"><div><h3>Restart once, cleanly</h3><p>If the app reports a transient startup error, stop the node, wait for it to exit, and start it once. Avoid repeated rapid restarts.</p></div></li>
       </ol>
@@ -65,7 +65,7 @@
 
     <section class="content-section"><h2>Actions to avoid</h2><ul class="plain-list"><li>Do not delete <code>veld-data</code> as a first troubleshooting step.</li><li>Do not replace chain state with files from another person.</li><li>Do not open RPC or local app ports to the internet.</li><li>Do not disable release signature checks.</li><li>Do not remove the mining identity unless a verified backup exists.</li></ul></section>
     <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/clearnet-or-tor/"><span>Previous guide</span><strong>Choose Clearnet or Tor-only</strong></a><a class="next-guide" href="/how-to/update-node/"><span>Next guide</span><strong>Update Veld Node safely</strong></a></nav>
-    <p class="article-foot">Reviewed <time datetime="2026-09-08">8 September 2026</time> for Veld Mainnet and Windows 3.1.1. Verified against the current Veld Node attention states, Mining details, Network transport states, and diagnostics flow.</p>
+    <p class="article-foot">Source reviewed <time datetime="2026-09-09">9 September 2026</time> for Veld Mainnet and Windows 3.1.2.</p>
   </article></div>
 </main>
 <footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>

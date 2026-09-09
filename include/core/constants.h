@@ -1,11 +1,30 @@
 #pragma once
 
+#if defined(VELD_LOCAL_TEST_NETWORK) && \
+    (!defined(VELD_TEST_HOOKS) || !defined(VELD_TEST_CHAIN_BUILD) || \
+     !defined(VELD_REGTEST_FIXED_DIFF) || defined(VELD_PUBLIC_RELEASE) || \
+     defined(VELD_PUBLIC_MAINNET) || defined(VELD_PUBLIC_TESTNET))
+#error "local test networking requires an isolated non-public regtest build"
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <ctime>
 #include <atomic>
 #include <iostream>
+
+#if defined(VELD_ASERT_TESTCHAIN)
+#if !defined(VELD_MAINNET_POW) || !defined(VELD_TEST_CHAIN_BUILD) || \
+    !defined(VELD_DSTATE_QUALIFICATION) || defined(VELD_PUBLIC_RELEASE) || \
+    defined(VELD_REGTEST_FIXED_DIFF) || defined(VELD_TEST_DATASET_BYTES)
+#error "ASERT testchain requires an isolated full-parameter qualification profile"
+#endif
+#include "../test/asert_chain_identity.h"
+#endif
+#if defined(VELD_ASERT_LEGACY_CONTROL) && !defined(VELD_ASERT_TESTCHAIN)
+#error "The legacy control belongs only to the isolated ASERT testchain"
+#endif
 
 // Deployment-role selection belongs in this universal public-build header,
 // not only version.h: standalone helpers such as the validator and one-time
@@ -553,8 +572,15 @@ constexpr uint32_t MIN_PEER_CONNECTIONS    = 4;
 constexpr uint32_t MAX_PEER_CONNECTIONS    = 125;
 constexpr uint32_t MAINNET_MAGIC           = 0x56454C44;
 constexpr uint32_t TESTNET_MAGIC           = 0x74564C44;
+#if defined(VELD_ASERT_TESTCHAIN)
+constexpr const char* GENESIS_TIMESTAMP_STR = "2026-01-01T00:00:00Z";
+constexpr const char* GENESIS_MESSAGE = "Veld isolated ASERT qualification 2026-09-08";
+constexpr uint64_t ASERT_TEST_ACTIVATION_HEIGHT = 144;
+constexpr uint32_t ASERT_TEST_HALF_LIFE = 2700;
+#else
 constexpr const char* GENESIS_TIMESTAMP_STR = "2026-08-01T15:46:00Z";
 constexpr const char* GENESIS_MESSAGE        = "Veld - Where value is earned.";
+#endif
 
 namespace genesis_iso {
     constexpr int  digit(char c)  { return (c >= '0' && c <= '9') ? c - '0' : -1; }
@@ -585,9 +611,14 @@ namespace genesis_iso {
 }
 static_assert(genesis_iso::parse(GENESIS_TIMESTAMP_STR) != 0,
               "GENESIS_TIMESTAMP_STR must parse as YYYY-MM-DDTHH:MM:SSZ");
+#if defined(VELD_ASERT_TESTCHAIN)
+constexpr uint64_t GENESIS_NONCE = VELD_ASERT_GENESIS_NONCE;
+constexpr const char* GENESIS_HASH = VELD_ASERT_GENESIS_HASH;
+#else
 constexpr uint64_t    GENESIS_NONCE          = 187948ULL;
 constexpr const char* GENESIS_HASH =
     "880a0057852ffcfa35119a83e556802848ed5cb469b260fb9fbd20e8b97ae77b";
+#endif
 // The first launch-chain block is a second, signed-snapshot identity boundary.
 // It prevents a snapshot from another history which reused the compiled
 // genesis from being accepted. This is the node's canonical internal hash
@@ -595,18 +626,31 @@ constexpr const char* GENESIS_HASH =
 constexpr uint64_t SNAPSHOT_LAUNCH_ANCHOR_HEIGHT = 1;
 constexpr const char* SNAPSHOT_LAUNCH_ANCHOR_HASH =
     "c595cc31fe47999186a402ee7c6fb8bdf97415e4e9d9e643733a828e2ce573d1";
+#if defined(VELD_ASERT_TESTCHAIN)
+constexpr uint64_t GENESIS_TIME = 1767225600;
+#else
 constexpr uint64_t    GENESIS_TIME           = 1785599160;
+#endif
 static_assert(sizeof(std::time_t) >= 8,
               "Veld requires 64-bit time_t");
 static_assert(genesis_iso::parse(GENESIS_TIMESTAMP_STR) == GENESIS_TIME,
               "GENESIS_TIMESTAMP_STR must equal GENESIS_TIME — bump both together");
+#if defined(VELD_ASERT_TESTCHAIN)
+constexpr uint32_t GENESIS_BITS = 0x200fffff;
+#else
 constexpr uint32_t    GENESIS_BITS           = 0x1e390000;
+#endif
 static_assert((GENESIS_BITS & 0x00FFFFFFu) != 0,
               "GENESIS_BITS mantissa is zero");
 static_assert((GENESIS_BITS & 0x00800000u) == 0,
               "GENESIS_BITS mantissa sign bit is set");
 static_assert(((GENESIS_BITS >> 24) & 0xFFu) >= 0x1cu &&
-              ((GENESIS_BITS >> 24) & 0xFFu) <= 0x1fu,
+              ((GENESIS_BITS >> 24) & 0xFFu) <=
+#if defined(VELD_ASERT_TESTCHAIN)
+                  0x20u,
+#else
+                  0x1fu,
+#endif
               "GENESIS_BITS exponent out of the sane PoW band");
 #if defined(VELD_MAINNET_POW) && !defined(VELD_FUZZ_BUILD) && \
     (!defined(VELD_TEST_CHAIN_BUILD) || defined(VELD_DSTATE_QUALIFICATION))
@@ -687,6 +731,47 @@ constexpr size_t         LOTTERY_FLEET_SIZE_THRESHOLD    = 1000;
 constexpr uint64_t       LOTTERY_KSLOT_DIVISOR_HEIGHT    = 0;
 constexpr uint32_t LOTTERY_AGG_SEED_K                       = 8;
 constexpr uint64_t LOTTERY_AGG_SEED_ACTIVATION_HEIGHT       = 1;
+// Public-mainnet-v2 activates the coordinated upgrade at block 3840.
+// Other deployments retain their existing rules. Compile-time test heights
+// are confined to disposable non-public profiles.
+#if defined(VELD_PROTOCOL_UPGRADE_TEST_HEIGHT)
+#if !defined(VELD_MAINNET_POW) || !defined(VELD_TEST_CHAIN_BUILD) || \
+    !defined(VELD_TEST_HOOKS) || defined(VELD_PUBLIC_RELEASE) || \
+    defined(VELD_PUBLIC_MAINNET) || defined(VELD_PUBLIC_TESTNET)
+#error "protocol test height requires an isolated non-public test build"
+#endif
+#if defined(VELD_PROTOCOL_UPGRADE_LEGACY_CONTROL)
+inline constexpr uint64_t PROTOCOL_UPGRADE_HEIGHT = 0;
+#else
+inline constexpr uint64_t PROTOCOL_UPGRADE_HEIGHT = VELD_PROTOCOL_UPGRADE_TEST_HEIGHT;
+#endif
+#else
+#if defined(VELD_PROTOCOL_UPGRADE_LEGACY_CONTROL)
+#error "legacy upgrade control requires the isolated protocol test height"
+#endif
+#if defined(VELD_PUBLIC_MAINNET)
+inline constexpr uint64_t PROTOCOL_UPGRADE_HEIGHT = 3840;
+#else
+inline constexpr uint64_t PROTOCOL_UPGRADE_HEIGHT = 0;
+#endif
+#endif
+static_assert(PROTOCOL_UPGRADE_HEIGHT % BOND_SETTLEMENT_INTERVAL == 0,
+              "protocol upgrade requires a settlement boundary");
+inline constexpr bool ProtocolUpgradeActive(uint64_t inclusion_height) noexcept {
+    return PROTOCOL_UPGRADE_HEIGHT != 0 && inclusion_height >= PROTOCOL_UPGRADE_HEIGHT;
+}
+inline constexpr uint64_t MinimumStakeAtHeight(uint64_t inclusion_height) noexcept {
+    return ProtocolUpgradeActive(inclusion_height) ? MIN_STAKE_UNITS / 2 : MIN_STAKE_UNITS;
+}
+#if defined(VELD_ASERT_LEGACY_CONTROL)
+inline constexpr uint64_t ASERT_ACTIVATION_HEIGHT = 0;
+#elif defined(VELD_ASERT_TESTCHAIN) && !defined(VELD_PROTOCOL_UPGRADE_TEST_HEIGHT)
+inline constexpr uint64_t ASERT_ACTIVATION_HEIGHT = ASERT_TEST_ACTIVATION_HEIGHT;
+#else
+inline constexpr uint64_t ASERT_ACTIVATION_HEIGHT = PROTOCOL_UPGRADE_HEIGHT;
+#endif
+inline constexpr uint32_t ASERT_HALF_LIFE = 2700;
+
 constexpr uint64_t       NMS_MIN_BOND_UNITS         = MIN_STAKE_UNITS;
 constexpr bool           OPTION_B_CONSENSUS_GATE_ENABLED = true;
 constexpr uint64_t VAULT_BLOCK_INTERVAL      = 100;

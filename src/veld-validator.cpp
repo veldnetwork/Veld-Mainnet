@@ -21,6 +21,9 @@
 #include "../include/compat/endorse_guard.h"   //  shared anti-equivocation guard
 #include "../include/network/strict_json.h"
 #include "../include/network/finality_rpc_limits.h"
+#if defined(VELD_RELEASE_INTEGRATION_NETWORK)
+#include "../include/network/chainparams.h"
+#endif
 #include "../include/node/work_admission.h"
 #include "../include/node/work_admission_coordinator.h"
 
@@ -39,6 +42,7 @@
 #include <functional>
 #include <set>
 #include <memory>
+#include <algorithm>
 
 #ifdef _WIN32
 #  include <winsock2.h>
@@ -504,6 +508,19 @@ static Hash256 compiled_genesis_bytes() {
     return lower_hex_hash(GENESIS_HASH, out) ? out : Hash256{};
 }
 
+static uint32_t compiled_work_network_magic() {
+#if defined(VELD_RELEASE_INTEGRATION_NETWORK)
+#if !defined(VELD_FIRST_ACTIVATION_NETWORK) || !defined(VELD_LOCAL_TEST_NETWORK) || !defined(VELD_TEST_HOOKS) || !defined(VELD_TEST_CHAIN_BUILD) || !defined(VELD_REGTEST_FIXED_DIFF) || defined(VELD_PUBLIC_RELEASE) || defined(VELD_PUBLIC_MAINNET) || defined(VELD_PUBLIC_TESTNET)
+#error "standalone integration network selection requires the isolated private regtest profile"
+#endif
+    // Select one exact network identity for the isolated process test. Public
+    // binaries retain their mainnet binding; no additional identity is accepted.
+    return RegtestConfig().magic;
+#else
+    return MAINNET_MAGIC;
+#endif
+}
+
 static bool validate_work_binding(
         const std::string& encoded, veld::work_admission::Purpose purpose,
         uint64_t target_height, const Hash256& target_hash) {
@@ -516,7 +533,7 @@ static bool validate_work_binding(
            binding->subject.parent_height >= target_height &&
            !HashIsZero(binding->subject.parent_hash) &&
            binding->validation_generation != 0 &&
-           binding->network_magic == MAINNET_MAGIC &&
+           binding->network_magic == compiled_work_network_magic() &&
            binding->genesis_hash == compiled_genesis_bytes() &&
            binding->profile_digest ==
                Hash256d(std::string(DEPLOYMENT_PROFILE_ID));
@@ -788,10 +805,21 @@ static std::optional<Hash256> fetch_rpc_block_hash(
 }
 
 
-static bool bitcoin_core_observes_block(const std::string& hash_hex) {
-    if (!veld::btc_buy::IsLowerHex(hash_hex, 64)) return false;
+static std::optional<std::string> bitcoin_core_display_hash(
+        const std::string& internal_hash_hex) {
+    Hash256 hash{};
+    if (!lower_hex_hash(internal_hash_hex, hash)) return std::nullopt;
+    // getanchorinfo preserves the SPV hash bytes. Bitcoin Core's RPC uses
+    // reversed display order for both its argument and returned hash field.
+    std::reverse(hash.begin(), hash.end());
+    return HashToHex(hash);
+}
+
+static bool bitcoin_core_observes_block(const std::string& internal_hash_hex) {
+    const auto display_hash = bitcoin_core_display_hash(internal_hash_hex);
+    if (!display_hash) return false;
     auto result = veld::compat::RunProcess(
-        {g_bitcoin_cli, "getblockheader", hash_hex, "true"},
+        {g_bitcoin_cli, "getblockheader", *display_hash, "true"},
         true, {}, false, 256u * 1024u);
     if (result.exit_code != 0 || result.output_truncated || result.output.empty())
         return false;
@@ -802,7 +830,7 @@ static bool bitcoin_core_observes_block(const std::string& hash_hex) {
         return false;
     std::string returned_hash;
     uint64_t confirmations = 0;
-    return json_string(root, "hash", returned_hash) && returned_hash == hash_hex &&
+    return json_string(root, "hash", returned_hash) && returned_hash == *display_hash &&
            json_u64(root, "confirmations", confirmations) &&
            confirmations >= BTCVELD_ANCHOR_BTC_CONFS;
 }
@@ -968,7 +996,7 @@ static bool broadcast_op_return(const std::string& host, uint16_t port,
     const std::string endorse_prefix = "VELD_VALIDATOR|ENDORSE|";
     const bool is_register = op_return_data.rfind(register_prefix, 0) == 0;
     const bool is_deregister = op_return_data.rfind(deregister_prefix, 0) == 0;
-    const bool is_endorse = op_return_data.rfind(endorse_prefix, 0) == 0;
+    const bool is_endorse = HasEndorsementWirePrefix(op_return_data);
     if ((!is_register && !is_deregister && !is_endorse) ||
         !vk.HasExactIdentityBinding() || from_address != vk.address) {
         log(RED, "Refusing an unrecognized or identity-unbound validator operation");
@@ -1548,7 +1576,7 @@ static int run_daemon(const std::string& host, uint16_t port,
                         log(RED, "Failed to sign block " + std::to_string(height));
                     } else {
                         std::string op = ValidatorRegistry::BuildEndorseOp(
-                            height, block_hash, sig_hex);
+                            height, block_hash, sig_hex, vk.address, NextInclusionHeight(height));
 
                         if (broadcast_op_return(host, port, vk.address, op, vk,
                                                 &*endorsement_work)) {

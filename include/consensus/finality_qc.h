@@ -59,7 +59,16 @@ constexpr uint64_t MIN_VALIDATOR_COUNT   = 7;
 // selection rule: an epoch with more qualifying keys fails closed instead of
 // claiming to be finalizable when no valid certificate can be carried.
 constexpr uint64_t MAX_FINALITY_VALIDATOR_COUNT = 3398;
+#ifdef VELD_FIRST_ACTIVATION_NETWORK
+#if !defined(VELD_LOCAL_TEST_NETWORK) || !defined(VELD_TEST_HOOKS) || !defined(VELD_TEST_CHAIN_BUILD) || !defined(VELD_REGTEST_FIXED_DIFF) || defined(VELD_PUBLIC_RELEASE) || defined(VELD_PUBLIC_MAINNET) || defined(VELD_PUBLIC_TESTNET)
+#error "first activation bond scale requires the isolated local regtest profile"
+#endif
+// Match the existing regtest registration amount. Validator count, maturity,
+// warm-up, equal weights and strict quorum remain the production rules.
+constexpr uint64_t BOND_PER_KEY_UNITS    = MIN_VALIDATOR_STAKE;
+#else
 constexpr uint64_t BOND_PER_KEY_UNITS    = 10000ULL * VELD_UNITS;   // min AND cap
+#endif
 constexpr uint64_t TOTAL_BOND_FLOOR      = MIN_VALIDATOR_COUNT * BOND_PER_KEY_UNITS;
 
 // New btcVELD exposure pauses after three missed checkpoints. AMM swaps continue

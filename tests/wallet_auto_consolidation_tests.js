@@ -19,17 +19,17 @@ function setup() {
   state.balance={pending_in_veld:0,pending_out_veld:0};
   state.counts={total_count:34,dust_count:30,dust_value_veld:50};
   const ctx=vm.createContext({Promise,Number,Date,Object,String,console:{warn(){}},
-    currentAddr:'WalletA',__opLocks:{},__veldKey:{get:()=>key},
+    VELD_MIN_TX_FEE_UNITS:100000,currentAddr:'WalletA',__opLocks:{},__veldKey:{get:()=>key},
     document:{getElementById:el},window:{addEventListener:(event,fn)=>listeners[event]=fn},
     localStorage:{getItem:k=>{if(readFails)throw Error('storage');return items.get(k)??null;},setItem:(k,v)=>{if(writeFails)throw Error('storage');items.set(k,v);}},
     setInterval(){},setTimeout:fn=>{queueMicrotask(fn);},loadWalletAddr(){},fmt:(x,n)=>Number(x).toFixed(n),escHtml:s=>String(s),
     _veldAddrToHash160Hex:a=>'hash:'+a,
     rpc:async(method,params)=>{calls.push([method,...params]);return state.rpc?state.rpc(method,params):(method==='getbalance'?state.balance:state.counts);},
-    signAndBroadcast:async(...args)=>{batches.push(args);return state.sign?state.sign(args):{inputs_consolidated:0};},
+    signAndBroadcast:async(...args)=>{batches.push(args);return state.sign?state.sign(args):{verified_consolidation_inputs:0};},
     __opLock:(name)=>{if(ctx.__opLocks[name])return false;ctx.__opLocks[name]=true;return true;},
     __opUnlock:(name)=>{ctx.__opLocks[name]=false;}
   });
-  vm.runInContext(source.slice(begin,end)+'\n'+extract('loadDustUtxoCount')+'\n'+extract('doConsolidateUtxos'),ctx);
+  vm.runInContext(extract('_veldConsolidationBudget')+'\n'+source.slice(begin,end)+'\n'+extract('loadDustUtxoCount')+'\n'+extract('doConsolidateUtxos'),ctx);
   ctx.autoConsolidateNotify=()=>{};
   state.ctx=ctx;
   state.enable=()=>ctx.setAutoConsolidatePreference(true);
@@ -81,7 +81,7 @@ const tick=()=>new Promise(r=>setImmediate(r));
     assert.equal(s.batches.length,0,'Changed context during '+stage);
   }
   for(const stop of interventions) {
-    s=setup();s.enable();s.sign=()=>{stop(s);return {inputs_consolidated:150,txid:'fixture'};};
+    s=setup();s.enable();s.sign=()=>{stop(s);return {verified_consolidation_inputs:150,txid:'fixture'};};
     await s.ctx.autoConsolidateMaybe();assert.equal(s.batches.length,1,'Stops future batches');assert.equal(s.ctx.__opLocks.consolidate,false);
   }
   s=setup();s.enable();const wait=deferred();s.rpc=m=>m==='getbalance'?wait.promise:s.counts;

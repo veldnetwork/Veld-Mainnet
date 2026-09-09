@@ -30,6 +30,7 @@
 #include "../include/mining/worker_policy.h"
 #include "../include/crypto/release_verify.h"
 #include "../include/gui/node_gui_model.h"
+#include "../include/node/client_exit_policy.h"
 #include "../include/network/chainparams.h"
 #include "../include/wallet/passphrase_policy.h"
 
@@ -1802,6 +1803,7 @@ enum class UpdateOperation {
 };
 
 struct LiveState {
+    std::string daemon_executable_sha256;
     bool process_running{false};
     bool local_online{false};
     bool reference_online{false};
@@ -1900,6 +1902,7 @@ public:
         if (worker_.joinable()) worker_.join();
         ClearSessionPassphrase();
         if (owned_process_) CloseHandle(owned_process_);
+        if (stopping_process_) CloseHandle(stopping_process_);
         if (wallet_process_) {
             if (WaitForSingleObject(wallet_process_, 0) == WAIT_TIMEOUT) {
                 TerminateProcess(wallet_process_, ERROR_CANCELLED);
@@ -1981,6 +1984,11 @@ private:
     std::deque<RatePoint> rate_history_;
     std::atomic<DWORD> owned_pid_{0};
     HANDLE owned_process_{nullptr};
+    HANDLE stopping_process_{nullptr};
+    unsigned recovery_restarts_{0};
+    std::chrono::steady_clock::time_point recovery_restart_window_{};
+    std::atomic<uint64_t> last_node_exit_at_{0};
+    std::atomic<DWORD> last_node_exit_code_{0};
     HANDLE wallet_process_{nullptr};
     std::string wallet_signer_token_;
     std::atomic<bool> stopping_node_{false};
@@ -2496,6 +2504,7 @@ private:
                 return 0;
             case WM_TIMER:
             case WM_NODE_REFRESH:
+                ObserveOwnedNodeExit();
                 InvalidateRect(hwnd_, nullptr, FALSE);
                 return 0;
             case WM_TOR_SETUP_COMPLETE:
@@ -6387,6 +6396,22 @@ private:
         }
     }
 
+    bool RequestNodeStop(DWORD pid) {
+        // A reopened app can stop an existing node without owning its launch.
+        // Retain that exact process until it exits; missing status is not proof.
+        HANDLE observed = OpenProcess(SYNCHRONIZE |
+            PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!observed) return false;
+        if (!RequestGuiNodeShutdown(pid)) {
+            CloseHandle(observed);
+            return false;
+        }
+        if (stopping_process_) CloseHandle(stopping_process_);
+        stopping_process_ = observed;
+        stopping_node_.store(true);
+        return true;
+    }
+
     void ToggleNode() {
         if (tor_preparing_.load()
             || stopping_node_.load()
@@ -6396,7 +6421,7 @@ private:
             StartNode();
             return;
         }
-        if (!RequestGuiNodeShutdown(live.pid)) {
+        if (!RequestNodeStop(live.pid)) {
             MessageBoxW(hwnd_,
                 L"The node did not accept a graceful stop signal. It was not force-terminated.",
                 L"Veld Node", MB_OK | MB_ICONWARNING);
@@ -6408,6 +6433,8 @@ private:
     }
 
     void StartNode() {
+        recovery_restarts_ = 0;
+        recovery_restart_window_ = {};
         stopping_node_.store(false);
         if (!std::filesystem::is_regular_file(data_dir_ / L"miner.key")) {
             page_ = Page::Settings;
@@ -6421,6 +6448,55 @@ private:
             return;
         }
         StartNodeEngine();
+    }
+
+    void ObserveOwnedNodeExit() {
+        // The UI thread owns this handle and every close/replacement of it.
+        // Missing telemetry or process-enumeration results are not an exit.
+        if (stopping_process_ &&
+            WaitForSingleObject(stopping_process_, 0) == WAIT_OBJECT_0) {
+            CloseHandle(stopping_process_);
+            stopping_process_ = nullptr;
+            // An owned exit must consume stop intent itself before deciding
+            // whether exit 75 permits a restart.
+            if (!owned_process_) {
+                stopping_node_.store(false);
+                ClearSessionPassphrase();
+                worker_cv_.notify_all();
+            }
+        }
+        if (!owned_process_) return;
+        DWORD code = STILL_ACTIVE;
+        if (!GetExitCodeProcess(owned_process_, &code) || code == STILL_ACTIVE)
+            return;
+        CloseHandle(owned_process_);
+        owned_process_ = nullptr;
+        owned_pid_.store(0);
+        last_node_exit_code_.store(code);
+        last_node_exit_at_.store(static_cast<uint64_t>(std::time(nullptr)));
+        const bool operator_stop = stopping_node_.exchange(false);
+        const bool unlocked = session_unlock_confirmed_.exchange(false);
+        const auto now = std::chrono::steady_clock::now();
+        if (recovery_restart_window_.time_since_epoch().count() == 0 ||
+            now - recovery_restart_window_ >= std::chrono::minutes(5)) {
+            recovery_restart_window_ = now;
+            recovery_restarts_ = 0;
+        }
+        const auto action = veld::node_client::ClassifyExit(
+            code, operator_stop, recovery_restarts_);
+        if (action == veld::node_client::ExitAction::Restart) {
+            ++recovery_restarts_;
+            // Reuse only the existing protected session unlock. The normal
+            // launch path still checks the signed executable and keyfile.
+            StartNodeEngine();
+        } else {
+            if (!operator_stop || !unlocked) ClearSessionPassphrase();
+            if (action == veld::node_client::ExitAction::Inspect)
+                MessageBoxW(hwnd_,
+                    L"The node stopped because recovery needs inspection. Your data has been preserved. Review the local log before restarting.",
+                    L"Veld Node", MB_OK | MB_ICONWARNING);
+        }
+        worker_cv_.notify_all();
     }
 
     void StartNodeEngine() {
@@ -6670,7 +6746,7 @@ private:
             else if (tor_preparing_.load() ||
                      update_operation_.load() != UpdateOperation::None) {
                 reject("Node stop is unavailable during setup or update work");
-            } else if (!RequestGuiNodeShutdown(live.pid)) {
+            } else if (!RequestNodeStop(live.pid)) {
                 reject("Node did not accept the graceful stop request");
             } else {
                 stopping_node_.store(true);
@@ -6778,11 +6854,11 @@ private:
         std::string state = "Stopped";
         std::string warning;
         if (live.process_running) {
-            if (!mining_enabled_.load()) {
-                state = "Node only";
-            } else if (!live.local_online || !live.mining_status_online) {
+            if (!live.local_online || !live.mining_status_online) {
                 state = "Warning";
                 warning = "Local node status is unavailable.";
+            } else if (!mining_enabled_.load()) {
+                state = "Node only";
             } else if (live.mining.mining_active) {
                 state = "Mining";
             } else if (sync_lag > 0 ||
@@ -6848,7 +6924,35 @@ private:
                     ? live.mining.blocks_mined_session : 0)
              << ",\"mining_state\":\"" << state
              << "\",\"warning\":\"" << JsonEscape(warning) << "\""
-             << ",\"snapshot\":{"
+             << ",\"snapshot\":{\"diagnostics\":{\"schema\":1"
+             << ",\"local_status_valid\":" << (live.local_online ? "true" : "false")
+             << ",\"mining_status_valid\":" << (live.mining_status_online ? "true" : "false")
+             << ",\"peer_status_valid\":" << (live.peer_details_online ? "true" : "false")
+             << ",\"status_updated_at\":" << (live.mining_status_online ? std::to_string(live.mining.updated_at) : "null")
+             << ",\"process_running\":" << (live.process_running ? "true" : "false")
+             << ",\"last_exit_at\":" << last_node_exit_at_.load()
+             << ",\"last_exit_code\":" << (last_node_exit_at_.load() ? std::to_string(last_node_exit_code_.load()) : "null")
+             << ",\"work_state\":" << (live.mining_status_online ? "\"" + JsonEscape(live.mining.work_state) + "\"" : "null")
+             << ",\"total_hashes\":" << (live.mining_status_online ? std::to_string(live.mining.total_hashes) : "null")
+             << ",\"mining_ready\":" << (live.mining_status_online ? (live.mining.mining_ready ? "true" : "false") : "null")
+             << ",\"daemon\":";
+        if (live.mining_status_online && live.mining.daemon_identity_known &&
+            live.mining.daemon_pid == live.pid && !live.daemon_executable_sha256.empty()) {
+            const auto& d = live.mining;
+            json << "{\"version\":\"" << JsonEscape(d.daemon_version)
+                 << "\",\"profile\":\"" << JsonEscape(d.daemon_profile)
+                 << "\",\"executable_sha256\":\"" << live.daemon_executable_sha256
+                 << "\",\"network_magic\":" << d.daemon_network_magic
+                 << ",\"protocol_height\":" << d.protocol_height
+                 << ",\"asert_height\":" << d.asert_height
+                 << ",\"migration_height\":" << d.migration_height
+                 << ",\"security_height\":" << d.security_height
+                 << ",\"verification_height\":" << d.verification_height
+                 << ",\"verification_target\":" << d.verification_target
+                 << ",\"ibd_complete\":" << (d.ibd_complete ? "true" : "false")
+                 << ",\"historical_validated\":" << (d.historical_validated ? "true" : "false") << '}';
+        } else json << "null";
+        json << "},"
              << "\"process_running\":" << (live.process_running ? "true" : "false")
              << ",\"snapshot_eligible\":"
              << (live.snapshot_eligible ? "true" : "false")
@@ -7077,6 +7181,9 @@ private:
     }
 
     void PollLoop() {
+        DWORD hashed_pid = 0;
+        uint64_t hashed_uptime = 0;
+        std::string running_executable_hash;
         auto last_reference = std::chrono::steady_clock::time_point{};
         auto last_topology = std::chrono::steady_clock::time_point{};
         auto last_size_scan = std::chrono::steady_clock::time_point{};
@@ -7127,6 +7234,26 @@ private:
             next.process_running = next.pid != 0;
             next.uptime_seconds = next.process_running
                 ? ProcessUptime(next.pid) : 0;
+            if (next.pid != hashed_pid || next.uptime_seconds < hashed_uptime) {
+                hashed_pid = next.pid;
+                running_executable_hash.clear();
+                HANDLE process = next.pid ? OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                    FALSE, next.pid) : nullptr;
+                wchar_t image[32768]{};DWORD size = static_cast<DWORD>(std::size(image));
+                if (process && QueryFullProcessImageNameW(process, 0, image, &size) &&
+                    _wcsicmp(std::filesystem::path(image).lexically_normal().c_str(),
+                             node_path_.lexically_normal().c_str()) == 0) {
+                    std::vector<uint8_t> bytes;
+                    if (ReadBoundedRegularFile(image, 512ULL*1024*1024, bytes)) {
+                        veld::SHA256 hash;hash.update(bytes.data(), bytes.size());
+                        const auto digest = hash.digest();
+                        running_executable_hash = LowerHex(digest.data(), digest.size());
+                    }
+                }
+                if (process) CloseHandle(process);
+            }
+            hashed_uptime = next.uptime_seconds;
+            next.daemon_executable_sha256 = running_executable_hash;
 
             const HttpResult local = HttpGetJson(
                 L"127.0.0.1", 8080, L"/api/stats", false, 900);
@@ -7170,7 +7297,8 @@ private:
                         mining_body, parsed, error)) {
                     const uint64_t now_seconds = static_cast<uint64_t>(
                         std::time(nullptr));
-                    if (parsed.updated_at <= now_seconds + 5 &&
+                    if ((!parsed.daemon_identity_known || parsed.daemon_pid == next.pid) &&
+                        parsed.updated_at <= now_seconds + 5 &&
                         now_seconds <= parsed.updated_at + 10) {
                         next.mining = std::move(parsed);
                         next.mining_status_online = true;
@@ -7351,17 +7479,10 @@ private:
                 }
             }
             const DWORD managed_pid = owned_pid_.load();
-            if (managed_pid != 0 && next.process_running && next.local_online)
+            if (managed_pid != 0 && next.pid == managed_pid && next.process_running && next.local_online)
                 session_unlock_confirmed_.store(true);
-            if (managed_pid != 0 && !next.process_running) {
-                const bool intentional_stop = stopping_node_.load();
-                if (!session_unlock_confirmed_.load() || !intentional_stop)
-                    ClearSessionPassphrase();
-                session_unlock_confirmed_.store(false);
-                owned_pid_.store(0);
-            }
-            if (!next.process_running)
-                stopping_node_.store(false);
+            // Only the owned process handle can establish an exit. The UI
+            // supervisor retains stop intent and handles bounded recovery.
             PostMessageW(hwnd_, WM_NODE_REFRESH, 0, 0);
 
             std::unique_lock<std::mutex> lock(worker_wait_mutex_);

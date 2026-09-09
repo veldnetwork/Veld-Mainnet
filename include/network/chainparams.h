@@ -86,7 +86,9 @@ enum class NetworkKind : uint8_t {
 };
 
 constexpr bool RuntimeNetworkAllowed(NetworkKind kind) {
-#if defined(VELD_PUBLIC_RELEASE) || defined(VELD_DSTATE_QUALIFICATION)
+#if defined(VELD_ASERT_TESTCHAIN)
+    return kind == NetworkKind::Regtest;
+#elif defined(VELD_PUBLIC_RELEASE) || defined(VELD_DSTATE_QUALIFICATION)
     return kind == NetworkKind::Mainnet;
 #else
     (void)kind;
@@ -158,12 +160,20 @@ inline NetworkConfig RegtestConfig() {
     NetworkConfig config;
     config.kind              = NetworkKind::Regtest;
     config.name              = "Veld Regtest";
+#if defined(VELD_ASERT_TESTCHAIN)
+    config.magic             = 0x54525341;
+#else
     config.magic             = 0x72564C44;
+#endif
     config.port              = 28333;
 
     config.validator_system_always_active = true;
 
     config.bootstrap_phase_end_units = 100 * VELD_UNITS;
+#if defined(VELD_ASERT_TESTCHAIN)
+    config.bootstrap_phase_end_units = STAKING_ACTIVATION_SUPPLY;
+    config.validator_system_always_active = false;
+#endif
     return config;
 }
 

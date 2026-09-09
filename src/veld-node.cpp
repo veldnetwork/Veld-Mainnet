@@ -2309,7 +2309,7 @@ int main(int argc, char* argv[]) {
             "difficulty network or datadir\n";
         return 2;
     }
-#else
+#elif !defined(VELD_ASERT_TESTCHAIN)
     if (opt_regtest) {
         std::cerr <<
             "veld-node: FATAL: --regtest requires an artifact compiled with "
@@ -2730,6 +2730,20 @@ int main(int argc, char* argv[]) {
                      "synchronization uses Tor peers.\n";
     }
 
+    try {
+        VeldNode::EnsureDataDir(opt_datadir, config.magic);
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+        if (snapshot_recovery::Pending(opt_datadir)) {
+            opt_snapshot_bootstrap = false;
+            opt_full_ibd = true;
+            std::cout << "  [snapshot] Rejected snapshot retained for inspection; "
+                         "resuming ordinary peer synchronization from genesis.\n";
+        }
+#endif
+    } catch (const std::exception& e) {
+        std::cerr << "  [snapshot] Recovery preflight failed: " << e.what() << "\n";
+        return 76;
+    }
 #if defined(VELD_PUBLIC_MAINNET) && \
     defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     // Acquire and validate a snapshot before constructing the live node, while
@@ -2740,7 +2754,10 @@ int main(int argc, char* argv[]) {
             std::filesystem::path(opt_datadir) /
             "db/.snapshot-consensus-replay-required")) {
         uint64_t local_height = 0;
+        snapshot_recovery::Floors inherited_floors;
         try {
+            inherited_floors = snapshot_recovery::CaptureLocalState(
+                opt_datadir, config.magic, CreateGenesisBlock().GetHash());
             const auto db_root = std::filesystem::path(opt_datadir) / "db";
             const bool any_existing = std::filesystem::exists(db_root / "blocks") ||
                                       std::filesystem::exists(db_root / "utxo") ||
@@ -2763,11 +2780,14 @@ int main(int argc, char* argv[]) {
         if (snapshot_bootstrap::PreparePublicSnapshot(
                 opt_datadir, local_height, prepared, &snapshot_error)) {
             snapshot_bootstrap::SnapshotCandidateValidation validation;
+            validation.network_magic = config.magic;
+            validation.required_floors = inherited_floors;
             try {
                 const std::string candidate_root =
                     (prepared.scratch_root / "extract").string();
                 {
                     VeldNode candidate(config, candidate_root);
+                    candidate.InheritSnapshotSecurityFloors(inherited_floors);
                     candidate.SetQuietBoot(true);
                     candidate.SetStakingActivation(STAKING_ACTIVATION_SUPPLY);
                     candidate.PrepareSnapshotCandidateReplay(
@@ -2786,8 +2806,11 @@ int main(int argc, char* argv[]) {
                     }
                     validation.consensus_state_sha256 =
                         HashToHex(candidate.ConsensusStateDigest());
+                    if (!candidate.AnchorSecurityImportSatisfied())
+                        throw std::runtime_error("snapshot does not reconstruct every retained local security floor");
                     validation.passed = true;
                 }
+                snapshot_recovery::PreserveFloors(opt_datadir, inherited_floors);
                 if (!snapshot_bootstrap::CommitPreparedPublicSnapshot(
                         opt_datadir, prepared, validation, &snapshot_error)) {
                     throw std::runtime_error(snapshot_error);
@@ -2798,8 +2821,10 @@ int main(int argc, char* argv[]) {
                              "the same chain is independently rebuilt from genesis.\n";
             } catch (const std::exception& e) {
                 std::error_code cleanup_error;
-                std::filesystem::remove_all(
-                    prepared.scratch_root, cleanup_error);
+                if (!snapshot_recovery::Exists(
+                        std::filesystem::path(opt_datadir) / snapshot_recovery::IMPORT)) {
+                    std::filesystem::remove_all(prepared.scratch_root, cleanup_error);
+                }
                 std::cerr << "  [snapshot] candidate rejected: " << e.what()
                           << "; continuing with ordinary peer IBD.\n";
             }
@@ -2853,12 +2878,30 @@ int main(int argc, char* argv[]) {
 #endif
     RealKeyPair miner_kp;
     bool miner_key_ready = false;
-#if defined(VELD_FLEET_NO_MINE) && \
-    defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+#if defined(VELD_FLEET_NO_MINE) && defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     RealKeyPair fleet_validation_kp;
     bool fleet_validation_key_ready = false;
 #endif
-#if defined(VELD_PUBLIC_MAINNET) && defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    const auto persist_current_receipt = [&](std::string* error) {
+#ifdef VELD_FLEET_NO_MINE
+        if (!fleet_validation_key_ready) {
+            if (error) *error = "fleet identity is unavailable";
+            return false;
+        }
+        return node.PersistFullIbdReceiptAtTip(
+            fleet_validation_kp, true, full_ibd_receipt, error);
+#else
+        if (!miner_key_ready) {
+            if (error) *error = "node identity is unavailable";
+            return false;
+        }
+        return node.PersistFullIbdReceiptAtTip(
+            miner_kp, false, full_ibd_receipt, error);
+#endif
+    };
+#endif
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     // A full-IBD receipt authenticates work this datadir already performed. It
     // is valid for accelerating local restart replay even when snapshot import
     // is disabled. --full-ibd / --no-snapshot controls external bootstrap; it
@@ -3233,7 +3276,7 @@ int main(int argc, char* argv[]) {
                          "chainstate could not start: "
                       << e.what() << "\n";
             node.Stop();
-            return 76;
+            return snapshot_recovery::RejectionExitCode(opt_datadir);
         }
     }
 #endif
@@ -3384,7 +3427,16 @@ int main(int argc, char* argv[]) {
                 /*require_private_parent=*/true);
         } catch (...) {
         }
-    } else {
+    }
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    else if (node.SnapshotQuarantineOnly()) {
+        std::cout << CYAN << "  [INFO] " << RESET
+                  << "Local wallet and explorer services are paused during "
+                     "independent snapshot verification; they will start "
+                     "after verification and the managed restart.\n";
+    }
+#endif
+    else {
 #ifdef VELD_PUBLIC_TESTNET
         std::cout << RED << "  [WARN] " << RESET
                   << "Could not bind immutable PUBLIC TESTNET RPC port "
@@ -3737,6 +3789,7 @@ int main(int argc, char* argv[]) {
     });
     heartbeat_thread.detach();
 
+    uint64_t connection_log_cursor = 0;
     uint64_t last_height          = 0;
     uint64_t stable_ticks         = 0;
     int      tick                 = 0;
@@ -3762,8 +3815,9 @@ int main(int argc, char* argv[]) {
     while (!g_shutdown) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         ++tick;
+        veld::net::connection_diagnostics::WritePending(std::cerr, connection_log_cursor);
 
-        if ((opt_mine || opt_endorse) && !opt_datadir.empty()) {
+        if (!opt_datadir.empty()) {
             auto peers = node.GetTCPServer()
                 ? node.GetTCPServer()->GetPeerInfoList()
                 : std::vector<veld::net::NodeServer::PeerInfo>{};
@@ -3792,9 +3846,16 @@ int main(int argc, char* argv[]) {
             const bool snapshot_bootstrap_compiled = true;
             const bool snapshot_fast_start_eligible =
                 node.SnapshotFastStartEligible();
+            const auto validation_base = node.IndependentValidationBase();
+            const uint64_t verification_height = validation_base
+                ? node.IndependentValidationProgress() : local_height;
+            const uint64_t verification_target = validation_base
+                ? validation_base->height : local_height;
 #else
             const bool snapshot_bootstrap_compiled = false;
             const bool snapshot_fast_start_eligible = false;
+            const uint64_t verification_height = local_height;
+            const uint64_t verification_target = local_height;
 #endif
             status << std::fixed << std::setprecision(2)
                    << "{\"mining_configured\":"
@@ -3855,6 +3916,7 @@ int main(int argc, char* argv[]) {
                 const uint64_t topology_peer_id = peer_identified
                     ? peer.node_id : static_cast<uint64_t>(peer_index + 1);
                 status << "{\"id\":" << topology_peer_id
+                       << ",\"connection_id\":\"" << peer.connection_id << "\""
                        << ",\"identified\":"
                        << (peer_identified ? "true" : "false")
                        << ",\"role_index\":" << peer.role_index
@@ -3871,7 +3933,24 @@ int main(int argc, char* argv[]) {
                        << ",\"lag_blocks\":" << lag_blocks
                        << '}';
             }
-            status << "]}";
+            status << "],\"daemon\":{\"version\":\"" << CLIENT_VERSION
+                   << "\",\"profile\":\"" << DEPLOYMENT_PROFILE_ID
+                   << "\",\"pid\":"
+#ifdef _WIN32
+                   << GetCurrentProcessId()
+#else
+                   << getpid()
+#endif
+                   << ",\"network_magic\":" << config.magic
+                   << ",\"protocol_height\":" << PROTOCOL_UPGRADE_HEIGHT
+                   << ",\"asert_height\":" << ASERT_ACTIVATION_HEIGHT
+                   << ",\"migration_height\":" << SECURITY_STATE_MIGRATION_HEIGHT
+                   << ",\"security_height\":" << CONSENSUS_SECURITY_UPGRADE_HEIGHT
+                   << ",\"verification_height\":" << verification_height
+                   << ",\"verification_target\":" << verification_target
+                   << ",\"ibd_complete\":" << (node.IsIBDComplete() ? "true" : "false")
+                   << ",\"historical_validated\":" << (node.ChainFullyValidated() ? "true" : "false")
+                   << "}}";
             std::string status_error;
             (void)veld::channel::secure_file::AtomicWriteText(
                 opt_datadir + "/gui-status.json", status.str(),
@@ -3967,32 +4046,8 @@ int main(int argc, char* argv[]) {
                              "matched the snapshot base; snapshot trust retired.\n";
                 std::cout.flush();
                 if (node.SnapshotQuarantineOnly()) {
-                    const uint64_t validated_height = node.GetChain().Height();
-                    std::string validated_tip;
-                    try {
-                        validated_tip = HashToHex(
-                            node.GetChain().Tip().GetHash());
-                    } catch (...) {
-                        validated_tip.clear();
-                    }
                     std::string receipt_error;
-                    bool receipt_written = false;
-#ifdef VELD_FLEET_NO_MINE
-                    if (fleet_validation_key_ready) {
-                        receipt_written =
-                            snapshot_bootstrap::WriteFleetIbdReceipt(
-                                opt_datadir, fleet_validation_kp,
-                                validated_height, validated_tip,
-                                &receipt_error);
-                    }
-#else
-                    if (miner_key_ready) {
-                        receipt_written =
-                            snapshot_bootstrap::WriteFullIbdReceipt(
-                                opt_datadir, miner_kp, validated_height,
-                                validated_tip, &receipt_error);
-                    }
-#endif
+                    const bool receipt_written = persist_current_receipt(&receipt_error);
                     if (!receipt_written) {
                         std::cerr << "  [snapshot] FATAL: independent IBD "
                                      "matched, but its authenticated restart "
@@ -4006,8 +4061,6 @@ int main(int argc, char* argv[]) {
                         break;
                     }
                     full_ibd_receipt_valid = true;
-                    full_ibd_receipt.height = validated_height;
-                    full_ibd_receipt.tip_hash = validated_tip;
                     std::cout << "  [snapshot] independent validation complete; "
                                  "authenticated restart receipt persisted; "
                                  "restarting once to activate RPC, inbound P2P, "
@@ -4190,8 +4243,8 @@ int main(int argc, char* argv[]) {
                 // authoritative post-call state can unlock backfill or mining.
                 if (node.IsIBDComplete()) {
                     node.TryBackfillFlushes();
-#if defined(VELD_PUBLIC_MAINNET) && defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
-                    bool receipt_role_ready = opt_mine;
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+                    bool receipt_role_ready = miner_key_ready;
 #ifdef VELD_FLEET_NO_MINE
                     receipt_role_ready = fleet_validation_key_ready;
 #endif
@@ -4200,35 +4253,9 @@ int main(int argc, char* argv[]) {
                          cur_height > full_ibd_receipt.height)) {
                         const bool first_receipt = !full_ibd_receipt_valid;
                         std::string receipt_error;
-                        std::string validated_tip;
-                        try {
-                            validated_tip = HashToHex(
-                                node.GetChain().Tip().GetHash());
-                        } catch (...) {
-                            validated_tip.clear();
-                        }
-                        bool receipt_written = false;
-#ifdef VELD_FLEET_NO_MINE
-                        receipt_written =
-                            snapshot_bootstrap::WriteFleetIbdReceipt(
-                                opt_datadir, fleet_validation_kp, cur_height,
-                                validated_tip, &receipt_error);
-#else
-                        receipt_written =
-                            snapshot_bootstrap::WriteFullIbdReceipt(
-                                opt_datadir, miner_kp, cur_height,
-                                validated_tip, &receipt_error);
-#endif
+                        const bool receipt_written = persist_current_receipt(&receipt_error);
                         if (receipt_written) {
                             full_ibd_receipt_valid = true;
-                            full_ibd_receipt.height = cur_height;
-                            full_ibd_receipt.tip_hash = validated_tip;
-#ifdef VELD_FLEET_NO_MINE
-                            full_ibd_receipt.miner_address =
-                                fleet_validation_kp.address;
-#else
-                            full_ibd_receipt.miner_address = miner_kp.address;
-#endif
                             if (first_receipt) {
 #ifdef VELD_FLEET_NO_MINE
                                 std::cout << "  [snapshot] qualified fleet "
@@ -4274,17 +4301,18 @@ int main(int argc, char* argv[]) {
             stable_ticks = 0;
         }
 
-#if defined(VELD_PUBLIC_MAINNET) && defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         // Keep the signed local PoW cache close to the live tip without
         // rewriting it for every block. A restart therefore verifies at most a
         // small recent suffix, while the full-IBD anchor remains exact and
         // owner-bound. Any write failure leaves the older valid receipt intact.
         constexpr uint64_t FULL_IBD_RECEIPT_REFRESH_BLOCKS = 16;
-        bool receipt_refresh_role_ready = opt_mine;
+        bool receipt_refresh_role_ready = miner_key_ready;
 #ifdef VELD_FLEET_NO_MINE
         receipt_refresh_role_ready = fleet_validation_key_ready;
 #endif
         const bool first_receipt_needed = !full_ibd_receipt_valid;
+        const bool recovery_completion_due = node.SnapshotRecoveryPending();
         const bool receipt_refresh_due =
             full_ibd_receipt_valid &&
             cur_height > full_ibd_receipt.height &&
@@ -4293,34 +4321,11 @@ int main(int argc, char* argv[]) {
             (tick % 60) == 0;
         if (receipt_refresh_role_ready && at_tip && stable_ticks >= 3 &&
             node.IsIBDComplete() && node.ChainFullyValidated() &&
-            (first_receipt_needed || receipt_refresh_due)) {
+            (first_receipt_needed || receipt_refresh_due || recovery_completion_due)) {
             std::string receipt_error;
-            std::string validated_tip;
-            try {
-                validated_tip = HashToHex(node.GetChain().Tip().GetHash());
-            } catch (...) {
-                validated_tip.clear();
-            }
-            bool receipt_written = false;
-#ifdef VELD_FLEET_NO_MINE
-            receipt_written = snapshot_bootstrap::WriteFleetIbdReceipt(
-                opt_datadir, fleet_validation_kp, cur_height,
-                validated_tip, &receipt_error);
-#else
-            receipt_written = snapshot_bootstrap::WriteFullIbdReceipt(
-                opt_datadir, miner_kp, cur_height,
-                validated_tip, &receipt_error);
-#endif
+            const bool receipt_written = persist_current_receipt(&receipt_error);
             if (receipt_written) {
                 full_ibd_receipt_valid = true;
-                full_ibd_receipt.height = cur_height;
-                full_ibd_receipt.tip_hash = validated_tip;
-#ifdef VELD_FLEET_NO_MINE
-                full_ibd_receipt.miner_address =
-                    fleet_validation_kp.address;
-#else
-                full_ibd_receipt.miner_address = miner_kp.address;
-#endif
                 if (first_receipt_needed) {
 #ifdef VELD_FLEET_NO_MINE
                     std::cout << "  [snapshot] qualified fleet restart and "
@@ -4336,8 +4341,8 @@ int main(int argc, char* argv[]) {
                                  "through h=" << cur_height << ".\n";
                 }
             } else {
-                std::cerr << "  [snapshot] WARN: verified-tip receipt refresh "
-                             "failed; the prior receipt remains valid: "
+                std::cerr << "  [snapshot] WARN: verified-tip receipt or "
+                             "recovery completion failed; retry deferred: "
                           << receipt_error << "\n";
             }
         }
@@ -4519,20 +4524,12 @@ int main(int argc, char* argv[]) {
                                   << "intervention required.\n";
                         std::cerr.flush();
                         stuck_secs = -STUCK_GRACE_SECS;
-                    } else if (gap <= ::veld::MAX_REORG_DEPTH) {
-                        std::cerr.flush();
-                        ::_exit(75);
                     } else {
-#if defined(VELD_PUBLIC_TESTNET) || defined(VELD_PUBLIC_RELEASE) || \
-    !defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
-                        // Public profiles are full-IBD-only. Writing the generic
-                        // snapshot recovery marker here would make every later
-                        // startup reject the same datadir. Recover only through
-                        // canonical peer replay, without any durable snapshot
-                        // request or restart loop.
-                        std::cerr << "  [stuck-watch] public-profile deep gap: "
-                                     "re-entering bounded full IBD; snapshot "
-                                     "recovery is unavailable.\n";
+                        // Height advertisements are hints. They may request
+                        // bounded in-process recovery, never a process exit or
+                        // a durable snapshot-recovery request.
+                        std::cerr << "  [stuck-watch] retrying bounded full IBD "
+                                     "after unverified peer-height hints.\n";
                         std::cerr.flush();
                         node.SetIBDComplete(false);
                         node.SyncTCPIBDFlag();
@@ -4542,14 +4539,6 @@ int main(int argc, char* argv[]) {
                         stable_ticks = 0;
                         stuck_anchor_height = cur_height;
                         stuck_secs = 0;
-#else
-                        if (!node.RequestSnapshotRecoveryOnRestart("stuck-watch")) {
-                            std::cerr << "  [stuck-watch] FATAL: could not durably "
-                                      << "write recovery request; exiting fail-closed.\n";
-                        }
-                        std::cerr.flush();
-                        ::_exit(75);
-#endif
                     }
                 }
             }
@@ -4898,7 +4887,9 @@ int main(int argc, char* argv[]) {
                         continue;
                     }
                     auto esig = Sign(epriv, emsg);
-                    std::string eop = ValidatorRegistry::BuildEndorseOp(eh, HashToHex(ehash), BytesToHex(esig));
+                    std::string eop = ValidatorRegistry::BuildEndorseOp(
+                        eh, HashToHex(ehash), BytesToHex(esig), ekp.address,
+                        NextInclusionHeight(node.GetChain().Height()));
 
                     std::vector<uint8_t> eop_bytes(eop.begin(), eop.end());
                     std::vector<uint8_t> eop_script;
@@ -5108,8 +5099,17 @@ int main(int argc, char* argv[]) {
     std::cout << "\n  Shutting down...\n" << std::flush;
     auto shutdown_start = std::chrono::steady_clock::now();
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    bool snapshot_recovery_restart = false;
+    if (snapshot_verification_exit) {
+        try {
+            snapshot_recovery_restart = snapshot_recovery::HasReason(
+                std::filesystem::path(opt_datadir) / snapshot_recovery::REQUEST);
+        } catch (const std::exception& e) {
+            std::cerr << "  [snapshot] Recovery intent is not readable: " << e.what() << "\n";
+        }
+    }
     const int shutdown_exit_code = testnet_expiry_exit ? 78 :
-                                   (snapshot_activation_restart ? 75 :
+                                   ((snapshot_activation_restart || snapshot_recovery_restart) ? 75 :
                                    (snapshot_verification_exit ? 76 :
                                    (fail_stop_exit ? 75 : 0)));
 #else
@@ -5136,6 +5136,7 @@ int main(int argc, char* argv[]) {
     if (background_chainstate) background_chainstate->Stop();
 #endif
     node.Stop();
+    veld::net::connection_diagnostics::WritePending(std::cerr, connection_log_cursor);
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - shutdown_start).count();
     std::cout << "  Done in " << elapsed << "ms.\n\n";

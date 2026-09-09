@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 LOGGER = logging.getLogger(__name__)
 
-VELD_OPERATOR_VERSION = "3.1.1"
+VELD_OPERATOR_VERSION = "3.1.2"
 VELD_OPERATOR_PROFILE = "veld-public-mainnet-v2"
 
 MAX_MINING_WORKERS = 64
@@ -366,11 +366,20 @@ function canonicalPayload(action,payload){if(["node.start","node.stop","updates.
 function commandEnvelope(command){return `VELD_PORTAL_COMMAND_V3\n${command.id}\n${command.sequence}\n${command.issued_at}\n${command.expires_at}\n${command.nonce}\n${command.action}\n${canonicalPayload(command.action,command.payload)}`}
 async function ensureDeviceCommandKey(device,keyInfo){if(device.command_key_id&&device.command_key_id!==keyInfo.id)throw new Error("This browser does not hold the command key trusted by this machine. Remove and pair the machine again locally.");if(!device.command_key_id){await api("/api/v1/devices/trust-key","POST",{id:device.id,command_key:keyInfo.key});device.command_key_id=keyInfo.id;device.command_sequence=0}}
 async function signedAction(name,payload={}){const device=current();if(!device)throw new Error("Select a paired machine");const keyInfo=await commandKey();await ensureDeviceCommandKey(device,keyInfo);const issued=Math.floor(Date.now()/1000),command={id:device.id,action:name,payload,sequence:Number(device.command_sequence||0)+1,issued_at:issued,expires_at:issued+180,nonce:b64url(crypto.getRandomValues(new Uint8Array(16))),key_id:keyInfo.id};const signature=await crypto.subtle.sign({name:"ECDSA",hash:"SHA-256"},keyInfo.pair.privateKey,new TextEncoder().encode(commandEnvelope(command)));command.signature=b64url(normalizeEcdsaSignature(signature));await api("/api/v1/devices/command","POST",command);device.command_sequence=command.sequence;toast("Signed command sent for local approval");await refresh()}
-function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}function n(v,d=0){return Number(v||0).toLocaleString(undefined,{maximumFractionDigits:d})}function bytes(v){let x=Number(v||0),u="B";for(const k of ["KB","MB","GB","TB"]){if(x<1024)break;x/=1024;u=k}return n(x,1)+" "+u}function current(){return devices.find(x=>x.id===selected)||devices[0]||null}function snap(d){return d&&d.snapshot||{}}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}function n(v,d=0){return v==null||!Number.isFinite(Number(v))?"—":Number(v).toLocaleString(undefined,{maximumFractionDigits:d})}function bytes(v){let x=Number(v||0),u="B";for(const k of ["KB","MB","GB","TB"]){if(x<1024)break;x/=1024;u=k}return n(x,1)+" "+u}function current(){return devices.find(x=>x.id===selected)||devices[0]||null}function snap(d){return d&&d.snapshot||{}}
 async function refresh(){const j=await api("/api/v1/devices");csrf=j.csrf||csrf;devices=j.devices||[];if(!devices.some(d=>d.id===selected))selected=devices[0]?.id||0;renderSelector();render()}
 function renderSelector(){const s=$("device-select");setHtml(s,devices.length?devices.map(d=>`<option value="${d.id}" ${d.id===selected?"selected":""}>${esc(d.name)}</option>`).join(""):'<option>No paired machines</option>');s.disabled=!devices.length}
 function metric(value,label,cls=""){return `<article class="card"><div class="value ${cls}">${value}</div><div class="label">${label}</div></article>`}
-function spark(history,key,label,formatter=n){const points=(Array.isArray(history)?history:[]).filter(x=>Number.isFinite(Number(x[key])));if(points.length<2)return `<div class="chart empty">History appears after two reports.</div>`;const values=points.map(x=>Number(x[key])),lo=Math.min(...values),hi=Math.max(...values),span=Math.max(hi-lo,1),plot=points.map((x,i)=>`${42+i*748/(points.length-1)},${15+(hi-Number(x[key]))*170/span}`).join(" ");return `<div class="chart"><svg viewBox="0 0 810 210" preserveAspectRatio="none" role="img" aria-label="${esc(label)}"><line class="axis" x1="42" y1="185" x2="790" y2="185"/><line class="axis" x1="42" y1="15" x2="42" y2="185"/><polyline class="trace" points="${plot}"/><text x="6" y="20">${esc(formatter(hi,1))}</text><text x="6" y="188">${esc(formatter(lo,1))}</text><text x="42" y="205">60m ago</text><text x="752" y="205">now</text></svg></div>`}
+function spark(history,key,label,formatter=n){
+  const samples=Array.isArray(history)?history:[],known=x=>x[key]!=null&&Number.isFinite(Number(x[key])),points=samples.filter(known);
+  if(points.length<2)return `<div class="chart empty">History needs two known readings.</div>`;
+  const values=points.map(x=>Number(x[key])),lo=Math.min(...values),hi=Math.max(...values),span=Math.max(hi-lo,1);
+  const segments=[];let segment=[];
+  samples.forEach((x,i)=>{if(!known(x)){if(segment.length)segments.push(segment);segment=[];return}segment.push(`${42+i*748/Math.max(samples.length-1,1)},${15+(hi-Number(x[key]))*170/span}`)});
+  if(segment.length)segments.push(segment);
+  const traces=segments.map(points=>`<polyline class="trace" points="${points.join(" ")}"/>`).join("");
+  return `<div class="chart"><svg viewBox="0 0 810 210" preserveAspectRatio="none" role="img" aria-label="${esc(label)}"><line class="axis" x1="42" y1="185" x2="790" y2="185"/><line class="axis" x1="42" y1="15" x2="42" y2="185"/>${traces}<text x="6" y="20">${esc(formatter(hi,1))}</text><text x="6" y="188">${esc(formatter(lo,1))}</text><text x="42" y="205">Earlier</text><text x="735" y="205">Latest</text></svg></div>`;
+}
 function inboundMapping(d,s){
   if(d.online!==true)return {value:'Not current',detail:'Waiting for a fresh machine report.'};
   if(s.process_running!==true)return {value:'Not running',detail:'Start the node to check its connections.'};
@@ -401,11 +410,11 @@ function firstPair(){return `<section class="section"><div class="section-head">
 function pageScrollState(){const state={};document.querySelectorAll("#page [data-scroll-key]").forEach(el=>state[el.dataset.scrollKey]=el.scrollLeft);return state}
 function restorePageScroll(state){requestAnimationFrame(()=>document.querySelectorAll("#page [data-scroll-key]").forEach(el=>{const value=state[el.dataset.scrollKey];if(Number.isFinite(value))el.scrollLeft=value}))}
 function render(){const scroll=pageScrollState();const d=current();$("mobile-nav").hidden=!d;$("app-view").classList.toggle("unpaired",!d);$("portal-more-menu").classList.toggle("unpaired",!d);const meta=d?titles[page]:["Pair a machine","Connect your first Veld node or miner."];$("page-title").textContent=meta[0];$("page-subtitle").textContent=meta[1];const extra=["workers","network","logs","settings"];document.querySelectorAll("#nav button,#mobile-nav button").forEach(b=>b.classList.toggle("active",!!d&&(b.dataset.page===page||(b.dataset.page==="more"&&extra.includes(page)))));if(!d){$("online").className="status";$("online").textContent="Offline";setHtml($("page"),firstPair());return}$("online").className="status "+(d.online?"online":"");$("online").textContent=d.online?"Online":"Offline";const fn={overview,blockchain,mining,workers,explorer,network,logs,settings,more}[page];setHtml($("page"),fn(d,snap(d)));restorePageScroll(scroll)}
-function overview(d,s){return `<div class="cards">${metric(n(d.height),"Block height","green")}${metric(d.sync_lag?n(d.sync_lag)+" behind":"100.0%","Synchronization")}${metric(n(d.peers),"P2P peers")}${metric(n(d.hashrate,1)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(d.workers),"CPU workers")}${metric(n(s.mempool),"Mempool transactions")}${metric(n(s.supply,2)+" VELD","Circulating supply")}</div><section class="section"><div class="section-head"><div><h2>Node status</h2><p>${esc(d.warning||"Consensus validation is active inside veld-node.")}</p></div><div class="controls"><span class="status ${d.online?'online':''}">${esc(d.mining_state)}</span><button class="button" data-command="${s.process_running?'node.stop':'node.start'}"${s.process_running?' data-confirm="Stop this node gracefully?"':''}>${s.process_running?'Stop node':'Start node'}</button></div></div><div class="kv"><div><b>${d.sync_lag?'Syncing':'Validated'}</b><span>Chain</span></div><div><b>${n(d.peers)}</b><span>Connections</span></div><div><b>${s.mining_ready?'Ready':'Waiting'}</b><span>Work admission</span></div><div><b>v${esc(d.version)}</b><span>Client build</span></div></div>${d.last_command?`<div class="warning">Last command: ${esc(d.last_command.action)} | ${esc(d.last_command.state)}</div>`:""}</section><section class="section"><div class="section-head"><div><h2>Chain activity</h2><p>Locally reported verified chain height over the last hour.</p></div></div>${spark(d.history,"height","Verified chain height")}</section>`}
+function overview(d,s){return `<div class="cards">${metric(n(d.height),"Block height","green")}${metric(d.sync_lag==null?"Unknown":d.sync_lag?n(d.sync_lag)+" behind":s.diagnostics?.daemon?.ibd_complete?"100.0%":"Verifying","Synchronization")}${metric(n(d.peers),"P2P peers")}${metric(n(d.hashrate,1)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(d.workers),"CPU workers")}${metric(n(s.mempool),"Mempool transactions")}${metric(n(s.supply,2)+" VELD","Circulating supply")}</div><section class="section"><div class="section-head"><div><h2>Node status</h2><p>${esc(d.warning||"Consensus validation is active inside veld-node.")}</p></div><div class="controls"><span class="status ${d.online?'online':''}">${esc(d.mining_state)}</span><button class="button" data-command="${s.process_running?'node.stop':'node.start'}"${s.process_running?' data-confirm="Stop this node gracefully?"':''}>${s.process_running?'Stop node':'Start node'}</button></div></div><div class="kv"><div><b>${d.sync_lag==null?'Unknown':d.sync_lag?'Syncing':s.diagnostics?.daemon?.historical_validated?'Validated':'Reported'}</b><span>Chain</span></div><div><b>${n(d.peers)}</b><span>Connections</span></div><div><b>${s.mining_ready==null?'Unknown':s.mining_ready?'Ready':'Waiting'}</b><span>Work admission</span></div><div><b>v${esc(d.gui_version||d.version)}</b><span>GUI version</span></div><div><b>${d.daemon_version?"v"+esc(d.daemon_version):"Unknown"}</b><span>Daemon version</span></div></div>${d.last_command?`<div class="warning">Last command: ${esc(d.last_command.action)} | ${esc(d.last_command.state)}</div>`:""}</section><section class="section"><div class="section-head"><div><h2>Chain activity</h2><p>Locally reported verified chain height over the last hour.</p></div></div>${spark(d.history,"height","Verified chain height")}</section>`}
 function blockchain(d,s){return `<div class="cards">${metric(n(d.height),"Locally verified height","green")}${metric(d.sync_lag?n(d.sync_lag):"0","Blocks behind")}${metric(bytes(s.chain_bytes),"Chain storage")}${metric("Signed + verified","Snapshot bootstrap")}</div><section class="section"><div class="section-head"><div><h2>Synchronization mode</h2><p>Snapshot starts remain quarantined until an independent genesis validation matches exactly.</p></div></div><div class="control-row"><div><h3>Signed snapshot</h3><p>Fast startup with independent full-chain validation in the background.</p></div><button class="button" data-command="sync.mode" data-mode="snapshot">Select</button></div><div class="control-row"><div><h3>Full initial block download</h3><p>Download and validate the complete chain from genesis before services open.</p></div><button class="button" data-command="sync.mode" data-mode="full">Select</button></div></section>`}
-function mining(d,s){return `<div class="cards">${metric(esc(d.mining_state),"Mining status",s.mining_active?"green":"")}${metric(n(d.hashrate,2)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.workers),"CPU workers")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(s.total_hashes),"Session hashes","wide")}${metric(s.mining_ready?"Admitted":"Waiting","Work admission","wide")}</div><section class="section"><div class="section-head"><div><h2>Hashrate history</h2><p>Measured aggregate VeldHash rate over the last hour.</p></div></div>${spark(d.history,"hashrate","VeldHash rate",(x,p)=>n(x,p)+" H/s")}</section><section class="section"><div class="control-row"><div><h3>CPU mining</h3><p>Enable mining for the next app-managed start.</p></div><button class="toggle ${s.mining_enabled?'on':''}" aria-label="Toggle mining" data-command="mining.enabled" data-enabled="${!!s.mining_enabled}"></button></div><div class="control-row"><div><h3>Worker count</h3><p>Choose 1 to 64 workers. Applies on the next node start.</p></div><div class="controls"><button class="button ghost" data-worker-delta="-1">-</button><span class="pill">${n(s.configured_workers||d.workers||1)} workers</span><button class="button ghost" data-worker-delta="1">+</button></div></div></section>`}
+function mining(d,s){return `<div class="cards">${metric(esc(d.mining_state),"Mining status",s.mining_active?"green":"")}${metric(n(d.hashrate,2)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.workers),"CPU workers")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(s.total_hashes),"Session hashes","wide")}${metric(s.mining_ready==null?"Unknown":s.mining_ready?"Admitted":"Waiting","Work admission","wide")}</div><section class="section"><div class="section-head"><div><h2>Hashrate history</h2><p>Measured aggregate VeldHash rate over the last hour.</p></div></div>${spark(d.history,"hashrate","VeldHash rate",(x,p)=>n(x,p)+" H/s")}</section><section class="section"><div class="control-row"><div><h3>CPU mining</h3><p>Enable mining for the next app-managed start.</p></div><button class="toggle ${s.mining_enabled?'on':''}" aria-label="Toggle mining" data-command="mining.enabled" data-enabled="${!!s.mining_enabled}"></button></div><div class="control-row"><div><h3>Worker count</h3><p>Choose 1 to 64 workers. Applies on the next node start.</p></div><div class="controls"><button class="button ghost" data-worker-delta="-1">-</button><span class="pill">${n(s.configured_workers||d.workers||1)} workers</span><button class="button ghost" data-worker-delta="1">+</button></div></div></section>`}
 function setWorkers(delta){const d=current(),s=snap(d);const value=Math.max(1,Math.min(64,Number(s.configured_workers||d.workers||1)+delta));action('mining.workers',{workers:value})}
-function workers(d,s){let count=Number(d.workers||s.configured_workers||0),rate=count?Number(d.hashrate||0)/count:0;let rows=Array.from({length:count},(_,i)=>`<tr><td>CPU ${i+1}</td><td class="green">${s.mining_active?'Hashing':'Waiting'}</td><td>${n(rate,2)} H/s</td><td>VeldHash</td></tr>`).join("");return `<section class="section"><div class="section-head"><div><h2>Local VeldHash workers</h2><p>Per-worker rates are estimates from the measured aggregate.</p></div><span class="status ${s.mining_active?'online':''}">${s.mining_active?'Running':'Paused'}</span></div>${rows?`<table class="table"><thead><tr><th>Worker</th><th>State</th><th>Est. rate</th><th>Algorithm</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">No mining workers are configured.</div>'}</section>`}
+function workers(d,s){let count=Number(d.workers||s.configured_workers||0),rate=d.hashrate==null?null:count?Number(d.hashrate)/count:0;let rows=Array.from({length:count},(_,i)=>`<tr><td>CPU ${i+1}</td><td class="green">${s.mining_active==null?'Unknown':s.mining_active?'Hashing':'Waiting'}</td><td>${n(rate,2)} H/s</td><td>VeldHash</td></tr>`).join("");return `<section class="section"><div class="section-head"><div><h2>Local VeldHash workers</h2><p>Per-worker rates are estimates from the measured aggregate.</p></div><span class="status ${s.mining_active?'online':''}">${s.mining_active==null?'Unknown':s.mining_active?'Running':'Paused'}</span></div>${rows?`<table class="table"><thead><tr><th>Worker</th><th>State</th><th>Est. rate</th><th>Algorithm</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">No mining workers are configured.</div>'}</section>`}
 function explorer(d,s){const blocks=Array.isArray(s.recent_blocks)?s.recent_blocks:[];const rows=blocks.map(b=>`<tr><td>#${n(b.height)}</td><td>${esc(b.hash||"")}</td><td>${n(b.tx_count)} tx</td><td>${n(b.reward,4)} VELD</td><td>${esc(b.winner||"")}</td></tr>`).join("");return `<div class="cards">${metric(n(d.height),"Chain height","green")}${metric(n(s.mempool),"Mempool")}${metric(n(s.supply,2)+" VELD","Supply")}${metric(n(d.blocks),"Session blocks")}</div><section class="section"><div class="section-head"><div><h2>Recent blocks</h2><p>Locally verified block feed.</p></div><a class="button ghost" href="https://explorer.veld.network" target="_blank" rel="noreferrer">Open public explorer</a></div>${rows?`<table class="table" data-scroll-key="recent-blocks"><thead><tr><th>Height</th><th>Hash</th><th>Transactions</th><th>Reward</th><th>Winner</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">Recent block data will appear after the next report.</div>'}</section>`}
 function topologyRoles(t,fallback={}){const roles={fleet:0,node:0,miner:0,validator:0},seen=new Set();if(t&&Array.isArray(t.nodes)&&t.nodes.length){for(const peer of t.nodes){const id=String(peer.id);if(seen.has(id))continue;seen.add(id);if(Object.prototype.hasOwnProperty.call(roles,peer.role))roles[peer.role]++}return roles}for(const role of Object.keys(roles))roles[role]=Number(fallback[role]||0);return roles}
 function network(d,s){
@@ -418,7 +427,7 @@ function network(d,s){
 function logs(d,s){const events=Array.isArray(s.events)?s.events:[];return `<section class="section"><div class="section-head"><div><h2>Operational events</h2><p>Sanitized status events only. Raw logs and local paths stay on the machine.</p></div></div><div class="log">${events.length?events.map(esc).join("\n"):"Waiting for sanitized client events..."}</div></section>`}
 function settingRow(title,detail,actionName,value,disabled=false){return `<div class="control-row"><div><h3>${title}</h3><p>${detail}</p></div><button class="toggle ${value?'on':''}" ${disabled?'disabled':''} data-command="${actionName}" data-enabled="${!!value}"></button></div>`}
 function installedPortal(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true}
-function settings(d,s){const pair=`<section class="section"><div class="section-head"><div><h2>Pair another machine</h2><p>Connect another Veld node or miner using its one-time code.</p></div><button type="button" class="button" data-portal-action="addMachine">Add machine</button></div></section>`;return `<section class="section"><div class="section-head"><div><h2>Node preferences</h2><p>Changes that affect transport or sync apply on the next start.</p></div></div>${settingRow("CPU mining","Run VeldHash workers when the node starts.","mining.enabled",s.mining_enabled)}${settingRow("Tor-only privacy","Route peer traffic through Tor.","privacy.tor",s.tor,s.process_running)}${settingRow("Attempt inbound reachability","Ask the router for an inbound P2P mapping.","network.reachable",s.reachable,s.process_running||s.tor)}${settingRow("Show public height reference","Use the public explorer for visual sync progress only.","display.reference",s.reference)}</section><section class="section"><div class="section-head"><div><h2>Release and updates</h2><p>Installed v${esc(d.version)}</p></div><div class="controls"><button class="button" data-command="updates.check">Check now</button><button class="button" data-command="updates.install" data-confirm="Install the signed update and restart this node?">Update now</button></div></div><div class="local-only">Signed feed verification and package installation run on the paired machine. Identity creation, keyfile import, and passphrase entry stay local and are never sent through this portal.</div></section>${pair}<section class="section"><div class="section-head"><div><h2>Current machine</h2><p>Rename or remove this paired machine.</p></div></div><div class="control-row"><div><h3>Machine name</h3><p>${esc(d.name)}</p></div><div class="controls"><button class="button ghost" data-portal-action="rename">Rename</button><button class="button danger" data-portal-action="remove">Remove</button></div></div></section>`}
+function settings(d,s){const pair=`<section class="section"><div class="section-head"><div><h2>Pair another machine</h2><p>Connect another Veld node or miner using its one-time code.</p></div><button type="button" class="button" data-portal-action="addMachine">Add machine</button></div></section>`;return `<section class="section"><div class="section-head"><div><h2>Node preferences</h2><p>Changes that affect transport or sync apply on the next start.</p></div></div>${settingRow("CPU mining","Run VeldHash workers when the node starts.","mining.enabled",s.mining_enabled)}${settingRow("Tor-only privacy","Route peer traffic through Tor.","privacy.tor",s.tor,s.process_running)}${settingRow("Attempt inbound reachability","Ask the router for an inbound P2P mapping.","network.reachable",s.reachable,s.process_running||s.tor)}${settingRow("Show public height reference","Use the public explorer for visual sync progress only.","display.reference",s.reference)}</section><section class="section"><div class="section-head"><div><h2>Release and updates</h2><p>GUI v${esc(d.gui_version||d.version)} · Daemon ${d.daemon_version?"v"+esc(d.daemon_version):"unknown"}</p></div><div class="controls"><button class="button" data-command="updates.check">Check now</button><button class="button" data-command="updates.install" data-confirm="Install the signed update and restart this node?">Update now</button></div></div><div class="local-only">Signed feed verification and package installation run on the paired machine. Identity creation, keyfile import, and passphrase entry stay local and are never sent through this portal.</div></section>${pair}<section class="section"><div class="section-head"><div><h2>Current machine</h2><p>Rename or remove this paired machine.</p></div></div><div class="control-row"><div><h3>Machine name</h3><p>${esc(d.name)}</p></div><div class="controls"><button class="button ghost" data-portal-action="rename">Rename</button><button class="button danger" data-portal-action="remove">Remove</button></div></div></section>`}
 function more(){const installed=installedPortal();return `<section class="section"><div class="more-grid"><button class="button" data-open-page="workers">Workers</button><button class="button" data-open-page="network">Network</button><button class="button" data-open-page="logs">Logs</button><button class="button" data-open-page="settings">Settings</button>${installed?'':`<button class="button" data-portal-action="install">Install portal</button>`}</div></section>`}
 async function installPortal(){if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;render();return}toast('Open your browser menu and choose Add to Home Screen')}
 let pairingBusy=false;
@@ -768,6 +777,14 @@ class PortalStore:
             command_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(commands)")
             }
+            sample_columns = {row["name"] for row in db.execute("PRAGMA table_info(samples)")}
+            for name, declaration in {
+                "diagnostics_json": "TEXT NOT NULL DEFAULT '{}'",
+                "warning": "TEXT NOT NULL DEFAULT ''",
+                "mining_state": "TEXT NOT NULL DEFAULT ''",
+            }.items():
+                if name not in sample_columns:
+                    db.execute(f"ALTER TABLE samples ADD COLUMN {name} {declaration}")
             command_migrations = {
                 "sequence": "INTEGER NOT NULL DEFAULT 0",
                 "issued_at": "INTEGER NOT NULL DEFAULT 0",
@@ -979,15 +996,20 @@ class PortalStore:
                 ),
             )
             latest_sample = db.execute(
-                "SELECT captured_at FROM samples WHERE device_id=? ORDER BY captured_at DESC LIMIT 1",
+                "SELECT captured_at,warning,mining_state,diagnostics_json FROM samples WHERE device_id=? ORDER BY captured_at DESC,id DESC LIMIT 1",
                 (device_id,),
             ).fetchone()
-            if latest_sample is None or int(latest_sample["captured_at"]) <= now - 10:
+            if (latest_sample is None or int(latest_sample["captured_at"]) <= now - 10
+                    or latest_sample["warning"] != report["warning"]
+                    or latest_sample["mining_state"] != report["mining_state"]
+                    or diagnostic_transition(json.loads(latest_sample["diagnostics_json"])) !=
+                       diagnostic_transition(report["snapshot"].get("diagnostics", {}))):
                 snapshot = report["snapshot"]
                 db.execute(
                     """INSERT INTO samples(
-                    device_id,captured_at,height,hashrate,peers,inbound,mining_active)
-                    VALUES(?,?,?,?,?,?,?)""",
+                    device_id,captured_at,height,hashrate,peers,inbound,mining_active,
+                    diagnostics_json,warning,mining_state)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)""",
                     (
                         device_id,
                         now,
@@ -996,6 +1018,8 @@ class PortalStore:
                         report["peers"],
                         report["inbound"],
                         1 if snapshot.get("mining_active") else 0,
+                        json.dumps(snapshot.get("diagnostics", {}), separators=(",", ":")),
+                        report["warning"], report["mining_state"],
                     ),
                 )
                 db.execute("DELETE FROM samples WHERE captured_at<?", (now - 86400,))
@@ -1174,12 +1198,14 @@ class PortalStore:
                 ).fetchone()
                 item["last_command"] = dict(command) if command else None
                 history = db.execute(
-                    """SELECT captured_at,height,hashrate,peers,inbound,mining_active
+                    """SELECT captured_at,height,hashrate,peers,inbound,mining_active,
+                                        diagnostics_json,warning,mining_state
                                         FROM samples WHERE device_id=? AND captured_at>=?
                                         ORDER BY captured_at""",
                     (item["id"], now - 3600),
                 ).fetchall()
-                item["history"] = [dict(sample) for sample in history]
+                item["history"] = [present_sample(dict(sample)) for sample in history]
+                present_device(item)
                 item["online"] = now - int(item["last_seen"]) <= ONLINE_SECONDS
                 result.append(item)
         return result
@@ -1295,6 +1321,109 @@ def clean_text(value: Any, maximum: int, field: str) -> str:
     return value
 
 
+def validate_diagnostics(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    required = {"schema", "local_status_valid", "mining_status_valid", "peer_status_valid",
+                "status_updated_at", "process_running", "last_exit_at", "last_exit_code",
+                "work_state", "total_hashes", "mining_ready", "daemon"}
+    if (not isinstance(value, dict) or set(value) != required
+            or type(value["schema"]) is not int or value["schema"] != 1):
+        raise ValueError("invalid status diagnostics")
+    out = {"schema": 1}
+    for key in ("local_status_valid", "mining_status_valid", "peer_status_valid", "process_running"):
+        if not isinstance(value[key], bool):
+            raise ValueError("invalid status validity")
+        out[key] = value[key]
+    for key, maximum in {"status_updated_at": 10**12, "last_exit_at": 10**12,
+                         "last_exit_code": 2**32-1, "total_hashes": 10**19}.items():
+        out[key] = None if value[key] is None else bounded_int(value[key], 0, maximum, key)
+    out["work_state"] = None if value["work_state"] is None else clean_text(value["work_state"], 48, "work state")
+    if value["mining_ready"] is not None and not isinstance(value["mining_ready"], bool):
+        raise ValueError("invalid mining readiness")
+    out["mining_ready"] = value["mining_ready"]
+    if not out["mining_status_valid"] and any(out[k] is not None for k in
+            ("status_updated_at", "work_state", "total_hashes", "mining_ready")):
+        raise ValueError("unavailable mining status must be unknown")
+    daemon = value["daemon"]
+    out["daemon"] = None
+    if daemon is not None:
+        integers = {"network_magic", "protocol_height", "asert_height", "migration_height",
+                    "security_height", "verification_height", "verification_target"}
+        fields = integers | {"version", "profile", "executable_sha256", "ibd_complete", "historical_validated"}
+        if not out["mining_status_valid"] or not isinstance(daemon, dict) or set(daemon) != fields:
+            raise ValueError("invalid daemon identity")
+        version = clean_text(daemon["version"], 32, "daemon version")
+        profile = clean_text(daemon["profile"], 64, "daemon profile")
+        digest = clean_text(daemon["executable_sha256"], 64, "daemon build hash")
+        if not VERSION_RE.fullmatch(version) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", profile) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("invalid daemon build identity")
+        result = {k: bounded_int(daemon[k], 0, 2**32-1 if k == "network_magic" else 10**12, k) for k in integers}
+        for key in ("ibd_complete", "historical_validated"):
+            if not isinstance(daemon[key], bool):
+                raise ValueError("invalid daemon validation state")
+            result[key] = daemon[key]
+        result.update(version=version, profile=profile, executable_sha256=digest)
+        out["daemon"] = result
+    return out
+
+
+def diagnostic_transition(value: dict[str, Any]) -> tuple:
+    daemon = value.get("daemon") or {}
+    return tuple(value.get(k) for k in (
+        "local_status_valid", "mining_status_valid", "peer_status_valid",
+        "process_running", "last_exit_at", "last_exit_code", "work_state", "mining_ready")) + tuple(
+        daemon.get(k) for k in ("version", "profile", "executable_sha256", "ibd_complete", "historical_validated"))
+
+
+def present_device(item: dict[str, Any]) -> None:
+    """Apply validity to legacy storage columns before exposing any readings."""
+    snapshot = item.get("snapshot", {})
+    diagnostic = snapshot.get("diagnostics", {})
+    item["gui_version"] = item.get("version")
+    daemon = diagnostic.get("daemon") or {}
+    item["daemon_version"] = daemon.get("version")
+    local = diagnostic.get("local_status_valid")
+    mining = diagnostic.get("mining_status_valid")
+    peers = diagnostic.get("peer_status_valid")
+    for key in ("height", "sync_lag"):
+        if local is False or (local is None and not item.get(key)):
+            item[key] = None
+    for key in ("hashrate", "workers", "blocks"):
+        if mining is False or (mining is None and not item.get(key)):
+            item[key] = None
+    if not (local or peers) and not (local is None and item.get("peers")):
+        item["peers"] = None
+    if peers is False or (peers is None and not item.get("inbound")):
+        item["inbound"] = None
+    for key in ("mining_active", "mining_ready", "total_hashes"):
+        if mining is False or (mining is None and not snapshot.get(key)):
+            snapshot[key] = None
+    for key in ("mempool", "supply", "last_block_age"):
+        if local is False or (local is None and not snapshot.get(key)):
+            snapshot[key] = None
+    for key in ("outbound", "exact_tip"):
+        if peers is False or (peers is None and not snapshot.get(key)):
+            snapshot[key] = None
+
+
+def present_sample(item: dict[str, Any]) -> dict[str, Any]:
+    try:
+        diagnostic = json.loads(item.pop("diagnostics_json", "{}"))
+    except (ValueError, TypeError):
+        diagnostic = {}
+    item["diagnostics"] = diagnostic
+    for key, validity in (("height", "local_status_valid"), ("hashrate", "mining_status_valid"),
+                          ("peers", "peer_status_valid"), ("inbound", "peer_status_valid"),
+                          ("mining_active", "mining_status_valid")):
+        valid = diagnostic.get(validity)
+        if key == "peers" and diagnostic.get("local_status_valid"):
+            valid = True
+        if valid is False or (valid is None and not item.get(key)):
+            item[key] = None
+    return item
+
+
 def validate_snapshot(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
@@ -1326,11 +1455,12 @@ def validate_snapshot(value: Any) -> dict[str, Any]:
         bool_fields
         | set(int_limits)
         | set(number_limits)
-        | {"peer_roles", "topology", "recent_blocks", "events"}
+        | {"peer_roles", "topology", "recent_blocks", "events", "diagnostics"}
     )
     if set(value) - allowed:
         raise ValueError("unexpected client snapshot field")
     out: dict[str, Any] = {}
+    out["diagnostics"] = validate_diagnostics(value.get("diagnostics"))
     for field in bool_fields:
         item = value.get(field, False)
         if not isinstance(item, bool):

@@ -409,6 +409,10 @@ private:
         Hash256 txid = tx.GetTxID();
         std::string key = HashToHex(txid);
 
+        // A live admitted entry has already passed the expensive checks. Keep
+        // the insertion-lock check below as well for concurrent arrivals.
+        if (Contains(txid)) return AddResult::DUPLICATE;
+
         if (!tx.IsValid()) return AddResult::INVALID;
         // Exact high-cardinality vault/system distributions are constructed
         // inside block assembly and validated contextually; they never belong
@@ -464,7 +468,7 @@ private:
                 op.amount_units > MAX_STAKE_UNITS)
                 return AddResult::INVALID;
             if (op.action == CanonicalStakeOp::Action::LOCK &&
-                op.amount_units < MIN_STAKE_UNITS)
+                op.amount_units < MinimumStakeAtHeight((uint64_t)current_height + 1))
                 return AddResult::INVALID;
             stake_ops.push_back(std::move(op));
         }
@@ -487,7 +491,7 @@ private:
         if (!chain.StakeTransactionValid(tx, candidate_height))
             return AddResult::INVALID;
         const uint64_t effective_min_stake =
-            chain.GetEffectiveMinStakeUnits();
+            chain.GetEffectiveMinStakeUnits(candidate_height);
         for (const auto& [address, requested] : unlock_claims) {
             const uint64_t current = chain.GetStakedForAddr(address);
             const uint64_t mature =
@@ -794,7 +798,7 @@ private:
                     std::cerr.flush();
                     return AddResult::INVALID;
                 }
-                if (!chain.NmsBondSatisfied(miner_script)) {
+                if (!chain.NmsBondSatisfied(miner_script, candidate_height)) {
                     std::cerr << "  [mempool-nms] reject: NmsBondSatisfied false\n";
                     std::cerr.flush();
                     return AddResult::INVALID;
@@ -832,12 +836,13 @@ private:
                     touches_amm_state = true;
             }
             if (all_inputs_on_chain_pre) {
-                if (!chain.ValidateTransactionLocking(tx, false)) {
+                bool permanent_failure = false;
+                if (!chain.ValidateTransactionLocking(tx, false, &permanent_failure)) {
                     std::cerr << "  [mempool] reject: ValidateTransactionLocking failed (sig/script verify)\n";
                     std::cerr.flush();
-                    //  #3: remember this txid (permanent sig/value failure) so a
-                    // replay is rejected by O(1) lookup above — no re-verify.
-                    {
+                    // Cache only explicitly classified immutable authentication
+                    // failures. Contextual and unclassified rejects must be retried.
+                    if (permanent_failure) {
                         std::lock_guard<std::mutex> rl(recently_rejected_mtx_);
                         if (recently_rejected_.insert(key).second) {
                             recently_rejected_fifo_.push_back(key);
@@ -1449,6 +1454,59 @@ public:
             std::cerr.flush();
         }
         return dead.size();
+    }
+
+    // Explorer projections contain bounded metadata, never transaction bodies.
+    // Aggregate counts/bytes/fees and the selected rows share one pool snapshot.
+    struct TransactionSummary {
+        std::string txid;
+        uint64_t fee, output_units;
+        size_t size, input_count, output_count;
+        std::vector<std::string> op_return_prefixes;
+    };
+    struct SummaryPage {
+        size_t total_count = 0, total_bytes = 0;
+        uint64_t total_fee_units = 0;
+        std::vector<TransactionSummary> rows;
+    };
+    static constexpr size_t MAX_SUMMARY_ROWS = 200;
+
+    SummaryPage GetSummaryPage() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        SummaryPage page;
+        page.total_count = entries_.size();
+        page.total_bytes = total_bytes_;
+        using Entry = decltype(entries_)::value_type;
+        std::multimap<uint64_t, const Entry*> selected;
+        for (const auto& entry : entries_) {
+            page.total_fee_units += entry.second.fee_units;
+            selected.emplace(entry.second.fee_units, &entry);
+            if (selected.size() > MAX_SUMMARY_ROWS) selected.erase(selected.begin());
+        }
+        page.rows.reserve(selected.size());
+        for (auto it = selected.rbegin(); it != selected.rend(); ++it) {
+            const auto& [key, entry] = *it->second;
+            TransactionSummary row{key, entry.fee_units, entry.tx.TotalOutput(),
+                static_cast<size_t>(entry.tx_size_bytes), entry.tx.inputs.size(),
+                entry.tx.outputs.size(), {}};
+            for (const auto& output : entry.tx.outputs) {
+                const auto& sp = output.script_pubkey;
+                if (sp.size() < 2 || sp[0] != 0x6a) continue;
+                size_t off = 1, length = 0;
+                if (sp[off] <= 75) length = sp[off++];
+                else if (sp[off] == 0x4c && sp.size() > off + 1) {
+                    ++off; length = sp[off++];
+                } else if (sp[off] == 0x4d && sp.size() > off + 2) {
+                    ++off; length = sp[off] | (sp[off + 1] << 8); off += 2;
+                } else continue;
+                if (length > sp.size() - off) continue;
+                // Every Explorer category is identified by at most 32 bytes.
+                row.op_return_prefixes.emplace_back(sp.begin() + off,
+                    sp.begin() + off + std::min<size_t>(length, 32));
+            }
+            page.rows.push_back(std::move(row));
+        }
+        return page;
     }
 
     std::vector<Transaction> GetAllTransactions() const {

@@ -202,6 +202,20 @@ private:
 
 // ---------------------------------------------------------------- assembler
 
+// Carriers omit set_root on the wire. Resolve their local retirement identity
+// from the retained epoch, before staging across a reorg or pruning snapshots.
+inline bool ResolveDurableCarrierClaim(
+        const QuorumCert& decoded,
+        const std::map<uint64_t, EpochSnapshot>& snapshots,
+        QuorumCert& out) {
+    if (decoded.phase != Phase::PRECOMMIT) return false;
+    const auto snapshot = snapshots.find(decoded.epoch_id);
+    if (snapshot == snapshots.end()) return false;
+    out = decoded;
+    out.set_root = snapshot->second.root;
+    return true;
+}
+
 class CertAssembler {
 public:
     static constexpr size_t MAX_POOL_VOTES = 8192;

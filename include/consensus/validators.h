@@ -1,4 +1,5 @@
 #pragma once
+#include "endorsement_wire.h"
 
 #include "../core/constants.h"
 #include "../core/block.h"
@@ -163,7 +164,8 @@ public:
           slashed_pubkeys_(src.slashed_pubkeys_),
           finality_membership_(src.finality_membership_),
           finality_equivocations_(src.finality_equivocations_),
-          security_upgrade_active_(src.security_upgrade_active_)
+          security_upgrade_active_(src.security_upgrade_active_),
+          state_migration_active_(src.state_migration_active_)
     {}
     ValidatorRegistry& operator=(const ValidatorRegistry&) = delete;
 
@@ -255,7 +257,9 @@ public:
     // accepting two markers would therefore count the same coins twice.  Count
     // even malformed REGISTER payloads (the action token alone is enough), so
     // an attacker cannot hide a second allocation behind a bad pubkey field.
+    static constexpr size_t MAX_ENDORSEMENT_VERIFICATIONS_PER_BLOCK = 256;
     static bool HasValidRegisterMultiplicity(const Block& block) {
+        size_t endorsements = 0;
         for (const auto& tx : block.transactions) {
             size_t registrations = 0;
             for (const auto& out : tx.outputs) {
@@ -266,6 +270,10 @@ public:
                 const std::string action = pipe == std::string::npos
                     ? rest : rest.substr(0, pipe);
                 if (action == "REGISTER" && ++registrations > 1) return false;
+                if (SecurityStateMigrationActive(block.height) &&
+                    (action == "ENDORSE" || action == "ENDORSE2") &&
+                    ++endorsements > MAX_ENDORSEMENT_VERIFICATIONS_PER_BLOCK)
+                    return false;
             }
         }
         return true;
@@ -279,6 +287,7 @@ public:
         // false as a candidate-block rejection on linear, replay, and reorg paths.
         if (!HasValidRegisterMultiplicity(block)) return false;
         std::lock_guard<std::mutex> lk(mutex_);
+        state_migration_active_ = SecurityStateMigrationActive(block.height);
 
         // A boundary block's mandatory D' settlement is validated against the
         // PARENT registry.  Consume that exact parent-state schedule before
@@ -1105,7 +1114,8 @@ public:
         // public-key/signature commitments and the deterministically pruned
         // retention window rather than duplicating multi-kilobyte PQ material
         // in every live record.
-        sd::put_u32_le(body, security_upgrade_active_ ? 8 : 7);
+        sd::put_u32_le(body, state_migration_active_ ? 9 : (security_upgrade_active_ ? 8 : 7));
+        if (state_migration_active_) sd::put_u8(body, security_upgrade_active_ ? 1 : 0);
         // This mutable instance rule directly controls REGISTER and ENDORSE
         // admission.  It is configuration rather than rollback state, but two
         // same-chain instances with different values must not report the same
@@ -1366,6 +1376,7 @@ public:
         finality_membership_.clear();
         finality_equivocations_.clear();
         security_upgrade_active_ = false;
+        state_migration_active_ = false;
     }
 
     // Atomic block-state snapshot and restore. Captures every
@@ -1394,6 +1405,7 @@ public:
         std::map<std::string, FinalityEquivocationRecord>              finality_equivocations;
         uint64_t                                                        total_staked_units = 0;
         bool security_upgrade_active = false;
+        bool state_migration_active = false;
     };
     StateSnapshot SnapshotState() const {
         std::lock_guard<std::mutex> lk(mutex_);
@@ -1405,7 +1417,7 @@ public:
                               evidence_per_pubkey_, bond_yield_escrow_,
                               finality_membership_, finality_equivocations_,
                               total_staked_units_.load(std::memory_order_relaxed),
-                              security_upgrade_active_ };
+                              security_upgrade_active_, state_migration_active_ };
     }
     void RestoreState(const StateSnapshot& s) {
         std::lock_guard<std::mutex> lk(mutex_);
@@ -1425,6 +1437,7 @@ public:
         finality_membership_   = s.finality_membership;
         finality_equivocations_= s.finality_equivocations;
         security_upgrade_active_ = s.security_upgrade_active;
+        state_migration_active_ = s.state_migration_active;
         total_staked_units_.store(s.total_staked_units,
                                   std::memory_order_relaxed);
     }
@@ -1619,6 +1632,15 @@ public:
              + std::to_string(height) + "|"
              + block_hash_hex + "|"
              + sig_hex;
+    }
+
+    static std::string BuildEndorseOp(uint64_t height,
+            const std::string& block_hash_hex, const std::string& sig_hex,
+            const std::string& address, uint64_t inclusion_height) {
+        if (!SecurityStateMigrationActive(inclusion_height))
+            return BuildEndorseOp(height, block_hash_hex, sig_hex);
+        return std::string(VAL_PREFIX) + "ENDORSE2|" + std::to_string(height) +
+            "|" + block_hash_hex + "|" + address + "|" + sig_hex;
     }
 
     void SetLastFlushRewardPerEndorsement(double veld) {
@@ -2160,6 +2182,7 @@ private:
     }
 
     bool security_upgrade_active_{false};
+    bool state_migration_active_{false};
 
     static uint64_t LegacyPrincipalBoundary(const ValidatorRecord& rec) {
         if (!rec.bond_custodial || rec.bond_units == 0) return 0;
@@ -2760,26 +2783,15 @@ private:
             }
         }
 
-        else if (action == "ENDORSE") {
-            // Exactly four fields and three separators.  Split() intentionally
-            // serves legacy marker families and does not preserve a trailing
-            // empty field, so count separators too: `...|sig|` is not another
-            // spelling of the same endorsement.
-            if (parts.size() != 4 ||
-                std::count(rest.begin(), rest.end(), '|') != 3) return;
-
-            uint64_t height = 0;
-            if (!ParseCanonicalUint64(parts[1], height)) return;
-            const std::string& hash_hex = parts[2];
-            const std::string& sig_hex  = parts[3];
-            if (!IsCanonicalLowerHex(hash_hex, 64) ||
-                !IsCanonicalLowerHex(sig_hex, 6618)) return;
-
-            const auto hash_bytes = HexToBytes(hash_hex);
-            if (hash_bytes.size() != 32) return;
-            Hash256 block_hash;
-            std::copy(hash_bytes.begin(), hash_bytes.end(), block_hash.begin());
-            const std::string canonical_hash_hex = HashToHex(block_hash);
+        else if (action == "ENDORSE" || action == "ENDORSE2") {
+            EndorsementWire wire;
+            if (!ParseEndorsementWire(data, wire) ||
+                wire.attributed != SecurityStateMigrationActive(block.height)) return;
+            const uint64_t height = wire.height;
+            const std::string& hash_hex = wire.hash;
+            const std::string& sig_hex = wire.signature;
+            const Hash256 block_hash = HexToHash(hash_hex);
+            const std::string canonical_hash_hex = hash_hex;
 
             if (height > block.height) return;
             if (block.height > height &&
@@ -2821,6 +2833,15 @@ private:
             // one pubkey, so at most one match regardless of order).
             std::string validator_pubkey;
             std::string validator_address;
+            if (wire.attributed) {
+                const auto address_it = address_to_pubkey_.find(wire.address);
+                if (address_it == address_to_pubkey_.end()) return;
+                const auto validator_it = validators_.find(address_it->second);
+                if (validator_it == validators_.end() || !validator_it->second.active ||
+                    validator_it->second.address != wire.address) return;
+                validator_pubkey = address_it->second;
+                validator_address = wire.address;
+            } else {
 #ifdef VELD_MAINNET_POW
             if (!tx.inputs.empty()) {
                 std::vector<uint8_t> sig_unused;
@@ -2859,6 +2880,7 @@ private:
                         break;
                     }
                 }
+            }
             }
             if (validator_pubkey.empty()) return;
 

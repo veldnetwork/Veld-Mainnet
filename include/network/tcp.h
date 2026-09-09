@@ -2,6 +2,7 @@
 
 #include "p2p.h"
 #include "peer_state.h"
+#include "connection_diagnostics.h"
 #include "../core/blockchain.h"
 #include "../core/mempool.h"
 #include <string>
@@ -97,6 +98,7 @@ namespace _detail {
 
 class Connection {
 public:
+    using CloseReason = connection_diagnostics::Reason;
     static constexpr size_t RECV_BUFFER_SIZE = 1024 * 1024;
     static constexpr size_t MAX_MESSAGE_SIZE = 32 * 1024 * 1024;
 
@@ -204,7 +206,9 @@ public:
     explicit Connection(SocketHandle fd, const std::string& remote_addr, uint16_t remote_port, bool inbound = false)
         : identity_(NextIdentity_()), fd_(fd), remote_addr_(remote_addr), remote_port_(remote_port)
         , connected_(true), bytes_sent_(0), bytes_recv_(0), inbound_(inbound)
-        , accepted_at_(std::chrono::steady_clock::now()), tip_received_(false) {}
+        , accepted_at_(std::chrono::steady_clock::now()), tip_received_(false) {
+        connection_diagnostics::Record(identity_, CloseReason::Connected, inbound_, 0, 0);
+    }
 
     ~Connection() { Close(); }
 
@@ -375,7 +379,7 @@ public:
             }
         }
         if (fatal) {
-            Close();
+            Close(CloseReason::SendError);
             return false;
         }
         return IsConnected();
@@ -410,13 +414,13 @@ public:
 #endif
                 if (retry) {
                     if (std::chrono::steady_clock::now() >= deadline) {
-                        Close();
+                        Close(CloseReason::SendTimeout);
                         return false;
                     }
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
-                Close();
+                Close(CloseReason::SendError);
                 return false;
             }
             total += sent;
@@ -474,7 +478,7 @@ public:
                     return false;
                 received = ::recv(fd, (char*)buf + total, n - total, 0);
             }
-            if (received == 0) { Close(); return false; }
+            if (received == 0) { Close(CloseReason::RemoteEof); return false; }
             if (received < 0) {
 #ifdef _WIN32
                 int err = WSAGetLastError();
@@ -488,7 +492,7 @@ public:
                     continue;
                 }
 #endif
-                Close();
+                Close(CloseReason::ReceiveError);
                 return false;
             }
             total += received;
@@ -512,8 +516,10 @@ public:
         std::string command;
         uint32_t payload_len = 0;
         if (!DecodeCanonicalHeader(header, expected_magic,
-                                   command, payload_len))
+                                   command, payload_len)) {
+            Close(CloseReason::InvalidFrame);
             return std::nullopt;
+        }
 
         std::vector<uint8_t> payload;
         struct InflightGuard {
@@ -533,7 +539,10 @@ public:
             while (remaining > 0) {
                 size_t want = std::min(remaining, CHUNK);
                 if (!RecvExact(buf, want)) return std::nullopt;
-                if (!ReserveRecvInflight_(want)) return std::nullopt;
+                if (!ReserveRecvInflight_(want)) {
+                    Close(CloseReason::ReceiveLimit);
+                    return std::nullopt;
+                }
                 payload.insert(payload.end(), buf, buf + want);
                 remaining -= want;
             }
@@ -541,8 +550,10 @@ public:
 
         Hash256 chk = Hash256d(payload);
         if (chk[0] != header[20] || chk[1] != header[21] ||
-            chk[2] != header[22] || chk[3] != header[23])
+            chk[2] != header[22] || chk[3] != header[23]) {
+            Close(CloseReason::InvalidFrame);
             return std::nullopt;
+        }
 
         return P2PMessage(expected_magic, command, std::move(payload));
     }
@@ -610,7 +621,7 @@ public:
         }
         if (got == 0) {
             ReleaseRecvInflight_();
-            Close();
+            Close(CloseReason::RemoteEof);
             out.status = TryRecvStatus::Error;
             return out;
         }
@@ -629,7 +640,7 @@ public:
                 return out;
             }
             ReleaseRecvInflight_();
-            Close();
+            Close(CloseReason::ReceiveError);
             out.status = TryRecvStatus::Error;
             return out;
         }
@@ -645,7 +656,7 @@ public:
         // global memory and cannot evict an honest peer before the bytes arrive.
         if (rx_.state == RecvState::NeedPayload &&
             !ReserveRecvInflight_(static_cast<uint64_t>(got))) {
-            Close();
+            Close(CloseReason::ReceiveLimit);
             out.status = TryRecvStatus::Error;
             return out;
         }
@@ -665,7 +676,7 @@ public:
             uint32_t payload_len = 0;
             if (!DecodeCanonicalHeader(h, expected_magic,
                                        command, payload_len)) {
-                Close();
+                Close(CloseReason::InvalidFrame);
                 out.status = TryRecvStatus::Error;
                 return out;
             }
@@ -685,7 +696,7 @@ public:
             if (chk[0] != h[20] || chk[1] != h[21] ||
                 chk[2] != h[22] || chk[3] != h[23]) {
                 ReleaseRecvInflight_();
-                Close();
+                Close(CloseReason::InvalidFrame);
                 out.status = TryRecvStatus::Error;
                 return out;
             }
@@ -717,7 +728,7 @@ public:
         return out;
     }
 
-    void Close() {
+    void Close(CloseReason reason = CloseReason::Unspecified) {
         bool expected = true;
         const bool was_connected = connected_.compare_exchange_strong(
                 expected, false, std::memory_order_acq_rel);
@@ -728,6 +739,8 @@ public:
         ReleaseQueuedSend_();
         if (!was_connected)
             return;
+        connection_diagnostics::Record(identity_, reason, inbound_,
+                                       bytes_sent_.load(), bytes_recv_.load());
         const SocketHandle fd_for_shutdown = fd_.load(std::memory_order_acquire);
         if (veld::compat::IsValidSocket(fd_for_shutdown)) {
 #ifdef _WIN32
@@ -754,6 +767,7 @@ public:
     }
     SocketHandle Fd()        const { return fd_.load(std::memory_order_acquire); }
     uint64_t    Identity()   const { return identity_; }
+    std::string DiagnosticId() const { return connection_diagnostics::Id(identity_); }
     std::string RemoteAddr() const { return remote_addr_; }
     uint16_t    RemotePort() const { return remote_port_; }
     uint64_t    BytesSent()  const { return bytes_sent_; }
@@ -1280,7 +1294,11 @@ public:
 
             struct sockaddr_in addr{};
             addr.sin_family      = AF_INET;
+#if defined(VELD_LOCAL_TEST_NETWORK) || defined(VELD_ASERT_TESTCHAIN)
+            addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+#else
             addr.sin_addr.s_addr = INADDR_ANY;
+#endif
             addr.sin_port        = htons(port_);
 
             if (::bind(listen_fd_, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
@@ -1849,6 +1867,9 @@ public:
     bool ConnectTo(const std::string& host, uint16_t port,
                    bool explicitly_trusted = false,
                    bool fleet_anchor = false) {
+#ifdef VELD_LOCAL_TEST_NETWORK
+        if (host != "127.0.0.1") return false; // before DNS, trust grants or socket creation
+#endif
         if (host.empty() || port == 0) return false;
         if (fleet_anchor &&
             (!explicitly_trusted || !IsCanonicalIPv4Literal(host)))
@@ -1883,6 +1904,9 @@ public:
     bool ConnectToReserved_(const std::string& host, uint16_t port,
                             bool explicitly_trusted = false,
                             bool fleet_anchor = false) {
+#ifdef VELD_LOCAL_TEST_NETWORK
+        if (host != "127.0.0.1") return false; // before DNS, trust grants or socket creation
+#endif
         if (host.empty() || port == 0) return false;
         if (!running_.load(std::memory_order_acquire)) return false;
         if (fleet_anchor &&
@@ -2764,15 +2788,26 @@ public:
         }
 
         if (emit_line) {
-            std::cerr << "  [violation] ip=" << ip
-                      << " tag=" << (tag ? tag : "untagged")
-                      << " weight=" << weight
-                      << " count=" << count << "/" << BAN_THRESHOLD
-                      << (log_only ? " (log-only)" : "") << "\n";
-            if (suppressed_in_window > 0) {
+            const bool ingest_flow_control = log_only && tag &&
+                std::string_view(tag) == "block_ingest_overflow";
+            if (ingest_flow_control) {
+                std::cerr << "  [sync] ip=" << ip
+                          << " Block validation queue busy; incoming block not queued. "
+                             "No peer penalty.\n";
+            } else {
                 std::cerr << "  [violation] ip=" << ip
                           << " tag=" << (tag ? tag : "untagged")
-                          << " (suppressed " << suppressed_in_window
+                          << " weight=" << weight
+                          << " count=" << count << "/" << BAN_THRESHOLD
+                          << (log_only ? " (log-only)" : "") << "\n";
+            }
+            if (suppressed_in_window > 0) {
+                if (ingest_flow_control)
+                    std::cerr << "  [sync] ip=" << ip << " Block validation queue busy";
+                else
+                    std::cerr << "  [violation] ip=" << ip
+                              << " tag=" << (tag ? tag : "untagged");
+                std::cerr << " (suppressed " << suppressed_in_window
                           << " line(s) in previous 60s window)\n";
             }
             std::cerr.flush();
@@ -3693,7 +3728,10 @@ public:
                 std::cerr << " (+" << (closed_keys.size() - 5) << " more)";
             std::cerr << "\n";
             std::cerr.flush();
-            for (auto& c : to_close) RetireDetachedConnection_(c);
+            for (auto& c : to_close) {
+                c->Close(Connection::CloseReason::IdleOrFrameTimeout);
+                RetireDetachedConnection_(c);
+            }
         }
     }
 
@@ -3736,14 +3774,20 @@ public:
                       << "s with no peer bytes, or >" << PRE_VERSION_PROGRESS_GRACE_S
                       << "s when bytes were queued but no valid VERSION completed)\n";
             std::cerr.flush();
-            for (auto& c : pre_version_close) RetireDetachedConnection_(c);
+            for (auto& c : pre_version_close) {
+                c->Close(Connection::CloseReason::HandshakeTimeout);
+                RetireDetachedConnection_(c);
+            }
         }
         if (!pre_tipsig_close.empty()) {
             std::cerr << "  [reaper] closing " << pre_tipsig_close.size()
                       << " stuck-handshake inbound conn(s) (>" << STUCK_HANDSHAKE_GRACE_S
                       << "s without TIPSIG)\n";
             std::cerr.flush();
-            for (auto& c : pre_tipsig_close) RetireDetachedConnection_(c);
+            for (auto& c : pre_tipsig_close) {
+                c->Close(Connection::CloseReason::HandshakeTimeout);
+                RetireDetachedConnection_(c);
+            }
         }
     }
 
@@ -4041,6 +4085,7 @@ public:
 
     struct PeerInfo {
         uint64_t    node_id{0};
+        std::string connection_id;
         std::string addr;
         std::string ip;
         std::string role;
@@ -4066,6 +4111,7 @@ public:
             if (!c->IsConnected()) continue;
             PeerInfo pi;
             pi.node_id    = c->PeerNonce();
+            pi.connection_id = c->DiagnosticId();
             pi.addr       = k;
             pi.ip         = c->RemoteAddr();
             pi.port       = c->RemotePort();
@@ -6226,7 +6272,7 @@ private:
                     std::cerr << "\n";
                     std::cerr.flush();
                 }
-                for (auto& c : died) c->Close();
+                for (auto& c : died) c->Close(Connection::CloseReason::PollError);
             }
             if ((pfds[0].revents & POLLIN) == 0) continue;
 
@@ -9453,7 +9499,7 @@ private:
             for (auto& [_key, conn] : peer_connections_)
                 if (conn) to_close.push_back(conn);
         }
-        for (auto& conn : to_close) conn->Close();
+        for (auto& conn : to_close) conn->Close(Connection::CloseReason::NodeStop);
         for (auto& conn : to_close) CleanupConnectionState_(conn);
 
         std::vector<PeerThreadSlot> peer_threads;
@@ -9920,7 +9966,15 @@ private:
         }
         if (source_pow_budgets_.size() >= SOURCE_POW_BUDGET_CAP) return {};
         auto budget = std::make_shared<mining::ExpensivePowBudget>(
+#if defined(VELD_ASERT_TESTCHAIN)
+            // The loopback-only qualification chain uses full PoW with an easy
+            // target and historical timestamps. Permit its accelerated replay;
+            // retain one concurrent proof per source. Public builds forbid this
+            // profile in constants.h.
+            1, 10000, std::chrono::minutes(1));
+#else
             1, 8, std::chrono::minutes(1));
+#endif
         source_pow_budgets_.emplace(
             source, SourcePowBudgetEntry{budget, now});
         return budget;
@@ -10512,6 +10566,7 @@ private:
                                                rr.msg, entry.key,
                                                entry.conn->IsInbound());
                     if (sr == StepResult::DropPeer) {
+                        entry.conn->Close(Connection::CloseReason::PolicyRejection);
                         died.push_back(entry.conn);
                         died_keys.push_back(entry.key);
                         peer_done[i] = true;
@@ -10835,6 +10890,7 @@ private:
                                                rr.msg, entry.key,
                                                entry.conn->IsInbound());
                     if (sr == StepResult::DropPeer) {
+                        entry.conn->Close(Connection::CloseReason::PolicyRejection);
                         died.push_back(entry.conn);
                         died_keys.push_back(entry.key);
                         break;
@@ -11214,7 +11270,10 @@ private:
 
             {
                 auto sr = PeerProtocolStep(ps, *conn, pm, msg, key, inbound);
-                if (sr == StepResult::DropPeer)  break;
+                if (sr == StepResult::DropPeer) {
+                    conn->Close(Connection::CloseReason::PolicyRejection);
+                    break;
+                }
                 if (sr == StepResult::Handled)   continue;
             }
 
