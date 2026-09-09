@@ -741,7 +741,7 @@ inline MineBlockResult MineOnly(
         candidate.header.timestamp = min_ts;
 
 #if defined(VELD_TEST_HOOKS) && defined(VELD_DSTATE_QUALIFICATION)
-    // The native D-state harness needs the exact production candidate builder
+    // The native state-capacity harness needs the exact production candidate builder
     // without spending five synthetic years of memory-hard work.  This returns
     // an uncommitted candidate only; AddBlockDirect still runs afterward with
     // skip_pow=false, where VELD_TEST_BRANCH_CONTEXT bypasses only the final
@@ -1507,7 +1507,7 @@ public:
         // Production mainnet policy is compiled, never an operator/config
         // input. Clamp even internal callers so two otherwise valid
         // NetworkConfig objects cannot instantiate different activation
-        // boundaries in a release or its nonshipping D-state qualification.
+        // boundaries in a release or its nonshipping state-capacity qualification.
         (void)units;
         units = STAKING_ACTIVATION_SUPPLY;
 #endif
@@ -1894,7 +1894,7 @@ public:
         ReplayChain(height);
     }
 #if defined(VELD_TEST_HOOKS) && defined(VELD_DSTATE_QUALIFICATION)
-    // Native D-STATE only: build with the production candidate constructor and
+    // Native state-capacity only: build with the production candidate constructor and
     // accept a canonical serialized frame through the same Blockchain ->
     // module preflight -> ApplyBlockModules_ -> durable VeldDB callback used by
     // ordinary node ingest. The only validation exceptions are the isolated
@@ -1906,7 +1906,7 @@ public:
     // points.
     void TestPrepareDStateQualificationIngest() {
         if (!chain_.IsEmpty())
-            throw std::logic_error("D-STATE ingest requires an empty node");
+            throw std::logic_error("state-capacity ingest requires an empty node");
         PrepareAnchorSecurityBootstrap_();
         WireDB();
     }
@@ -1956,18 +1956,18 @@ public:
             uint64_t capacity_lp_identities = 0) {
         if (chain_.IsEmpty() || expected_height != chain_.Height() + 1)
             throw std::logic_error(
-                "D-STATE candidate height does not extend the live tip");
+                "state-capacity candidate height does not extend the live tip");
         if (miner_script.size() != 25 || miner_script[0] != 0x76 ||
             miner_script[1] != 0xA9 || miner_script[2] != 0x14 ||
             miner_script[23] != 0x88 || miner_script[24] != 0xAC)
             throw std::logic_error(
-                "D-STATE candidate miner script is not canonical P2PKH");
+                "state-capacity candidate miner script is not canonical P2PKH");
         const auto valid_field = [](const std::string& value) {
             return value == "-" || IsCanonicalTokenCreditAddress(value);
         };
         if (!valid_field(token_address) || !valid_field(lp_address))
             throw std::logic_error(
-                "D-STATE candidate carrier field is not canonical");
+                "state-capacity candidate carrier field is not canonical");
         const bool capacity_carrier =
             capacity_token_accounts != 0 || capacity_lp_identities != 0;
         if (capacity_carrier &&
@@ -1977,7 +1977,7 @@ public:
              capacity_lp_identities == 0 ||
              capacity_lp_identities > AmmLedger::AMM_MAX_LP_IDENTITIES)) {
             throw std::logic_error(
-                "D-STATE S6 capacity carrier has invalid scope or cardinality");
+                "state-capacity S6 capacity carrier has invalid scope or cardinality");
         }
 
         Block settlement_probe;
@@ -2011,7 +2011,7 @@ public:
             /*qualification_candidate_only=*/true);
         if (!candidate.success || candidate.block.height != expected_height)
             throw std::runtime_error(
-                "D-STATE production candidate construction failed: " +
+                "state-capacity production candidate construction failed: " +
                 candidate.error);
 
         Block& block = candidate.block;
@@ -2023,7 +2023,7 @@ public:
                 block.transactions.front().inputs.size() != 1 ||
                 !block.transactions.front().IsCoinbase())
                 throw std::runtime_error(
-                    "D-STATE production candidate lacks canonical coinbase");
+                    "state-capacity production candidate lacks canonical coinbase");
             const std::string carrier = capacity_carrier
                 ? "dstate-replay:" + std::to_string(expected_height) +
                       "|VELD_DSTATE_S6_CAPACITY_V1|" +
@@ -2040,10 +2040,10 @@ public:
         block.UpdateMerkleRoot();
         if (!PreflightMiningCandidate_(block))
             throw std::runtime_error(
-                "D-STATE carrier-bearing production candidate failed module preflight");
+                "state-capacity carrier-bearing production candidate failed module preflight");
         if (block.SerializedSize() > static_cast<size_t>(MAX_BLOCK_SIZE))
             throw std::runtime_error(
-                "D-STATE production candidate exceeds the block-size envelope");
+                "state-capacity production candidate exceeds the block-size envelope");
         return block;
     }
     bool TestIngestDStateQualificationFrame(
@@ -2071,7 +2071,7 @@ public:
     }
     void TestReplayDStateQualificationCorpus(uint64_t expected_height) {
         if (!chain_.IsEmpty())
-            throw std::logic_error("D-STATE replay requires an empty node");
+            throw std::logic_error("state-capacity replay requires an empty node");
         PrepareAnchorSecurityBootstrap_();
         WireDB();
         ReplayChain(expected_height);
@@ -8202,7 +8202,7 @@ private:
     static constexpr uint64_t PEG_GATE_FINALITY_EVER_ACTIVE_BIT_ =
         uint64_t{1} << 63;
     std::atomic<uint64_t>  peg_gate_snapshot_{0};
-    std::atomic<bool>      redeem_index_healthy_{true};          // N-02: false closes payout RPC until startup replay repairs the derived index
+    std::atomic<bool>      redeem_index_healthy_{true};          // false closes payout RPC until startup replay repairs the derived index
     std::atomic<bool>      mint_nullifier_index_healthy_{true};  // false pauses new mint proof production; transfers/redeems remain live
     btcveld::SupplySnapshotPublisher btcveld_supply_snapshot_;   // coherent (token supply, canonical tip, hash) RPC tuple
     btcveld::SignerBondCovenant bond_covenant_;                 // redeem bond and slash state
@@ -13981,7 +13981,7 @@ private:
                         gb.height = 0;
                         bool replay_genesis_skip_pow = true;
 #if defined(VELD_TEST_HOOKS) && defined(VELD_DSTATE_QUALIFICATION)
-                        // The D-state binary's hash-only branch hook makes the
+                        // The state-capacity binary's hash-only branch hook makes the
                         // exact compiled genesis cheap to validate while
                         // preserving every non-PoW gate. Production startup
                         // retains its trusted, byte-equal genesis fast path.
@@ -14123,7 +14123,7 @@ private:
                     "ReplayChain: indexed hash does not match stored block bytes at height " +
                     std::to_string(h));
             }
-            // Full synchronous consensus validation. The D-state executable's
+            // Full synchronous consensus validation. The state-capacity executable's
             // compile-isolated branch hook bypasses only hash-vs-target; never
             // select the broad trusted-replay `skip_pow=true` shortcut here.
             if (!chain_.AddBlockDirect(

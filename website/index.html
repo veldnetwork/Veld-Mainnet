@@ -209,7 +209,7 @@ h2 em{font-style:normal;color:var(--em);text-shadow:0 0 22px rgba(50,240,110,.4)
 .tl-now{position:absolute;top:-4px;left:16%;width:14px;height:14px;border-radius:50%;background:#fff;transform:translateX(-50%);box-shadow:0 0 0 3px rgba(50,240,110,.5),0 0 18px rgba(50,240,110,.7);animation:heartbeat 2.2s ease infinite}
 .tl-stops{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;font-size:12px;color:var(--text-muted)}
 .tl-stops .s{border-left:2px solid var(--border);padding:6px 0 6px 12px;background:var(--surface);position:relative;z-index:1}
-.tl-stops .s.on{border-left-color:var(--em);background:linear-gradient(90deg,rgba(50,240,110,.06),transparent 60%);border-radius:0 6px 6px 0}
+.tl-stops .s.on{border-left-color:var(--border);background:var(--surface);border-radius:0 6px 6px 0}
 .tl-stops .s .d{font-family:var(--font-mono);font-size:11px;color:var(--em);margin-bottom:2px;letter-spacing:.4px}
 .tl-stops .s .t{color:var(--text)}
 .tl-stops .s .sub{font-size:11.5px;color:var(--text-muted)}
@@ -386,7 +386,7 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— 02 STAKE</div>
         <h3>Lock VELD, earn from vault</h3>
-        <p>After canonical issued supply reaches <strong>10,000 VELD mined</strong>, lock at least 1,000 VELD for 7 / 14 / 30 / 90 days. Longer lockups earn higher multipliers (1.00× → 1.50×). Every 480 blocks, the vault distributes up to 90% of that cycle's inflow and retains the rest as principal.</p>
+        <p>After canonical issued supply reaches <strong>10,000 VELD mined</strong>, lock at least 500 VELD from block 3,840 (1,000 VELD before that height) for 7 / 14 / 30 / 90 days. Longer lockups earn higher multipliers (1.00× → 1.50×). Every 480 blocks, the vault distributes up to 90% of that cycle's inflow and retains the rest as principal.</p>
         <div class="meta"><span class="k">Vault fills with:</span> 50% of ordinary blocks before activation; 20% after · <span class="k">+ 100%</span> of every 100th block</div>
       </div>
       <div class="hc">
@@ -398,7 +398,7 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— 04 CO-MINE</div>
         <h3>Get paid for near-misses</h3>
-        <p>After staking activates, lock at least 1,000 VELD at your mining address and keep mining. A valid near-miss included on-chain in the 100-block window gives that address one entry in the co-mining draw. The client submits near-misses automatically; submission and rewards are not guaranteed.</p>
+        <p>Co-mining continues to require at least 1,000 VELD locked at your mining address. This minimum is unchanged by the ordinary-staking reduction. Keep mining on the validated chain. A valid near-miss included on-chain in the 100-block window gives that address one entry in the co-mining draw. The client submits near-misses automatically; submission and rewards are not guaranteed.</p>
         <div class="meta"><span class="k">Co-mine pool:</span> 20% of ordinary block rewards after staking activation</div>
       </div>
       <div class="hc" style="border-color:rgba(255,216,74,.2)">
@@ -541,7 +541,7 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— STEP 01</div>
         <h3>Download &amp; extract</h3>
-        <p>Grab <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">VeldClient-Windows-x64-3.1.1.zip</code> from below. Extract to a stable local folder. The portable client validates a signed snapshot when eligible, or synchronizes from peers. Windows may request approval for its optional inbound P2P firewall rule.</p>
+        <p>Grab <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">VeldClient-Windows-x64-3.1.3.zip</code> from below. Extract to a stable local folder. The portable client validates a signed snapshot when eligible, or synchronizes from peers. Windows may request approval for its optional inbound P2P firewall rule.</p>
       </div>
       <div class="hc">
         <div class="n">— STEP 02</div>
@@ -617,12 +617,12 @@ input,textarea,[contenteditable]{cursor:text}
 
     <div class="dl hud">
       <div class="dl-left">
-                <h3>Veld Node 3.1.1</h3>
-                <p style="color:var(--em);font-weight:600">Verified historical checkpoint protection with a renewed checkpoint signing authority. Includes the mining improvements from 3.1.0.</p>
+                <h3>Veld Node 3.1.3</h3>
+                <p style="color:var(--em);font-weight:600">Update to 3.1.3 before block 3,840, including if you already installed 3.1.2. ASERT and a 500 VELD ordinary staking minimum activate at that height. The co-mining lottery minimum stays at 1,000 VELD.</p>
         <p>For Windows 10 / 11. Extract the download and double-click <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">Start Veld Node.bat</code>. The app guides you through setup and sync.</p>
       </div>
       <div class="dl-right">
-        <a class="dl-btn" href="https://veld.network/downloads/VeldClient-Windows-x64-3.1.1.zip">↓ &nbsp; Download</a>
+        <a class="dl-btn" href="https://veld.network/downloads/VeldClient-Windows-x64-3.1.3.zip">↓ &nbsp; Download</a>
       </div>
 
       <div class="dl-steps">
@@ -636,13 +636,13 @@ input,textarea,[contenteditable]{cursor:text}
         </div>
         <div class="s">
           <div class="n">3</div>
-          <div class="txt"><strong>Verify</strong> (optional) in PowerShell: <code>Get-FileHash -Algorithm SHA256 .\VeldClient-Windows-x64-3.1.1.zip</code> — match the ZIP SHA256 below.</div>
+          <div class="txt"><strong>Verify</strong> (optional) in PowerShell: <code>Get-FileHash -Algorithm SHA256 .\VeldClient-Windows-x64-3.1.3.zip</code> — match the ZIP SHA256 below.</div>
         </div>
       </div>
       <div class="dl-meta">
-        <div class="hash"><span class="hash-label">ZIP SHA256</span>2b70f2891dcee5d2eaa960671bc5c596cc85611b30667bbcbc7bc8e9ebeeab26</div>
-        <div class="hash"><span class="hash-label">EXE SHA256</span>fcd9fbaa203503dc3f3b1bd5310bffd72a2b0f05a55422b2d68c97ed6e92f518</div>
-        <div><a href="https://veld.network/downloads/SHA256SUMS.txt" style="color:var(--text-muted);text-decoration:underline">signed manifest</a> · <a href="https://veld.network/downloads/CHANGES.txt" style="color:var(--text-muted);text-decoration:underline">release notes</a> · <a href="https://veld.network/downloads/Veld-3.1.1-source.tar.gz" style="color:var(--text-muted);text-decoration:underline">source code</a></div>
+        <div class="hash"><span class="hash-label">ZIP SHA256</span>b7290cd9a3c589c78437d289c3d058f9027db34e0df67e818bb2ae451bad4ca3</div>
+        <div class="hash"><span class="hash-label">EXE SHA256</span>0539440bb732242ed65958f89b52658732a659c7295df5bd4b2d91860cd8432d</div>
+        <div><a href="https://veld.network/downloads/SHA256SUMS.txt" style="color:var(--text-muted);text-decoration:underline">signed manifest</a> · <a href="https://veld.network/downloads/CHANGES.txt" style="color:var(--text-muted);text-decoration:underline">release notes</a> · <a href="https://veld.network/downloads/Veld-3.1.3-source.tar.gz" style="color:var(--text-muted);text-decoration:underline">source code</a></div>
       </div>
     </div>
 

@@ -52,7 +52,7 @@ int main() {
                     if (variant==4) outputs[0].value=UINT64_MAX;
                     const bool shape=chain.ValidateCoinbaseOutputs(b);
                     const bool exact=chain.ValidateCanonicalCoinbaseSplit(b);
-#ifdef VELD_AUDITED_BASELINE_CONTROL
+#ifdef VELD_COINBASE_LEGACY_POLICY_CONTROL
                     const bool direct=shape && exact && chain.ValidateMinerCaps(b);
                     const bool replay=shape && exact;
 #else

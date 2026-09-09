@@ -142,7 +142,7 @@ int main() {
               "close-wins leaves no work artifact");
     }
 
-    // Exact two-preparer regression for CAND-P8-PEER-REOPEN-01. T1 and T2
+    // Concurrent preparation regression: T1 and T2
     // complete the same safe epoch snapshot; this fixture begins at T1's
     // post-peer-bound/pre-Acquire boundary (the NodeServer composition is in
     // peer_work_view_race_tests). A peer writer then fully closes

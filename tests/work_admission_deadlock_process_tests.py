@@ -116,11 +116,11 @@ def main() -> int:
         result = None
     else:
         if timed_out:
-            fail(f"remediated child exceeded strict {args.timeout}s watchdog")
+            fail(f"recovery child exceeded strict {args.timeout}s watchdog")
         if process.returncode != 0:
-            fail(f"remediated child exited {process.returncode}; see child.log")
+            fail(f"recovery child exited {process.returncode}; see child.log")
         if not armed:
-            fail("remediated child did not arm exact verified-peer path")
+            fail("recovery child did not arm exact verified-peer path")
         if len(records) != 1:
             fail(f"expected one sealed result, got {len(records)}")
         result = json.loads(records[0])

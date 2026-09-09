@@ -2609,7 +2609,7 @@ private:
                     pubkey_hex, epoch, set_root_hex, phase, round,
                     srcB_h, srcB_hash, tgtB_h, tgtB_hash, sigB_hex)) return;
 
-            // A3 fixes the economic result at 25% evidence bounty / 75%
+            // The slashing policy fixes the economic result at 25% evidence bounty / 75%
             // protocol confiscation / 0% offender.  Therefore evidence must
             // name a real, non-offender reporter before it can consume the
             // one-shot equivocation slot.  Accepting an anonymous/self report

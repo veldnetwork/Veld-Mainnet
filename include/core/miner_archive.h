@@ -4,7 +4,7 @@
 //
 // This component deliberately owns the on-disk schema and every state
 // transition for the non-consensus lifetime index.  VeldNode and the native
-// D-STATE qualification executable both call these functions; the benchmark
+// state-capacity qualification executable both call these functions; the benchmark
 // therefore cannot manufacture archive rows that production would never
 // create.  Completion markers are written last, so interruption always leaves
 // an archive which fails closed and can be rebuilt from canonical block bodies.

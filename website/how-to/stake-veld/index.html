@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Stake VELD in four clear steps: prepare your wallet, choose a lockup, follow vault rewards, and unstake. Includes co-mining eligibility and related guides.">
+  <meta name="robots" content="index,follow">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="How to stake VELD">
+  <meta property="og:description" content="A practical guide to wallet staking, lockups, vault distributions, and the co-mining lottery.">
+  <meta property="og:url" content="https://veld.network/how-to/stake-veld/">
+  <link rel="canonical" href="https://veld.network/how-to/stake-veld/">
+  <title>How to Stake VELD | Veld How-to</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/how-to/how-to.css">
+  <link rel="stylesheet" href="/how-to/stake-veld/staking-guide.css?v=ccff82438c9a">
+</head>
+<body class="staking-guide">
+  <a class="skip" href="#guide">Skip to guide</a>
+  <header class="nav-bar">
+    <div class="nav-inner">
+      <a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a>
+      <nav class="nav-links" aria-label="Primary navigation">
+        <a href="/">Home</a>
+        <a href="/how-to/" aria-current="page">How-to</a>
+        <a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a>
+        <a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a>
+        <a class="button" href="/#download">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="guide">
+    <header class="guide-hero">
+      <div class="breadcrumb"><a href="/how-to/">How-to</a> / Staking</div>
+      <h1>How to stake VELD</h1>
+      <p class="lede">From finding your keyfile and signing in to staking, tracking rewards, and withdrawing after your lockup. Start here, even if you have never opened Veld Wallet.</p>
+
+      <dl class="staking-basics">
+        <div>
+          <dt>Minimum new stake</dt>
+          <dd><strong>500 VELD</strong><span>From block 3,840; 1,000 VELD before it. Keep extra for fees.</span></dd>
+        </div>
+        <div>
+          <dt>Shortest lockup</dt>
+          <dd><strong>3,360 blocks</strong><span>About 7 days at the target rate</span></dd>
+        </div>
+      </dl>
+
+      <div class="guide-actions">
+        <a class="button" href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Open Veld Wallet</a>
+        <span class="guide-meta">7-minute read</span>
+      </div>
+      <nav class="guide-progress" style="--progress-count:4" aria-label="Staking steps">
+        <a class="progress-item" href="#prepare"><span class="progress-index">01</span><span class="progress-label">Prepare</span></a>
+        <a class="progress-item" href="#lock"><span class="progress-index">02</span><span class="progress-label">Lock</span></a>
+        <a class="progress-item" href="#rewards"><span class="progress-index">03</span><span class="progress-label">Rewards</span></a>
+        <a class="progress-item" href="#unstake"><span class="progress-index">04</span><span class="progress-label">Unstake</span></a>
+      </nav>
+      <nav class="guide-shortcuts" aria-label="More in this guide">
+        <a href="#co-mining">Co-mining</a>
+        <a href="#help">Help</a>
+        <a href="#related-guides">Related guides</a>
+      </nav>
+    </header>
+
+    <div class="shell">
+      <article class="article" aria-label="Staking instructions">
+        <section class="content-section" id="prepare">
+          <p class="stage-label">01 / Prepare</p>
+          <h2>Find your keyfile and sign in</h2>
+          <div class="setup-part" id="find-keyfile">
+            <h3>Find the file for your existing wallet</h3>
+            <p><strong>If you mine with Veld Node:</strong> open the desktop client, then <strong>Settings → Local paths → Open data folder</strong>. Look for <code>veld-wallet-&lt;address prefix&gt;.veld-keys</code> beside <code>miner.key</code>. Use the <code>.veld-keys</code> file.</p>
+            <p><strong>If you created a browser wallet:</strong> check your device’s <strong>Downloads</strong> folder or browser download history for a file ending in <code>.veld-keys</code>. On iPhone, use <strong>Files → Browse</strong> and check Downloads under iCloud Drive or On My iPhone. On Android, check <strong>Files → Downloads</strong>.</p>
+            <p>To use a phone, transfer a copy to your own device with AirDrop, a cable, or another trusted device-to-device method, then save it in Files. Keep a separate encrypted backup and store its passphrase separately. Never share either with another person.</p>
+            <p>No wallet yet? Follow <a href="/how-to/create-backup-wallet/">Create and back up a wallet</a>, then return here. If you already mine, use that wallet’s file to access its funds.</p>
+          </div>
+          <div class="setup-part" id="sign-in">
+            <h3>Open and unlock Veld Wallet</h3>
+            <ol class="staking-list">
+              <li>Open <a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">wallet.veld.network</a> and check the exact HTTPS address.</li>
+              <li>Select <strong>Log in</strong>. On mobile, you can also open <strong>More → Log in</strong>.</li>
+              <li>Select <strong>Import keystore file</strong> and choose your <code>.veld-keys</code> file. If this browser already holds the intended wallet, use its <strong>Unlock</strong> screen instead.</li>
+              <li>Enter the passphrase for that file and select <strong>Unlock</strong>. If importing an encrypted <code>miner.key</code> instead, use <strong>Decrypt &amp; Import</strong>. Importing gives you access to the same wallet; it does not move your VELD.</li>
+            </ol>
+            <p>Open the <strong>Wallet</strong> tab and compare the complete address with your mining client or known wallet address. If it differs, stop and choose the correct file. Once unlocked, <strong>Wallet Settings → Save file</strong> downloads another encrypted backup.</p>
+          </div>
+          <div class="setup-part">
+            <h3>Check your funds before staking</h3>
+          <ul class="staking-list">
+            <li><strong>Check your spendable balance.</strong> From block 3,840, each new ordinary stake needs at least 500 VELD plus a network fee. Below that height, the minimum is 1,000 VELD. Maturing rewards, locked funds, and pending spends are unavailable. <a href="/how-to/send-receive-veld/">Fund your wallet</a> if needed.</li>
+            <li><strong>Open the Stake tab.</strong> Confirm your address. One address can hold up to 10,000 VELD in active stakes.</li>
+          </ul>
+          </div>
+        </section>
+
+        <section class="content-section" id="lock">
+          <p class="stage-label">02 / Lock</p>
+          <h2>Choose your amount and term</h2>
+          <p>Under <strong>Lock more VELD</strong>, select a <strong>Tier &amp; lockup</strong> and enter your <strong>Amount</strong>.</p>
+          <table class="lockup-table" aria-describedby="lockup-note">
+            <caption>Lockup options</caption>
+            <thead><tr><th scope="col">Tier</th><th scope="col">Lockup</th><th scope="col">Weight</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Base</th><td>3,360 blocks<span>About 7 days</span></td><td>1.00×</td></tr>
+              <tr><th scope="row">Short</th><td>6,720 blocks<span>About 14 days</span></td><td>1.10×</td></tr>
+              <tr><th scope="row">Medium</th><td>14,400 blocks<span>About 30 days</span></td><td>1.25×</td></tr>
+              <tr><th scope="row">Long</th><td>43,200 blocks<span>About 90 days</span></td><td>1.50×</td></tr>
+            </tbody>
+          </table>
+          <p class="table-note" id="lockup-note">Days assume the 180-second target block interval. The unlock height determines when you can unstake. Weight adjusts your share of vault distributions; it is not an interest rate.</p>
+          <ul class="staking-list">
+            <li><strong>Select Review &amp; lock.</strong> Check the address, amount, tier, lockup, and fee before approving.</li>
+            <li><strong>Wait for confirmation.</strong> The wallet signs locally and broadcasts the transaction. Save the transaction ID; do not resubmit while it is pending.</li>
+            <li><strong>Check your stake.</strong> Look for the confirmed amount in <strong>Staked</strong> and the tier and unlock height in staking history.</li>
+          </ul>
+          <aside class="note"><strong>Choose a term you can leave locked.</strong> Staked funds cannot be sent, swapped, or consolidated. Reaching the unlock height lets you unstake; it does not withdraw the funds automatically.</aside>
+        </section>
+
+        <section class="content-section" id="rewards">
+          <p class="stage-label">03 / Rewards</p>
+          <h2>Follow your vault rewards</h2>
+          <p>Vault distributions run every <strong>480 blocks</strong>. Follow the wallet’s next-distribution counter and confirmed activity. Your share depends on eligible stake weight, available vault funds, and the network’s distribution limits.</p>
+          <p>You can close the wallet between visits. Your ordinary stake remains on-chain and does not require the browser to stay open.</p>
+        </section>
+
+        <section class="content-section" id="unstake">
+          <p class="stage-label">04 / Unstake</p>
+          <h2>Withdraw when your stake matures</h2>
+          <p>Return to <strong>Stake</strong> and check <strong>Unstakeable now</strong>. Enter no more than that mature amount in the unstake <strong>Amount</strong> field, then select <strong>Unstake</strong>.</p>
+          <p>Unstaking pays a network fee. After confirmation, check that your staked balance has decreased and the funds, less the fee, are spendable again. Ordinary wallet stakes have no further holding cooldown after a valid, confirmed unstake.</p>
+          <p>Each position has its own unlock height, so a newer stake may still be locked.</p>
+        </section>
+
+        <section class="content-section" id="co-mining">
+          <p class="stage-label">For miners</p>
+          <h2>Join the co-mining lottery</h2>
+          <p>Co-mining combines staking with qualifying mining work. Its minimum remains <strong>1,000 VELD</strong>; the ordinary-staking reduction to 500 VELD does not change lottery eligibility. Staking alone does not enter you into a draw.</p>
+          <ul class="staking-list">
+            <li><strong>Use the same address.</strong> Keep at least <strong>1,000 VELD staked</strong> under your miner’s address, plus a small spendable balance for share transactions and fees.</li>
+            <li><strong>Keep mining.</strong> <a href="/how-to/update-node/">Update your client</a> and follow <a href="/how-to/start-cpu-mining/">Start CPU mining</a>. Check that it is hashing on the validated chain.</li>
+            <li><strong>Let the client submit work.</strong> It automatically submits qualifying near-miss shares. These must be accepted on-chain in the relevant window for eligibility.</li>
+            <li><strong>Follow the draw.</strong> Windows are <strong>100 blocks</strong>. Check the wallet’s next-draw counter and confirmed rewards. <a href="/how-to/pair-veld-portal/">Pair with the Portal</a> to monitor your miner remotely.</li>
+          </ul>
+          <p>Mining to another address does not use this stake. Falling below the required staked amount removes that address’s eligibility.</p>
+        </section>
+
+        <section class="content-section" id="help">
+          <h2>Need a hand?</h2>
+          <div class="trouble">
+            <details>
+              <summary>I cannot find my keyfile or unlock the wallet</summary>
+              <p>Use <a href="/how-to/import-keyfile/">Import a keyfile</a> for file locations and recovery steps. If the node’s portable file is missing, sign in to your existing encrypted identity with the latest client and check its data folder again. Preserve <code>miner.key</code>; do not delete it or create a replacement identity. If the wallet is already unlocked in another browser, export it through <strong>Wallet Settings → Save file</strong>.</p>
+            </details>
+            <details>
+              <summary>The browser opens a different wallet</summary>
+              <p>Back up that wallet before signing out or replacing it. Use a separate browser profile to import your intended file, then compare the complete address. Keep the original wallet and its backup intact.</p>
+            </details>
+            <details>
+              <summary>My balance is enough, but Available is too low</summary>
+              <p>Only spendable funds cover a new stake and its fee. Wait for mining rewards to mature or pending transactions to confirm.</p>
+            </details>
+            <details>
+              <summary>Review &amp; lock is disabled or my transaction is pending</summary>
+              <p>Unlock the wallet and let live staking status load. Check the transaction ID and wait for any pending stake to confirm before retrying.</p>
+            </details>
+            <details>
+              <summary>My stake still shows as locked</summary>
+              <p>Check its unlock height and the <strong>Unstakeable now</strong> amount. Calendar-day labels are estimates; block height controls maturity.</p>
+            </details>
+            <details>
+              <summary>Do I need to register as a validator?</summary>
+              <p>No. This guide covers ordinary wallet staking. Validator registration is a separate role with separate requirements in the <a href="https://explorer.veld.network/rules" target="_blank" rel="noopener noreferrer">mainnet rules</a>.</p>
+            </details>
+          </div>
+        </section>
+
+        <section class="content-section" id="related-guides">
+          <h2>Keep going</h2>
+          <ul class="related-guides">
+            <li><a href="/how-to/create-backup-wallet/"><strong>Back up your wallet</strong><span>Protect access to your funds.</span></a></li>
+            <li><a href="/how-to/import-keyfile/"><strong>Import your keyfile</strong><span>Use your existing mining wallet.</span></a></li>
+            <li><a href="/how-to/send-receive-veld/"><strong>Send and receive VELD</strong><span>Fund your wallet and check transfers.</span></a></li>
+            <li><a href="/how-to/start-cpu-mining/"><strong>Start CPU mining</strong><span>Put your miner to work.</span></a></li>
+            <li><a href="/how-to/update-node/"><strong>Update Veld Node</strong><span>Install the latest signed client.</span></a></li>
+            <li><a href="https://explorer.veld.network/rules" target="_blank" rel="noopener noreferrer"><strong>Read the mainnet rules</strong><span>Check staking and co-mining requirements.</span></a></li>
+          </ul>
+        </section>
+
+        <p class="article-foot">Reviewed <time datetime="2026-09-09">9 September 2026</time> for Veld Mainnet and Windows 3.1.3.</p>
+      </article>
+    </div>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <div>Veld · Where value is earned.</div>
+      <div class="footer-links">
+        <a href="/how-to/">All guides</a>
+        <a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a>
+        <a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a>
+        <a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

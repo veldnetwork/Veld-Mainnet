@@ -770,7 +770,7 @@ html[data-theme="light"] .rl-ic.ic-b{background:linear-gradient(135deg,#32F06E,#
 
 /* Supply Progress slim bar inside row-list card */
 .supply-bar-wrap{padding:6px 4px 14px}
-/* UI-5: substantial bar; fill always visible (min-width nub) even at ~0.2%; fitted static gradient+glow; theme-correct. */
+/* substantial bar; fill always visible (min-width nub) even at ~0.2%; fitted static gradient+glow; theme-correct. */
 .supply-bar-track{height:16px;background:var(--s3);border-radius:99px;overflow:hidden;margin-bottom:10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.28);position:relative}
 /* Supply is a tiny fraction of the 21M cap for years, so the fill is very
    narrow early on. A 240%-oversized shimmering gradient on a ~14px nub looked
@@ -2560,10 +2560,10 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 <div class="card rule-card">
   <h2>How Veld works</h2>
   <p style="color:var(--muted);font-size:13px;line-height:1.6">
-    Reviewed for Veld 3.1.1 on 8 September 2026. This summarizes the released
-    <a href="https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.1" style="color:var(--em);text-decoration:underline">consensus source</a>.
+    Reviewed for Veld 3.1.3 on 9 September 2026. This summarizes the released
+    <a href="https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.3" style="color:var(--em);text-decoration:underline">consensus source</a>.
     The <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a> provides background.
-    A protocol day is 480 blocks. Durations in days assume the 180-second target; actual elapsed time varies.
+    A protocol day is 480 blocks. Durations in days assume the 180-second target; actual elapsed time varies. <strong>Update to 3.1.3 before block 3,840, including if you installed 3.1.2.</strong> ASERT and the 500 VELD ordinary-staking minimum activate at that height. The co-mining lottery minimum remains 1,000 VELD.
   </p>
   <div class="toc">
     <h3>Table of Contents</h3>
@@ -2605,12 +2605,12 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <tr><td style="color:var(--gold);font-weight:600">Vault</td><td style="color:var(--gold)"><strong>20%</strong></td><td>Eligible staking distributions every 480 blocks</td></tr>
     <tr><td style="color:#B07CFF;font-weight:600">Validator pool</td><td style="color:#B07CFF"><strong>10%</strong></td><td>Eligible endorsement distributions every 480 blocks</td></tr>
   </table>
-  <p style="color:var(--muted);font-size:12px">During the subsidy era, transaction fees flow to the vault on top of its block share. Post-cap fee routing is 50% miner, 40% vault, and 10% validator pool.</p>
+  <p style="color:var(--muted);font-size:12px">During the subsidy era, transaction fees flow to the vault on top of its block share. When effective subsidy is zero, fee routing is 50% miner, 40% vault, and 10% validator pool, subject to integer rounding. From block 3,840, the common state-aware policy applies that fee-only allocation at every height, including every 100th block. Exact permitted subsidy plus authenticated fees remain mandatory.</p>
 </div>
 
 <div class="card rule-card">
   <h2 id="vault">3. How vault distributions work</h2>
-<p>Staking activates when canonical issued supply reaches <strong>10,000 VELD</strong>. The minimum ordinary stake is <strong>1,000 VELD</strong>.</p>
+<p>Staking activates when canonical issued supply reaches <strong>10,000 VELD</strong>. The minimum ordinary stake is <strong>1,000 VELD below block 3,840</strong> and <strong>500 VELD from that inclusion height</strong>. The maximum remains 10,000 VELD per address. The co-mining lottery still requires 1,000 VELD.</p>
   <p>Every <strong>480 blocks</strong>, the vault can distribute a budget to eligible stakes and validator yield escrow. Ordinary stake weight is <span class="formula">stake &times; mining multiplier &times; lockup multiplier</span>, with the combined multiplier capped at 3.00&times;.</p>
   <p>The budget, concentration limit, recipient limits, fees, and integer rounding determine actual payments. A multiplier changes your relative weight; it does not promise a fixed yield or a payment in every cycle.</p>
 </div>
@@ -2711,7 +2711,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 <div class="card rule-card">
   <h2 id="poolflush">11. Co-mining lottery</h2>
 <p>After staking activates, the co-mining pool receives <strong>20% of ordinary block subsidies</strong>. A draw runs every <strong>100 blocks</strong>.</p>
-  <ul><li>Keep at least <strong>1,000 VELD of ordinary stake locked at the mining address</strong>. The same stake can qualify for vault distributions.</li><li>The client submits qualifying near-miss proofs automatically. At least one valid proof must be <strong>included in the canonical chain during the draw window</strong>; submission alone does not qualify.</li><li>Each eligible address gets one entry regardless of its near-miss count. Up to four near-miss records can be included per block.</li></ul>
+  <ul><li>Keep at least <strong>1,000 VELD of ordinary stake locked at the mining address</strong>. This lottery minimum remains 1,000 VELD before and after block 3,840; a 500 VELD ordinary stake does not qualify. The same stake can qualify for vault distributions.</li><li>The client submits qualifying near-miss proofs automatically. At least one valid proof must be <strong>included in the canonical chain during the draw window</strong>; submission alone does not qualify.</li><li>Each eligible address gets one entry regardless of its near-miss count. Up to four near-miss records can be included per block.</li></ul>
   <p>The draw selects up to five distinct addresses, or up to 20 when at least 1,000 addresses qualify. Each winner receives one slot; unfilled slots carry forward, subject to the protocol’s rounding rule. Finding a block or receiving a lottery payment is not guaranteed.</p>
 </div>
 
@@ -2724,6 +2724,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <div class="peg-item"><span class="k">General proposals</span><span class="v"><strong>51% yes.</strong> The quorum is seven votes when at least seven validators are recently active; below that it follows a majority of active validators.</span></div>
     <div class="peg-item"><span class="k">Protocol upgrades</span><span class="v"><strong>67% yes</strong> with a hard minimum of ten votes, followed by a 3,360-block (approximately seven-day) timelock.</span></div>
   </div>
+  <p>At block 3,840, validator attribution, governance operation formats, and retained state migrate together. Separate validator, governance, and btcVELD participation gates remain in force.</p>
   <p>Passing a protocol-upgrade proposal records on-chain approval after the timelock. It does not automatically replace node binaries or mutate consensus parameters; a software upgrade still requires published source, signed artifacts, operator adoption, and an activation plan.</p>
 </div>
 
@@ -2739,10 +2740,10 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 </div>
 
 <div class="card rule-card">
-  <h2 id="difficulty">14. Difficulty retargeting</h2>
-<p>Veld targets <strong>180 seconds per block</strong> using a <strong>144-block linear weighted moving average (LWMA)</strong>. Faster measured blocks raise difficulty; slower measured blocks lower it at the next retarget boundary.</p>
-  <p>The standard calculation bounds individual timing samples and clamps the weighted average to <strong>0.5&times;–1.5&times;</strong> of target. This limits each adjustment to approximately a doubling or a fall to two-thirds, subject to the proof-of-work limit and compact-target rounding.</p>
-  <p>The launch phase used shorter bootstrap windows. Standard retargeting now applies. Elapsed wall-clock time alone does not relax difficulty, and a change in hashrate can produce faster or slower blocks until subsequent retargets respond.</p>
+  <h2 id="difficulty">14. Difficulty adjustment and ASERT</h2>
+  <p>Veld targets <strong>180 seconds per block</strong>. Below block <strong>3,840</strong>, historical LWMA rules apply. From that inclusion height, <strong>ASERT adjusts the target after every accepted block</strong>, with a <strong>2,700-second (45-minute) half-life</strong>.</p>
+  <p>ASERT compares accepted branch time and height progression with the 180-second schedule from a canonical anchor. Blocks ahead of schedule raise difficulty; blocks behind schedule lower it. Deterministic integer arithmetic, canonical target encoding, and the proof-of-work limit constrain the calculation.</p>
+  <p>The half-life controls the response to accumulated timing error; it does not promise a three-minute interval. The next target does not continuously decrease merely because wall-clock time passes without an accepted block. Historical LWMA remains part of replay below activation.</p>
 </div>
 
 <div class="card rule-card">
@@ -2783,8 +2784,8 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
   <p><strong>At the tip does not mean fully verified.</strong> Independent validation can continue even when the displayed height matches the network.</p>
   <details>
     <summary>Sync options and trust</summary>
-    <p><code>--full-ibd</code> and <code>--no-snapshot</code> skip snapshot import. Previously imported data still requires validation; verified progress can be reused on restart. Tor-only mode syncs from peers without HTTPS snapshot downloads. If existing data fails startup checks, the node stops and reports the error.</p>
-    <p>A snapshot signature does not replace consensus checks. Version 3.1.1 enforces the verified historical block at height 2,800. A chain that conflicts with that block is rejected. Downloaded signed checkpoints remain advisory and cannot move this compiled pin. Before validator finality, nodes rely on verified proof of work and reorganization limits. Once a node verifies a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that checkpoint and rejects conflicting histories.</p>
+    <p><code>--full-ibd</code> and <code>--no-snapshot</code> skip snapshot import. Previously imported data still requires validation; verified progress can be reused on restart. Version 3.1.3 retains the recovery improvements from 3.1.2: durable independent progress, interrupted snapshot cleanup, bounded Windows restarts, and clearer daemon and connection diagnostics. Tor-only mode syncs from peers without HTTPS snapshot downloads. If existing data fails startup checks, the node stops and reports the error.</p>
+    <p>A snapshot signature does not replace consensus checks. Version 3.1.3 retains the verified historical checkpoint at height 2,800 introduced in 3.1.1. A chain that conflicts with that block is rejected. Downloaded signed checkpoints remain advisory and cannot move this compiled pin. Before validator finality, nodes rely on verified proof of work and reorganization limits. Once a node verifies a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that checkpoint and rejects conflicting histories.</p>
   </details>
 </div>
 

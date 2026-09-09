@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory(prefix="veld-caller-checks-") as directory:
         global checks
         fixture.write_text(source, encoding="utf-8")
         result = subprocess.run(
-            [sys.executable, "-B", str(ROOT / "tests/security_scan_closure_wiring_tests.py"),
+            [sys.executable, "-B", str(ROOT / "tests/wallet_authorization_wiring_tests.py"),
              "--wallet-source", str(fixture)], env=env, capture_output=True, text=True, timeout=40)
         assert (result.returncode == 0) == expected, result.stdout + result.stderr
         if expected:

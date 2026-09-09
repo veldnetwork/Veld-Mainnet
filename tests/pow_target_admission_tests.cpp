@@ -144,7 +144,7 @@ int main() {
     nms.header.bits = GENESIS_BITS;
     nms.raw = EncodeNmsPayload(nms.header);
 
-    // Reproduce the exact alias sequence from the finding. Only the canonical
+    // Exercise an equivalent compact-target encoding. Only the canonical
     // expected identity reaches the cache; attacker-selected sign-bit aliases
     // return before a dataset request or regeneration.
     auto before_alias = GlobalDataset().Stats();

@@ -76,7 +76,7 @@ constexpr bool CompiledRoleAllowsPort(uint16_t actual, uint16_t expected) {
 
 // Runtime network selection is a transport/developer concern, never a second
 // source of genesis or consensus identity. Production-semantics builds,
-// including the nonshipping D-state qualification executable, are bound to
+// including the nonshipping state-capacity qualification executable, are bound to
 // the one compiled mainnet identity; isolated test transports remain
 // available only in ordinary development builds.
 enum class NetworkKind : uint8_t {
