@@ -7286,8 +7286,8 @@ private:
             hashed_uptime = next.uptime_seconds;
             next.daemon_executable_sha256 = running_executable_hash;
 
-            const HttpResult local = HttpGetJson(
-                L"127.0.0.1", 8080, L"/api/stats", false, 900);
+            const HttpResult local = next.process_running ? HttpGetJson(
+                L"127.0.0.1", 8080, L"/api/stats", false, 900) : HttpResult{};
             if (local.ok) {
                 std::string error;
                 next.local_online = veld::node_gui::ParseStats(
@@ -7316,6 +7316,7 @@ private:
                 }
                 if (!refreshed.empty()) cached_blocks = std::move(refreshed);
             }
+            if (!next.process_running) cached_blocks.clear();
             next.recent_blocks = cached_blocks;
 
             const std::string mining_body = ReadTextBounded(

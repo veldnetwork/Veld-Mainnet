@@ -8,8 +8,18 @@ $signature = Join-Path $root 'SHA256SUMS.txt.sig'
 try {
     # The fresh complete package supplies its own pinned native verifier.
     # Repair never edits a manifest, disables verification, or touches keys.
-    $verified = @(& $node --verify-release $manifest $signature 2>&1)
-    if ($LASTEXITCODE -ne 0 -or ($verified -join "`n").Trim() -cne 'RELEASE-SIGNATURE-VALID') {
+    $savedPreference = $ErrorActionPreference
+    try {
+        # Native diagnostic stderr is separate from the verifier's exact
+        # stdout verdict. Windows PowerShell otherwise promotes it to a
+        # terminating NativeCommandError even when verification succeeds.
+        $ErrorActionPreference = 'SilentlyContinue'
+        $verified = @(& $node --verify-release $manifest $signature 2>$null |
+            ForEach-Object { $_.ToString() })
+        $verifyExit = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $savedPreference }
+    if ($verifyExit -ne 0 -or $verified.Count -ne 1 -or
+        $verified[0] -cne 'RELEASE-SIGNATURE-VALID') {
         throw 'The repair package signature could not be verified. Download the complete package again.'
     }
     if ((Get-Item -LiteralPath $manifest).Length -gt 8MB) {throw 'Repair manifest exceeds its size limit'}
