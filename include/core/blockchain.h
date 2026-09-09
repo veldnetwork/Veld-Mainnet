@@ -1465,11 +1465,12 @@ public:
     }
 
     bool NmsBondSatisfied(const std::vector<uint8_t>& miner_script,
-                          uint64_t inclusion_height) const {
+                          uint64_t /* inclusion_height */) const {
         if (!nms_stake_query_) return true;
         std::string addr = ScriptToAddress(miner_script);
         if (addr.empty()) return false;
-        return nms_stake_query_(addr) >= MinimumStakeAtHeight(inclusion_height);
+        // Co-mining retains its own stake floor when ordinary staking changes.
+        return nms_stake_query_(addr) >= NMS_MIN_BOND_UNITS;
     }
 
     // ───────────────────────────────────────────────────────────────

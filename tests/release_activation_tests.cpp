@@ -10,13 +10,14 @@
 #endif
 
 using namespace veld;
-static_assert(std::string_view(CLIENT_VERSION) == "3.1.2");
+static_assert(std::string_view(CLIENT_VERSION) == "3.1.3");
 static_assert(CONSENSUS_SECURITY_UPGRADE_HEIGHT == 2880);
 static_assert(!ConsensusSecurityUpgradeActive(2879));
 static_assert(ConsensusSecurityUpgradeActive(2880));
 static_assert(BOND_SETTLEMENT_INTERVAL == 480);
 static_assert(TARGET_BLOCK_TIME == 180 && ASERT_HALF_LIFE == 2700);
 static_assert(MIN_STAKE_UNITS == 1000 * VELD_UNITS);
+static_assert(NMS_MIN_BOND_UNITS == 1000 * VELD_UNITS);
 static_assert(MAX_STAKE_UNITS == 10000 * VELD_UNITS);
 static_assert(MIN_VALIDATOR_STAKE == 10000 * VELD_UNITS);
 static_assert(COINBASE_MATURITY == 100);

@@ -1,68 +1,43 @@
-# Veld 3.1.2
+# Veld 3.1.3
 
-Veld 3.1.2 schedules the next coordinated network upgrade and improves client
-recovery. Activation is scheduled for **block 3,840** on
-`veld-public-mainnet-v2`. Miners and node operators must install the signed
-3.1.2 update before that height.
+Update before **block 3,840**. This correction supersedes 3.1.2 and preserves
+the intended distinction between ordinary staking and the co-mining lottery.
 
-## Network upgrade at block 3,840
+## Stake requirements
 
-- Adjust difficulty after every block using ASERT, with a 180-second target and
-  a 2,700-second half-life. Block intervals will continue to vary.
-- Lower the minimum ordinary stake and co-mining eligibility stake from 1,000
-  to 500 VELD at the same inclusion height. Validator bonds, maximum stake,
-  maturity, lockups, and the established reward allocation remain unchanged.
-- Apply one state-aware coinbase policy to direct admission, alternate branches,
-  independent replay, and mining preflight. Preserve exact effective subsidy
-  plus authenticated fees, required categories, and the supply cap.
-- Apply the existing fee-only allocation consistently when the supply cap has
-  been reached, including at periodic vault boundaries.
-- Activate the coordinated validator, governance, and retained-state migration
-  with the same settlement boundary. Existing block-2,880 rules remain intact.
+| Requirement | Before block 3,840 | From block 3,840 |
+| --- | --- | --- |
+| Ordinary staking | 1,000 VELD | 500 VELD |
+| Co-mining lottery | 1,000 VELD | 1,000 VELD |
+| Validator bond | 10,000 VELD | 10,000 VELD |
 
-Block 3,840 is a 480-block settlement boundary. Historical blocks retain their
-applicable rules. A compatible client is required before the announced height;
-older clients can remain connected but will not enforce the new rules.
-See [coinbase accounting](consensus/coinbase-policy.md) for the historical
-compatibility boundary and exact allocations.
+The initial 3.1.2 binary incorrectly applied the ordinary-staking reduction to
+co-mining eligibility. Version 3.1.3 uses the independent co-mining threshold
+for near-miss admission, alternate-branch validation, local share submission,
+and payout selection. The wallet reads a separate co-mining requirement and
+reports unavailable policy explicitly. A stake below 1,000 VELD does not meet
+the lottery requirement, including a shortfall of one atomic unit.
 
-## Client recovery and diagnostics
+## Network upgrade
 
-- Preserve independent verification progress using protected atomic writes and
-  refresh saved progress when a reorganization replaces its block.
-- Finish interrupted snapshot quarantine and cleanup safely across restarts.
-  Independent validation from genesis remains mandatory before mining resumes.
-- Issue validation receipts for non-mining nodes and separate payout addresses,
-  and serialize receipt creation with canonical chain transitions.
-- Restore finality journals with explicit expiry handling while authenticating
-  every retained record.
-- Correct the Windows stop/restart lifecycle for an already-running daemon and
-  bound repeated recovery relaunches before requesting inspection.
-- Distinguish deliberately paused wallet/RPC access during snapshot verification
-  from an actual port-binding failure.
-- Report GUI and daemon identity separately, retain unknown status explicitly,
-  and record diagnostic transitions and anonymous connection reasons.
+The previously scheduled **3,840** activation remains unchanged. ASERT adjusts
+difficulty after each block toward the **180-second** target with a
+**2,700-second** half-life. Ordinary staking drops to 500 VELD at that height;
+the coordinated coinbase and validator/governance state migrations remain on
+the same settlement boundary. Reward allocations, maximum stake, maturity,
+lockups, and the historical block-2,880 rules are unchanged.
+
+The correction restores the existing pre-activation lottery rule and prevents
+3.1.2 from introducing the unintended lower threshold. All miners and node
+operators, including those who already installed 3.1.2, must update before
+block 3,840. Mixed 3.1.2/3.1.3 validation after activation can disagree on
+near-miss submissions or payouts involving stakes below 1,000 VELD.
 
 ## Updating
 
-Use the signed updater or the
-[official download](https://veld.network/#download). The package manifest
-authenticates the release version and every installed payload file.
+Use the signed updater or the [official download](https://veld.network/#download).
+Close the existing client before replacing it. Keep your chain data and wallet
+backups; a routine update does not require a full resynchronization.
 
-Keep wallet backups and existing chain data. A routine upgrade does not require
-deleting the data directory. Allow any required independent verification to
-finish; a caught-up foreground height does not mean background verification is
-complete. Do not repeatedly force-restart a client that is making progress.
-
-Checkpoint protection from 3.1.1 and the mainnet chain identity are retained.
-The original unexpected process stop reported by one miner is not explained by
-the available photographs; these changes address the verified recovery and
-diagnostic defects, without attributing that stop to an unproven cause.
-
-## Release qualification
-
-Local Windows and Linux tests cover disk-backed admission, replay and
-reorganization across the activation boundary, signed snapshot recovery with
-full proof-of-work verification, process-crash recovery, and client lifecycle
-checks. These isolated tests establish the tested behavior; they do not predict
-every operating condition or certify the future mainnet activation.
+The client recovery, checkpoint, GUI/daemon diagnostics, and mining improvements
+from 3.1.2 are retained. See the [3.1.2 notes](releases/3.1.2.md) for that history.

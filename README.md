@@ -24,16 +24,18 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
-**3.1.2** schedules the coordinated network upgrade at **block 3,840**.
+**3.1.3** corrects the co-mining threshold and retains the coordinated network upgrade at **block 3,840**.
 Miners and node operators must update before that height. ASERT and the 500 VELD
-ordinary/co-mining minimum begin at that inclusion height. See the
+ordinary staking minimum begin at that inclusion height. The co-mining lottery
+minimum remains **1,000 VELD**. Version 3.1.3 supersedes 3.1.2; both miners and
+node operators who already installed 3.1.2 must update again. See the
 [release notes](docs/release-notes.md) for scope and compatibility, and
 [download the signed client](https://veld.network/#download).
 
 The verified historical checkpoint at block **2,800**, checkpoint authority from
 3.1.1, and consensus rules activated at **block 2,880** remain unchanged.
 
-The [`v3.1.2` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.2)
+The [`v3.1.3` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.3)
 identifies the published release source. Signed package manifests identify
 the distributed binaries. `main` may contain later maintenance and documentation updates. [CHANGELOG.md](CHANGELOG.md)
 distinguishes hosted updates from packaged changes.

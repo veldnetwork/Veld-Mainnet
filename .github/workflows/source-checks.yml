@@ -111,7 +111,7 @@ jobs:
               -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"
           done
-          for test in coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests; do
+          for test in co_mining_stake_floor_tests coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests; do
             c++ -std=c++20 -O1 -pthread -Iinclude -Ivendor/pqc "tests/$test.cpp" "${objects[@]}" \
               -lssl -lcrypto -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"
