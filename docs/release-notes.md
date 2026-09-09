@@ -1,3 +1,17 @@
+## 3.1.5 - Preserve local synchronization progress
+
+Windows startup now limits automatic signed snapshot import to a fresh
+datadir. Existing chain storage and pending verification are retained even
+when a newer official snapshot exists. This prevents an ordinary restart or
+update from replacing previously verified history and starting another
+independent genesis verification. Partial local databases remain available
+for normal recovery or inspection instead of being overwritten.
+
+Existing snapshot validation obligations remain enforced. This update does
+not automatically restore a previously replaced database or bypass proof
+verification. The DLL and signed updater repairs from 3.1.4 are included.
+There are no changes to consensus rules or activation heights.
+
 # Veld 3.1.4
 
 Windows packaging correction: OpenSSL is now linked into each executable, so

@@ -3468,8 +3468,8 @@ private:
                        full_ibd_choice_, true);
         DrawSyncChoice(dc, snapshot_card_, L"Signed snapshot",
                        live.process_running
-                            ? L"Use on the next start; services stay locked while genesis validation catches up."
-                            : L"Start quickly from an official signed snapshot and validate it independently in the background.",
+                            ? L"Retain local history on restart; finish any pending snapshot verification."
+                            : L"Use an official snapshot on first use; retain local history on later starts.",
                        !full_ibd_choice_, true);
 
         RECT verify{left, choice_top + S(140), right, client.bottom - S(30)};
