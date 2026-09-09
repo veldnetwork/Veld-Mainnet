@@ -265,7 +265,11 @@ if [[ $role != keygen && $role != validator && $role != gui ]]; then
   }
   static_role_archives+=("$leveldb_archive")
 fi
-libraries=(-lssl -lcrypto -lws2_32 -ladvapi32 -lbcrypt -liphlpapi \
+static_openssl_archives=("$MINGW_PREFIX/lib/libssl.a" "$MINGW_PREFIX/lib/libcrypto.a")
+for archive in "${static_openssl_archives[@]}"; do
+  [[ -f $archive ]] || { echo "missing required static OpenSSL archive: $archive" >&2; exit 2; }
+done
+libraries=("${static_openssl_archives[@]}" -lws2_32 -ladvapi32 -lbcrypt -lcrypt32 -liphlpapi \
   -lshell32 -lole32 -luuid -lgdi32)
 [[ $role != desktop ]] || libraries+=(-lwinhttp -lcrypt32 -lcomctl32)
 extra_objects=()
@@ -317,11 +321,13 @@ fi
 
 file "$artifact" | tee "$output/binary-file.txt"
 objdump -p "$artifact" | tee "$output/binary-pe-metadata.txt"
-if grep -Eiq 'DLL Name:[[:space:]]*(libc\+\+|libc\+\+abi|libunwind|libleveldb|libwinpthread[^[:space:]]*)\.dll' \
+if grep -Eiq 'DLL Name:[[:space:]]*(libcrypto[^[:space:]]*|libssl[^[:space:]]*|libc\+\+|libc\+\+abi|libunwind|libleveldb|libwinpthread[^[:space:]]*)\.dll' \
     "$output/binary-pe-metadata.txt"; then
   echo "release artifact retains a forbidden loose-runtime DLL import" >&2
   exit 2
 fi
+"$pqc_python" "$src/scripts/verify-windows-runtime.py" --binary "$artifact" --role "$role" \
+  --imports "$output/binary-pe-metadata.txt" | tee "$output/stock-windows-runtime.txt"
 sha256sum "$artifact" | tee "$output/binary-sha256.txt"
 if [[ $role == gui ]]; then
   cp "$trusted_node" "$output/bin/veld-node.exe"

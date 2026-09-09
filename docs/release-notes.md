@@ -1,4 +1,16 @@
-# Veld 3.1.3
+# Veld 3.1.4
+
+Windows packaging correction: OpenSSL is now linked into each executable, so
+the node and wallet do not require `libcrypto-3-x64.dll` or a developer PATH.
+The build rejects non-system DLL imports and runs command-line startup checks
+with only Windows system directories on PATH. This fixes the missing-DLL
+startup failure and the resulting signed-updater rollback to the older client.
+Terminal launcher version declarations are also synchronized with the signed
+package. Keep existing wallet and chain data when updating.
+
+The 3.1.3 network rules and block-3,840 activation schedule are unchanged.
+
+## Retained 3.1.3 network correction
 
 Update before **block 3,840**. This correction supersedes 3.1.2 and preserves
 the intended distinction between ordinary staking and the co-mining lottery.
