@@ -59,7 +59,7 @@ int main() {
             Require(block.transactions[0].IsValid(),"canonical coinbase representation invalid");
             Require(chain.ValidateCanonicalCoinbaseSplit(block),"independent canonical split rejected");
             const bool shape=chain.ValidateCoinbaseOutputs(block);
-#ifdef VELD_AUDITED_BASELINE_CONTROL
+#ifdef VELD_COINBASE_LEGACY_POLICY_CONTROL
             const bool caps=chain.ValidateMinerCaps(block);
             if(!caps)++disagreement;
             if(!shape)++boundary_conflicts;
@@ -118,10 +118,10 @@ int main() {
             Require(chain.TotalSupplyUnits()==supply,"validation changed supply");
 #endif
         }
-#ifdef VELD_AUDITED_BASELINE_CONTROL
+#ifdef VELD_COINBASE_LEGACY_POLICY_CONTROL
         std::cout<<"BASELINE_POLICY_OBSERVATION cases="<<cases<<" exact_split_passed="<<cases
                  <<" fixed_backstop_rejections="<<disagreement<<" structural_conflicts="<<boundary_conflicts<<'\n';
-        Require(disagreement>0 && boundary_conflicts>0,"audited mismatches not confirmed");
+        Require(disagreement>0 && boundary_conflicts>0,"historical policy disagreements not confirmed");
         std::cerr<<"EXPECTED INVARIANT FAILURE: canonical coinbases do not satisfy all mandatory predicates\n";
         return 1;
 #else

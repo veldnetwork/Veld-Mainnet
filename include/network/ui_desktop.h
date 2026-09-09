@@ -5821,7 +5821,7 @@ function bvAbsBig(n){ return n<0n?-n:n; }
 // consensus quote (bvDoSwap re-checks fee_bps against prepareammswap below).
 var BV_FEE_MODEL='seed-ratio-output-asset-4band-v1';
 var BV_BAND_EDGE=[500,1000,2000], BV_BAND_FEE=[30,50,75,100];
-// A4 LOCKED_SEED_CORE — mirrors AmmLedger::QuoteInitialSeed exactly.  The RPC
+// Locked seed core — mirrors AmmLedger::QuoteInitialSeed exactly.  The RPC
 // response is checked against this quote again before any signature is made.
 var BV_SEED_LOCK_VELD=5000000000n, BV_SEED_LOCK_BTC=50000n;
 var BV_SEED_LP_MIN=1000n, BV_SEED_POOL_BTC_CAP=1000000000n;
@@ -8702,7 +8702,7 @@ function chacha20poly1305Decrypt(key, nonce, ciphertext, tag, aad) {
     return new Uint8Array(out.buffer);
   }
 
-  // H2 closure: pure-JS Poly1305 tag verification. Previously
+  // Verify the Poly1305 authentication tag in JavaScript. Previously
   // this function decrypted without MAC check — ChaCha20-alone is a
   // malleability surface (attacker bit-flips in ct → matching plaintext
   // flips). The miner-side C++ (wallet_crypto.h::poly1305_tag) verifies
@@ -13005,7 +13005,7 @@ function renderValidatorHealth(v, dGetValidators) {
     var pendVeld = parseFloat(h.pending_rewards_veld || 0) || 0;
     paidEl.textContent = paid.toLocaleString();
     pendEl.textContent = pending.toLocaleString();
-    // UI-7 — "Total earned" (a non-actionable lifetime
+    // "Total earned" (a non-actionable lifetime
     // vanity total) replaced by a forward-looking "Earnings rate"
     // (VELD/day) computed below once the time window is known. The
     // lifetime figure is preserved (demoted to the sub-line). The
@@ -13032,7 +13032,7 @@ function renderValidatorHealth(v, dGetValidators) {
     } else {
       rateEl.style.color = 'var(--em)';
     }
-    // UI-7 — forward-looking earnings RATE (VELD/day) over
+    // forward-looking earnings RATE (VELD/day) over
     // the measured window, replacing the old non-actionable lifetime
     // total. Lifetime figure preserved in the sub-line. For a window
     // too short to annualize honestly (just-registered) we fall back

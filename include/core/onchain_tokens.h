@@ -503,7 +503,7 @@ struct BtcVeldC1ReservationStatus {
 
 class OnChainTokenLedger {
 public:
-    // ---- D-STATE-01: minimum positive account balance ----------------------
+    // ---- minimum positive account balance ----------------------
     // balances_ holds one consensus entry per positive token:address balance.
     // The SPV custody ceiling is 1,000,000,000 sats, so WITHOUT a floor a holder
     // can split into 1,000,000,000 one-sat accounts at fresh canonical addresses:
@@ -1059,7 +1059,7 @@ public:
     }
 
 #if defined(VELD_TEST_HOOKS) && defined(VELD_DSTATE_QUALIFICATION)
-    // Qualification-only in-band state carrier. The native D-STATE corpus
+    // Qualification-only in-band state carrier. The native state-capacity corpus
     // places the address in canonical serialized block bytes; VeldNode calls
     // this only from its ordinary ApplyBlockModules_ sequence. This seam is
     // compile-incompatible with VELD_PUBLIC_RELEASE and cannot be reached by a
@@ -1136,7 +1136,7 @@ public:
         auto bit = balances_.find(key);
         const int64_t old_balance = bit == balances_.end() ? 0 : bit->second;
         if (old_balance < 0 || old_balance > INT64_MAX - a) return false;
-        // D-STATE-01: compensation may not create a sub-floor account.
+        // compensation may not create a sub-floor account.
         if (!BalanceAdmissible(old_balance + a)) return false;
         btcveld::reserve::State reserve_next = reserve_state_;
         if constexpr (btcveld::reserve::TRANSITION_V1_REQUIRED) {
@@ -2296,7 +2296,7 @@ private:
         if (old_balance < 0 || old_balance > INT64_MAX - amount ||
             signed_supply > INT64_MAX - amount)
             return false;
-        // D-STATE-01: a mint may not create a sub-floor account.
+        // a mint may not create a sub-floor account.
         if (!BalanceAdmissible(old_balance + (int64_t)amount)) return false;
         balances_[balance_key] = old_balance + amount;
         supply_[BTCVELD_TOKEN_ID] = signed_supply + amount;
@@ -2768,7 +2768,7 @@ private:
             if (sup < 0 || sup > INT64_MAX - op.amount ||
                 to_balance < 0 || to_balance > INT64_MAX - op.amount)
                 return false;
-            // D-STATE-01: a mint may not create a sub-floor account.
+            // a mint may not create a sub-floor account.
             if (!BalanceAdmissible(to_balance + op.amount)) return false;
             balances_[to_key] = to_balance + op.amount;
             supply_[op.token_id] = sup + op.amount;
@@ -2820,7 +2820,7 @@ private:
                     to_balance > INT64_MAX - op.amount)
                     return false;
                 const int64_t remaining = from_balance - op.amount;
-                // D-STATE-01: both legs land on 0 or >= floor. This is the
+                // both legs land on 0 or >= floor. This is the
                 // path an account-splitting attacker would use.
                 if (!BalanceAdmissible(remaining))            return false;
                 if (!BalanceAdmissible(to_balance + op.amount)) return false;
@@ -2838,7 +2838,7 @@ private:
                 supply_it->second < op.amount)
                 return false;
             const int64_t remaining = from_it->second - op.amount;
-            // D-STATE-01: a partial redeem may not leave a sub-floor dust
+            // a partial redeem may not leave a sub-floor dust
             // account behind. Redeem everything, or leave a real balance.
             if (!BalanceAdmissible(remaining)) return false;
             btcveld::reserve::State reserve_next = reserve_state_;

@@ -62,7 +62,7 @@ def main():
         route = route.rstrip("/") + "/"
         assert guide.canonical == "https://veld.network" + route, path
         guides[route] = guide
-    assert len(guides) == 13, "Expected library and 12 guides"
+    assert len(guides) == 14, "Expected library and 13 guides"
     checked = 0
     for route, guide in guides.items():
         for href in guide.links:

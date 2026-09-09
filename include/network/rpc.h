@@ -2944,7 +2944,7 @@ private:
                 {"vout",          JB::Number((uint64_t)utxo->output_index)},
                 {"value",         JB::Float((double)utxo->value / VELD_UNITS)},
                 {"value_units",   JB::Number(utxo->value)},
-                // N-01: offline/isolated policy signers must resolve the exact
+                // offline/isolated policy signers must resolve the exact
                 // prevout script and value from their own trusted node.  Do not
                 // make them trust the transaction preparer's `inputs[]` claims.
                 {"script_pubkey_hex", JB::String(BytesToHex(utxo->script_pubkey))},
@@ -4940,12 +4940,12 @@ private:
             if (p.utxo_valid && p.reserve_veld > 0) throw std::runtime_error("pool already seeded — use prepareammadd");
             if (d_veld < AmmLedger::AMM_SEED_LOCK_VELD_UNITS)
                 throw std::runtime_error(
-                    "seed VELD leg is below the A4 locked-core minimum (" +
+                    "seed VELD leg is below the locked-core minimum (" +
                     std::to_string(AmmLedger::AMM_SEED_LOCK_VELD_UNITS) +
                     " sats / 50 VELD)");
             if (d_btc < AmmLedger::AMM_SEED_LOCK_BTCVELD_SATS)
                 throw std::runtime_error(
-                    "seed btcVELD leg is below the A4 locked-core minimum (" +
+                    "seed btcVELD leg is below the locked-core minimum (" +
                     std::to_string(AmmLedger::AMM_SEED_LOCK_BTCVELD_SATS) +
                     " sats)");
             // Layer-4 pool-cap mirror (consensus re-checks in ApplyAdd's seed branch).
@@ -4958,7 +4958,7 @@ private:
                     d_veld, d_btc, candidate_height);
             if (!locked_core_quote.valid)
                 throw std::runtime_error(
-                    "seed fails the A4 locked-core/sliver consensus rules");
+                    "seed fails the locked-core/sliver consensus rules");
             int64_t ubtc = onchain_tokens_ ? onchain_tokens_->GetBalance("btcVELD", from) : 0;
             if (ubtc < d_btc) throw std::runtime_error("insufficient btcVELD: need " + std::to_string(d_btc) + " sats, have " + std::to_string(ubtc));
             auto from_script = AddressToScript(from);

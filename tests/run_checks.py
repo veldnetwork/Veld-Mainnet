@@ -12,8 +12,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = {
     "source": [
-        "tests/security_scan_closure_wiring_tests.py",
-        "tests/security_scan_closure_extraction_tests.py",
+        "tests/wallet_authorization_wiring_tests.py",
+        "tests/wallet_authorization_extraction_tests.py",
         "scripts/check-how-to.py",
         "tests/portal_mobile_nav_tests.py",
         "tests/portal_worker_limit_tests.py",
@@ -29,8 +29,8 @@ SUITES = {
     ],
     "web": [
         "tests/wallet_co_mining_eligibility_tests.js",
-        "tests/security_scan_closure_script_syntax_tests.js",
-        "tests/security_scan_closure_wallet_tests.js",
+        "tests/wallet_script_syntax_tests.js",
+        "tests/wallet_authorization_tests.js",
         "tests/security_state_migration_wallet_tests.js",
         "tests/network_display_refresh_tests.js",
         "tests/portal_network_status_tests.js",

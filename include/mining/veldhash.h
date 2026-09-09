@@ -786,7 +786,7 @@ public:
                         // space (32-byte Hash256) has 2^256 entropy; coincidence
                         // is cryptographically infeasible.
                         //
-                        //  (Crypto M5 — nonce-space
+                        //  (nonce-space
                         // discipline). The ChaCha20 dataset uses an all-zero
                         // (12-byte) nonce against the seed-derived key. The
                         // wallet AEAD path uses a per-encryption RANDOM

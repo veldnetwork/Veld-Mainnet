@@ -283,11 +283,11 @@ public:
     // launch-ratio check.
     static constexpr int64_t AMM_SEED_LOCK_VELD_UNITS   = 5'000'000'000;  // 50 VELD
     static constexpr int64_t AMM_SEED_LOCK_BTCVELD_SATS = 50'000;         // 10% of pool ceiling
-    // Minimum withdrawable LP position (D-STATE-02).  A seed whose remainder
+    // Minimum withdrawable LP position.  A seed whose remainder
     // would be sub-minimum dust is invalid, fail-closed, rather than rounded.
     static constexpr int64_t LP_MIN_POSITION            = 1000;
 
-    // ---- D-STATE-02: active LP identity ceiling ----------------------------
+    // ---- active LP identity ceiling ----------------------------
     // lp_ erases a position only at zero, and ADD can mint to a fresh address.
     // The aggregate custody-bound pool ceiling does NOT bound identity count over time:
     // swaps and removals reduce reserves, after which new providers add while
@@ -567,7 +567,7 @@ public:
     }
 #endif
 
-    // ---- A4 locked-seed-core math -------------------------------------------
+    // ---- locked-seed-core math -------------------------------------------
     // ceil(a/b) on unsigned 128-bit.  b > 0 enforced by callers (both floors
     // are nonzero constants).
     static int64_t CeilDivU128(unsigned __int128 a, unsigned __int128 b) {
@@ -598,7 +598,7 @@ public:
     }
 
     // Canonical first-seed quote shared by consensus, RPC and tests.  Keeping
-    // all A4 floor/lock/sliver arithmetic here prevents a wallet from showing
+    // all floor/lock/sliver arithmetic here prevents a wallet from showing
     // the retired `g - MIN_LIQUIDITY` result for a seed that consensus will
     // either reject or lock more heavily.  `gross_lp` is total initial supply;
     // only `lp_minted` is owned and withdrawable by the seeder.
@@ -898,7 +898,7 @@ public:
                 return {-1, 0};
             minted = std::min(minted_from_veld, minted_from_btc);
         }
-        // A4: total supply grows by minted + the permanent lock (== g for a
+        // total supply grows by minted + the permanent lock (== g for a
         // seed).  Was MIN_LIQUIDITY; the lock generalises that constant.
         const unsigned __int128 lp_delta_u =
             (unsigned __int128)(uint64_t)minted +
@@ -907,12 +907,12 @@ public:
         const int64_t lp_delta = (int64_t)lp_delta_u;
         const auto lp_key = pool_id + ":" + addr;
         const int64_t owner_lp = lp_.count(lp_key) ? lp_.at(lp_key) : 0;
-        // Package-A D-STATE rule: a fresh identity must enter at the selected
+        // a fresh identity must enter at the selected
         // minimum. Existing providers may add any positive amount because their
         // resulting position is already above the retained floor.
         if (owner_lp == 0 && minted > 0 && minted < LP_MIN_POSITION)
             return {-1, 0};
-        // D-STATE-02: identity ceiling, fail-closed (see ApplyAdd).
+        // identity ceiling, fail-closed (see ApplyAdd).
         if (owner_lp == 0 && minted > 0 && lp_.size() >= AMM_MAX_LP_IDENTITIES)
             return {-1, 0};
         if (d_veld > INT64_MAX - p->reserve_veld ||
@@ -925,8 +925,8 @@ public:
             p->anchor_veld = p->reserve_veld;
             p->anchor_btcveld = p->reserve_btcveld;
         }
-        // A4: a floor-leg seed mints ZERO withdrawable units.  Do not create a
-        // zero-balance identity — the ledger's zero-erasure rule (D-STATE-02)
+        // a floor-leg seed mints ZERO withdrawable units.  Do not create a
+        // zero-balance identity — the ledger's zero-erasure rule
         // requires that only positive positions exist.
         if (minted > 0) lp_[lp_key] += minted;
         return {minted, use_btc};
@@ -1255,7 +1255,7 @@ public:
         // validation/execution behavior and therefore cannot be inferred or
         // omitted from a consensus-state measurement.
         //
-        // v4 () adds A4's locked_lp. It is NOT derivable from
+        // v4 adds the permanent locked_lp balance. It is NOT derivable from
         // lp_supply and the lp_ map on a node that did not observe the seed,
         // and it bounds every future REMOVE, so omitting it would let two nodes
         // agree on a digest while disagreeing on withdrawable liquidity.
@@ -1272,7 +1272,7 @@ public:
             sd::put_u64_le(body, (uint64_t)p.reserve_veld);
             sd::put_u64_le(body, (uint64_t)p.reserve_btcveld);
             sd::put_u64_le(body, (uint64_t)p.lp_supply);
-            sd::put_u64_le(body, (uint64_t)p.locked_lp);      // A4
+            sd::put_u64_le(body, (uint64_t)p.locked_lp);      // permanent seed lock
             sd::put_u32_le(body, p.fee_bps);
             sd::put_u64_le(body, (uint64_t)p.anchor_veld);
             sd::put_u64_le(body, (uint64_t)p.anchor_btcveld);
@@ -1613,7 +1613,7 @@ private:
         if (tx.outputs[0].value != (uint64_t)new_rveld) return false;
         if (v2b) {
             // Use the exact token-ledger transition predicate here, not just a
-            // balance check.  The launch D-state floor also constrains the
+            // balance check.  The launch state-capacity floor also constrains the
             // source remainder and destination balance/overflow.  Keeping this
             // in the pure path makes ValidateBlock and ProcessBlock agree.
             if (!tokens.CanAmmMove("btcVELD", p.btcveld_addr, op.user, out))
@@ -1695,7 +1695,7 @@ private:
             if (op.amt > INT64_MAX - p.reserve_veld) return false;
             if (tx.outputs[0].value != (uint64_t)(p.reserve_veld + op.amt)) return false;
         }
-        // A4: total supply grows by minted + the permanent lock (== g for a
+        // total supply grows by minted + the permanent lock (== g for a
         // seed).  Was MIN_LIQUIDITY; the lock generalises that constant.
         const unsigned __int128 lp_delta_u =
             (unsigned __int128)(uint64_t)minted +
@@ -1711,7 +1711,7 @@ private:
         if (owner_lp < 0 || minted > INT64_MAX - owner_lp) return false;
         if (owner_lp == 0 && minted > 0 && minted < LP_MIN_POSITION)
             return false;
-        // D-STATE-02: fail-closed admission at the identity ceiling. Existing
+        // fail-closed admission at the identity ceiling. Existing
         // providers are unaffected; only a NEW identity is refused, and it is
         // refused before any state mutation.
         if (owner_lp == 0 && minted > 0 && lp_.size() >= AMM_MAX_LP_IDENTITIES)
@@ -1733,8 +1733,8 @@ private:
             p.lp_supply = lp_delta;
         }
         else      { p.reserve_veld += op.amt; p.reserve_btcveld += use_btc; p.lp_supply += lp_delta; }
-        // A4: a floor-leg seed mints ZERO withdrawable units — never create a
-        // zero-balance identity (D-STATE-02 zero-erasure rule).
+        // a floor-leg seed mints ZERO withdrawable units — never create a
+        // zero-balance identity (zero-balance removal rule).
         if (minted > 0) lp_[lp_key] += minted;
         ChainPool(p, tx);
         return true;

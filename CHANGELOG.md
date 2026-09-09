@@ -3,6 +3,11 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## Documentation maintenance - 2026-09-09
+
+- Update the whitepaper, rules, and staking guides for ASERT at block 3,840, the 500 VELD ordinary stake, and the unchanged 1,000 VELD lottery requirement.
+- Replace internal review labels with descriptive explanations and test names; preserve regression coverage and release history.
+
 ## 3.1.3 - 2026-09-09
 
 - Keep the co-mining lottery minimum at 1,000 VELD across block 3,840.

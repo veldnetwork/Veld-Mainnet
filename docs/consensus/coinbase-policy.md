@@ -75,7 +75,7 @@ time, transaction and state validation, but does not establish shipping-profile
 proof-of-work or public-network qualification.
 
 `tests/coinbase_compatibility_tests.cpp` emits a differential transcript that
-can be compiled against the preserved audited source and the corrected source.
+can be compiled against the historical control source and the current source.
 It covers both sides of the independent 2880 boundary and the private upgrade
 boundary. This compares coinbase predicates with controlled UTXO inputs; it is
 not a replay of historical mainnet blocks or a transaction-signature test.

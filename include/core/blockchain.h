@@ -41,7 +41,7 @@
 
 namespace veld {
 
-// Canonical value-bearing OP_RETURN destination for the A3 finality-
+// Canonical value-bearing OP_RETURN destination for the finality-
 // equivocation burn. Blockchain::CommitBlock excludes every OP_RETURN from
 // the UTXO set, so value sent here is provably unspendable and can never enter
 // the distributable protocol vault. The fixed tag makes the destruction
@@ -4672,7 +4672,7 @@ public:
         if (parent_known && derived_height > 0) {
             uint64_t now = (uint64_t)std::time(nullptr);
 #if defined(VELD_TEST_HOOKS) && defined(VELD_DSTATE_QUALIFICATION)
-            // The native D-state corpus compresses five years of block heights
+            // The native state-capacity corpus compresses five years of block heights
             // into one qualification run. Keep MTP and every state transition
             // exact, but do not compare its synthetic timestamp to the host
             // wall clock. constants.h forbids this macro in public builds.
