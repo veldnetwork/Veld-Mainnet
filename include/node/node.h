@@ -3713,6 +3713,7 @@ public:
     void Stop() {
         (void)CloseWorkAdmissionBounded_(
             work_admission::Refusal::NodeNotRunning);
+        if (tcp_server_) tcp_server_->RequestWorkStop();
         {
             auto transition = chain_.AcquireConsensusTransitionGuard();
             work_admission_coordinator_.CancelAndClose(

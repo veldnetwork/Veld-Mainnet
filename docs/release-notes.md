@@ -13,7 +13,8 @@ Unreadable persistent identity is reported rather than silently replaced.
 Repair uses the verifier from the fresh complete package, so an older node's
 missing runtime DLL cannot prevent signed verification of its replacement.
 
-Shutdown interrupts outstanding RPC work and uses a cancellable watchdog.
+Shutdown closes queued validation before waiting for the active chain commit,
+interrupts outstanding RPC work, and uses a cancellable watchdog.
 Logs distinguish current-chain catch-up from independent historical validation.
 Peer diagnostics describe the exact connection. The wallet's lockup API reports
 the effective ordinary staking minimum consistently.

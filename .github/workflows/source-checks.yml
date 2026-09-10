@@ -191,6 +191,13 @@ jobs:
           - name: background node stop and restart
             fixture: reliability_node_shutdown_tests
             members: ''
+          - name: shutdown during an active chain commit
+            fixture: reliability_ingest_shutdown_tests
+            members: ''
+          - name: partial network startup and restart
+            fixture: reliability_server_restart_tests
+            standalone: true
+            members: ''
           - name: exact connection tip diagnostics
             fixture: reliability_peer_diagnostics_tests
             standalone: true

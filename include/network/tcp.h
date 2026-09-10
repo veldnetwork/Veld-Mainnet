@@ -1351,6 +1351,10 @@ public:
             }
         }
 
+        {
+            std::lock_guard<std::mutex> ingest_lock(ingest_mtx_);
+            ingest_stopping_.store(false, std::memory_order_release);
+        }
         running_.store(true, std::memory_order_release);
         if (!StartFinalityVoteWorkers_()) {
             running_.store(false, std::memory_order_release);
@@ -1618,20 +1622,16 @@ public:
         }
     }
 
+    // Cancel queued validation before the owner waits for its active commit.
+    // Keep connections available for the owner's shutdown peer-cache snapshot.
+    void RequestWorkStop() {
+        std::unique_lock<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        StopWorkLocked_();
+    }
+
     void Stop() {
         std::unique_lock<std::mutex> lifecycle_lock(lifecycle_mutex_);
-        {
-            // Admission and the lifecycle transition share the registry lock,
-            // giving a strict boundary: a connection is either fully registered
-            // before shutdown's snapshot or observes running=false and rejects.
-            std::lock_guard<std::mutex> registry_lock(peers_mutex_);
-            running_.store(false, std::memory_order_release);
-        }
-        // Close asynchronous crypto admission at the same lifecycle boundary
-        // as socket admission. Existing in-flight verification is bounded and
-        // joined below; queued attacker work is cancelled rather than making
-        // shutdown drain it.
-        SignalFinalityVoteStop_();
+        BeginStopLocked_();
         port_mapper_.Stop();
         // Wake listener polls first, but do not close or rewrite listen_fd_
         // while accept threads can still read it.  The former close + `=-1`
@@ -1706,12 +1706,8 @@ public:
         // destruction, then erase all queue/hash/source reservations so a
         // Start -> Stop -> Start cycle is a clean generation.
         JoinFinalityVoteWorkers_();
-        if (ingest_running_.load(std::memory_order_acquire)) {
-            ingest_running_.store(false, std::memory_order_release);
-            ingest_cv_.notify_all();
-            if (ingest_worker_thread_.joinable())
-                ingest_worker_thread_.join();
-        }
+        if (ingest_worker_thread_.joinable())
+            ingest_worker_thread_.join();
         {
             // Stop may leave queued (not in-flight) jobs after the worker exits.
             // Release every byte/count/hash/source reservation so a subsequent
@@ -5079,6 +5075,7 @@ private:
     bool                                    ingest_protected_preempt_{false};
     std::thread                             ingest_worker_thread_;
     std::atomic<bool>                       ingest_running_{false};
+    std::atomic<bool>                       ingest_stopping_{false};
 
     struct SourcePowBudgetEntry {
         std::shared_ptr<mining::ExpensivePowBudget> budget;
@@ -9489,16 +9486,32 @@ private:
 #endif
     }
 
+    // Work already executing may finish its commit; queued work cannot start
+    // another commit or reacquire the chain sequencer ahead of shutdown.
+    void StopWorkLocked_() {
+        {
+            std::lock_guard<std::mutex> ingest_lock(ingest_mtx_);
+            ingest_stopping_.store(true, std::memory_order_release);
+            ingest_running_.store(false, std::memory_order_release);
+        }
+        ingest_cv_.notify_all();
+        SignalFinalityVoteStop_();
+    }
+
+    void BeginStopLocked_() {
+        {
+            std::lock_guard<std::mutex> peers_lock(peers_mutex_);
+            running_.store(false, std::memory_order_release);
+        }
+        StopWorkLocked_();
+    }
+
     // Start() owns lifecycle_mutex_ while calling this. It intentionally does
     // not call public Stop(), which would recursively lock the same mutex.
     // Every post-FINVOTE producer is quiesced before its registry/state is
     // cleared, so a failed partial generation is immediately restartable.
     void RollbackFailedStartLocked_() {
-        {
-            std::lock_guard<std::mutex> peers_lock(peers_mutex_);
-            running_.store(false, std::memory_order_release);
-        }
-        SignalFinalityVoteStop_();
+        BeginStopLocked_();
 
         const SocketHandle listener_fd = listen_fd_;
         if (veld::compat::IsValidSocket(listener_fd)) {
@@ -9552,9 +9565,6 @@ private:
             el_workers_.clear();
         }
 
-        if (ingest_running_.exchange(false, std::memory_order_acq_rel)) {
-            ingest_cv_.notify_all();
-        }
         if (ingest_worker_thread_.joinable())
             ingest_worker_thread_.join();
 
@@ -10009,6 +10019,8 @@ private:
                              size_t wire_bytes,
                              const std::string& sender_key,
                              std::shared_ptr<Connection> sender_conn) {
+        if (ingest_stopping_.load(std::memory_order_acquire))
+            return IngestEnqueueResult::Full;
         if (wire_bytes == 0 || wire_bytes > MAX_BLOCK_SIZE)
             return IngestEnqueueResult::Full;
         const std::string block_hash = HashToHex(blk.GetHash());
@@ -10030,6 +10042,8 @@ private:
         bool queued = false;
         {
             std::lock_guard<std::mutex> lk(ingest_mtx_);
+            if (ingest_stopping_.load(std::memory_order_acquire))
+                return IngestEnqueueResult::Full;
             const uint64_t now = MonotonicSeconds();
             PruneProtectedBlockPolicyLocked_(now);
             const uint64_t connection_id = sender_conn
