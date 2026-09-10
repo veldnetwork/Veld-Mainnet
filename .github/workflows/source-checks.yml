@@ -41,6 +41,10 @@ jobs:
       - name: Verify native mining launcher recovery limits
         if: runner.os == 'Windows'
         run: python tests/windows_mining_restart_tests.py
+      - name: Verify updater file locks and state protection
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: tests/windows_updater_durability_tests.ps1 -Output "$env:RUNNER_TEMP/veld-updater-durability"
       - name: Compile and run work-admission tests
         if: runner.os == 'Linux'
         shell: bash
@@ -166,13 +170,27 @@ jobs:
             members: ''
           - name: background peer heartbeat and reconnect
             fixture: background_peer_liveness_tests
+            standalone: true
             members: ''
           - name: background periodic tip wire protocol
             fixture: reliability_background_peer_tests
+            standalone: true
             defines: '-DVELD_RELIABILITY_IDENTITY_PROFILE'
             members: '110'
+          - name: background peer identity rejection
+            fixture: reliability_background_peer_tests
+            standalone: true
+            defines: '-DVELD_RELIABILITY_IDENTITY_PROFILE'
+            members: '5 bad-identity'
+          - name: interrupted RPC stop and restart
+            fixture: reliability_rpc_shutdown_tests
+            members: ''
+          - name: background node stop and restart
+            fixture: reliability_node_shutdown_tests
+            members: ''
           - name: exact connection tip diagnostics
             fixture: reliability_peer_diagnostics_tests
+            standalone: true
             members: ''
           - name: snapshot disabled recovery barriers
             fixture: snapshot_disabled_recovery_tests
@@ -202,8 +220,12 @@ jobs:
           c++ -std=c++20 -O1 -pthread -DVELD_USE_LEVELDB -Iinclude -Ivendor/pqc ${{ matrix.defines }} \
             "tests/${{ matrix.fixture }}.cpp" "${objects[@]}" \
             -lleveldb -lssl -lcrypto -o "$RUNNER_TEMP/${{ matrix.fixture }}"
-          sudo unshare --net bash -eu -c 'ip link set lo up; exec runuser -u "$1" -- "$2" "$3" ${4:+"$4"}' \
-            _ "$(id -un)" "$RUNNER_TEMP/${{ matrix.fixture }}" "$RUNNER_TEMP/fixture-state" '${{ matrix.members }}'
+          fixture_args=("$RUNNER_TEMP/fixture-state")
+          if [[ '${{ matrix.standalone }}' == 'true' ]]; then fixture_args=(); fi
+          extra_args=()
+          if [[ -n '${{ matrix.members }}' ]]; then read -r -a extra_args <<< '${{ matrix.members }}'; fi
+          sudo unshare --net bash -eu -c 'ip link set lo up; exec runuser -u "$1" -- "${@:2}"' \
+            _ "$(id -un)" "$RUNNER_TEMP/${{ matrix.fixture }}" "${fixture_args[@]}" "${extra_args[@]}"
       - name: Verify private fixture exclusion from public profiles
         if: matrix.fixture == 'coinbase_cap_admission_tests'
         run: python3 tests/coinbase_fixture_profile_tests.py --compiler c++ --output-dir "$RUNNER_TEMP/coinbase-profiles"

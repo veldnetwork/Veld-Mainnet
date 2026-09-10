@@ -3643,7 +3643,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       who found it and 50% into the vault. <span id="staking-lock-detail"></span>
     </div>
     <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:2px 0 8px" id="val-cta-help">
-      Clicking Register sends the minimum stake (the custodial bond) from your
+      Clicking Register sends the required validator bond from your
       wallet to the protocol stake vault and announces you as a validator — all
       in one transaction. The bond is returned in full when you cleanly
       deregister. Ordinary endorsement double-signing confiscates 50%;
@@ -3677,7 +3677,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
  Calm, plain, non-alarming. Hidden by loadValidatorsPage() once the
  address is already registered (the deregister flow has its own note). -->
     <div id="val-reg-disclaimer" style="margin-top:10px;font-size:11.5px;line-height:1.6;color:var(--muted);padding:10px 12px;border-radius:8px;border:1px solid var(--b1);background:rgba(50,240,110,.04)">
-      Registering bonds the minimum stake from your spendable balance into the protocol custody vault. The bond is <b>locked for at least 100 blocks</b> &mdash; you cannot deregister sooner. On a clean deregister it is <b style="color:var(--em)">returned in full</b> after the complete 43,200-block (~90-day) finality-equivocation evidence horizon (measured from the last counted finality vote when later), at the next settlement boundary. Ordinary endorsement double-signing confiscates 50%; locked-finality equivocation confiscates 100% (25% reporter, 75% burn).
+      Registering commits the required validator bond from your spendable balance into the protocol custody vault. The bond is <b>locked for at least 100 blocks</b> &mdash; you cannot deregister sooner. On a clean deregister it is <b style="color:var(--em)">returned in full</b> after the complete 43,200-block (~90-day) finality-equivocation evidence horizon (measured from the last counted finality vote when later), at the next settlement boundary. Ordinary endorsement double-signing confiscates 50%; locked-finality equivocation confiscates 100% (25% reporter, 75% burn).
     </div>
   </div>
 
@@ -12819,7 +12819,7 @@ function loadValidatorsPage() {
         document.getElementById('val-dereg-btn').style.display = 'none';
         if (_vTitle) _vTitle.textContent = 'Become a Validator';
         if (_vHelp)  _vHelp.textContent =
-          'Bonds the minimum stake from your unlocked wallet and starts ' +
+          'Commits the required validator bond from your unlocked wallet and starts ' +
           'endorsing for a share of the 10% pool. Slashable on a proven ' +
           'double-sign; returned in full on a clean deregister.';
         // Not registered: show the pre-register disclaimer, hide the
@@ -14793,7 +14793,7 @@ function govVote(id, choice) {
     var msg = e.message || 'Vote failed';
     if (/registered validator/i.test(msg) || /not_eligible/i.test(msg)) {
       msg = 'Voting is restricted to registered validators. ' +
-            'Open the Validators tab to see the minimum stake requirement and register.';
+            'Open the Validators tab to see the required validator bond and register.';
     }
     if (res) govShowAlert(res, 'err', escHtml(msg));
     __voteRel();

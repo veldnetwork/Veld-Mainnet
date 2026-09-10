@@ -2906,16 +2906,16 @@ public:
         rpc_.SetPeerInfo([this]() -> std::string {
             if (!tcp_server_) return "[]";
             auto peers       = tcp_server_->GetPeerInfoList();
-            auto tip_snaps   = tcp_server_->SnapshotPeerTips();
+            auto tip_snaps   = tcp_server_->SnapshotConnectionTips();
             uint64_t our_h   = chain_.Height();
             // system_clock, NOT steady: updated_at is stamped with system_clock at
             // every RecordPeerTip site — a steady read here yielded age ≈ -(unix now)
             int64_t now_s    = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
 
-            std::unordered_map<std::string, const veld::net::NodeServer::PeerTipSnapshot*> by_ip;
-            by_ip.reserve(tip_snaps.size());
-            for (const auto& s : tip_snaps) by_ip[s.ip] = &s;
+            std::unordered_map<std::string, const veld::net::NodeServer::PeerTipSnapshot*> by_connection;
+            by_connection.reserve(tip_snaps.size());
+            for (const auto& s : tip_snaps) by_connection[s.connection_id] = &s;
 
             std::ostringstream j;
             j << "[";
@@ -2923,16 +2923,14 @@ public:
             for (const auto& p : peers) {
                 if (!first) j << ",";
                 first = false;
-                std::string ip_only = p.ip;
-                size_t colon = ip_only.find_last_of(':');
-                if (colon != std::string::npos) ip_only = ip_only.substr(0, colon);
-                auto it = by_ip.find(ip_only);
-                bool   have_tip      = (it != by_ip.end());
+                auto it = by_connection.find(p.connection_id);
+                bool   have_tip      = (it != by_connection.end());
                 uint64_t peer_h      = have_tip ? it->second->height : 0;
                 std::string peer_hex = have_tip ? HashToHex(it->second->hash) : "";
                 int64_t age_s        = have_tip ? (now_s - it->second->updated_at) : -1;
                 int64_t lag_blocks   = have_tip ? (int64_t)our_h - (int64_t)peer_h : 0;
                 j << "{"
+                  << "\"connection_id\":\"" << p.connection_id << "\","
                   << "\"addr\":\"" << p.addr << "\","
                   << "\"ip\":\"" << p.ip << "\","
                   << "\"port\":" << p.port << ","

@@ -25,6 +25,15 @@ Verify downloaded binaries using the official package manifest and signature.
 Building from source does not grant the official release signature. Different
 toolchains or paths can produce different binary hashes.
 
+## Veld 3.1.7
+
+The `v3.1.7` tag identifies the consolidated reliability source. The
+[release identity record](https://veld.network/downloads/RELEASE-IDENTITY-3.1.7.json)
+binds its exact commit and tree to the distributed package hashes. The
+[corresponding source archive](https://veld.network/downloads/Veld-3.1.7-source.tar.gz)
+is generated from that commit. Verify the detached release manifest signature
+and individual payload hashes before installing downloaded artifacts.
+
 ## Veld 3.1.6
 
 The `v3.1.6` tag identifies the source used for the distributed Windows client

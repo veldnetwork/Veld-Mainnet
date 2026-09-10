@@ -51,7 +51,7 @@ REM   Bump this string EVERY TIME a new Windows client zip is published.
 REM   Format: MAJOR.MINOR.PATCH (strict semantic versioning).
 REM   It's displayed in the welcome banner so users can confirm they're
 REM   on the current release at a glance.
-set CLIENT_VERSION=3.1.6
+set CLIENT_VERSION=3.1.7
 title Veld Desktop Mining Client v%CLIENT_VERSION%
 
 echo.
@@ -200,6 +200,7 @@ REM up the complete old signed tree, atomically replaces each file, promotes
 REM the signed manifest last, rehashes the live tree, and only then relaunches.
 REM Any error rolls back; any power loss is recovered at the top of this file.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0veld-update.ps1" -Mode Install -InstallDir "%_VELD_INSTALL_DIR%" -Distribution Terminal
+if %errorlevel%==4 goto skip_update
 if errorlevel 1 goto update_failed
 goto signed_update_complete
 :signed_update_complete

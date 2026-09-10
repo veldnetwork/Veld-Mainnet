@@ -61,6 +61,7 @@ $MaxReleaseEntryBytes = 256MB
 $MaxReleaseExpandedBytes = 512MB
 
 function Abort-Update([string]$Message) {
+    try { Write-UpdateResult 'failed' $Message } catch { }
     Write-Host ('   [update] ABORT: ' + $Message)
     exit 1
 }
@@ -389,6 +390,12 @@ function Read-Manifest([string]$Path) {
         }
         $sha = $matches[1]
         $rel = $matches[2]
+        # Release packages own program files only. A valid signature must not
+        # make a packaging mistake overwrite a miner's mutable identity/state.
+        if ($rel -match '(?i)(^|/)(veld-data|wallet-data|background-ibd|security)(/|$)' -or
+            $rel -match '(?i)(^|/)(node-gui\.conf|remote-monitor\.dat|remote-trust\.dat|miner\.key|wallet\.dat|full-ibd\.receipt|fleet-full-ibd\.receipt|\.veld-update[^/]*)(/|$)') {
+            throw ('release manifest attempts to replace persistent user state: ' + $rel)
+        }
         if ($rel.StartsWith('/') -or $rel.Contains('\') -or
             ($rel -split '/') -contains '..' -or ($rel -split '/') -contains '.' -or
             $rel -notmatch '^[A-Za-z0-9._ ()/-]+$') {
@@ -586,8 +593,45 @@ function Replace-FileAtomic([string]$Pending, [string]$Destination) {
     }
 }
 
+function Test-RetryableFileError([Exception]$Failure) {
+    for ($depth = 0; $null -ne $Failure -and $depth -lt 8; $depth++) {
+        # Sharing/lock violations and Windows executable-image access denial
+        # are transient on scanner/process teardown paths. Never retry a hash,
+        # signature, path-policy, or release-version refusal.
+        if (($Failure -is [IO.IOException] -or $Failure -is [UnauthorizedAccessException]) -and
+            (($Failure.HResult -band 65535) -in @(5, 32, 33))) { return $true }
+        $Failure = $Failure.InnerException
+    }
+    return $false
+}
+
 function Install-FileAtomic([string]$Source, [string]$Destination, [string]$ExpectedSha) {
+    $deadline = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        try { Install-FileAtomicOnce $Source $Destination $ExpectedSha; return }
+        catch {
+            if (-not (Test-RetryableFileError $_.Exception)) { throw }
+            if ($deadline.Elapsed.TotalSeconds -ge 15) {
+                throw ('Windows is still locking ' + [IO.Path]::GetFileName($Destination) +
+                    '. Close other Veld windows using this installation and retry. ' + $_.Exception.Message)
+            }
+            Start-Sleep -Milliseconds 250
+        }
+    } while ($true)
+}
+
+function Install-FileAtomicOnce([string]$Source, [string]$Destination, [string]$ExpectedSha) {
     $safeDestination = Ensure-SafeParent $Destination 'signed install destination'
+    Assert-RegularFile $Source 'signed install source'
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $Source).Hash.ToLower() -ne $ExpectedSha) {
+        throw 'signed install source changed hash'
+    }
+    if ([IO.File]::Exists($safeDestination)) {
+        Assert-RegularFile $safeDestination 'existing install destination'
+        # Idempotence matters during rollback: a locked file which was never
+        # changed already has the required signed bytes and needs no rename.
+        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $safeDestination).Hash.ToLower() -eq $ExpectedSha) { return }
+    }
     $pending = $safeDestination + '.veld-update-' + [guid]::NewGuid().ToString('N') + '.new'
     try {
         Copy-Durable $Source $pending
@@ -659,6 +703,16 @@ function Read-TransactionState() {
 
 function Open-TransactionLock([int]$WaitSeconds = 0) {
     $lockPath = Join-Path $Transaction 'active.lock'
+    return Open-UpdateLock $lockPath $WaitSeconds
+}
+
+function Open-InstallLock([int]$WaitSeconds = 0) {
+    # The stable lock lives outside the directory which recovery removes.
+    # Hold it through cleanup and relaunch, including the handoff boundary.
+    return Open-UpdateLock (Join-Path $InstallDir '.veld-update.lock') $WaitSeconds
+}
+
+function Open-UpdateLock([string]$lockPath, [int]$WaitSeconds = 0) {
     Assert-SafeInstallPath $lockPath 'update transaction lock' | Out-Null
     if ([IO.File]::Exists($lockPath)) {
         Assert-RegularFile $lockPath 'update transaction lock'
@@ -679,6 +733,24 @@ function Open-TransactionLock([int]$WaitSeconds = 0) {
             Start-Sleep -Milliseconds 100
         }
     } while ($true)
+}
+
+function Write-UpdateResult([string]$Status, [string]$Message) {
+    $destination = Ensure-SafeParent (Join-Path $InstallDir 'update-last-result.json') 'update result'
+    if ([IO.File]::Exists($destination)) { Assert-RegularFile $destination 'previous update result' }
+    $pending = $destination + '.' + [guid]::NewGuid().ToString('N') + '.new'
+    $body = @{schema=1;status=$Status;phase=$Mode;message=$Message;
+        utc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($body + "`n")
+    try {
+        $stream = [IO.File]::Open($pending, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try { $stream.Write($bytes,0,$bytes.Length); $stream.Flush($true) }
+        finally { $stream.Dispose() }
+        if ([IO.File]::Exists($destination)) { Replace-FileAtomic $pending $destination }
+        else { [IO.File]::Move($pending,$destination) }
+    } finally {
+        if ([IO.File]::Exists($pending)) { [IO.File]::Delete($pending) }
+    }
 }
 
 function Get-VerifiedPackage([string]$Stage) {
@@ -985,7 +1057,17 @@ function Invoke-TransactionCommit([int]$LauncherPid) {
     if ($null -ne $failure -and -not $committed) {
         throw ('update transaction failed: ' + $failure)
     }
+    try { Write-UpdateResult 'installed' 'Signed update installed and verified.' } catch { }
+    if ($null -ne $script:InstallLock) { $script:InstallLock.Dispose(); $script:InstallLock = $null }
     Relaunch-InstalledClient
+}
+
+# A single owner covers recovery, staging, commit and cleanup. Watch is
+# read-only and must not hold this lock throughout its day-long wait loop.
+$InstallLock = $null
+if ($Mode -ne 'Watch') {
+    try { $InstallLock = Open-InstallLock -WaitSeconds $(if ($Mode -eq 'Commit') { 30 } else { 0 }) }
+    catch { Write-Host ('   [update] ABORT: ' + $_.Exception.Message); exit 1 }
 }
 
 if ($Mode -eq 'Recover') {
@@ -994,6 +1076,7 @@ if ($Mode -eq 'Recover') {
         exit 0
     }
     catch {
+        try { Write-UpdateResult 'recovery-required' $_.Exception.Message } catch { }
         Write-Host ('   [update] RECOVERY FAILED: ' + $_.Exception.Message)
         exit 1
     }
@@ -1005,7 +1088,9 @@ if ($Mode -eq 'Commit') {
         exit 0
     }
     catch {
+        try { Write-UpdateResult 'failed' $_.Exception.Message } catch { }
         Write-Host ('   [update] COMMIT FAILED: ' + $_.Exception.Message)
+        if ($null -ne $script:InstallLock) { $script:InstallLock.Dispose(); $script:InstallLock = $null }
         try { Relaunch-InstalledClient } catch { }
         exit 1
     }
@@ -1147,7 +1232,7 @@ try {
     if ($comparison -eq 0) {
         Write-Host ('   [update] No install: signed version ' + $remoteVersion.Text + ' is already installed.')
         Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
-        exit 0
+        exit 4
     }
 
     $zip = Join-Path $TempRoot $RemoteZipName
@@ -1219,6 +1304,9 @@ try {
     $TransactionOwned = $true
     Assert-SafeInstallPath $Transaction 'new update transaction' | Out-Null
     $TransactionLock = Open-TransactionLock
+    # A power loss during stage transfer is discardable, not an ambiguous
+    # transaction without a state file. No live program file has changed.
+    Write-TransactionState 'PREPARED'
     $transactionStage = Join-Path $Transaction 'stage'
     Move-Item -LiteralPath $stage -Destination $transactionStage
     $transactionPackage = Get-VerifiedPackage $transactionStage
@@ -1243,6 +1331,7 @@ try {
     exit 0
 }
 catch {
+    try { Write-UpdateResult 'failed' $_.Exception.Message } catch { }
     Write-Host ('   [update] FAILED: ' + $_.Exception.Message)
     if ($null -ne $TransactionLock) {
         $TransactionLock.Dispose()

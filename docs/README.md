@@ -12,7 +12,7 @@
 
 - [Running Veld](operations/README.md): launchers, node roles, and updates.
 - [Node health](operations/node-health.md): synchronization, peers, and state consistency.
-- [Release notes](release-notes.md): 3.1.6 update guidance and compatibility.
+- [Release notes](release-notes.md): 3.1.7 update guidance and compatibility.
 - [Changelog](../CHANGELOG.md): source changes and pending client changes.
 
 ## Security and protocol

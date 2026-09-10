@@ -79,6 +79,7 @@ if /I not "%VELD_UPDATE_CHOICE%"=="Y" (
     exit /b 1
 )
 powershell -NoProfile -ExecutionPolicy Bypass -File "%VELD_UPDATER%" -Mode Install -InstallDir "%VELD_INSTALL_DIR%"
+if %errorlevel%==4 goto :launch
 if errorlevel 1 (
     echo.
     echo   The signed update could not be installed. No unverified files were launched.

@@ -10,6 +10,10 @@
 #include <string>
 #include <cstring>
 #include <unordered_map>
+#include <unordered_set>
+#ifndef _WIN32
+#include <poll.h>
+#endif
 #include <cctype>
 #include <cstdlib>
 #include <cstdio>
@@ -200,6 +204,7 @@ public:
     ~RpcHttpServer() { Stop(); }
 
     bool Start(const std::function<bool()>& activation_guard = {}) {
+        std::lock_guard<std::mutex> lifecycle(lifecycle_mutex_);
         activation_guard_refused_.store(false, std::memory_order_release);
         if (running_.load(std::memory_order_acquire) || thread_.joinable())
             return false;
@@ -243,6 +248,17 @@ public:
         if (::listen(listen_fd_, 16) < 0) {
             VELD_CLOSE_SOCKET(listen_fd_); listen_fd_ = compat::kInvalidSocket; return false;
         }
+#ifdef _WIN32
+        u_long nonblocking = 1;
+        const bool listener_ready = ::ioctlsocket(listen_fd_, FIONBIO, &nonblocking) == 0;
+#else
+        const int flags = ::fcntl(listen_fd_, F_GETFL, 0);
+        const bool listener_ready = flags >= 0 &&
+            ::fcntl(listen_fd_, F_SETFL, flags | O_NONBLOCK) == 0;
+#endif
+        if (!listener_ready) {
+            VELD_CLOSE_SOCKET(listen_fd_); listen_fd_ = compat::kInvalidSocket; return false;
+        }
         if (!net::ListenerActivationPermitted(activation_guard)) {
             activation_guard_refused_.store(true, std::memory_order_release);
             VELD_CLOSE_SOCKET(listen_fd_); listen_fd_ = compat::kInvalidSocket; return false;
@@ -264,21 +280,34 @@ public:
     }
 
     void Stop() {
+        std::lock_guard<std::mutex> lifecycle(lifecycle_mutex_);
         running_ = false;
+        shutdown_phase_.store("rpc acceptor", std::memory_order_release);
+        // The acceptor polls a nonblocking listener with a bounded timeout.
+        // Keep the descriptor alive until it exits: closing it concurrently
+        // can reuse its numeric value under poll/accept on another thread.
+        if (thread_.joinable()) thread_.join();
         if (compat::IsValidSocket(listen_fd_)) {
-#ifdef _WIN32
-            ::shutdown((SOCKET)listen_fd_, SD_BOTH);
-#else
-            ::shutdown(listen_fd_, SHUT_RDWR);
-#endif
             VELD_CLOSE_SOCKET(listen_fd_);
         }
-        if (thread_.joinable()) thread_.join();
         listen_fd_ = compat::kInvalidSocket;
+        shutdown_phase_.store("rpc requests", std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(connection_workers_mutex_);
+            for (const auto fd : request_sockets_) {
+#ifdef _WIN32
+                ::shutdown(fd, SD_BOTH);
+#else
+                ::shutdown(fd, SHUT_RDWR);
+#endif
+            }
+        }
         JoinConnectionWorkers();
+        shutdown_phase_.store("rpc stopped", std::memory_order_release);
     }
 
     uint16_t Port() const { return port_; }
+    const char* ShutdownPhase() const { return shutdown_phase_.load(std::memory_order_acquire); }
 
 private:
     RpcServer&        rpc_;
@@ -287,22 +316,43 @@ private:
     std::atomic<bool> activation_guard_refused_{false};
     SocketHandle      listen_fd_;
     std::thread       thread_;
+    std::mutex        lifecycle_mutex_;
+    std::atomic<const char*> shutdown_phase_{"rpc running"};
     std::string       ui_html_;
     std::string       auth_token_;
 
-    static bool SendAll(SocketHandle fd, const char* bytes, size_t size) {
+    static bool RetryableSocketWait() {
+#ifdef _WIN32
+        const int error = WSAGetLastError();
+        return error == WSAEINTR || error == WSAEWOULDBLOCK || error == WSAETIMEDOUT;
+#else
+        return errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK;
+#endif
+    }
+
+    int ReceiveUntil(SocketHandle fd, char* bytes, int size,
+                     std::chrono::steady_clock::time_point deadline) {
+        while (running_.load(std::memory_order_acquire) &&
+               std::chrono::steady_clock::now() < deadline) {
+            const int received = ::recv(fd, bytes, size, 0);
+            if (!running_.load(std::memory_order_acquire)) return 0;
+            if (received >= 0 || !RetryableSocketWait()) return received;
+        }
+        return 0;
+    }
+
+    bool SendAll(SocketHandle fd, const char* bytes, size_t size) {
         size_t sent = 0;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         while (sent < size) {
+            if (!running_.load(std::memory_order_acquire) ||
+                std::chrono::steady_clock::now() >= deadline) return false;
             const size_t remaining = size - sent;
             const int chunk = static_cast<int>(std::min<size_t>(
                 remaining, static_cast<size_t>(INT_MAX)));
             const int wrote = ::send(fd, bytes + sent, chunk, MSG_NOSIGNAL);
             if (wrote < 0) {
-#ifdef _WIN32
-                if (WSAGetLastError() == WSAEINTR) continue;
-#else
-                if (errno == EINTR) continue;
-#endif
+                if (RetryableSocketWait()) continue;
                 return false;
             }
             if (wrote == 0) return false;
@@ -311,11 +361,11 @@ private:
         return true;
     }
 
-    static bool SendAll(SocketHandle fd, const std::string& value) {
+    bool SendAll(SocketHandle fd, const std::string& value) {
         return SendAll(fd, value.data(), value.size());
     }
 
-    static void SendEmptyError(SocketHandle fd, const char* status) {
+    void SendEmptyError(SocketHandle fd, const char* status) {
         const std::string response = std::string("HTTP/1.1 ") + status +
             "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
         (void)SendAll(fd, response);
@@ -330,6 +380,14 @@ private:
     };
     std::mutex connection_workers_mutex_;
     std::vector<ConnectionWorker> connection_workers_;
+    std::unordered_set<SocketHandle> request_sockets_;
+
+    void CloseRequestSocket(SocketHandle fd) {
+        // Serialize shutdown with removal/close so Stop cannot touch a
+        // recycled descriptor. Only the registered request owner closes it.
+        std::lock_guard<std::mutex> lock(connection_workers_mutex_);
+        if (request_sockets_.erase(fd)) VELD_CLOSE_SOCKET(fd);
+    }
 
     void ReapConnectionWorkers() {
         std::vector<std::thread> finished;
@@ -573,12 +631,25 @@ private:
     void AcceptLoop() {
         while (running_) {
             ReapConnectionWorkers();
+#ifdef _WIN32
+            WSAPOLLFD ready{listen_fd_, POLLIN, 0};
+            const int poll_result = ::WSAPoll(&ready, 1, 100);
+#else
+            pollfd ready{listen_fd_, POLLIN, 0};
+            const int poll_result = ::poll(&ready, 1, 100);
+#endif
+            if (!running_.load(std::memory_order_acquire)) break;
+            if (poll_result <= 0 || !(ready.revents & POLLIN)) continue;
             struct sockaddr_in client{};
             socklen_t len = sizeof(client);
             SocketHandle fd = ::accept(listen_fd_, (struct sockaddr*)&client, &len);
             if (!compat::IsValidSocket(fd)) {
                 if (running_) std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
+            }
+            {
+                std::lock_guard<std::mutex> lock(connection_workers_mutex_);
+                request_sockets_.insert(fd);
             }
             if (inflight_conns_.load(std::memory_order_acquire)
                 >= MAX_INFLIGHT_RPC_CONNS) {
@@ -587,25 +658,27 @@ private:
                     "Content-Length: 0\r\n"
                     "Connection: close\r\n\r\n";
                 (void)SendAll(fd, busy, std::strlen(busy));
-                VELD_CLOSE_SOCKET(fd);
+                CloseRequestSocket(fd);
                 continue;
             }
 
 #ifdef _WIN32
-            DWORD to_ms = 10000;
-            const bool timeouts_ok =
+            u_long blocking = 0;
+            const bool blocking_ok = ::ioctlsocket(fd, FIONBIO, &blocking) == 0;
+            DWORD to_ms = 100;
+            const bool timeouts_ok = blocking_ok &&
                 ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
                              (const char*)&to_ms, sizeof(to_ms)) == 0 &&
                 ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO,
                              (const char*)&to_ms, sizeof(to_ms)) == 0;
 #else
-            struct timeval tv{10, 0};
+            struct timeval tv{0, 100000};
             const bool timeouts_ok =
                 ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == 0 &&
                 ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) == 0;
 #endif
             if (!timeouts_ok) {
-                VELD_CLOSE_SOCKET(fd);
+                CloseRequestSocket(fd);
                 continue;
             }
 
@@ -623,7 +696,7 @@ private:
                         }
                     } g{&inflight_conns_, done.get()};
                     try { HandleConnection(fd); }
-                    catch (...) { VELD_CLOSE_SOCKET(fd); }
+                    catch (...) { CloseRequestSocket(fd); }
                 });
                 worker_started = true;
                 try {
@@ -640,7 +713,7 @@ private:
                 std::cerr << "  [rpc-http] thread spawn failed (" << e.what()
                           << ") — dropping request, socket fd=" << fd << "\n";
                 std::cerr.flush();
-                if (!worker_started) VELD_CLOSE_SOCKET(fd);
+                if (!worker_started) CloseRequestSocket(fd);
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
             } catch (const std::exception& e) {
                 if (!worker_started)
@@ -648,7 +721,7 @@ private:
                 std::cerr << "  [rpc-http] unexpected thread-spawn error: "
                           << e.what() << "\n";
                 std::cerr.flush();
-                if (!worker_started) VELD_CLOSE_SOCKET(fd);
+                if (!worker_started) CloseRequestSocket(fd);
             }
         }
         ReapConnectionWorkers();
@@ -660,7 +733,7 @@ private:
         if (::getpeername(fd, (struct sockaddr*)&peer, &plen) == 0) {
             uint32_t ip = ntohl(peer.sin_addr.s_addr);
             if ((ip >> 24) != 127) {
-                VELD_CLOSE_SOCKET(fd);
+                CloseRequestSocket(fd);
                 return;
             }
         }
@@ -671,11 +744,12 @@ private:
         raw.reserve(8192);
         char buf[8192];
         size_t header_end = std::string::npos;
+        const auto request_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         while ((header_end = raw.find("\r\n\r\n")) == std::string::npos &&
                raw.size() < MAX_HEADERS) {
             const size_t room = MAX_HEADERS - raw.size();
             const int want = static_cast<int>(std::min(room, sizeof(buf)));
-            const int got = ::recv(fd, buf, want, 0);
+            const int got = ReceiveUntil(fd, buf, want, request_deadline);
             if (got <= 0) break;
             raw.append(buf, static_cast<size_t>(got));
         }
@@ -683,7 +757,7 @@ private:
             SendEmptyError(fd, raw.size() >= MAX_HEADERS
                                ? "431 Request Header Fields Too Large"
                                : "400 Bad Request");
-            VELD_CLOSE_SOCKET(fd);
+            CloseRequestSocket(fd);
             return;
         }
 
@@ -695,7 +769,7 @@ private:
             while (raw.size() < target) {
                 const size_t room = target - raw.size();
                 const int want = static_cast<int>(std::min(room, sizeof(buf)));
-                const int got = ::recv(fd, buf, want, 0);
+                const int got = ReceiveUntil(fd, buf, want, request_deadline);
                 if (got <= 0) break;
                 raw.append(buf, static_cast<size_t>(got));
             }
@@ -709,7 +783,7 @@ private:
                 parse_status == rpc_http_detail::ParseStatus::BODY_TOO_LARGE
                     ? "413 Payload Too Large" : "400 Bad Request";
             SendEmptyError(fd, status);
-            VELD_CLOSE_SOCKET(fd);
+            CloseRequestSocket(fd);
             return;
         }
 
@@ -735,7 +809,7 @@ private:
         if (parsed.target != "/" || !canonical_host || !canonical_origin ||
             !canonical_fetch_site) {
             SendEmptyError(fd, "400 Bad Request");
-            VELD_CLOSE_SOCKET(fd);
+            CloseRequestSocket(fd);
             return;
         }
 
@@ -776,7 +850,7 @@ private:
                     + cors + "Content-Length: " + std::to_string(err.size())
                     + "\r\nConnection: close\r\n\r\n" + err;
                 (void)SendAll(fd, resp);
-                VELD_CLOSE_SOCKET(fd);
+                CloseRequestSocket(fd);
                 return;
             }
         }
@@ -803,7 +877,7 @@ private:
                         + cors + "Content-Length: " + std::to_string(err.size())
                         + "\r\nConnection: close\r\n\r\n" + err;
                     (void)SendAll(fd, resp);
-                    VELD_CLOSE_SOCKET(fd);
+                    CloseRequestSocket(fd);
                     return;
                 }
                 RecordFailedAuth(client_ip);
@@ -814,7 +888,7 @@ private:
                     + cors + "Content-Length: " + std::to_string(err.size())
                     + "\r\nConnection: close\r\n\r\n" + err;
                 (void)SendAll(fd, resp);
-                VELD_CLOSE_SOCKET(fd);
+                CloseRequestSocket(fd);
                 return;
             }
         }
@@ -833,7 +907,7 @@ private:
                         + cors + "Content-Length: " + std::to_string(err.size())
                         + "\r\nConnection: close\r\n\r\n" + err;
                     (void)SendAll(fd, resp);
-                    VELD_CLOSE_SOCKET(fd);
+                    CloseRequestSocket(fd);
                     return;
                 }
                 static const char* hex = "0123456789abcdef";
@@ -898,7 +972,7 @@ private:
         }
 
         (void)SendAll(fd, response);
-        VELD_CLOSE_SOCKET(fd);
+        CloseRequestSocket(fd);
     }
 };
 

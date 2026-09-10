@@ -24,11 +24,12 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
-**3.1.6** consolidates the Windows updater, bundled-runtime, and local-chain
-preservation fixes. Update checks recover interrupted transactions, downloads
-retry transient failures, and the complete Windows package includes a repair
-helper for existing installations. See the [release notes](docs/release-notes.md)
-and [download the signed client](https://veld.network/#download).
+**3.1.7** adds connection-owned background peer liveness, durable Windows
+update and settings storage, protected pairing-state retention, and bounded
+RPC shutdown. The complete Windows package retains static runtime dependencies
+and the repair helper for older installations. See the
+[release notes](docs/release-notes.md) and
+[download the signed client](https://veld.network/#download).
 
 The consensus rules introduced in 3.1.3 are unchanged: ASERT and the **500 VELD**
 ordinary-staking minimum apply from block **3,840**. The co-mining lottery
@@ -37,7 +38,7 @@ minimum is **1,000 VELD**; validator registration uses a separate bond.
 The verified historical checkpoint at block **2,800**, checkpoint authority from
 3.1.1, and consensus rules activated at **block 2,880** remain unchanged.
 
-The [`v3.1.6` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.6)
+The [`v3.1.7` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.7)
 identifies the published release source. Signed package manifests identify
 the distributed binaries. `main` may contain later maintenance and documentation updates. [CHANGELOG.md](CHANGELOG.md)
 distinguishes hosted updates from packaged changes.

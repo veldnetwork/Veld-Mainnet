@@ -1,3 +1,25 @@
+## 3.1.7 - Connection and update reliability
+
+Independent background validation now sends tip announcements from each
+connection's own timer. Valid background peers remain connected through the
+normal handshake deadline, including after reconnects and while the foreground
+supervisor is busy. Network identity checks and IP-distinct admission remain
+unchanged.
+
+Windows updates retry temporary file locks, verify installed payloads, and
+retain actionable transaction results. Settings, worker count, sync preference,
+remote monitoring, and protected pairing state survive saves and replacement.
+Unreadable persistent identity is reported rather than silently replaced.
+
+Shutdown interrupts outstanding RPC work and uses a cancellable watchdog.
+Logs distinguish current-chain catch-up from independent historical validation.
+Peer diagnostics describe the exact connection. The wallet's lockup API reports
+the effective ordinary staking minimum consistently.
+
+This release retains static Windows runtime dependencies and local-chain
+preservation. Snapshot receipt validation and mining admission remain enforced.
+No consensus rules, validator bond amounts, or activation heights change.
+
 # Release notes
 
 ## 3.1.6 - Consolidated Windows updater repair

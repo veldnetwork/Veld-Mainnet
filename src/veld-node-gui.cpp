@@ -31,6 +31,7 @@
 #include "../include/crypto/release_verify.h"
 #include "../include/gui/node_gui_model.h"
 #include "../include/gui/node_log_display.h"
+#include "../include/gui/state_file.h"
 #include "../include/node/client_exit_policy.h"
 #include "../include/network/chainparams.h"
 #include "../include/wallet/passphrase_policy.h"
@@ -255,7 +256,7 @@ HttpResult HttpPostJson(const wchar_t* host, INTERNET_PORT port,
                 WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                 WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size,
                 WINHTTP_NO_HEADER_INDEX) || status != 200) {
-            out.error = L"Monitoring endpoint rejected the report";
+            out.error = L"Portal rejected the report (HTTP " + std::to_wstring(status) + L")";
         } else {
             constexpr size_t MAX_RESPONSE = 16U * 1024U;
             for (;;) {
@@ -398,27 +399,13 @@ bool SaveDeviceToken(const std::filesystem::path& path,
     if (!CryptProtectData(&plain, L"Veld remote monitor credential", &entropy,
                           nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN,
                           &protected_blob)) return false;
-    const std::filesystem::path pending = path.wstring() + L".new";
-    bool written = false;
-    {
-        std::ofstream output(pending, std::ios::binary | std::ios::trunc);
-        if (output) {
-            output.write(reinterpret_cast<const char*>(protected_blob.pbData),
-                         protected_blob.cbData);
-            output.flush();
-            written = static_cast<bool>(output);
-        }
-    }
+    const bool written = veld::node_gui::WriteStateFile(path,
+        protected_blob.pbData, protected_blob.cbData, nullptr, false);
     if (protected_blob.pbData) {
         SecureZeroMemory(protected_blob.pbData, protected_blob.cbData);
         LocalFree(protected_blob.pbData);
     }
-    if (!written || !MoveFileExW(pending.c_str(), path.c_str(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        DeleteFileW(pending.c_str());
-        return false;
-    }
-    return true;
+    return written;
 }
 
 std::string LoadDeviceToken(const std::filesystem::path& path) {
@@ -625,28 +612,14 @@ bool SavePortalTrust(const std::filesystem::path& path,
         SecureZeroMemory(text.data(), text.size());
         return false;
     }
-    const std::filesystem::path pending = path.wstring() + L".new";
-    bool written = false;
-    {
-        std::ofstream output(pending, std::ios::binary | std::ios::trunc);
-        if (output) {
-            output.write(reinterpret_cast<const char*>(protected_blob.pbData),
-                         protected_blob.cbData);
-            output.flush();
-            written = static_cast<bool>(output);
-        }
-    }
+    const bool written = veld::node_gui::WriteStateFile(
+        path, protected_blob.pbData, protected_blob.cbData);
     SecureZeroMemory(text.data(), text.size());
     if (protected_blob.pbData) {
         SecureZeroMemory(protected_blob.pbData, protected_blob.cbData);
         LocalFree(protected_blob.pbData);
     }
-    if (!written || !MoveFileExW(pending.c_str(), path.c_str(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        DeleteFileW(pending.c_str());
-        return false;
-    }
-    return true;
+    return written;
 }
 
 bool LoadPortalTrust(const std::filesystem::path& path,
@@ -1067,6 +1040,25 @@ std::string ReadTextBounded(const std::filesystem::path& path,
     input.read(body.data(), static_cast<std::streamsize>(body.size()));
     if (input.gcount() != static_cast<std::streamsize>(body.size())) return {};
     return body;
+}
+
+std::string ReadLastUpdateFailure(const std::filesystem::path& root) {
+    const auto text = ReadTextBounded(root / L"update-last-result.json", 8192);
+    if (text.empty()) return {};
+    veld::btc_buy::JsonValue value;
+    std::string error;
+    veld::btc_buy::StrictJsonParser parser(text, 8192, true);
+    if (!parser.Parse(value, error) ||
+        value.kind != veld::btc_buy::JsonValue::Kind::Object) return {};
+    const auto* status = value.Get("status");
+    const auto* message = value.Get("message");
+    if (!status || !message ||
+        status->kind != veld::btc_buy::JsonValue::Kind::String ||
+        message->kind != veld::btc_buy::JsonValue::Kind::String ||
+        (status->text != "failed" && status->text != "recovery-required")) return {};
+    std::string detail = message->text.substr(0, 512);
+    for (char& c : detail) if (static_cast<unsigned char>(c) < 32) c = ' ';
+    return detail;
 }
 
 std::wstring FormatUnsigned(uint64_t value) {
@@ -1872,6 +1864,12 @@ struct RemoteMonitorStatus {
 
 class NodeGuiApp {
 public:
+#ifdef VELD_GUI_TEST_INSTANCE
+    // Console qualification never runs the GUI constructor's machine discovery,
+    // service management or network workers. All state is explicitly disposable.
+    explicit NodeGuiApp(const std::filesystem::path& state) : state_dir_(state) {}
+    friend struct GuiStateQualification;
+#endif
     explicit NodeGuiApp(HINSTANCE instance) : instance_(instance) {
         const auto module = ModulePath();
         const auto packaged_node = module.parent_path() / L"bin" /
@@ -1892,6 +1890,12 @@ public:
         std::filesystem::create_directories(state_dir_, state_error);
         (void)LoadPortalTrust(state_dir_ / L"remote-trust.dat", remote_trust_);
         LoadSettings();
+        const auto prior_update_failure = ReadLastUpdateFailure(InstallRoot());
+        if (!prior_update_failure.empty()) {
+            update_status_ = L"Previous update failed · " +
+                Utf8ToWide(prior_update_failure.substr(0, 160));
+            update_status_color_ = RGB(231, 126, 126);
+        }
         if (force_clearnet_) {
             tor_choice_ = false;
             reachable_choice_ = true;
@@ -1984,6 +1988,7 @@ private:
     std::filesystem::path wallet_path_;
     std::filesystem::path data_dir_;
     std::filesystem::path state_dir_;
+    bool settings_load_failed_{false};
     std::atomic<bool> stop_worker_{false};
     std::condition_variable worker_cv_;
     std::mutex worker_wait_mutex_;
@@ -2570,8 +2575,14 @@ private:
 
     void LoadSettings() {
         std::ifstream input(state_dir_ / L"node-gui.conf");
+        if (!input) {
+            std::error_code error;
+            settings_load_failed_ = std::filesystem::exists(state_dir_ / L"node-gui.conf", error) || bool(error);
+            return;
+        }
         std::string line;
         while (std::getline(input, line)) {
+            veld::node_gui::NormalizeSettingsLine(line);
             if (line == "reachable=0") reachable_choice_ = false;
             else if (line == "reachable=1") reachable_choice_ = true;
             else if (line == "tor=0") tor_choice_ = false;
@@ -2641,6 +2652,7 @@ private:
                 }
             }
         }
+        settings_load_failed_ = input.bad();
         if (mining_preset_ >= 0 && mining_preset_ <= 2)
             mining_thread_count_ = PresetThreadCount(mining_preset_);
         if (chain_range_minutes_ != 5 && chain_range_minutes_ != 15 &&
@@ -2649,15 +2661,12 @@ private:
             rate_range_minutes_ != 60) rate_range_minutes_ = 15;
     }
 
-    void SaveSettings() {
+    bool SaveSettings() {
         std::error_code ec;
         std::filesystem::create_directories(state_dir_, ec);
-        if (ec) return;
         const auto path = state_dir_ / L"node-gui.conf";
-        const auto pending = state_dir_ / L"node-gui.conf.new";
-        {
-            std::ofstream output(pending, std::ios::binary | std::ios::trunc);
-            if (!output) return;
+        std::string error;
+        std::ostringstream output;
             output << "reachable=" << (reachable_choice_ ? 1 : 0) << "\n"
                    << "tor=" << (tor_choice_ ? 1 : 0) << "\n"
                    << "mining=" << (mining_enabled_ ? 1 : 0) << "\n"
@@ -2681,11 +2690,16 @@ private:
                    << "window_height=" << window_height_ << "\n"
                    << "window_maximized=" << (window_maximized_ ? 1 : 0)
                    << "\n";
-            output.flush();
-            if (!output) return;
+        const bool saved = !ec && !settings_load_failed_ &&
+            veld::node_gui::WriteStateText(path, output.str(), &error);
+        if (!saved && IsWindow(hwnd_)) {
+            MessageBoxW(hwnd_,
+                L"Veld could not confirm that your settings were saved. "
+                L"Check available disk space and close other Veld windows, "
+                L"then try again. Updates will wait until your settings can be saved.",
+                L"Veld settings could not be saved", MB_OK | MB_ICONERROR);
         }
-        MoveFileExW(pending.c_str(), path.c_str(),
-                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+        return saved;
     }
 
     HFONT MakeFont(int px, int weight, const wchar_t* face) {
@@ -6022,6 +6036,7 @@ private:
             return false;
         }
         const bool installing = operation == UpdateOperation::Install;
+        if (installing && !SaveSettings()) return false;
         if (installing && !StopServicesForUpdate()) return false;
         std::error_code ec;
         std::filesystem::create_directories(state_dir_, ec);
@@ -6101,7 +6116,12 @@ private:
         const UpdateOperation operation =
             update_operation_.exchange(UpdateOperation::None);
         if (operation == UpdateOperation::Install) {
-            if (exit_code == 0) {
+            if (exit_code == 4) {
+                update_available_ = false;
+                update_status_ = L"This signed release is already installed. You can start the node.";
+                update_status_color_ = C_TEXT;
+                InvalidateRect(hwnd_, nullptr, FALSE);
+            } else if (exit_code == 0) {
                 update_status_ = L"Signed update ready · restarting…";
                 update_status_color_ = C_TEXT;
                 InvalidateRect(hwnd_, nullptr, FALSE);
@@ -6803,34 +6823,35 @@ private:
                 reject("Signed update installation could not start");
         } else if (command.action == "mining.enabled") {
             mining_enabled_.store(command.enabled);
-            SaveSettings();
-            complete("Mining preference saved for the next app-managed start");
+            if (SaveSettings()) complete("Mining preference saved for the next app-managed start");
+            else reject("Mining preference could not be saved");
         } else if (command.action == "mining.workers") {
             mining_preset_ = 3;
             mining_thread_count_ = static_cast<unsigned>(command.workers);
-            SaveSettings();
-            complete("Worker count saved for the next app-managed start");
+            if (SaveSettings()) complete("Worker count saved for the next app-managed start");
+            else reject("Worker count could not be saved");
         } else if (command.action == "display.reference") {
             reference_display_enabled_.store(command.enabled);
-            SaveSettings();
+            const bool saved = SaveSettings();
             worker_cv_.notify_all();
-            complete("Public height display preference saved");
+            if (saved) complete("Public height display preference saved");
+            else reject("Public height display preference could not be saved");
         } else if (command.action == "privacy.tor") {
             if (live.process_running || tor_preparing_.load())
                 reject("Stop the node before changing Tor mode");
             else {
                 tor_choice_ = command.enabled;
                 if (tor_choice_) reachable_choice_ = false;
-                SaveSettings();
-                complete("Tor preference saved");
+                if (SaveSettings()) complete("Tor preference saved");
+                else reject("Tor preference could not be saved");
             }
         } else if (command.action == "network.reachable") {
             if (live.process_running || tor_choice_ || tor_preparing_.load())
                 reject("Stop the clearnet node before changing reachability");
             else {
                 reachable_choice_ = command.enabled;
-                SaveSettings();
-                complete("Inbound reachability preference saved");
+                if (SaveSettings()) complete("Inbound reachability preference saved");
+                else reject("Inbound reachability preference could not be saved");
             }
         } else if (command.action == "sync.mode") {
             if (live.process_running)
@@ -6838,8 +6859,8 @@ private:
             else {
                 full_ibd_choice_ = command.mode == "full";
                 sync_choice_explicit_ = true;
-                SaveSettings();
-                complete("Synchronization preference saved");
+                if (SaveSettings()) complete("Synchronization preference saved");
+                else reject("Synchronization preference could not be saved");
             }
         } else {
             reject("Unsupported command");
@@ -6857,6 +6878,10 @@ private:
         const auto path = state_dir_ / L"remote-monitor.dat";
         cached = LoadDeviceToken(path);
         if (IsDeviceToken(cached)) return cached;
+        // A sharing violation, damaged DPAPI file, or profile problem is not a
+        // missing pairing. Retain the existing identity and retry its read.
+        std::error_code credential_error;
+        if (std::filesystem::exists(path, credential_error) || credential_error) return {};
         cached = NewDeviceToken();
         if (cached.empty() || !SaveDeviceToken(path, cached)) {
             if (!cached.empty()) {
@@ -7087,7 +7112,7 @@ private:
             remote_monitor_status_.credential_ready = false;
             remote_monitor_status_.report_ok = false;
             remote_monitor_status_.detail =
-                L"The protected device credential could not be created.";
+                L"The protected portal credential could not be loaded or saved. Existing pairing is retained; retrying.";
             return;
         }
 
@@ -7095,13 +7120,14 @@ private:
         const std::string report = BuildMonitoringReport(live, included_ack);
         const HttpResult response = HttpPostJson(
             L"portal.veld.network", INTERNET_DEFAULT_HTTPS_PORT,
-            L"/api/v1/device/report", report, token, 2500);
+            L"/api/v1/device/report", report, token, 8000);
         if (!response.ok) {
             std::lock_guard<std::mutex> lock(remote_monitor_mutex_);
             remote_monitor_status_.credential_ready = true;
             remote_monitor_status_.report_ok = false;
             remote_monitor_status_.detail =
-                L"Portal unavailable. Retrying automatically.";
+                (response.error.empty() ? L"Portal unavailable" : response.error) +
+                L". Existing pairing is retained; retrying automatically.";
             return;
         }
 

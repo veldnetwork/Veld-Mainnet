@@ -5357,13 +5357,16 @@ private:
         });
 
         methods_["getlockuptiers"] = RpcMethod([this](const P&) -> std::string {
+            const double minimum_veld = (double)MinimumStakeAtHeight(
+                NextInclusionHeight(chain_.Height())) / VELD_UNITS;
+            const double maximum_veld = (double)MAX_STAKE_UNITS / VELD_UNITS;
             std::ostringstream j;
             j << std::fixed << std::setprecision(3);
             j << "{\"max_multiplier\":" << LOCKUP_MAX_MULTIPLIER << ","
-              << "\"min_stake_veld\":" << LOCKUP_REFERENCE_MIN_VELD << ","
-              << "\"max_stake_veld\":" << LOCKUP_REFERENCE_MAX_VELD << ","
-              << "\"effective_min_stake_veld\":" << (double)MinimumStakeAtHeight(NextInclusionHeight(chain_.Height()))/VELD_UNITS << ","
-              << "\"effective_max_stake_veld\":" << (double)MAX_STAKE_UNITS/VELD_UNITS << ","
+              << "\"min_stake_veld\":" << minimum_veld << ","
+              << "\"max_stake_veld\":" << maximum_veld << ","
+              << "\"effective_min_stake_veld\":" << minimum_veld << ","
+              << "\"effective_max_stake_veld\":" << maximum_veld << ","
               << "\"tiers\":[";
             for (int i = 0; i < 4; ++i) {
                 if (i) j << ",";

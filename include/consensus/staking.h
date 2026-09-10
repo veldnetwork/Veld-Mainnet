@@ -64,8 +64,6 @@ static_assert(LOCKUP_TIERS[3].blocks == BOND_YIELD_VEST_BLOCKS,
               "the custodial bond draws yield at the Long-tier rate, so its vest horizon "
               "must equal the Long lockup tier — move them together");
 static constexpr double   LOCKUP_MAX_MULTIPLIER      = 3.0;
-static constexpr double   LOCKUP_REFERENCE_MIN_VELD  = 1000.0;
-static constexpr double   LOCKUP_REFERENCE_MAX_VELD  = 10000.0;
 
 inline double ComputeStakeMultiplier(uint8_t tier, uint64_t ) {
     if (tier < 1 || tier > 4) tier = 1;

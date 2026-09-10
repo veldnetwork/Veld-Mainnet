@@ -3,6 +3,12 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## 3.1.7
+
+Connection-owned background tip announcements, durable updater and settings
+storage, bounded RPC shutdown, and exact per-connection diagnostics. See the
+[release notes](docs/release-notes.md) for behavior and compatibility details.
+
 ## Hosted web and source maintenance - 2026-09-10
 
 - Keep the installed Explorer PWA's navigation controls mounted while opening

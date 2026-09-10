@@ -3837,12 +3837,14 @@ int main(int argc, char* argv[]) {
                       [](const auto& a, const auto& b) {
                           return a.addr < b.addr;
                       });
-            const auto tip_snapshots = node.SnapshotPeerTips();
+            const auto tip_snapshots = node.GetTCPServer()
+                ? node.GetTCPServer()->SnapshotConnectionTips()
+                : std::vector<veld::net::NodeServer::PeerTipSnapshot>{};
             std::unordered_map<std::string,
-                const veld::net::NodeServer::PeerTipSnapshot*> tips_by_ip;
-            tips_by_ip.reserve(tip_snapshots.size());
+                const veld::net::NodeServer::PeerTipSnapshot*> tips_by_connection;
+            tips_by_connection.reserve(tip_snapshots.size());
             for (const auto& peer_tip : tip_snapshots)
-                tips_by_ip[peer_tip.ip] = &peer_tip;
+                tips_by_connection[peer_tip.connection_id] = &peer_tip;
 
             const uint64_t local_height = node.GetChain().Height();
             Hash256 local_tip{};
@@ -3910,8 +3912,8 @@ int main(int argc, char* argv[]) {
                    << ",\"peer_details\":[";
             for (size_t peer_index = 0; peer_index < peers.size(); ++peer_index) {
                 const auto& peer = peers[peer_index];
-                const auto tip_it = tips_by_ip.find(peer.ip);
-                const bool have_tip = tip_it != tips_by_ip.end();
+                const auto tip_it = tips_by_connection.find(peer.connection_id);
+                const bool have_tip = tip_it != tips_by_connection.end();
                 const uint64_t peer_height = have_tip
                     ? tip_it->second->height : 0;
                 const int64_t peer_tip_age = have_tip
@@ -4291,10 +4293,13 @@ int main(int argc, char* argv[]) {
                         }
                     }
 #endif
-                    std::cout << "  [IBD complete] height=" << cur_height;
+                    std::cout << (node.ChainFullyValidated()
+                        ? "  [IBD complete] height="
+                        : "  [network sync complete] height=") << cur_height;
                     if (!node.ChainFullyValidated()) {
-                        std::cout << ". Independent background IBD active; "
-                                     "mining and endorsing paused.\n";
+                        std::cout << ". Historical validation is still running; "
+                                     "mining and endorsing wait for it to finish. "
+                                     "Saved verification progress is reused on restart.\n";
                     } else if (node.IsMining()) {
                         std::cout << ". Mining active.\n";
                     } else if (opt_endorse) {
@@ -5130,24 +5135,33 @@ int main(int argc, char* argv[]) {
 #endif
 
     constexpr int SHUTDOWN_DEADLINE_SEC = 20;
-    std::thread watchdog([shutdown_start, SHUTDOWN_DEADLINE_SEC,
-                          shutdown_exit_code]() {
-        std::this_thread::sleep_for(std::chrono::seconds(SHUTDOWN_DEADLINE_SEC));
+    std::atomic<const char*> shutdown_phase{"RPC service"};
+    std::jthread watchdog([shutdown_start, SHUTDOWN_DEADLINE_SEC,
+                          shutdown_exit_code, &shutdown_phase](std::stop_token stop) {
+        std::mutex mutex;
+        std::condition_variable_any wake;
+        std::unique_lock lock(mutex);
+        (void)wake.wait_for(lock, stop,
+            std::chrono::seconds(SHUTDOWN_DEADLINE_SEC), [] { return false; });
+        if (stop.stop_requested()) return;
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - shutdown_start).count();
         std::cerr << "\n  [shutdown-watchdog] Stop() did not return in "
-                  << elapsed << "s — force-exiting (LevelDB WAL is durable,\n"
+                  << elapsed << "s during " << shutdown_phase.load()
+                  << " — force-exiting (LevelDB WAL is durable,\n"
                      "  see leveldb.h CommitBlock sync=true batches).\n";
         std::cerr.flush();
         ::_exit(shutdown_exit_code);
     });
-    watchdog.detach();
-
     if (rpc_http_owned) rpc_http_owned->Stop();
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    shutdown_phase.store("background historical validation");
     if (background_chainstate) background_chainstate->Stop();
 #endif
+    shutdown_phase.store("foreground node");
     node.Stop();
+    watchdog.request_stop();
+    watchdog.join();
     veld::net::connection_diagnostics::WritePending(std::cerr, connection_log_cursor);
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - shutdown_start).count();

@@ -10,7 +10,7 @@
 #endif
 
 using namespace veld;
-static_assert(std::string_view(CLIENT_VERSION) == "3.1.6");
+static_assert(std::string_view(CLIENT_VERSION) == "3.1.7");
 static_assert(CONSENSUS_SECURITY_UPGRADE_HEIGHT == 2880);
 static_assert(!ConsensusSecurityUpgradeActive(2879));
 static_assert(ConsensusSecurityUpgradeActive(2880));
