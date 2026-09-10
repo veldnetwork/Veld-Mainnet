@@ -10,6 +10,8 @@ Windows updates retry temporary file locks, verify installed payloads, and
 retain actionable transaction results. Settings, worker count, sync preference,
 remote monitoring, and protected pairing state survive saves and replacement.
 Unreadable persistent identity is reported rather than silently replaced.
+Repair uses the verifier from the fresh complete package, so an older node's
+missing runtime DLL cannot prevent signed verification of its replacement.
 
 Shutdown interrupts outstanding RPC work and uses a cancellable watchdog.
 Logs distinguish current-chain catch-up from independent historical validation.

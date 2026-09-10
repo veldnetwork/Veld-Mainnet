@@ -45,6 +45,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: tests/windows_updater_durability_tests.ps1 -Output "$env:RUNNER_TEMP/veld-updater-durability"
+      - name: Verify repair of a DLL-dependent historical client
+        if: runner.os == 'Windows'
+        run: python tests/windows_updater_signed_repair_tests.py
       - name: Compile and run work-admission tests
         if: runner.os == 'Linux'
         shell: bash

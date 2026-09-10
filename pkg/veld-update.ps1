@@ -47,6 +47,13 @@ $RequiredPackageFiles = if ($Distribution -eq 'Terminal') {
       'Start Veld Node.bat', 'veld-update.ps1', 'tor-setup.ps1', 'CHANGES.txt')
 }
 $Node = Join-Path $InstallDir 'bin\veld-node.exe'
+# Repair runs the signed helper from a freshly extracted package. Its native
+# verifier must stay usable even when the installed node has a missing runtime.
+# Keep $Node bound to the installed payload for all path and hash checks.
+$ReleaseVerifier = Join-Path $PSScriptRoot 'bin\veld-node.exe'
+if (-not (Test-Path -LiteralPath $ReleaseVerifier -PathType Leaf)) {
+    $ReleaseVerifier = $Node
+}
 $LocalManifest = Join-Path $InstallDir 'SHA256SUMS.txt'
 $LocalSignature = Join-Path $InstallDir 'SHA256SUMS.txt.sig'
 $Transaction = Join-Path $InstallDir '.veld-update-transaction'
@@ -481,10 +488,13 @@ function Assert-EqualVersionManifestIdentity([string]$RemotePath, [string]$Local
 }
 
 function Verify-ReleaseSignature([string]$Manifest, [string]$Signature) {
-    if (-not (Test-Path -LiteralPath $Node)) { return $false }
+    $verifier = if ([string]::IsNullOrWhiteSpace($ReleaseVerifier)) {
+        $Node
+    } else { $ReleaseVerifier }
+    if (-not (Test-Path -LiteralPath $verifier -PathType Leaf)) { return $false }
     $saved = $ErrorActionPreference
     $ErrorActionPreference = 'SilentlyContinue'
-    $output = @(& $Node --verify-release $Manifest $Signature 2>$null |
+    $output = @(& $verifier --verify-release $Manifest $Signature 2>$null |
         ForEach-Object { $_.ToString() })
     $code = $LASTEXITCODE
     $ErrorActionPreference = $saved

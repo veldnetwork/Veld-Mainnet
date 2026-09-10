@@ -1,6 +1,9 @@
-param([string]$Updater = (Join-Path $PSScriptRoot '..\pkg\veld-update.ps1'),
+param([string]$Updater,
       [string]$Output, [switch]$Baseline)
 $ErrorActionPreference='Stop'
+if ([string]::IsNullOrWhiteSpace($Updater)) {
+    $Updater = Join-Path $PSScriptRoot '..\pkg\veld-update.ps1'
+}
 if (!$Output -or (Test-Path -LiteralPath $Output)) { throw 'A new disposable output directory is required' }
 $InstallDir=[IO.Path]::GetFullPath($Output)
 [IO.Directory]::CreateDirectory($InstallDir)|Out-Null
