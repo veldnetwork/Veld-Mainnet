@@ -1,3 +1,5 @@
+# Release notes
+
 ## 3.1.6 - Consolidated Windows updater repair
 
 Fixes a race between update handoff and the transaction lock. Commit now
@@ -18,6 +20,18 @@ events, and the complete raw log remain available.
 Includes the 3.1.4 static Windows runtime and 3.1.5 local-chain preservation
 fixes. There are no changes to network consensus or activation heights.
 
+To update, open **Settings**, check for updates, and choose **Install** when
+the signed update is offered. If an older updater cannot complete the update,
+extract the complete 3.1.6 Windows package and run **Repair Veld Update.bat**
+against the existing installation. Keep the existing data directory and
+identity backup.
+
+Snapshot bootstrap still requires independent background verification before
+mining. Version 3.1.6 does not bypass that requirement. A node shutdown can
+still reach its twenty-second fallback timeout; a follow-up repair is under
+investigation. These notes describe the released fixes, not every possible
+failure on an uninspected installation.
+
 ## 3.1.5 - Preserve local synchronization progress
 
 Windows startup now limits automatic signed snapshot import to a fresh
@@ -32,7 +46,7 @@ not automatically restore a previously replaced database or bypass proof
 verification. The DLL and signed updater repairs from 3.1.4 are included.
 There are no changes to consensus rules or activation heights.
 
-# Veld 3.1.4
+## 3.1.4 - Windows runtime packaging
 
 Windows packaging correction: OpenSSL is now linked into each executable, so
 the node and wallet do not require `libcrypto-3-x64.dll` or a developer PATH.

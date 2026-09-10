@@ -43,6 +43,7 @@ SUITES = {
         "tests/wallet_stake_navigation_tests.js",
         "tests/wallet_transaction_policy_tests.js",
         "tests/web_freshness_tests.js",
+        "tests/explorer_pwa_navigation_tests.js",
     ],
     "provenance": [
         "scripts/verify-pqc-provenance.py",

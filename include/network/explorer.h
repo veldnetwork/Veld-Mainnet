@@ -6769,16 +6769,9 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             }
         }
 
-        // ALWAYS recompute total_staked as the sum of actual validator
-        // stake amounts. The "total_staked_veld" field in getvalidators
-        // is the NETWORK-WIDE total stake (all stakers, validator or
-        // not), which is misleading on this page. Stakers who are NOT
-        // registered validators should not contribute to "Validator
-        // Stake" shown here. Fixes user report:
-        //   "it shows how much is staked from validators but the card
-        //    only says 'total staked' which is a different amount that
-        //    whats actually staked since its showing total staked
-        //    amount of validators across network"
+        // Sum registered validator balances separately from the network-wide
+        // stake returned by getvalidators. Ordinary stakers do not contribute
+        // to the validator total displayed on this page.
         double network_total_staked = total_staked;
         total_staked = 0.0;
         for (auto& v : vlist) total_staked += v.staked;
