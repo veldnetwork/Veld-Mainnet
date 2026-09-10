@@ -6780,17 +6780,15 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
         page << "<div class=\"stat-grid\" style=\"margin-bottom:20px\">";
         page << "<div class=\"stat\"><div class=\"stat-label\">System Status</div><div class=\"stat-value " << (sys_active ? "em" : "") << "\">"
-             << (existing_operations_active ? "Active" : "Locked") << "</div><div class=\"stat-sub\">";
+             << (existing_operations_active ? "Active" : "Locked") << "</div>";
         if (sys_active) {
-            page << "Validators are endorsing blocks";
-        } else if (existing_operations_active) {
-            page << "Existing validators remain active; new registration is paused";
-        } else {
-            page << "Needs " << std::fixed << std::setprecision(0)
+            page << "<div class=\"stat-sub\">Validators are endorsing blocks</div>";
+        } else if (!existing_operations_active) {
+            page << "<div class=\"stat-sub\">Needs " << std::fixed << std::setprecision(0)
                  << ((double)VALIDATOR_UNLOCK_STAKED / (double)VELD_UNITS)
-                 << " VELD staked to unlock";
+                 << " VELD staked to unlock</div>";
         }
-        page << "</div></div>";
+        page << "</div>";
         (void)total_staked;  // Validator Stake box removed (operator-directed) -- irrelevant on the validator page
         page << "<div class=\"stat\"><div class=\"stat-label\">Validators</div><div class=\"stat-value em\">" << val_count << "</div></div>";
         {
