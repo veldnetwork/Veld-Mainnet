@@ -26,6 +26,7 @@ function fixture() {
     tipAge.textContent = '+3 m';
     function descendants(node) { return node.children.flatMap(child => [child, ...descendants(child)]); }
     const document = {hidden: false,
+        addEventListener: (name, handler) => { events[name] = handler; },
         getElementById: id => id === 'blocks-list' ? list : id === 's-tip-age' ? tipAge : null,
         createElement: tag => new Element(tag), createDocumentFragment: () => new Element('#fragment'),
         querySelectorAll: selector => {
@@ -71,6 +72,14 @@ function fixture() {
 }
 
 (async () => {
+    const catchup = fixture();
+    catchup.load(100);
+    await catchup.respond(catchup.requests[0], catchup.batch(100));
+    catchup.load(107);
+    await catchup.respond(catchup.requests[1], catchup.batch(107));
+    assert.deepEqual(catchup.ages().slice(0, 7), ['3 m', '6 m', '9 m', '12 m', '15 m', '18 m', '21 m'],
+        'A catch-up batch must retain each block timestamp instead of assigning one arrival time');
+
     const f = fixture();
     f.load(100);
     assert.equal(f.requests[0].url, '/api/v1/blocks/100/10');
@@ -129,5 +138,60 @@ function fixture() {
     await empty.advance(30000); empty.load(100); assert.equal(empty.requests.length, 2);
     empty.events.pagehide(); assert(empty.requests[1].options.signal.aborted);
 
-    console.log('PASS Explorer arrival ages, unchanged format, batch validation, retry, timeout and reorg checks');
+    for (const height of [101, 107]) {
+        const resumed = fixture();
+        resumed.load(100);
+        await resumed.respond(resumed.requests[0], resumed.batch(100));
+        resumed.document.hidden = true; resumed.events.visibilitychange();
+        await resumed.advance(600000);
+        resumed.document.hidden = false; resumed.events.visibilitychange();
+        resumed.load(height);
+        await resumed.respond(resumed.requests[1], resumed.batch(height));
+        assert.equal(resumed.ages()[0], '3 m', 'PWA resume must establish a timestamp baseline even for one missed block');
+        assert.equal(resumed.ages()[1], '6 m');
+        resumed.load(height + 1);
+        await resumed.respond(resumed.requests[2], resumed.batch(height + 1));
+        assert.equal(resumed.ages()[0], '0 s', 'Continuous live arrival timing must recover after resume');
+    }
+
+    const suspended = fixture();
+    suspended.load(100);
+    await suspended.respond(suspended.requests[0], suspended.batch(100));
+    await suspended.advance(60000);
+    suspended.load(101);
+    await suspended.respond(suspended.requests[1], suspended.batch(101));
+    assert.equal(suspended.ages()[0], '3 m', 'A polling gap must rebaseline even without a visibility event');
+
+    const interrupted = fixture();
+    interrupted.load(100);
+    await interrupted.respond(interrupted.requests[0], interrupted.batch(100));
+    interrupted.load(101);
+    interrupted.document.hidden = true; interrupted.events.visibilitychange();
+    interrupted.document.hidden = false; interrupted.events.visibilitychange();
+    await interrupted.respond(interrupted.requests[1], interrupted.batch(101));
+    assert.equal(interrupted.list.children[0].href, '/block/height/100', 'A request started before suspension cannot paint after resume');
+    assert(!interrupted.list.textContent.includes('temporarily unavailable'), 'Suspension must not display a fetch failure');
+    interrupted.load(101);
+    await interrupted.respond(interrupted.requests[2], interrupted.batch(101));
+    assert.equal(interrupted.ages()[0], '3 m');
+
+    const offline = fixture();
+    offline.load(100);
+    await offline.respond(offline.requests[0], offline.batch(100));
+    offline.load(101); offline.requests[1].reject(new Error('offline')); await flush();
+    await offline.advance(2000); offline.load(101);
+    await offline.respond(offline.requests[2], offline.batch(101));
+    assert.equal(offline.ages()[0], '3 m', 'An arrival missed during a failed request cannot be timed from reconnection');
+
+    const restored = fixture();
+    restored.load(100);
+    await restored.respond(restored.requests[0], restored.batch(100));
+    restored.load(101);
+    await restored.respond(restored.requests[1], restored.batch(101));
+    restored.events.pagehide();
+    restored.load(101);
+    await restored.respond(restored.requests[2], restored.batch(101));
+    assert.equal(restored.ages()[0], '3 m', 'Restoring an unchanged page must discard stale arrival clocks');
+
+    console.log('PASS Explorer live arrival ages, catch-up batches, PWA resume, polling gaps, retries, deadlines and reorg checks');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -284,7 +284,8 @@
   'use strict';
   if (location.pathname !== '/') return;
 
-  var state = { pending: false, target: '', loaded: '', retryAt: 0, failures: 0, controller: null, hasFeed: false };
+  var state = { pending: false, target: '', loaded: '', retryAt: 0, failures: 0, controller: null,
+    tip: null, continuous: false, lastPoll: null, epoch: 0 };
   var firstSeen = new Map();
   var badges = new Map();
   var badgeTypes = {btcveld_mint:['Mint','gold'],btcveld_redeem:['Redeem','gold'],btcveld_transfer:['btcVELD','gold'],amm_op:['AMM','blue'],stake_lock:['Stake','veld-reward-stake'],stake_unlock:['Unstake','veld-reward-stake'],endorsement:['Endorse','veld-reward-validator'],validator_register:['Validator','veld-reward-validator'],staking_distribution:['Payout','veld-reward-stake'],endorsement_distribution:['Val payout','veld-reward-validator'],anchor_post:['Anchor','gold'],btc_header_relay:['BTC hdr','gold']};
@@ -321,6 +322,11 @@
     var el = document.getElementById('s-tip-age');
     if (el && typeof seen === 'number') el.textContent = '+' + displayAge((performance.now() - seen) / 1000);
   }
+  function pauseObservation() {
+    state.continuous = false; state.lastPoll = null; state.tip = null; state.loaded = ''; state.epoch++;
+    firstSeen.clear();
+    if (state.controller) state.controller.abort();
+  }
   function validate(data, height, hash) {
     if (!data || !Number.isSafeInteger(data.tip_height) || data.tip_height < height ||
         !/^[0-9a-f]{64}$/.test(data.tip_hash || '') || data.start !== height ||
@@ -336,12 +342,12 @@
     }
     return data.blocks;
   }
-  function paint(blocks) {
+  function paint(blocks, observed) {
     var list = document.getElementById('blocks-list');
     if (!list) return;
     var fragment = document.createDocumentFragment();
     blocks.forEach(function (block, index) {
-      if (!firstSeen.has(block.hash)) firstSeen.set(block.hash, state.hasFeed ? performance.now() : null);
+      if (!firstSeen.has(block.hash)) firstSeen.set(block.hash, observed && index === 0 ? performance.now() : null);
       if (firstSeen.size > 40) firstSeen.delete(firstSeen.keys().next().value);
       var link = textElement('a', 'bk' + (index === 0 ? ' fresh' : ''));
       link.href = '/block/height/' + block.height;
@@ -361,7 +367,7 @@
       link.appendChild(right); fragment.appendChild(link);
     });
     list.replaceChildren(fragment);
-    state.hasFeed = true;
+    state.tip = blocks[0]; state.continuous = true;
     updateTipAge(blocks[0].hash);
   }
   async function paintBadges(blocks, key, signal) {
@@ -391,14 +397,19 @@
   window.veldExplorerDashboard = {
     load: function (height, hash) {
       if (!Number.isSafeInteger(height) || height < 0) return;
+      if (document.hidden || location.pathname !== '/') { pauseObservation(); return; }
+      var now = performance.now();
+      if (state.lastPoll !== null && now - state.lastPoll > 15000) pauseObservation();
+      state.lastPoll = now;
       hash = /^[0-9a-f]{64}$/.test(hash || '') ? hash : '';
       var key = height + ':' + hash;
       state.target = key;
       updateAges();
       updateTipAge(hash);
-      if (document.hidden || state.pending || Date.now() < state.retryAt) return;
+      if (state.pending || Date.now() < state.retryAt) return;
       if (state.loaded === key) return;
       state.pending = true;
+      var epoch = state.epoch, previous = state.tip, continuous = state.continuous;
       var controller = new AbortController(); state.controller = controller;
       var timer = setTimeout(function () { controller.abort(); }, 8000);
       var list = document.getElementById('blocks-list');
@@ -409,15 +420,20 @@
           return response.json();
         }).then(function (data) {
           var blocks = validate(data, height, hash);
-          if (key !== state.target || controller.signal.aborted) return;
-          paint(blocks); state.loaded = key; state.failures = 0; state.retryAt = 0;
+          if (key !== state.target || controller.signal.aborted || epoch !== state.epoch || document.hidden || location.pathname !== '/') return;
+          var tip = blocks[0];
+          var observed = continuous && previous && (
+            (tip.height === previous.height + 1 && tip.prev_hash === previous.hash) ||
+            (tip.height === previous.height && tip.hash !== previous.hash && tip.prev_hash === previous.prev_hash));
+          paint(blocks, observed); state.loaded = key; state.failures = 0; state.retryAt = 0;
           return paintBadges(blocks, key, controller.signal);
         }).catch(function (error) {
-          if (controller.signal.aborted && document.hidden) return;
+          if (epoch !== state.epoch || (controller.signal.aborted && document.hidden)) return;
           if (key !== state.target) return;
           state.failures++;
           state.retryAt = Date.now() + Math.max(error.retryMs || 0, Math.min(30000, 1000 * Math.pow(2, state.failures)));
           state.loaded = '';
+          state.continuous = false;
           if (list) {
             var status = textElement('div', 'explorer-data-status', 'Recent blocks are temporarily unavailable. Retrying automatically.');
             status.setAttribute('role', 'status'); list.replaceChildren(status);
@@ -428,7 +444,8 @@
         });
     }
   };
-  window.addEventListener('pagehide', function () { if (state.controller) state.controller.abort(); });
+  document.addEventListener('visibilitychange', function () { if (document.hidden) pauseObservation(); });
+  window.addEventListener('pagehide', pauseObservation);
 })();
 
 // Keep the installed app's navigation controls mounted when opening Mempool.
