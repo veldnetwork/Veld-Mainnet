@@ -14,6 +14,66 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-reliability:
+    name: Windows native reliability (${{ matrix.fixture }})
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      VELD_NO_NAT: '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - fixture: reliability_node_shutdown_tests
+            args: --stress
+          - fixture: reliability_prewarm_wake_tests
+          - fixture: reliability_ingest_shutdown_tests
+          - fixture: reliability_server_restart_tests
+            standalone: true
+          - fixture: background_peer_liveness_tests
+            standalone: true
+          - fixture: reliability_gui_state_tests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-openssl
+            mingw-w64-clang-x86_64-leveldb
+      - name: Compile and exercise the native Windows fixture
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          output=$(mktemp -d /tmp/veld-native.XXXXXXXX)
+          objects=()
+          index=0
+          while IFS= read -r source; do
+            [[ -n $source && $source != \#* ]] || continue
+            object="$output/pqc-$index.o"
+            clang -std=c11 -O2 -Ivendor/pqc -Ivendor/pqc/mldsa65 -c "$source" -o "$object"
+            objects+=("$object")
+            index=$((index + 1))
+          done < vendor/pqc/provenance/release-c-sources.txt
+          clang++ -std=c++20 -O1 -pthread -DVELD_USE_LEVELDB \
+            -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 \
+            -Iinclude -Ivendor/pqc -Ivendor/pqc/mldsa65 -Itests \
+            "tests/${{ matrix.fixture }}.cpp" "${objects[@]}" -nostdlib++ \
+            /clang64/lib/libleveldb.a /clang64/lib/libc++.a \
+            /clang64/lib/libc++abi.a /clang64/lib/libunwind.a \
+            -lssl -lcrypto -lws2_32 -ladvapi32 -lbcrypt -liphlpapi -lshell32 \
+            -lole32 -luuid -lgdi32 -lwinhttp -lcrypt32 -lcomctl32 \
+            -lcomdlg32 -ldwmapi -luser32 -o "$output/fixture.exe"
+          if [[ '${{ matrix.standalone }}' == 'true' ]]; then
+            "$output/fixture.exe" ${{ matrix.args }}
+          else
+            "$output/fixture.exe" "$output/data" ${{ matrix.args }}
+          fi
+
   portable:
     name: Source and web checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -193,6 +253,9 @@ jobs:
             members: ''
           - name: shutdown during an active chain commit
             fixture: reliability_ingest_shutdown_tests
+            members: ''
+          - name: shutdown at the prewarm wait boundary
+            fixture: reliability_prewarm_wake_tests
             members: ''
           - name: partial network startup and restart
             fixture: reliability_server_restart_tests

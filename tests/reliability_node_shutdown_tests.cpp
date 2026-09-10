@@ -4,12 +4,30 @@
 #define VELD_LOCAL_TEST_NETWORK 1
 #define VELD_ENABLE_SNAPSHOT_BOOTSTRAP 1
 #include "node/node.h"
+#include <algorithm>
 #include <future>
 #include <iostream>
+#include <vector>
 
 using namespace veld;
 int main(int argc, char** argv) {
-    if (argc != 2 || std::filesystem::exists(argv[1])) return 2;
+    const bool stress = argc == 3 && std::string(argv[2]) == "--stress";
+    if ((argc != 2 && !stress) || std::filesystem::exists(argv[1])) return 2;
+    std::vector<std::jthread> load;
+    if (stress) {
+        const unsigned workers = std::min(32u,
+            std::max(2u, std::thread::hardware_concurrency()));
+        const auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(30);
+        for (unsigned i = 0; i < workers; ++i) {
+            load.emplace_back([deadline](std::stop_token stop) {
+                while (!stop.stop_requested() &&
+                       std::chrono::steady_clock::now() < deadline)
+                    std::atomic_signal_fence(std::memory_order_seq_cst);
+            });
+        }
+        std::cout << "bounded CPU load workers=" << workers << std::endl;
+    }
     auto config = RegtestConfig(); config.port = 0;
     const std::filesystem::path root(argv[1]);
     for (int i = 0; i < 8; ++i) {

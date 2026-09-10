@@ -3725,7 +3725,7 @@ public:
             BumpValidationGeneration_();
         }
         ClearActiveRemoteSigningLeases_();
-        prewarm_cv_.notify_all();
+        NotifyPrewarm_();
 
         // Oracle and dataset prewarm closures capture this and may touch the
         // chain/TCP/global dataset.  Take ownership under their launch mutexes
@@ -3858,6 +3858,16 @@ public:
         catch (...) {  }
     }
 
+#ifdef VELD_TEST_HOOKS
+    void TestSetPrewarmWaitHooks(std::function<void()> before_wait,
+                                 std::function<void()> before_notify) {
+        std::lock_guard<std::mutex> lock(prewarm_thread_mutex_);
+        test_prewarm_before_wait_ = std::move(before_wait);
+        test_prewarm_before_notify_ = std::move(before_notify);
+    }
+    void TestNotifyPrewarm() { NotifyPrewarm_(); }
+#endif
+
     void PrewarmHashDataset() {
 #ifdef VELD_MAINNET_POW
         // Independent snapshot validation is already building and using the
@@ -3881,8 +3891,14 @@ public:
                 // work until the existing IBD-complete safety latch opens.
                 std::unique_lock<std::mutex> wait_lock(prewarm_thread_mutex_);
                 prewarm_cv_.wait(wait_lock, [this]() {
-                    return !running_.load(std::memory_order_acquire) ||
-                           ibd_complete_.load(std::memory_order_acquire);
+                    const bool ready =
+                        !running_.load(std::memory_order_acquire) ||
+                        ibd_complete_.load(std::memory_order_acquire);
+#ifdef VELD_TEST_HOOKS
+                    if (!ready && test_prewarm_before_wait_)
+                        test_prewarm_before_wait_();
+#endif
+                    return ready;
                 });
                 wait_lock.unlock();
                 if (!running_.load(std::memory_order_acquire)) return;
@@ -5411,7 +5427,7 @@ public:
         SetIbdCompleteLatch_(v);
         if (v) {
             checkpoint_anchor_valid_.store(true, std::memory_order_release);
-            prewarm_cv_.notify_all();
+            NotifyPrewarm_();
         }
     }
     // Trust-min opt-out: when set, all external snapshot-bootstrap paths are
@@ -8382,6 +8398,19 @@ private:
     std::thread           prewarm_thread_;
     std::mutex            prewarm_thread_mutex_;
     std::condition_variable prewarm_cv_;
+#ifdef VELD_TEST_HOOKS
+    std::function<void()> test_prewarm_before_wait_;
+    std::function<void()> test_prewarm_before_notify_;
+#endif
+    void NotifyPrewarm_() {
+#ifdef VELD_TEST_HOOKS
+        if (test_prewarm_before_notify_) test_prewarm_before_notify_();
+#endif
+        // Pair the notification with wait's predicate mutex. Atomic flags alone
+        // do not prevent a wake from being lost between the predicate and wait.
+        std::lock_guard<std::mutex> lock(prewarm_thread_mutex_);
+        prewarm_cv_.notify_all();
+    }
     bool                  prewarm_started_{false};
     std::thread           oracle_thread_;
     std::mutex            oracle_thread_mutex_;
@@ -8881,7 +8910,7 @@ private:
             BumpValidationGeneration_();
         mining_.store(false, std::memory_order_release);
         running_.store(false, std::memory_order_release);
-        prewarm_cv_.notify_all();
+        NotifyPrewarm_();
         if (tcp_server_) tcp_server_->SetIBDComplete(false);
         std::cerr << "  [anchor-floor] FATAL FAIL-STOP: " << why
                   << ". The block is already durable, so it will not be "
@@ -8908,7 +8937,7 @@ private:
             BumpValidationGeneration_();
         mining_.store(false, std::memory_order_release);
         running_.store(false, std::memory_order_release);
-        prewarm_cv_.notify_all();
+        NotifyPrewarm_();
         try {
             if (tcp_server_) tcp_server_->SetIBDComplete(false);
         } catch (...) {

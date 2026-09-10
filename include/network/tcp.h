@@ -10804,15 +10804,9 @@ private:
     // ACK quorum (preserved from original PeerProtocolStep BLOCK
     // handler at tcp.h:4741-4745).
     void BlockIngestWorker() {
-#ifdef _WIN32
-        // Independent snapshot validation is deliberately subordinate to the
-        // foreground node. Windows background mode lowers both CPU scheduling
-        // and I/O priority for this consensus-heavy worker without changing
-        // validation order or weakening any block check.
-        if (background_sync_mode_)
-            ::SetThreadPriority(::GetCurrentThread(),
-                                THREAD_MODE_BACKGROUND_BEGIN);
-#endif
+        // Commit holds locks also needed by networking and shutdown. Keep this
+        // worker at their scheduling and I/O priority to avoid priority inversion
+        // under mining load. Queue and proof budgets bound background work.
         while (ingest_running_.load(std::memory_order_acquire)) {
             PendingBlockIngest job;
             {
