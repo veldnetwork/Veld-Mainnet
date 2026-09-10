@@ -53,6 +53,7 @@ inline std::mutex g_stdout_mtx;
 #include "nat_traversal.h"
 #include "tor_transport.h"
 #include "listener_activation_guard.h"
+#include "local_endpoint.h"
 #include <fstream>
 #include <iostream>
 #include <iomanip>
@@ -1196,6 +1197,7 @@ public:
             return false;
         }
         background_sync_mode_ = !accept_inbound;
+        local_listener_endpoint_.store(0, std::memory_order_release);
         // Production uses bounded event-loop workers by default.  The legacy
         // thread-per-peer mode remains available only to an explicitly
         // acknowledged nonrelease test; a production-semantics binary must
@@ -1349,6 +1351,20 @@ public:
                 listen_fd_ = veld::compat::kInvalidSocket;
                 return false;
             }
+        }
+
+        if (accept_inbound) {
+            sockaddr_in bound{};
+            socklen_t bound_size = sizeof(bound);
+            if (::getsockname(listen_fd_, reinterpret_cast<sockaddr*>(&bound), &bound_size) != 0 ||
+                bound.sin_family != AF_INET || bound.sin_port == 0) {
+                VELD_CLOSE_SOCKET(listen_fd_);
+                listen_fd_ = veld::compat::kInvalidSocket;
+                return false;
+            }
+            local_listener_endpoint_.store(
+                (uint64_t(ntohs(bound.sin_port)) << 32) | bound.sin_addr.s_addr,
+                std::memory_order_release);
         }
 
         {
@@ -1861,6 +1877,19 @@ public:
         NodeServer* owner_{nullptr};
     };
 
+    bool IsLocalListenerEndpoint(const std::string& host, uint16_t port) const {
+        if (!running_.load(std::memory_order_acquire)) return false;
+        const uint64_t listener = local_listener_endpoint_.load(std::memory_order_acquire);
+        if (listener == 0 || port != uint16_t(listener >> 32)) return false;
+        if (host.size() > 6 && host.compare(host.size() - 6, 6, ".onion") == 0)
+            return host == OnionAddress();
+        in_addr resolved{};
+        if (::inet_pton(AF_INET, host.c_str(), &resolved) != 1) return false;
+        const auto bound_address = static_cast<uint32_t>(listener);
+        return bound_address == INADDR_ANY ? IsLocalIPv4Address(resolved)
+                                          : resolved.s_addr == bound_address;
+    }
+
     bool ConnectTo(const std::string& host, uint16_t port,
                    bool explicitly_trusted = false,
                    bool fleet_anchor = false) {
@@ -1871,6 +1900,7 @@ public:
         if (fleet_anchor &&
             (!explicitly_trusted || !IsCanonicalIPv4Literal(host)))
             return false;
+        if (IsLocalListenerEndpoint(host, port)) return false;
         if (explicitly_trusted) {
             if (fleet_anchor) {
                 if (!AddFleetAnchorIp(host)) return false;
@@ -1906,6 +1936,7 @@ public:
 #endif
         if (host.empty() || port == 0) return false;
         if (!running_.load(std::memory_order_acquire)) return false;
+        if (IsLocalListenerEndpoint(host, port)) return false;
         if (fleet_anchor &&
             (!explicitly_trusted || !IsCanonicalIPv4Literal(host)))
             return false;
@@ -1951,6 +1982,10 @@ public:
             if (resolved_ip.empty()) resolved_ip = ip_buf;
         }
 
+        if (IsLocalListenerEndpoint(resolved_ip, port)) {
+            ::freeaddrinfo(res);
+            return false;
+        }
         if (!resolved_ip.empty()) {
             std::lock_guard<std::mutex> lock(peers_mutex_);
             // CanDialOutboundIp reads the explicit trust set.  Use the same
@@ -4850,6 +4885,7 @@ public:
 
 private:
     uint16_t   port_;
+    std::atomic<uint64_t> local_listener_endpoint_{0};
     uint32_t   magic_;
     Blockchain& chain_;
     Mempool&    mempool_;
@@ -5223,6 +5259,7 @@ private:
     bool SpawnTrackedDial_(const std::string& host, uint16_t port,
                            bool explicitly_trusted = false,
                            bool fleet_anchor = false) {
+        if (IsLocalListenerEndpoint(host, port)) return false;
         PendingDialLease lease(*this);
         if (!lease) return false;
         return SpawnTrackedPeerThread(

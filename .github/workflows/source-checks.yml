@@ -35,6 +35,8 @@ jobs:
             standalone: true
           - fixture: background_peer_liveness_tests
             standalone: true
+          - fixture: self_dial_tests
+            standalone: true
           - fixture: reliability_gui_state_tests
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -236,6 +238,10 @@ jobs:
             members: ''
           - name: background peer heartbeat and reconnect
             fixture: background_peer_liveness_tests
+            standalone: true
+            members: ''
+          - name: self-dial exclusion and local peer reconnect
+            fixture: self_dial_tests
             standalone: true
             members: ''
           - name: background periodic tip wire protocol

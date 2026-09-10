@@ -5719,6 +5719,8 @@ public:
         // idempotent and dynamically promotes an existing ordinary outbound
         // connection when the exact configured IP is already live.
         if (!tcp_server_->AddFleetAnchorIp(ip)) return false;
+        // The local anchor is configured, but must never become its own peer.
+        if (tcp_server_->IsLocalListenerEndpoint(ip, config_.port)) return true;
         return tcp_server_->ConnectTo(ip, config_.port,
                                       /*explicitly_trusted=*/true,
                                       /*fleet_anchor=*/true);
