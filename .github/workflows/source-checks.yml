@@ -164,6 +164,16 @@ jobs:
           - name: connection diagnostics
             fixture: connection_diagnostics_tests
             members: ''
+          - name: background peer heartbeat and reconnect
+            fixture: background_peer_liveness_tests
+            members: ''
+          - name: background periodic tip wire protocol
+            fixture: reliability_background_peer_tests
+            defines: '-DVELD_RELIABILITY_IDENTITY_PROFILE'
+            members: '110'
+          - name: exact connection tip diagnostics
+            fixture: reliability_peer_diagnostics_tests
+            members: ''
           - name: snapshot disabled recovery barriers
             fixture: snapshot_disabled_recovery_tests
             members: ''

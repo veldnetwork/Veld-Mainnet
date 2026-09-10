@@ -66,6 +66,8 @@ struct PeerState {
 
     tp_t conn_started        = clock_t::now();
     tp_t last_ping           = clock_t::now();
+    // Connection-owned liveness, including independent background chainstates.
+    tp_t last_tipsig{};
     tp_t last_getblocks       = clock_t::now();
     tp_t last_ibd_progress    = clock_t::now();
     tp_t last_mempool_req     = clock_t::now();

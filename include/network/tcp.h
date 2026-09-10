@@ -3100,13 +3100,16 @@ public:
         Hash256     hash;
         uint64_t    height;
         int64_t     updated_at;
+        std::string connection_id;
     };
     std::vector<PeerTipSnapshot> SnapshotPeerTips(
-            bool configured_outbound_anchors_only = false) const {
+            bool configured_outbound_anchors_only = false,
+            bool group_by_ip = true) const {
         struct LiveTipSource {
             uint64_t    connection_id{0};
             std::string source_ip;
             bool        inbound{false};
+            std::string diagnostic_id;
         };
         // Mining may request the operator-configured outbound anchor view.
         // Snapshot configuration before peers to preserve config -> peers
@@ -3129,7 +3132,7 @@ public:
                     continue;
                 live_sources.push_back({conn->Identity(),
                                         conn->RemoteAddr(),
-                                        conn->IsInbound()});
+                                        conn->IsInbound(), conn->DiagnosticId()});
             }
         }
 
@@ -3148,13 +3151,15 @@ public:
                     it->second.inbound != live.inbound) continue;
                 PeerTipSnapshot candidate{live.source_ip, it->second.hash,
                                           it->second.height,
-                                          it->second.updated_at};
-                auto chosen = selected.find(live.source_ip);
+                                          it->second.updated_at,
+                                          live.diagnostic_id};
+                const auto& source_key = group_by_ip ? live.source_ip : live.diagnostic_id;
+                auto chosen = selected.find(source_key);
                 if (chosen == selected.end() ||
                     candidate.updated_at > chosen->second.second.updated_at ||
                     (candidate.updated_at == chosen->second.second.updated_at &&
                      live.connection_id > chosen->second.first)) {
-                    selected[live.source_ip] =
+                    selected[source_key] =
                         {live.connection_id, std::move(candidate)};
                 }
             }
@@ -3171,6 +3176,12 @@ public:
             return active.empty() || active != HashToHex(s.hash);
         }), out.end());
         return out;
+    }
+    // Diagnostics are per live connection, not a quorum observation. The
+    // default SnapshotPeerTips view remains IP-distinct for every admission
+    // caller; GUI/RPC must never assign one machine's tip to its NAT neighbor.
+    std::vector<PeerTipSnapshot> SnapshotConnectionTips() const {
+        return SnapshotPeerTips(false, false);
     }
     static constexpr size_t  PEER_TIPS_CAP        = 1024;
     static constexpr int64_t PEER_TIP_HARD_TTL_S  = 600;
@@ -8687,6 +8698,19 @@ private:
             if (conn.TrySend(pm.BuildPingMessage(0xDEADBEEF))) {
                 ps.last_ping = now;
             }
+        }
+        // Every connection owns its tip heartbeat. Background chainstates do
+        // not run the foreground application's supervisor; relying on its
+        // BroadcastTipsig call left otherwise healthy peers without TIPSIG and
+        // the remote handshake reaper closed them every 90 seconds. Queue the
+        // first tip after VERSION/VERACK and refresh it independently of slow
+        // checkpoint downloads, UI polling, and block validation.
+        if (ps.handshake_done && !chain_.IsEmpty() &&
+            (ps.last_tipsig == PeerState::tp_t{} ||
+             now - ps.last_tipsig >= std::chrono::seconds(30))) {
+            const auto tip = chain_.TipCopy();
+            if (conn.TrySend(pm.BuildTipsigMessage(tip.height, tip.GetHash())))
+                ps.last_tipsig = now;
         }
         if (ps.handshake_done && !ps.getaddr_sent) {
             if (conn.TrySend(pm.BuildGetAddrMessage())) {
