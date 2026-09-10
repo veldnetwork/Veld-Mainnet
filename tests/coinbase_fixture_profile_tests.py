@@ -22,7 +22,7 @@ template<class T> concept HasAccountingParent = requires(T& node) {
     { node.TestSetCoinbaseAccountingParent(uint64_t{0}) } -> std::same_as<bool>;
 };
 static_assert(HasAccountingParent<veld::VeldNode> == EXPECT_FIXTURE);
-static_assert(std::string_view(veld::CLIENT_VERSION) == "3.1.3");
+static_assert(std::string_view(veld::CLIENT_VERSION) == "3.1.6");
 static_assert(veld::CONSENSUS_SECURITY_UPGRADE_HEIGHT == 2880);
 #ifdef VELD_PUBLIC_RELEASE
 #ifdef VELD_PUBLIC_MAINNET
