@@ -67,6 +67,28 @@ int main(int argc,char** argv) {
         const auto base=fs::absolute(argv[1]);
         Check(!fs::exists(base),"do not reuse a fixture root");
         fs::create_directories(base);
+        {
+            const auto fresh=base/"bootstrap-policy";
+            std::string directory_error;
+            Check(channel::secure_file::EnsurePrivateDirectory(fresh.string(),&directory_error),"private bootstrap fixture");
+            Check(channel::secure_file::EnsurePrivateDirectory((fresh/"db").string(),&directory_error),"private empty storage directory");
+            Check(!sr::HasLocalChainState(fresh),"empty datadir permits first bootstrap");
+            // Each surviving storage member or validation obligation must
+            // prevent automatic replacement, including partial local state.
+            for (const auto* name : {"db/blocks", "db/utxo", "db/index",
+                    "db/.snapshot-consensus-replay-required", ".snapshot-handoff",
+                    ".background-chainstate-required", "background-ibd",
+                    "background-chainstate", sr::REQUEST, sr::REVOKED,
+                    sr::JOURNAL, sr::IMPORT}) {
+                const auto path=fresh/name;
+                sr::Write(path,"retained local state\n");
+                Check(sr::HasLocalChainState(fresh),"existing state blocks another snapshot import");
+                Check(sr::Read(path,64)==std::optional<std::vector<uint8_t>>(
+                    std::vector<uint8_t>{'r','e','t','a','i','n','e','d',' ','l','o','c','a','l',' ','s','t','a','t','e','\n'}),
+                    "bootstrap decision preserves local bytes");
+                sr::Remove(path);
+            }
+        }
         const auto lower=Floor(480,10),higher=Floor(520,30);
         for (unsigned sources=0;sources<5;++sources) {
             const auto root=New(base,"floor-"+std::to_string(sources));

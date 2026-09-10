@@ -3,6 +3,32 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## Hosted web and source maintenance - 2026-09-10
+
+- Keep the installed Explorer PWA's navigation controls mounted while opening
+  Mempool; preserve fresh responses, history, and native navigation on failure.
+- Synchronize the hosted Explorer theme, reward colors, staking wording and
+  bounded recent-block loading with the public source.
+- Update the operator version and Windows guides to 3.1.6, including the repair
+  launcher and preservation of existing chain storage.
+
+These maintenance changes do not replace the signed 3.1.6 packages or tag.
+
+## 3.1.6 - 2026-09-09
+
+- Serialize updater lock handoff and recover interrupted transactions during
+  Settings update checks and installation.
+- Allow healthy slow downloads, with bounded deadlines and retries for
+  transient transfer failures.
+- Include a signed repair helper for updating an existing Windows installation.
+- Scope GUI node discovery to the selected executable and render connection
+  diagnostics as readable messages while retaining raw logs and warnings.
+- Include the 3.1.4 static Windows runtime and 3.1.5 preservation of existing
+  chain storage during snapshot-enabled startup.
+
+This release retains the consensus rules and activation heights from 3.1.3.
+See [release notes](docs/release-notes.md) for update instructions and limits.
+
 ## Documentation maintenance - 2026-09-09
 
 - Update the whitepaper, rules, and staking guides for ASERT at block 3,840, the 500 VELD ordinary stake, and the unchanged 1,000 VELD lottery requirement.

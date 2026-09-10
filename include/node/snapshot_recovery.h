@@ -47,6 +47,20 @@ inline bool Exists(const fs::path& path) {
     return true;
 }
 
+// Bootstrap is for a fresh datadir. Even partial local storage must be
+// resumed or inspected by normal startup, never replaced with a newer snapshot.
+// EnsureDataDir creates an empty db directory before this decision.
+inline bool HasLocalChainState(const fs::path& root) {
+    bool present = false;
+    for (const char* name : {"db/blocks", "db/utxo", "db/index",
+             "db/.snapshot-consensus-replay-required", ".snapshot-handoff",
+             ".background-chainstate-required", "background-ibd",
+             "background-chainstate", REQUEST, REVOKED, JOURNAL, IMPORT}) {
+        present = Exists(root / name) || present;
+    }
+    return present;
+}
+
 inline std::optional<std::vector<uint8_t>> Read(const fs::path& path, size_t bound) {
     if (!Exists(path)) return std::nullopt;
     std::vector<uint8_t> wire;

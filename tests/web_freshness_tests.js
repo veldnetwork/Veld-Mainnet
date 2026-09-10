@@ -51,6 +51,8 @@ async function checkNavigation() {
     const docListeners = {}, winListeners = {};
     let reloads = 0;
     const context = vm.createContext({
+      navigator: {standalone: false},
+      location: {pathname: route},
       window: {location: {pathname: route, reload: () => { reloads++; }},
         matchMedia: () => ({matches: false}), addEventListener: (name, fn) => { winListeners[name] = fn; }},
       document: {readyState: 'loading', documentElement: {dataset: {}},

@@ -30,6 +30,7 @@
 #include "../include/mining/worker_policy.h"
 #include "../include/crypto/release_verify.h"
 #include "../include/gui/node_gui_model.h"
+#include "../include/gui/node_log_display.h"
 #include "../include/node/client_exit_policy.h"
 #include "../include/network/chainparams.h"
 #include "../include/wallet/passphrase_policy.h"
@@ -1040,6 +1041,7 @@ std::vector<std::wstring> ReadLogTail(const std::filesystem::path& path,
             const unsigned char value = static_cast<unsigned char>(c);
             if (value < 0x20 && c != '\t') c = ' ';
         }
+        line = veld::node_gui::DisplayLogLine(line);
         if (line.size() > 360) line.resize(360);
         std::wstring wide = Utf8ToWide(line);
         if (!line.empty() && wide.empty()) wide = L"[unreadable log line]";
@@ -1731,7 +1733,7 @@ INT_PTR CALLBACK PassphraseDialogProc(HWND dialog, UINT message,
     return FALSE;
 }
 
-DWORD FindNodeProcess() {
+DWORD FindNodeProcess(const std::filesystem::path& expected_executable) {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return 0;
     PROCESSENTRY32W entry{};
@@ -1740,8 +1742,16 @@ DWORD FindNodeProcess() {
     if (Process32FirstW(snap, &entry)) {
         do {
             if (_wcsicmp(entry.szExeFile, L"veld-node.exe") == 0) {
-                pid = entry.th32ProcessID;
-                break;
+                HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                    FALSE, entry.th32ProcessID);
+                wchar_t image[32768]{};
+                DWORD size = static_cast<DWORD>(std::size(image));
+                const bool matches = process && QueryFullProcessImageNameW(
+                    process, 0, image, &size) &&
+                    _wcsicmp(std::filesystem::path(image).lexically_normal().c_str(),
+                             expected_executable.lexically_normal().c_str()) == 0;
+                if (process) CloseHandle(process);
+                if (matches) { pid = entry.th32ProcessID; break; }
             }
         } while (Process32NextW(snap, &entry));
     }
@@ -3468,8 +3478,8 @@ private:
                        full_ibd_choice_, true);
         DrawSyncChoice(dc, snapshot_card_, L"Signed snapshot",
                        live.process_running
-                            ? L"Use on the next start; services stay locked while genesis validation catches up."
-                            : L"Start quickly from an official signed snapshot and validate it independently in the background.",
+                            ? L"Retain local history on restart; finish any pending snapshot verification."
+                            : L"Use an official snapshot on first use; retain local history on later starts.",
                        !full_ibd_choice_, true);
 
         RECT verify{left, choice_top + S(140), right, client.bottom - S(30)};
@@ -6099,9 +6109,30 @@ private:
                 DestroyWindow(hwnd_);
             } else {
                 update_available_ = true;
-                update_status_ = L"Update failed safely · retry or restart the node";
+                const std::string output = ReadTextBounded(
+                    state_dir_ / L"update-install.log", 128U * 1024U);
+                std::string detail;
+                size_t last_marker = std::string::npos;
+                for (const char* marker : {"[update] FAILED:", "[update] ABORT:"}) {
+                    const size_t at = output.rfind(marker);
+                    if (at != std::string::npos &&
+                        (last_marker == std::string::npos || at > last_marker)) {
+                        last_marker = at;
+                        const size_t begin = output.find_first_not_of(" \t", at + std::strlen(marker));
+                        if (begin != std::string::npos)
+                            detail = output.substr(begin, output.find_first_of("\r\n", begin) - begin);
+                    }
+                }
+                if (detail.empty()) detail = "The update helper exited with code " +
+                    std::to_string(exit_code) + ".";
+                if (detail.size() > 1200) detail.resize(1200);
+                update_status_ = L"Update failed · " + Utf8ToWide(detail.substr(0, 160));
                 update_status_color_ = RGB(231, 126, 126);
                 InvalidateRect(hwnd_, nullptr, FALSE);
+                const std::wstring message = Utf8ToWide(detail) +
+                    L"\n\nYou can restart the node. To repair the updater, download "
+                    L"the complete package from veld.network and run Repair Veld Update.bat.";
+                MessageBoxW(hwnd_, message.c_str(), L"Veld update could not finish", MB_OK | MB_ICONERROR);
             }
             return;
         }
@@ -7230,7 +7261,7 @@ private:
                 PostMessageW(hwnd_, WM_UPDATE_CHECK_COMPLETE, update_exit, 0);
 
             LiveState next;
-            next.pid = FindNodeProcess();
+            next.pid = FindNodeProcess(node_path_);
             next.process_running = next.pid != 0;
             next.uptime_seconds = next.process_running
                 ? ProcessUptime(next.pid) : 0;
@@ -7255,8 +7286,8 @@ private:
             hashed_uptime = next.uptime_seconds;
             next.daemon_executable_sha256 = running_executable_hash;
 
-            const HttpResult local = HttpGetJson(
-                L"127.0.0.1", 8080, L"/api/stats", false, 900);
+            const HttpResult local = next.process_running ? HttpGetJson(
+                L"127.0.0.1", 8080, L"/api/stats", false, 900) : HttpResult{};
             if (local.ok) {
                 std::string error;
                 next.local_online = veld::node_gui::ParseStats(
@@ -7285,6 +7316,7 @@ private:
                 }
                 if (!refreshed.empty()) cached_blocks = std::move(refreshed);
             }
+            if (!next.process_running) cached_blocks.clear();
             next.recent_blocks = cached_blocks;
 
             const std::string mining_body = ReadTextBounded(

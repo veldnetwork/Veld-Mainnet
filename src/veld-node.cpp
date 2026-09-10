@@ -2746,6 +2746,18 @@ int main(int argc, char* argv[]) {
     }
 #if defined(VELD_PUBLIC_MAINNET) && \
     defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    try {
+        if (opt_snapshot_bootstrap && !opt_regtest &&
+            snapshot_recovery::HasLocalChainState(opt_datadir)) {
+            opt_snapshot_bootstrap = false;
+            std::cout << "  [snapshot] Existing local chain retained; "
+                         "resuming local validation and peer synchronization.\n";
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "  [snapshot] local chain inspection failed: "
+                  << e.what() << "\n";
+        return 76;
+    }
     // Acquire and validate a snapshot before constructing the live node, while
     // no RPC, P2P, explorer, or mining surface exists. An invalid/unavailable
     // signed snapshot is an availability miss and falls back to ordinary IBD.

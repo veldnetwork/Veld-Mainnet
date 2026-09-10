@@ -25,6 +25,23 @@ Verify downloaded binaries using the official package manifest and signature.
 Building from source does not grant the official release signature. Different
 toolchains or paths can produce different binary hashes.
 
+## Veld 3.1.6
+
+The `v3.1.6` tag identifies the source used for the distributed Windows client
+and Linux fleet build. The [release identity record](https://veld.network/downloads/RELEASE-IDENTITY-3.1.6.json)
+binds that source to the signed packages. Documentation and hosted web changes
+on `main` do not replace the tagged source or existing signed binaries.
+
+| Field | Value |
+| --- | --- |
+| Source commit | `1ddcb449c651748463a4f066c4d5fec6e5e1a623` |
+| Source tree | `ea76d61d2439a312fd9ea1317645fe6bb39b9634` |
+| Windows GUI ZIP SHA-256 | `01fe6745793a07190b899750638f3b148a946accdf4614728502ea6c85fe4b51` |
+| Windows terminal ZIP SHA-256 | `4760d5ce8ceda6a35a5eebe21cd31e6eff6fcfa2dfbe2ccd72bbc5f6b823502e` |
+
+The [source archive](https://veld.network/downloads/Veld-3.1.6-source.tar.gz)
+is published with the package checksums and detached Veld signatures.
+
 ## Veld 3.1.1
 
 The `v3.1.1` release tag and
