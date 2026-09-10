@@ -51,7 +51,7 @@
         <li class="step"><div><h3>Run Repair Veld Update.bat</h3><p>Open the repair launcher in the newly extracted folder and select the existing folder containing <code>Veld Node.exe</code> and <code>veld-data</code>.</p></div></li>
         <li class="step"><div><h3>Allow verification and restart</h3><p>The repair helper authenticates its package and uses the fresh signed updater against the selected installation. If the node is still stopping, wait for it to stop before retrying repair.</p></div></li>
       </ol>
-      <div class="note">Version 3.1.7 can still reach the node's twenty-second shutdown fallback. Preserve the data directory and inspect the next startup if this appears in Logs.</div>
+      <div class="note">If Logs report a shutdown fallback, preserve the data directory and inspect the next startup. A forced exit is not a completed clean shutdown.</div>
     </section>
 
     <section class="content-section" id="confirm">

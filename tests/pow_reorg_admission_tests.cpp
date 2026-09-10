@@ -73,12 +73,20 @@ int main() {
 
     Blockchain chain;
     Init(chain);
-    Mempool main_mempool;
-    const auto main_miner = TestMiner(0x21);
+    auto main_blocks = MineFresh(0x21, 4);
+    auto fork = MineFresh(0x51, 4);
+    // Choose the canonical branch after constructing both valid histories.
+    // This guarantees the side branch loses the height-3 tie, independent of
+    // timestamps and mining nonces, so height 4 exercises reorganization.
+    if (HashToHex(main_blocks[2].GetHash()) >
+        HashToHex(fork[2].GetHash()))
+        main_blocks.swap(fork);
     for (size_t i = 0; i < 3; ++i) {
-        auto mined = MineAndCommit(chain, main_mempool, main_miner);
-        Check(mined.success, "main branch block mined and committed");
-        if (!mined.success) return 1;
+        auto admitted = chain.AddBlockDirect(
+            main_blocks[i], false, true, false,
+            PowAdmissionContext::Internal());
+        Check(admitted.IsAccepted(), "mined main branch block committed");
+        if (!admitted.IsAccepted()) return 1;
     }
     const Hash256 original_tip = chain.Tip().GetHash();
     const std::string original_tip_hex = HashToHex(original_tip);
@@ -122,21 +130,9 @@ int main() {
             return true;
         });
 
-    // At equal work the smaller header hash wins. Select a deterministic test
-    // fork whose height-3 hash loses the tie so only height 4 can trigger the
-    // reorg under test.
-    std::vector<Block> fork;
-    bool found_losing_tie = false;
-    for (uint16_t tag = 0x51; tag < 0xf0; ++tag) {
-        auto candidate = MineFresh(static_cast<uint8_t>(tag), 4);
-        if (HashToHex(candidate[2].GetHash()) > original_tip_hex) {
-            fork = std::move(candidate);
-            found_losing_tie = true;
-            break;
-        }
-    }
-    Check(found_losing_tie, "constructed side branch loses equal-work tie");
-    if (!found_losing_tie) return 1;
+    const bool loses_tie = HashToHex(fork[2].GetHash()) > original_tip_hex;
+    Check(loses_tie, "constructed side branch loses equal-work tie");
+    if (!loses_tie) return 1;
 
     // Force a transient dataset refusal on the replay pass (after the ingress
     // hash succeeds). The body must remain volatile, unblacklisted and

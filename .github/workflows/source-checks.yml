@@ -267,6 +267,11 @@ jobs:
             fixture: reliability_peer_shutdown_tests
             standalone: true
             members: ''
+          - name: proof of work admission and reorganization retry
+            fixture: pow_reorg_admission_tests
+            standalone: true
+            defines: '-DVELD_TEST_DATASET_BYTES=1048576 -DVELD_TEST_HOOKS=1'
+            members: ''
           - name: partial network startup and restart
             fixture: reliability_server_restart_tests
             standalone: true
