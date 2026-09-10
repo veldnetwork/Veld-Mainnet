@@ -42,16 +42,16 @@
         <li class="step"><div><h3>Allow the atomic install to finish</h3><p>Replacement is staged before activation and keeps rollback material. Do not move, rename, or edit the client folder during this phase.</p></div></li>
         <li class="step"><div><h3>Let Veld Node restart</h3><p>On success the app reports <strong>Signed update ready · restarting</strong> and reopens from the installed release.</p></div></li>
       </ol>
-      <div class="note"><strong>A failed update should fail safely.</strong> If the app reports <strong>Update failed safely</strong>, retain the installation and read the detailed reason in Settings and Logs. An older updater can be repaired using the complete signed 3.1.6 package.</div>
+      <div class="note"><strong>A failed update should fail safely.</strong> If the app reports <strong>Update failed safely</strong>, retain the installation and read the detailed reason in Settings and Logs. An older updater can be repaired using the complete signed 3.1.7 package.</div>
     </section>
 
     <section class="content-section"><h2>Repair an older updater</h2>
       <ol class="step-list">
-        <li class="step"><div><h3>Extract the complete signed package</h3><p>Download the official 3.1.6 Windows ZIP and extract it into a separate folder. Keep the existing installation and data directory in place.</p></div></li>
+        <li class="step"><div><h3>Extract the complete signed package</h3><p>Download the official 3.1.7 Windows ZIP and extract it into a separate folder. Keep the existing installation and data directory in place.</p></div></li>
         <li class="step"><div><h3>Run Repair Veld Update.bat</h3><p>Open the repair launcher in the newly extracted folder and select the existing folder containing <code>Veld Node.exe</code> and <code>veld-data</code>.</p></div></li>
         <li class="step"><div><h3>Allow verification and restart</h3><p>The repair helper authenticates its package and uses the fresh signed updater against the selected installation. If the node is still stopping, wait for it to stop before retrying repair.</p></div></li>
       </ol>
-      <div class="note">Version 3.1.6 can still reach the node's twenty-second shutdown fallback. Preserve the data directory and inspect the next startup if this appears in Logs.</div>
+      <div class="note">Version 3.1.7 can still reach the node's twenty-second shutdown fallback. Preserve the data directory and inspect the next startup if this appears in Logs.</div>
     </section>
 
     <section class="content-section" id="confirm">
@@ -62,7 +62,7 @@
 
     <section class="content-section"><h2>Updater protections</h2><dl class="path-list"><div class="path-row"><dt>Signature required</dt><dd>A missing, malformed, or invalid release signature is rejected.</dd></div><div class="path-row"><dt>Exact manifest</dt><dd>Shipping files must match the signed list and hashes.</dd></div><div class="path-row"><dt>No downgrade</dt><dd>An older signed version cannot replace the installed version.</dd></div><div class="path-row"><dt>No same-version swap</dt><dd>A same-version manifest with a different node hash is rejected.</dd></div><div class="path-row"><dt>Atomic replacement</dt><dd>Files are staged and installed with rollback protection rather than overwritten piecemeal.</dd></div></dl></section>
     <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/no-peers-or-mining/"><span>Previous guide</span><strong>Fix no peers or mining waiting</strong></a><a class="next-guide" href="/how-to/pair-veld-portal/"><span>Next guide</span><strong>Pair Veld Node with the Portal</strong></a></nav>
-    <p class="article-foot">Reviewed <time datetime="2026-09-10">10 September 2026</time> for Veld Mainnet and Windows 3.1.6. Checked against the current source for the signed-feed check, safe-stop, updater, restart, and rollback behavior in Veld Node.</p>
+    <p class="article-foot">Reviewed <time datetime="2026-09-10">10 September 2026</time> for Veld Mainnet and Windows 3.1.7. Checked against the current source for the signed-feed check, safe-stop, updater, restart, and rollback behavior in Veld Node.</p>
   </article></div>
 </main>
 <footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
