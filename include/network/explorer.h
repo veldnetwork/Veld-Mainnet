@@ -2560,16 +2560,16 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 <div class="card rule-card">
   <h2>How Veld works</h2>
   <p style="color:var(--muted);font-size:13px;line-height:1.6">
-    Reviewed for Veld 3.1.3 on 9 September 2026. This summarizes the released
-    <a href="https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.3" style="color:var(--em);text-decoration:underline">consensus source</a>.
+    Reviewed for Veld 3.1.7 on 10 September 2026. This summarizes the released
+    <a href="https://github.com/veldnetwork/Veld-Mainnet/tree/b32e942cdd18c4d0317c5054cc0c22bf6147d5e8" style="color:var(--em);text-decoration:underline">consensus source</a>.
     The <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a> provides background.
-    A protocol day is 480 blocks. Durations in days assume the 180-second target; actual elapsed time varies. <strong>Update to 3.1.3 before block 3,840, including if you installed 3.1.2.</strong> ASERT and the 500 VELD ordinary-staking minimum activate at that height. The co-mining lottery minimum remains 1,000 VELD.
+    A protocol day is 480 blocks. Durations in days assume the 180-second target; actual elapsed time varies. Staking is active with a <strong>500 VELD minimum</strong>.
   </p>
   <div class="toc">
     <h3>Table of Contents</h3>
     <ul>
       <li><a href="#emission">1. Block reward &amp; emission</a></li>
-      <li><a href="#splits">2. Coinbase split &amp; activation</a></li>
+      <li><a href="#splits">2. Coinbase split</a></li>
       <li><a href="#vault">3. Vault distribution math</a></li>
       <li><a href="#caps">4. Vault distribution limits</a></li>
       <li><a href="#whale">5. Concentration limit</a></li>
@@ -2597,7 +2597,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="splits">2. Where each block reward goes</h2>
-  <p>Before staking activates at 10,000 VELD issued, ordinary block subsidies split <strong>50% to the miner and 50% to the vault</strong>. After activation, ordinary blocks use the split below. <strong>Every 100th block routes its full subsidy to the vault</strong> in both phases.</p>
+  <p>Ordinary block subsidies use the split below. <strong>Every 100th block routes its full subsidy to the vault</strong>.</p>
   <table class="tbl-rules">
     <tr><th>Stream</th><th>Share</th><th>Goes to</th></tr>
     <tr><td style="color:var(--em);font-weight:600">Block winner</td><td style="color:var(--em)"><strong>50%</strong></td><td>Whoever solved this block&#39;s proof-of-work</td></tr>
@@ -2605,12 +2605,12 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <tr><td style="color:var(--gold);font-weight:600">Vault</td><td style="color:var(--gold)"><strong>20%</strong></td><td>Eligible staking distributions every 480 blocks</td></tr>
     <tr><td style="color:#B07CFF;font-weight:600">Validator pool</td><td style="color:#B07CFF"><strong>10%</strong></td><td>Eligible endorsement distributions every 480 blocks</td></tr>
   </table>
-  <p style="color:var(--muted);font-size:12px">During the subsidy era, transaction fees flow to the vault on top of its block share. When effective subsidy is zero, fee routing is 50% miner, 40% vault, and 10% validator pool, subject to integer rounding. From block 3,840, the common state-aware policy applies that fee-only allocation at every height, including every 100th block. Exact permitted subsidy plus authenticated fees remain mandatory.</p>
+  <p style="color:var(--muted);font-size:12px">During the subsidy era, transaction fees flow to the vault on top of its block share. When effective subsidy is zero, fee routing is 50% miner, 40% vault, and 10% validator pool, subject to integer rounding. The state-aware policy applies that fee-only allocation at every height, including every 100th block. Exact permitted subsidy plus authenticated fees remain mandatory.</p>
 </div>
 
 <div class="card rule-card">
   <h2 id="vault">3. How vault distributions work</h2>
-<p>Staking activates when canonical issued supply reaches <strong>10,000 VELD</strong>. The minimum ordinary stake is <strong>1,000 VELD below block 3,840</strong> and <strong>500 VELD from that inclusion height</strong>. The maximum remains 10,000 VELD per address. The co-mining lottery still requires 1,000 VELD.</p>
+<p>Staking is active on public mainnet. The minimum ordinary stake is <strong>500 VELD</strong>. The maximum ordinary stake is <strong>10,000 VELD per address</strong>. Keep additional spendable funds for the transaction fee.</p>
   <p>Every <strong>480 blocks</strong>, the vault can distribute a budget to eligible stakes and validator yield escrow. Ordinary stake weight is <span class="formula">stake &times; mining multiplier &times; lockup multiplier</span>, with the combined multiplier capped at 3.00&times;.</p>
   <p>The budget, concentration limit, recipient limits, fees, and integer rounding determine actual payments. A multiplier changes your relative weight; it does not promise a fixed yield or a payment in every cycle.</p>
 </div>
@@ -2674,9 +2674,9 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="endorse">9. Validators &amp; the validator pool</h2>
-  <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool collects <strong>10% of ordinary block subsidy after staking activation</strong> and pays it out every <strong>480 blocks</strong> in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle.</p>
+  <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool collects <strong>10% of ordinary block subsidy</strong> and pays it out every <strong>480 blocks</strong> in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle.</p>
   <ul>
-    <li><strong>System unlock.</strong> Staking first activates when issued supply reaches 10,000 VELD. After that, the validator subsystem unlocks when aggregate ordinary stake reaches <strong>10,000 VELD</strong>. Before the aggregate-stake gate opens, no endorsements are accepted. The validator pool begins receiving its allocation only after staking activates.</li>
+    <li><strong>System unlock.</strong> The validator subsystem requires aggregate ordinary stake of <strong>10,000 VELD</strong>. Endorsements are accepted only when that participation requirement is met. The validator pool receives its allocation independently of whether any validator qualifies for a payout.</li>
     <li><strong>Register on-chain.</strong> You submit a <span class="formula">VELD_VALIDATOR|REGISTER</span> transaction binding your ML-DSA-65 public key. A matching <span class="formula">DEREGISTER</span> exits cleanly.</li>
     <li><strong>Bond the minimum.</strong> Registration requires posting the minimum validator bond of <strong>10,000 VELD</strong> (see &sect;10) into the sigless custody vault. The live value is shown on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a>.</li>
     <li><strong>Stay online.</strong> Endorsement share is your count &divide; the network&#39;s count over the last 480 blocks &mdash; consistent uptime is what pays.</li>
@@ -2686,7 +2686,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="valbond">10. Validator bond, slashing &amp; yield escrow</h2>
-  <p>A validator&#39;s registration bond is not just a balance check &mdash; it is real, slashable capital. The custody, slashing, and reporter-bounty rules are compiled from genesis; validator operations become available only after the staking and aggregate-stake gates are satisfied.</p>
+  <p>A validator&#39;s registration bond is not just a balance check &mdash; it is real, slashable capital. Custody, slashing, and reporter-bounty rules are enforced by consensus; validator operations require the aggregate-stake threshold in &sect;9.</p>
   <h3>The bond (custody)</h3>
   <p>At registration the minimum bond is sent into a <strong>sigless custody vault</strong> &mdash; an address whose key nobody holds, so the principal cannot be moved arbitrarily. It sits there as collateral for as long as you validate. After a clean deregistration it remains slashable through the complete <strong>43,200-block (~90-day) finality-equivocation evidence horizon</strong>, measured from the validator's last counted finality vote when that is later. It is then <strong>returned to you in full</strong> by the mandatory, zero-fee canonical transaction at the first 480-block settlement boundary strictly after that horizon (up to about 91 days after the controlling event).</p>
   <h3>Slashing &mdash; two evidence classes</h3>
@@ -2710,8 +2710,8 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="poolflush">11. Co-mining lottery</h2>
-<p>After staking activates, the co-mining pool receives <strong>20% of ordinary block subsidies</strong>. A draw runs every <strong>100 blocks</strong>.</p>
-  <ul><li>Keep at least <strong>1,000 VELD of ordinary stake locked at the mining address</strong>. This lottery minimum remains 1,000 VELD before and after block 3,840; a 500 VELD ordinary stake does not qualify. The same stake can qualify for vault distributions.</li><li>The client submits qualifying near-miss proofs automatically. At least one valid proof must be <strong>included in the canonical chain during the draw window</strong>; submission alone does not qualify.</li><li>Each eligible address gets one entry regardless of its near-miss count. Up to four near-miss records can be included per block.</li></ul>
+<p>The co-mining pool receives <strong>20% of ordinary block subsidies</strong>. A draw runs every <strong>100 blocks</strong>.</p>
+  <ul><li>Keep at least <strong>1,000 VELD of ordinary stake locked at the mining address</strong>. The same stake can qualify for vault distributions.</li><li>The client submits qualifying near-miss proofs automatically. At least one valid proof must be <strong>included in the canonical chain during the draw window</strong>; submission alone does not qualify.</li><li>Each eligible address gets one entry regardless of its near-miss count. Up to four near-miss records can be included per block.</li></ul>
   <p>The draw selects up to five distinct addresses, or up to 20 when at least 1,000 addresses qualify. Each winner receives one slot; unfilled slots carry forward, subject to the protocol’s rounding rule. Finding a block or receiving a lottery payment is not guaranteed.</p>
 </div>
 
@@ -2724,7 +2724,6 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <div class="peg-item"><span class="k">General proposals</span><span class="v"><strong>51% yes.</strong> The quorum is seven votes when at least seven validators are recently active; below that it follows a majority of active validators.</span></div>
     <div class="peg-item"><span class="k">Protocol upgrades</span><span class="v"><strong>67% yes</strong> with a hard minimum of ten votes, followed by a 3,360-block (approximately seven-day) timelock.</span></div>
   </div>
-  <p>At block 3,840, validator attribution, governance operation formats, and retained state migrate together. Separate validator, governance, and btcVELD participation gates remain in force.</p>
   <p>Passing a protocol-upgrade proposal records on-chain approval after the timelock. It does not automatically replace node binaries or mutate consensus parameters; a software upgrade still requires published source, signed artifacts, operator adoption, and an activation plan.</p>
 </div>
 
@@ -2741,9 +2740,9 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="difficulty">14. Difficulty adjustment and ASERT</h2>
-  <p>Veld targets <strong>180 seconds per block</strong>. Below block <strong>3,840</strong>, historical LWMA rules apply. From that inclusion height, <strong>ASERT adjusts the target after every accepted block</strong>, with a <strong>2,700-second (45-minute) half-life</strong>.</p>
+  <p>Veld targets <strong>180 seconds per block</strong>. <strong>ASERT adjusts the target after every accepted block</strong>, with a <strong>2,700-second (45-minute) half-life</strong>.</p>
   <p>ASERT compares accepted branch time and height progression with the 180-second schedule from a canonical anchor. Blocks ahead of schedule raise difficulty; blocks behind schedule lower it. Deterministic integer arithmetic, canonical target encoding, and the proof-of-work limit constrain the calculation.</p>
-  <p>The half-life controls the response to accumulated timing error; it does not promise a three-minute interval. The next target does not continuously decrease merely because wall-clock time passes without an accepted block. Historical LWMA remains part of replay below activation.</p>
+  <p>The half-life controls the response to accumulated timing error; it does not promise a three-minute interval. The next target does not continuously decrease merely because wall-clock time passes without an accepted block.</p>
 </div>
 
 <div class="card rule-card">
@@ -2784,8 +2783,8 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
   <p><strong>At the tip does not mean fully verified.</strong> Independent validation can continue even when the displayed height matches the network.</p>
   <details>
     <summary>Sync options and trust</summary>
-    <p><code>--full-ibd</code> and <code>--no-snapshot</code> skip snapshot import. Previously imported data still requires validation; verified progress can be reused on restart. Version 3.1.3 retains the recovery improvements from 3.1.2: durable independent progress, interrupted snapshot cleanup, bounded Windows restarts, and clearer daemon and connection diagnostics. Tor-only mode syncs from peers without HTTPS snapshot downloads. If existing data fails startup checks, the node stops and reports the error.</p>
-    <p>A snapshot signature does not replace consensus checks. Version 3.1.3 retains the verified historical checkpoint at height 2,800 introduced in 3.1.1. A chain that conflicts with that block is rejected. Downloaded signed checkpoints remain advisory and cannot move this compiled pin. Before validator finality, nodes rely on verified proof of work and reorganization limits. Once a node verifies a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that checkpoint and rejects conflicting histories.</p>
+    <p><code>--full-ibd</code> and <code>--no-snapshot</code> skip snapshot import. Previously imported data still requires validation; verified progress can be reused on restart. The client saves independent validation progress, recovers interrupted snapshot cleanup, bounds Windows recovery restarts, and reports daemon and connection status. Tor-only mode syncs from peers without HTTPS snapshot downloads. If existing data fails startup checks, the node stops and reports the error.</p>
+    <p>A snapshot signature does not replace consensus checks. Public-mainnet clients enforce a compiled checkpoint at height 2,800. A chain that conflicts with that block is rejected. Downloaded signed checkpoints remain advisory and cannot move this compiled pin. Before validator finality, nodes rely on verified proof of work and reorganization limits. Once a node verifies a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that checkpoint and rejects conflicting histories.</p>
   </details>
 </div>
 

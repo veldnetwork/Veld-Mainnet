@@ -2,13 +2,13 @@
 
 ## A memory-hard proof-of-work network with native staking, co-mining, validator finality, and Bitcoin utility
 
-**Protocol version:** Veld Core 3.1.3
+**Protocol version:** Veld Core 3.1.7
 
-**Document version:** 9 September 2026
+**Document version:** 10 September 2026
 
 **Network:** veld-public-mainnet-v2
 
-**Coordinated upgrade:** Block 3,840
+**Ordinary staking minimum:** 500 VELD
 
 ---
 
@@ -16,17 +16,17 @@
 
 VELD is a proof-of-work network with a maximum native supply of 21,000,000 VELD and no premine. Its UTXO ledger combines CPU-oriented, memory-hard mining with native staking, a co-mining lottery, and bonded validators. Qualified validator finality can support Bitcoin anchoring and activation of btcVELD, a representation of Bitcoin held in custody. An on-chain automated market maker provides VELD/btcVELD exchange once its activation conditions are satisfied.
 
-The target block interval is 180 seconds. Veld 3.1.3 activates per-block ASERT difficulty adjustment at block 3,840, using a 2,700-second half-life. At the same inclusion height, the ordinary staking minimum decreases from 1,000 to 500 VELD. The co-mining lottery minimum stays at 1,000 VELD. The validator bond, maximum ordinary stake, lockups, reward maturity, and established reward allocation remain unchanged.
+The target block interval is 180 seconds. ASERT adjusts difficulty after every accepted block using a 2,700-second half-life. Ordinary staking is active with a minimum of 500 VELD and a maximum of 10,000 VELD per address. Co-mining requires 1,000 VELD of ordinary stake at the mining address. Validator registration requires a separate 10,000 VELD bond.
 
-The upgrade also coordinates coinbase validation and validator, governance, and retained-state transitions at a 480-block settlement boundary. Client changes improve independent verification progress, interrupted snapshot recovery, Windows process management, and diagnostic reporting. Installing a release and activating its consensus rules are separate events: operators must install 3.1.3 before height 3,840.
+Nodes independently validate proof of work, transactions, monetary accounting, and participation state. Signed snapshots support synchronization, while independent validation from genesis remains mandatory before a snapshot-backed node can mine, endorse, or serve its normal interfaces. Durable progress and verified recovery records allow that validation to continue across restarts.
 
-This paper describes the released implementation and its activation boundaries. Historical blocks retain the rules applicable at their height. The corresponding source, network parameters, and signed release records provide the implementation references for this document.
+This paper describes current public-mainnet rules and the Veld 3.1.7 client. The corresponding source, network parameters, and signed release records provide the implementation references.
 
-## 1. Network and activation model
+## 1. Network and current mainnet rules
 
 ### 1.1 Public network identity
 
-The public network is `veld-public-mainnet-v2`. This chain began on 2 September 2026 under the Veld 3.0.0 public-mainnet-v2 release. Earlier preparation balances and block history are not balances or history on this ledger.
+The public network is `veld-public-mainnet-v2`, launched on 2 September 2026.
 
 Nodes identify the network through its compiled profile, genesis fingerprint, protocol capabilities, and launch-chain anchor. An application version alone is not a network identity. Two peers can remain connected while running software that applies different future consensus rules.
 
@@ -38,27 +38,26 @@ The public genesis fingerprint is:
 
 Operators can inspect `getnetworkinfo` and the release identity records to compare the profile and genesis fingerprint. RPC block-hash display order must be distinguished from the fingerprint's byte order. Matching identifiers and height do not establish completed independent verification.
 
-### 1.2 Height-based changes
+### 1.2 Current mainnet parameters
 
-Veld 3.1.3 schedules the coordinated upgrade at block 3,840. This is a multiple of the 480-block settlement interval. The candidate block's inclusion height selects the applicable rules, including when a transaction was prepared before activation but confirmed afterward.
+| Rule | Current value |
+|---|---|
+| Difficulty adjustment | ASERT after every accepted block |
+| Target block interval | 180 seconds |
+| ASERT half-life | 2,700 seconds |
+| Minimum new ordinary stake | 500 VELD |
+| Maximum ordinary stake per address | 10,000 VELD |
+| Co-mining stake minimum | 1,000 VELD at the mining address |
+| Validator registration bond | 10,000 VELD |
+| Vault and validator settlement interval | 480 blocks |
 
-| Rule | Below block 3,840 | From block 3,840 |
-|---|---|---|
-| Difficulty adjustment | Historical LWMA and bootstrap rules | ASERT after every block |
-| Ordinary staking minimum | 1,000 VELD | 500 VELD |
-| Co-mining stake minimum | 1,000 VELD | 1,000 VELD (unchanged) |
-| Maximum ordinary stake per address | 10,000 VELD | 10,000 VELD |
-| Validator registration bond | 10,000 VELD | 10,000 VELD |
-| Coinbase validation | Historical admission and replay rules | Unified state-aware policy |
-| Validator, governance, and retained state | Existing formats and state rules | Coordinated migration |
-
-The independent rules activated at block 2,880 remain in force. The 3.1.3 upgrade does not replace the genesis, reset balances, change the supply cap, or require ordinary users to move funds. Existing stakes retain their lockup conditions. A lower minimum does not shorten a lock or create an automatic withdrawal.
+Staking positions retain their chosen lockup conditions. Reaching the unlock height permits an unstake transaction; funds do not withdraw automatically.
 
 ### 1.3 Consensus and operating policy
 
 Consensus rules determine whether every validating node accepts a block. Relay policy determines what a node forwards or places in its mempool. Wallet policy governs transaction preparation and user interaction. Snapshot distribution, the hosted wallet, the Explorer, the Portal, and custody services are operational components with their own availability and trust boundaries.
 
-Documentation and dashboards describe those components; they do not override validation. A signed update proves the origin and integrity of the distributed files. It does not certify every operating condition or make a future activation complete before its height is reached.
+Documentation and dashboards describe those components; they do not override validation. A signed update proves the origin and integrity of the distributed files. It does not certify every operating condition or satisfy a service's participation requirements.
 
 ## 2. Native ledger and proof of work
 
@@ -91,13 +90,13 @@ Memory hardness can alter the cost of specialized hardware and large CPU farms, 
 
 ### 2.3 ASERT difficulty adjustment
 
-From block 3,840, ASERT calculates the required target after every block using the canonical branch's anchor, elapsed block time, and height progression. It compares elapsed time with the schedule implied by the 180-second target and applies an exponential correction with a 2,700-second half-life. The implementation uses deterministic integer arithmetic and canonical compact-target encoding.
+ASERT calculates the required target after every block using the canonical branch's anchor, elapsed block time, and height progression. It compares elapsed time with the schedule implied by the 180-second target and applies an exponential correction with a 2,700-second half-life. The implementation uses deterministic integer arithmetic and canonical compact-target encoding.
 
 When blocks accumulate ahead of the target schedule, the required target decreases and difficulty rises. When the chain falls behind the schedule, the target increases and difficulty falls, within the proof-of-work limit. The half-life controls the response to accumulated schedule error; it is not a promised block interval and does not schedule a wall-clock reset.
 
-The next target is derived from accepted parent-chain evidence. Merely waiting without another accepted block does not continuously lower the next target. Random block discovery and changes in hashrate can still produce long or short intervals. ASERT responds after each accepted block instead of waiting for a periodic LWMA retarget boundary.
+The next target is derived from accepted parent-chain evidence. Merely waiting without another accepted block does not continuously lower the next target. Random block discovery and changes in hashrate can still produce long or short intervals. ASERT responds after each accepted block.
 
-Historical LWMA remains necessary for validating blocks below activation. Reorganization and independent replay must select the target from the same candidate-parent history. The change applies to difficulty calculation; VeldHash and the 180-second target are retained.
+Reorganization and independent replay must select the target from the same candidate-parent history. VeldHash supplies the proof of work for the resulting target.
 
 ## 3. Supply, fees, and coinbase accounting
 
@@ -109,31 +108,28 @@ The effective subsidy is the scheduled subsidy limited by remaining supply headr
 
 ### 3.2 Subsidy allocation
 
-Before staking activation at 10,000 VELD of canonical issued supply, ordinary block subsidies are divided between the miner and vault. After staking activation, ordinary blocks use four participation categories. A positive multiple of 100 is a periodic vault-funding block while effective subsidy remains positive.
+Staking is active on public mainnet. Ordinary block subsidies use four participation categories. Every 100th block is a periodic vault-funding block while effective subsidy remains positive.
 
 | Context with positive subsidy | Miner | Co-mining | Vault | Validator pool |
 |---|---:|---:|---:|---:|
-| Ordinary block before staking activation | 50% | 0% | 50% | 0% |
-| Ordinary block after staking activation | 50% | 20% | 20% | 10% |
+| Ordinary block | 50% | 20% | 20% | 10% |
 | Every 100th block | 0% | 0% | 100% | 0% |
 
-During the subsidy era, included transaction fees go to the vault in addition to its subsidy allocation. Allocations use integer atomic units: prescribed category percentages round down and the miner receives the applicable subsidy remainder. The lower staking minimum does not change these shares.
+During the subsidy era, included transaction fees go to the vault in addition to its subsidy allocation. Allocations use integer atomic units: prescribed category percentages round down and the miner receives the applicable subsidy remainder.
 
 When effective subsidy is zero, the fee-only policy gives 40% of authenticated fees to the vault, 10% to the validator pool, and the remainder to the miner. This policy takes precedence at every height, including a periodic vault boundary. A block with no subsidy and no fees uses the canonical zero-value representation rather than inventing a payment category.
 
-### 3.3 Consistent validation at activation
+### 3.3 Coinbase validation
 
-From block 3,840, direct admission, alternate-branch validation, independent replay, and mining preflight apply one state-aware coinbase policy. The policy derives fee-only status from the candidate parent's issued supply. It authenticates fees against the parent UTXO state and enforces exact permitted value, payout categories, output shape, and output bounds.
+Direct admission, alternate-branch validation, independent replay, and mining preflight apply one state-aware coinbase policy. The policy derives fee-only status from the candidate parent's issued supply. It authenticates fees against the parent UTXO state and enforces exact permitted value, payout categories, output shape, and output bounds.
 
-The correction replaces historical reward-multiple backstops with exact subsidy-plus-fee accounting for upgraded blocks. This matters for otherwise valid large-fee blocks and for zero-subsidy blocks on periodic vault boundaries. Canonical miner templates must satisfy the same mandatory checks as received blocks. Required settlement transactions and finality-certificate authentication remain separate checks.
-
-Historical admission and replay behavior is retained below activation. The change does not retroactively invalidate an accepted history or reinterpret its monetary state. The source's coinbase accounting document describes the historical compatibility and output-boundary details.
+Canonical miner templates must satisfy the same mandatory subsidy-plus-fee checks as received blocks, including large-fee blocks and zero-subsidy blocks on periodic vault boundaries. Required settlement transactions and finality-certificate authentication remain separate checks.
 
 ## 4. Ordinary staking and vault distributions
 
 ### 4.1 Access and limits
 
-Staking activates once canonical issued supply reaches 10,000 VELD. That supply gate has been reached on public mainnet. The minimum new ordinary stake is 1,000 VELD below block 3,840 and 500 VELD from that inclusion height. The maximum ordinary stake remains 10,000 VELD per address. Spendable funds must also cover the transaction fee.
+Staking is active on public mainnet. The minimum new ordinary stake is 500 VELD. The maximum ordinary stake is 10,000 VELD per address. Spendable funds must also cover the transaction fee.
 
 Ordinary staking is available through Veld Wallet. Users import their encrypted keyfile, unlock it locally, verify the intended address, choose an amount and lockup, and review the transaction before signing. Importing a keyfile accesses the same wallet; it does not move funds. Wallet keys and passphrases must be kept private and backed up separately.
 
@@ -150,7 +146,7 @@ The unlock height controls maturity. Calendar durations are estimates based on 1
 
 ### 4.3 Mining activity weights
 
-Eligible mining activity can increase an address's relative vault weight. The established activity windows and tier multipliers are unchanged by 3.1.3.
+Eligible mining activity can increase an address's relative vault weight.
 
 | Mining tier | Active days required / window | Multiplier |
 |---|---:|---:|
@@ -172,25 +168,25 @@ Ordinary wallet stakes remain on-chain while the browser is closed. The hosted w
 
 ## 5. Co-mining lottery
 
-The co-mining pool receives 20% of ordinary block subsidies after staking activation. It distributes through a draw every 100 blocks. Qualification combines ordinary stake at the mining address with valid near-miss proof of work included in the canonical chain during the relevant window.
+The co-mining pool receives 20% of ordinary block subsidies. It distributes through a draw every 100 blocks. Qualification combines ordinary stake at the mining address with valid near-miss proof of work included in the canonical chain during the relevant window.
 
 A near miss satisfies the protocol's share target without satisfying the full block target. It must refer to eligible recent chain state, meet signature and uniqueness requirements, and be admitted on-chain. The client submits qualifying work automatically. A locally found or merely broadcast share is not yet an included share.
 
-The co-mining stake threshold remains 1,000 VELD before and after block 3,840. Ordinary staking at 500 VELD does not qualify an address for the lottery. The same ordinary stake can contribute to vault distributions and co-mining eligibility; a separate duplicate lock is not required. Staking to a different address does not qualify the miner's address.
+Co-mining requires at least 1,000 VELD of ordinary stake locked at the mining address. The same stake can contribute to vault distributions and co-mining eligibility; a separate duplicate lock is not required. Staking to a different address does not qualify the miner's address.
 
 Each eligible address receives one entry, regardless of the number of qualifying near misses. Up to four near-miss records may be included in a block. The draw selects up to five distinct addresses, increasing to up to 20 when at least 1,000 addresses qualify. Winners receive one slot each; unfilled slots carry forward subject to integer rounding.
 
-Lowering the ordinary staking minimum gives smaller balances access to vault distributions; it does not lower the lottery threshold. The signature, work, inclusion, uniqueness, lockup, and per-address entry rules remain. One address is an accounting identity, not proof of one independent person or one physical computer.
+Qualification requires the stake, signature, work, inclusion, uniqueness, and lockup checks described above. One address is an accounting identity, not proof of one independent person or one physical computer.
 
 ## 6. Validators, finality, and checkpoints
 
 ### 6.1 Validator participation
 
-After staking activates, the validator subsystem unlocks when aggregate ordinary stake reaches 10,000 VELD. Validator registration requires a 10,000 VELD bond. This bond is distinct from the 500 VELD ordinary staking minimum and remains slashable under the validator rules. Registration maturity and the existing 480-block settlement schedule are retained.
+The validator subsystem requires aggregate ordinary stake of 10,000 VELD. Validator registration requires a 10,000 VELD bond, distinct from ordinary staking and slashable under the validator rules. Registration maturity and the 480-block settlement schedule apply.
 
-The validator pool receives 10% of ordinary block subsidy after staking activation. Payouts depend on eligible endorsements in the settlement window. A pool allocation is not evidence that a validator has qualified for payment. Where no eligible endorsement recipient exists, the applicable settlement rules determine routing; the allocation must not be interpreted as an unconditional payout to operators.
+The validator pool receives 10% of ordinary block subsidy. Payouts depend on eligible endorsements in the settlement window. A pool allocation is not evidence that a validator has qualified for payment. Where no eligible endorsement recipient exists, the applicable settlement rules determine routing; the allocation must not be interpreted as an unconditional payout to operators.
 
-At block 3,840, validator attribution and governance operations transition with retained state on the coordinated schedule. Updated clients bind operations to their required identity, signature, and inclusion context. Reorganization and replay reconstruct the same applicable state. This transition does not automatically satisfy the separate participation gates for governance, finality, or btcVELD.
+Validator and governance operations bind their required identity, signature, and inclusion context. Reorganization and replay reconstruct the corresponding state. Governance, finality, and btcVELD each have separate participation requirements.
 
 ### 6.2 Bond penalties and yield
 
@@ -204,9 +200,9 @@ Finality requires at least seven eligible validators and caps voting weight at 1
 
 A quorum certificate requires strictly more than two-thirds of eligible capped voting weight. Equal-weight membership therefore requires five signatures out of seven. Qualification and warm-up rules apply before the service becomes active. Certificates must be authenticated and retained; an observed certificate or dashboard label cannot replace those checks.
 
-### 6.4 Historical checkpoint protection
+### 6.4 Checkpoint protection
 
-Veld 3.1.3 retains the verified historical checkpoint introduced in 3.1.1 at block 2,800. A conflicting history is rejected at that compiled checkpoint. Downloaded signed checkpoints are advisory and cannot move the compiled pin. The checkpoint authority and the release-signing authority have different roles.
+Public-mainnet clients enforce a compiled checkpoint at block 2,800. A conflicting history is rejected at that compiled checkpoint. Downloaded signed checkpoints are advisory and cannot move the compiled pin. The checkpoint authority and the release-signing authority have different roles.
 
 The bounded reorganization horizon, compiled checkpoint, and qualified validator finality are distinct protections. They do not eliminate the need to validate proof of work, signatures, transactions, and state. Unconfirmed or recently confirmed transactions can still be affected by a permitted reorganization.
 
@@ -222,7 +218,7 @@ Bitcoin header relay and anchoring are different operations. Relaying headers pa
 
 btcVELD has eight decimal places, with one atomic unit corresponding to one Bitcoin satoshi represented by the system. The accounting relationship is one btcVELD to one BTC held in custody. Market execution prices and redemption completion depend on liquidity and operating conditions.
 
-btcVELD becomes available after seven qualified validators complete the required finality warm-up. The qualification is a one-time activation condition. New exposure can subsequently be restricted by liveness and safety gates; existing completion and redemption paths retain their separate checks. Installing 3.1.3 alone does not activate these services.
+btcVELD becomes available after seven qualified validators complete the required finality warm-up. The qualification is a one-time activation condition. New exposure can subsequently be restricted by liveness and safety gates; existing completion and redemption paths retain their separate checks.
 
 ### 7.2 Shared supply and replay accounting
 
@@ -265,7 +261,7 @@ Governance activates when at least five validators have bonded an aggregate 50,0
 
 Registered, recently active validators submit proposals and vote. The voting window is 6,720 blocks. General proposals require 51% yes; the quorum is seven votes when at least seven validators are recently active and otherwise follows the majority rule for the active set. Protocol-upgrade proposals require 67% yes with at least ten votes, followed by a 3,360-block timelock.
 
-The 3.1.3 migration applies the upgraded operation formats and retained-state rules at the same inclusion-height boundary as ASERT and the minimum-stake change. Historical records continue to use their applicable validation rules. A passing proposal records on-chain approval; it does not replace binaries or silently rewrite compiled consensus parameters. Protocol changes still require published source, an activation plan, and operator adoption.
+A passing proposal records on-chain approval; it does not replace binaries or silently rewrite compiled consensus parameters. Protocol changes require published source, an activation plan, and operator adoption.
 
 ## 10. Synchronization and recovery
 
@@ -277,7 +273,7 @@ A snapshot accelerates access to stored data but does not replace independent va
 
 `--full-ibd` and `--no-snapshot` skip snapshot import. Previously imported data still requires its applicable verification. Tor-only synchronization uses peers without HTTPS snapshot downloads. Invalid or mismatched data is not silently accepted as verified state.
 
-### 10.2 Recovery retained from 3.1.2
+### 10.2 Durable recovery
 
 The client persists independent verification progress through protected atomic writes, checks saved progress against canonical state, and refreshes progress when a reorganization changes the corresponding block. Interrupted snapshot quarantine and cleanup are completed consistently across restarts. Validation receipts cover non-mining nodes and separate payout addresses and are serialized with canonical transitions.
 
@@ -287,7 +283,7 @@ Windows process management recognizes an already-running daemon, handles stop/re
 
 ### 10.3 Diagnostic interpretation
 
-The GUI version and running daemon identity are reported separately. A diagnostic record can include daemon build identity, network profile, activation information, process state, verification progress, warnings, and connection reasons. Unavailable local status is represented as unknown rather than proof of zero hashrate or an inactive miner.
+The GUI version and running daemon identity are reported separately. A diagnostic record can include daemon build identity, network profile, process state, verification progress, warnings, and connection reasons. Unavailable local status is represented as unknown rather than proof of zero hashrate or an inactive miner.
 
 During snapshot verification, deliberately paused wallet/RPC access is distinguished from a port-binding failure. Connection identifiers support diagnosis without displaying peer addresses. A reconnect, missing report, or incomplete synchronization sample does not alone identify a common fleet failure or justify a destructive resynchronization.
 
@@ -299,7 +295,7 @@ Wallet transaction signing occurs locally. Operators must protect encrypted keyf
 
 Use the signed updater or download from `https://veld.network/#download`. Verify the package manifest and detached Veld signature with the expected release authority. GUI and terminal distributions have separate signed feeds. Source tags, source archives, and signed binary manifests identify related but distinct artifacts.
 
-Miners and node operators must install 3.1.3 before block 3,840. Keep wallet backups and existing chain data. The upgrade retains the network identity and checkpoint protection. Operators should verify the daemon's version, profile, completed synchronization, fresh peer evidence, and canonical tip after updating.
+Use Veld 3.1.7 for current mainnet operation. In Veld Node, open Settings, select Check now under Release and updates, and choose Update now when the signed update is offered. Keep wallet backups and existing chain data. The updater preserves saved settings, including worker count and Portal pairing. After updating, verify the daemon's version, profile, synchronization status, peers, selected mining identity, and worker count.
 
 For service health, height alone is insufficient. Useful evidence includes a stable process, completed independent verification, fresh distinct outbound peers, matching block hash and complete state digest, and progress observed over time. Fleet counts and public address groups do not reveal the health or ownership of every physical miner.
 
@@ -315,36 +311,34 @@ The software is subject to implementation and operational failure. Source review
 
 ## 13. Implementation and release references
 
-This revision describes Veld 3.1.3, source commit `e4921fd8d736e76c3ce5d81574c492ba00d0e60c` and source tree `e80fb25bde90ffff4fe711280fcc408458b174cf`. The initial 3.1.2 artifacts incorrectly share the ordinary-staking threshold with co-mining after activation. The correction restores the independent 1,000 VELD lottery floor. Operators require the 3.1.3 client before block 3,840. The original signed release identity remains preserved.
+This revision describes Veld 3.1.7, published source commit `b32e942cdd18c4d0317c5054cc0c22bf6147d5e8` and source tree `98ef04bc35ab33ca6187009000ad61a4cecc81b5`. The signed release identity records the relationship between published source, binary build inputs, and distributed artifacts.
 
 | Area | Source reference |
 |---|---|
-| Network, activation, and monetary parameters | `include/core/constants.h` |
+| Network and monetary parameters | `include/core/constants.h` |
 | ASERT integer calculation | `include/core/asert.h` |
 | VeldHash | `include/mining/veldhash.h` |
 | Block admission and replay | `include/core/blockchain.h` |
 | Coinbase economics and compatibility | `docs/consensus/coinbase-policy.md` |
 | Staking and co-mining | `include/consensus/staking.h`, `include/consensus/nms.h` |
 | Validator and governance state | `include/consensus/validators.h`, `include/consensus/governance.h` |
-| Coordinated state migration | `include/consensus/security_state_migration.h` |
+| Authenticated state transitions | `include/consensus/security_state_migration.h` |
 | btcVELD and the pool | `include/core/onchain_tokens.h`, `include/core/amm_pool.h` |
 | Node lifecycle and recovery | `src/veld-node.cpp`, `include/node/node.h` |
 | Build and package identity | `BUILDING.md`, `docs/source-identity.md` |
 
 Public references:
 
-- Source and release: https://github.com/veldnetwork/Veld-Mainnet/releases/tag/v3.1.3
+- Published source: [Veld 3.1.7 source](https://github.com/veldnetwork/Veld-Mainnet/tree/b32e942cdd18c4d0317c5054cc0c22bf6147d5e8)
 - Signed downloads: https://veld.network/#download
 - Network rules: https://explorer.veld.network/rules
 - How-to library: https://veld.network/how-to/
 - Staking guide: https://veld.network/how-to/stake-veld/
-- Release identity: https://veld.network/downloads/RELEASE-IDENTITY-3.1.3.json
+- Release identity: https://veld.network/downloads/RELEASE-IDENTITY-3.1.7.json
 
 ## 14. Glossary
 
-**ASERT:** An exponential difficulty adjustment that uses elapsed chain time and height progression relative to an anchor. VELD activates it at block 3,840.
-
-**LWMA:** Linearly weighted moving average; VELD's historical difficulty algorithm below the upgrade.
+**ASERT:** An exponential difficulty adjustment that uses elapsed chain time and height progression relative to an anchor.
 
 **Atomic unit:** One hundred-millionth of a VELD.
 

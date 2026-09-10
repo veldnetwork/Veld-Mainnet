@@ -39,7 +39,7 @@
       <ol class="step-list">
         <li class="step"><div><h3>Select Update now</h3><p>The app first asks the exact packaged node process to stop cleanly. If it cannot stop safely, installation does not begin.</p></div></li>
         <li class="step"><div><h3>Wait through verification</h3><p>The updater downloads the candidate release, verifies the pinned ML-DSA-65 signature and exact signed hashes, rejects extra or missing files, and enforces strict version ordering.</p></div></li>
-        <li class="step"><div><h3>Allow the atomic install to finish</h3><p>Replacement is staged before activation and keeps rollback material. Do not move, rename, or edit the client folder during this phase.</p></div></li>
+        <li class="step"><div><h3>Allow the atomic install to finish</h3><p>Replacement is staged before installation and keeps rollback material. Do not move, rename, or edit the client folder during this phase.</p></div></li>
         <li class="step"><div><h3>Let Veld Node restart</h3><p>On success the app reports <strong>Signed update ready · restarting</strong> and reopens from the installed release.</p></div></li>
       </ol>
       <div class="note"><strong>A failed update should fail safely.</strong> If the app reports <strong>Update failed safely</strong>, retain the installation and read the detailed reason in Settings and Logs. An older updater can be repaired using the complete signed 3.1.7 package.</div>
@@ -56,7 +56,7 @@
 
     <section class="content-section" id="confirm">
       <p class="stage-label">04 / Confirm</p><h2>Verify the restarted node</h2>
-      <ul class="checklist"><li><strong>Release and updates</strong> shows the expected installed version.</li><li>Overview reports the local node online.</li><li>Blockchain opens the existing mainnet data folder, not an empty new one.</li><li>The saved Full IBD or Signed snapshot preference is retained. An update alone does not require deleting chain data or repeating a full download; mandatory migration or validation requirements still apply.</li><li>A reused receipt must still match the chain and identity. A newly imported snapshot stays quarantined until independent genesis validation succeeds.</li><li>Network peers reconnect.</li><li>The expected mining identity and address remain selected.</li><li>Mining returns to its valid state after synchronization and peer checks.</li></ul>
+      <ul class="checklist"><li><strong>Release and updates</strong> shows the expected installed version.</li><li>Overview reports the local node online.</li><li>Blockchain opens the existing mainnet data folder, not an empty new one.</li><li>The saved Full IBD or Signed snapshot preference is retained. An update alone does not require deleting chain data or repeating a full download; mandatory migration or validation requirements still apply.</li><li>A reused receipt must still match the chain and identity. A newly imported snapshot stays quarantined until independent genesis validation succeeds.</li><li>Network peers reconnect.</li><li>The expected mining identity, address, and worker count remain selected.</li><li>Your saved Portal pairing remains available when remote monitoring is enabled.</li><li>Mining returns to its valid state after synchronization and peer checks.</li></ul>
       <p>Run <strong>Check now</strong> once more. The result should report the latest signed release as verified.</p>
     </section>
 
