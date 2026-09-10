@@ -284,7 +284,8 @@
   'use strict';
   if (location.pathname !== '/') return;
 
-  var state = { pending: false, target: '', loaded: '', retryAt: 0, failures: 0, controller: null };
+  var state = { pending: false, target: '', loaded: '', retryAt: 0, failures: 0, controller: null, hasFeed: false };
+  var firstSeen = new Map();
   var badges = new Map();
   var badgeTypes = {btcveld_mint:['Mint','gold'],btcveld_redeem:['Redeem','gold'],btcveld_transfer:['btcVELD','gold'],amm_op:['AMM','blue'],stake_lock:['Stake','veld-reward-stake'],stake_unlock:['Unstake','veld-reward-stake'],endorsement:['Endorse','veld-reward-validator'],validator_register:['Validator','veld-reward-validator'],staking_distribution:['Payout','veld-reward-stake'],endorsement_distribution:['Val payout','veld-reward-validator'],anchor_post:['Anchor','gold'],btc_header_relay:['BTC hdr','gold']};
 
@@ -298,6 +299,27 @@
     var value = response.headers.get('Retry-After');
     var delay = /^\d+$/.test(value || '') ? Number(value) * 1000 : Date.parse(value) - Date.now();
     return Number.isFinite(delay) && delay > 0 ? delay : (response.status === 429 ? 60000 : 2000);
+  }
+  function displayAge(seconds) {
+    seconds = Math.max(0, Math.floor(seconds));
+    if (seconds < 60) return seconds + ' s';
+    if (seconds < 3600) return Math.floor(seconds / 60) + ' m';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + ' h';
+    return Math.floor(seconds / 86400) + ' d';
+  }
+  function updateAge(el) {
+    var seen = firstSeen.get(el.dataset.blockHash);
+    var observed = typeof seen === 'number';
+    var seconds = observed ? (performance.now() - seen) / 1000 : Date.now() / 1000 - Number(el.dataset.blockTime);
+    el.textContent = displayAge(seconds);
+  }
+  function updateAges() {
+    document.querySelectorAll('#blocks-list [data-block-time]').forEach(updateAge);
+  }
+  function updateTipAge(hash) {
+    var seen = firstSeen.get(hash);
+    var el = document.getElementById('s-tip-age');
+    if (el && typeof seen === 'number') el.textContent = '+' + displayAge((performance.now() - seen) / 1000);
   }
   function validate(data, height, hash) {
     if (!data || !Number.isSafeInteger(data.tip_height) || data.tip_height < height ||
@@ -319,6 +341,8 @@
     if (!list) return;
     var fragment = document.createDocumentFragment();
     blocks.forEach(function (block, index) {
+      if (!firstSeen.has(block.hash)) firstSeen.set(block.hash, state.hasFeed ? performance.now() : null);
+      if (firstSeen.size > 40) firstSeen.delete(firstSeen.keys().next().value);
       var link = textElement('a', 'bk' + (index === 0 ? ' fresh' : ''));
       link.href = '/block/height/' + block.height;
       link.appendChild(textElement('div', 'ic', Math.floor(block.height / 1000) + 'k'));
@@ -330,12 +354,15 @@
       info.appendChild(textElement('div', 's', shortHash(block.hash) + (block.miner ? ' · ' + shortAddr(block.miner) : '')));
       link.appendChild(info);
       var right = textElement('div', 'right');
-      var age = textElement('div', 'ago', ago(block.time)); age.dataset.blockTime = block.time;
+      var age = textElement('div', 'ago');
+      age.dataset.blockTime = block.time; age.dataset.blockHash = block.hash; updateAge(age);
       right.appendChild(age);
       right.appendChild(textElement('div', 'tx', (block.tx_count || block.ntx || 0) + ' tx · ' + (block.size_kb || Math.round((block.size || 0) / 102.4) / 10) + ' KB'));
       link.appendChild(right); fragment.appendChild(link);
     });
     list.replaceChildren(fragment);
+    state.hasFeed = true;
+    updateTipAge(blocks[0].hash);
   }
   async function paintBadges(blocks, key, signal) {
     for (var block of blocks) {
@@ -367,11 +394,10 @@
       hash = /^[0-9a-f]{64}$/.test(hash || '') ? hash : '';
       var key = height + ':' + hash;
       state.target = key;
+      updateAges();
+      updateTipAge(hash);
       if (document.hidden || state.pending || Date.now() < state.retryAt) return;
-      if (state.loaded === key) {
-        document.querySelectorAll('#blocks-list [data-block-time]').forEach(function (el) { el.textContent = ago(Number(el.dataset.blockTime)); });
-        return;
-      }
+      if (state.loaded === key) return;
       state.pending = true;
       var controller = new AbortController(); state.controller = controller;
       var timer = setTimeout(function () { controller.abort(); }, 8000);
