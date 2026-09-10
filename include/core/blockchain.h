@@ -4180,6 +4180,10 @@ public:
                         bool skip_scripts = false,
                         bool skip_pow_hash_only = false,
                         mining::PowAdmissionContext pow_admission = {}) {
+        if (pow_admission.PeerWorkStopped()) {
+            last_reject_tag_ = "peer_work_stopping";
+            return BlockAdmissionResult::DeferredLocalWork();
+        }
         // Phase 1 of local-work admission is intentionally before both the
         // connect sequencer and chain_mutex_.  The node may sample peer height,
         // IBD, startup, role, and coordinator state here.  Only the immutable
@@ -4218,6 +4222,13 @@ public:
         // tip while the first block's module/persistence callback was still in
         // flight; a failure rollback could then disconnect the wrong block.
         std::lock_guard<std::mutex> connect_guard(block_connect_mutex_);
+        // Shutdown may begin while this call waits behind another commit.
+        // Cancel before validation; completed or active commits keep their
+        // existing persistence guarantees and no peer validity decision changes.
+        if (pow_admission.PeerWorkStopped()) {
+            last_reject_tag_ = "peer_work_stopping";
+            return BlockAdmissionResult::DeferredLocalWork();
+        }
         struct LocalHandoffReset {
             std::shared_ptr<mining::LocalWorkLeaseHandoff> handoff;
             bool retain{false};

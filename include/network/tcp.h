@@ -1353,6 +1353,7 @@ public:
 
         {
             std::lock_guard<std::mutex> ingest_lock(ingest_mtx_);
+            peer_work_stop_ = std::stop_source{};
             ingest_stopping_.store(false, std::memory_order_release);
         }
         running_.store(true, std::memory_order_release);
@@ -5076,6 +5077,7 @@ private:
     std::thread                             ingest_worker_thread_;
     std::atomic<bool>                       ingest_running_{false};
     std::atomic<bool>                       ingest_stopping_{false};
+    std::stop_source                        peer_work_stop_;
 
     struct SourcePowBudgetEntry {
         std::shared_ptr<mining::ExpensivePowBudget> budget;
@@ -6111,7 +6113,7 @@ private:
     void ProcessOrphanChain(const Hash256& parent_hash, PeerManager& pm,
                             Connection& conn, const std::string& key,
                             uint32_t depth = 0) {
-        if (depth >= 500) return;
+        if (depth >= 500 || peer_work_stop_.stop_requested()) return;
         std::vector<OrphanBlockEntry> to_process;
         {
             std::lock_guard<std::mutex> ol(orphan_mutex_);
@@ -6153,12 +6155,14 @@ private:
             }
         }
         for (auto& entry : to_process) {
+            if (peer_work_stop_.stop_requested()) return;
             if (!entry.source_pow_budget) continue;
             Block& orphan = entry.block;
             const auto admission = chain_.AddBlockDirect(
                 orphan, false, true, false,
                 mining::PowAdmissionContext::Peer(
-                    entry.source, entry.source_pow_budget));
+                    entry.source, entry.source_pow_budget,
+                    peer_work_stop_.get_token()));
             if (admission.IsAccepted()) {
                 uint64_t h = chain_.Height();
                 RecordVerifiedPeerHeight_(entry.source, orphan.GetHash());
@@ -8029,6 +8033,7 @@ private:
             // orphan_parent_getdata_throttle) preserved verbatim --
             // process-lifetime semantics identical when hosted in
             // PeerProtocolStep instead of HandlePeer.
+            if (peer_work_stop_.stop_requested()) return StepResult::Handled;
             if (msg.payload.empty()) {
                 RecordViolation(conn.RemoteAddr(), 10, "block_empty");
                 RevokeMalformedProtectedBlockQos_(conn);
@@ -8154,7 +8159,10 @@ private:
                 true,
                 false,
                 mining::PowAdmissionContext::Peer(
-                    StripPort_(conn.RemoteAddr()), source_pow_budget));
+                    StripPort_(conn.RemoteAddr()), source_pow_budget,
+                    peer_work_stop_.get_token()));
+            if (admission.IsDeferred() && peer_work_stop_.stop_requested())
+                return StepResult::Handled;
             if (admission.IsAccepted()) {
                 uint64_t h = chain_.Height();
                 {
@@ -9489,6 +9497,7 @@ private:
     // Work already executing may finish its commit; queued work cannot start
     // another commit or reacquire the chain sequencer ahead of shutdown.
     void StopWorkLocked_() {
+        peer_work_stop_.request_stop();
         {
             std::lock_guard<std::mutex> ingest_lock(ingest_mtx_);
             ingest_stopping_.store(true, std::memory_order_release);
@@ -10710,6 +10719,7 @@ private:
     }
 
     void ProcessBlockIngestJob_(PendingBlockIngest& job) {
+        if (peer_work_stop_.stop_requested()) return;
         // A prior item from this source may have crossed the ban threshold
         // while later items were already queued. Never run another
         // memory-hard consensus validation for that source.
@@ -10741,7 +10751,8 @@ private:
         const auto admission = chain_.AddBlockDirect(
             job.new_block, false, true, false,
             mining::PowAdmissionContext::Peer(
-                job.sender_source, job.source_pow_budget));
+                job.sender_source, job.source_pow_budget,
+                peer_work_stop_.get_token()));
         if (admission.IsAccepted()) {
             // The queued wire block carried height=0. AddBlockDirect has now
             // replaced it with the locally parent-derived height; only at this

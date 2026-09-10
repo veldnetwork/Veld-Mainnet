@@ -27,6 +27,9 @@ jobs:
           - fixture: reliability_node_shutdown_tests
             args: --stress
           - fixture: reliability_prewarm_wake_tests
+          - fixture: reliability_reorg_wake_tests
+          - fixture: reliability_peer_shutdown_tests
+            standalone: true
           - fixture: reliability_ingest_shutdown_tests
           - fixture: reliability_server_restart_tests
             standalone: true
@@ -256,6 +259,13 @@ jobs:
             members: ''
           - name: shutdown at the prewarm wait boundary
             fixture: reliability_prewarm_wake_tests
+            members: ''
+          - name: shutdown at the reorganization wait boundary
+            fixture: reliability_reorg_wake_tests
+            members: ''
+          - name: shutdown cancels late and waiting peer validation
+            fixture: reliability_peer_shutdown_tests
+            standalone: true
             members: ''
           - name: partial network startup and restart
             fixture: reliability_server_restart_tests

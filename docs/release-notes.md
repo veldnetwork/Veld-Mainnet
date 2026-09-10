@@ -14,10 +14,12 @@ Repair uses the verifier from the fresh complete package, so an older node's
 missing runtime DLL cannot prevent signed verification of its replacement.
 
 Shutdown closes queued validation before waiting for the active chain commit,
+also cancels direct peer validation that has not started its commit,
 interrupts outstanding RPC work, and uses a cancellable watchdog. The validation
 worker retains normal Windows scheduling and I/O priority instead of making
 networking and shutdown wait for a background-priority lock owner.
-Prewarm notifications share the wait mutex, preventing a missed shutdown wake.
+Prewarm and reorganization notifications share their respective wait mutexes,
+preventing missed shutdown wakes.
 Logs distinguish current-chain catch-up from independent historical validation.
 Peer diagnostics describe the exact connection. The wallet's lockup API reports
 the effective ordinary staking minimum consistently.

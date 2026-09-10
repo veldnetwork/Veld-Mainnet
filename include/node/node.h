@@ -3767,7 +3767,7 @@ public:
         if (mining_thread_.joinable()) mining_thread_.join();
         if (pow_verify_thread_.joinable()) pow_verify_thread_.join();
         // Join the reorg worker before chain and mempool destruction.
-        reorg_fixup_cv_.notify_all();
+        NotifyReorgFixup_();
         if (reorg_fixup_thread_.joinable()) reorg_fixup_thread_.join();
     }
 
@@ -3780,7 +3780,11 @@ public:
                 {
                     std::unique_lock<std::mutex> lk(reorg_fixup_mtx_);
                     reorg_fixup_cv_.wait(lk, [this]{
-                        return !reorg_fixup_q_.empty() || !running_.load();
+                        const bool ready = !reorg_fixup_q_.empty() || !running_.load();
+#ifdef VELD_TEST_HOOKS
+                        if (!ready && test_reorg_before_wait_) test_reorg_before_wait_();
+#endif
+                        return ready;
                     });
                     if (reorg_fixup_q_.empty()) { if (!running_.load()) return; continue; }
                     task = std::move(reorg_fixup_q_.front());
@@ -3866,6 +3870,13 @@ public:
         test_prewarm_before_notify_ = std::move(before_notify);
     }
     void TestNotifyPrewarm() { NotifyPrewarm_(); }
+    void TestSetReorgWaitHooks(std::function<void()> before_wait,
+                               std::function<void()> before_notify) {
+        std::lock_guard<std::mutex> lock(reorg_fixup_mtx_);
+        test_reorg_before_wait_ = std::move(before_wait);
+        test_reorg_before_notify_ = std::move(before_notify);
+    }
+    void TestNotifyReorg() { NotifyReorgFixup_(); }
 #endif
 
     void PrewarmHashDataset() {
@@ -8427,6 +8438,17 @@ private:
     std::deque<std::function<void()>> reorg_fixup_q_;
     std::mutex                        reorg_fixup_mtx_;
     std::condition_variable           reorg_fixup_cv_;
+#ifdef VELD_TEST_HOOKS
+    std::function<void()> test_reorg_before_wait_;
+    std::function<void()> test_reorg_before_notify_;
+#endif
+    void NotifyReorgFixup_() {
+#ifdef VELD_TEST_HOOKS
+        if (test_reorg_before_notify_) test_reorg_before_notify_();
+#endif
+        std::lock_guard<std::mutex> lock(reorg_fixup_mtx_);
+        reorg_fixup_cv_.notify_all();
+    }
     // Set while on_commit_ rebuilds the derived-state engines (staking_/validators_/
     // governance_) after a reorg, OFF the chain lock. The miner checks it and pauses a
     // round rather than reading half-rebuilt engine state (a reorg-time consistency race).

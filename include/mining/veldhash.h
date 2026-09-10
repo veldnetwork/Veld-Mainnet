@@ -25,6 +25,7 @@
 #include <shared_mutex>
 #include <optional>
 #include <memory>
+#include <stop_token>
 #include <utility>
 
 namespace veld {
@@ -225,6 +226,7 @@ struct PowAdmissionContext {
     PowAdmissionOrigin origin{PowAdmissionOrigin::Unwired};
     std::string source_identity;
     std::shared_ptr<ExpensivePowBudget> source_budget;
+    std::stop_token peer_stop;
     LocalWorkKind local_work_kind{LocalWorkKind::None};
     std::string work_binding;
     // Server-minted bearer returned by getblocktemplate. A raw serialized
@@ -237,11 +239,13 @@ struct PowAdmissionContext {
 
     static PowAdmissionContext Peer(
             std::string source,
-            std::shared_ptr<ExpensivePowBudget> budget) {
+            std::shared_ptr<ExpensivePowBudget> budget,
+            std::stop_token stop = {}) {
         PowAdmissionContext out;
         out.origin = PowAdmissionOrigin::Peer;
         out.source_identity = std::move(source);
         out.source_budget = std::move(budget);
+        out.peer_stop = std::move(stop);
         return out;
     }
 
@@ -295,6 +299,10 @@ struct PowAdmissionContext {
         return local_work_kind != LocalWorkKind::None;
     }
 
+    bool PeerWorkStopped() const noexcept {
+        return origin == PowAdmissionOrigin::Peer && peer_stop.stop_requested();
+    }
+
     bool HasRequiredProvenance() const noexcept {
         if (source_identity.size() > 255) return false;
         if (origin == PowAdmissionOrigin::Unwired) return false;
@@ -321,7 +329,7 @@ struct PowAdmissionContext {
         if (origin == PowAdmissionOrigin::Peer)
             return !source_identity.empty() &&
                    static_cast<bool>(source_budget);
-        return !source_budget;
+        return !source_budget && !peer_stop.stop_possible();
     }
 
     bool IsExternal() const noexcept {
