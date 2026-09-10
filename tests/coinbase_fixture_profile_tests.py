@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+import re
 import subprocess
 
 
@@ -11,6 +12,10 @@ def main():
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
+    version_header = (root / "include/core/version.h").read_text(encoding="utf-8")
+    version = re.search(r'\bCLIENT_VERSION\s*=\s*"(\d+\.\d+\.\d+)"', version_header)
+    if not version:
+        raise AssertionError("Release version declaration is missing or ambiguous")
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=False)
     source = output / "coinbase-fixture-profile.cpp"
@@ -22,7 +27,7 @@ template<class T> concept HasAccountingParent = requires(T& node) {
     { node.TestSetCoinbaseAccountingParent(uint64_t{0}) } -> std::same_as<bool>;
 };
 static_assert(HasAccountingParent<veld::VeldNode> == EXPECT_FIXTURE);
-static_assert(std::string_view(veld::CLIENT_VERSION) == "3.1.6");
+static_assert(std::string_view(veld::CLIENT_VERSION) == EXPECTED_CLIENT_VERSION);
 static_assert(veld::CONSENSUS_SECURITY_UPGRADE_HEIGHT == 2880);
 #ifdef VELD_PUBLIC_RELEASE
 #ifdef VELD_PUBLIC_MAINNET
@@ -49,6 +54,7 @@ static_assert(veld::SECURITY_STATE_MIGRATION_HEIGHT == 0);
     for name, flags, visible, allowed in cases:
         command = [args.compiler, "-std=c++20", "-fsyntax-only", "-DVELD_MAINNET_POW",
                    "-DVELD_USE_LEVELDB", "-DEXPECT_FIXTURE=" + str(int(visible)),
+                   '-DEXPECTED_CLIENT_VERSION="' + version.group(1) + '"',
                    "-I" + str(root / "include"), "-I" + str(root / "vendor/pqc"),
                    *("-D" + flag for flag in flags), str(source)]
         result = subprocess.run(command, capture_output=True, text=True,
