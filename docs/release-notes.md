@@ -1,4 +1,4 @@
-## 3.1.8 - Mining timestamp and near-miss reliability
+## 3.1.8 - Mining and wallet reliability
 
 Mining workers refresh their block timestamp as the clock advances, including
 on slow CPUs and after a paused search. This prevents a long hash search from
@@ -13,6 +13,11 @@ The Windows package removes the separate update-repair launcher. Updates and
 interrupted-update recovery remain available through Settings and the normal
 launcher. Existing chain data, identity, worker count, and pairing are retained.
 The wallet login dialog no longer offers biometric removal while locked.
+
+Staking checks the final signed transaction size before requesting signatures.
+Wallets with too many small outputs receive a short cleanup instruction instead
+of failing after signing. Transaction hex validation handles large valid inputs
+consistently in mobile browsers. Automatic cleanup remains opt-in.
 
 Includes the intervening connection, checkpoint publisher, and wallet display
 maintenance in published source. No consensus rules, stake requirements,

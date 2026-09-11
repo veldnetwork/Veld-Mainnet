@@ -6794,6 +6794,14 @@ private:
             tx.outputs.push_back(TxOutput(0, op_return_script));
 
             auto raw = tx.Serialize();
+            constexpr size_t signature_growth =
+                offline_signing::kCanonicalInputScriptBytes + 2U;
+            if (raw.size() > Mempool::MAX_RELAY_TX_BYTES ||
+                tx.inputs.size() >
+                    (Mempool::MAX_RELAY_TX_BYTES - raw.size()) / signature_growth)
+                throw std::runtime_error(
+                    "Transaction is too large. In Wallet, use Combine my outputs, "
+                    "wait for confirmation, then try again.");
             std::string unsigned_tx_hex = BytesToHex(raw);
 
             // Compute sighash for each input

@@ -7,6 +7,8 @@ are tracked separately; publishing source does not release new binaries.
 
 - Refresh mining timestamps by elapsed wall-clock time on every worker.
 - Retry failed near-miss submissions without consuming the submission window.
+- Check signed transaction size before staking and explain when wallet cleanup
+  is needed; avoid browser failures when validating large transaction hex.
 - Correct co-mining pool percentage metadata to the existing 20% allocation.
 - Remove the separate Windows update-repair launcher and the wallet login
   dialog's biometric-removal button.

@@ -4402,6 +4402,7 @@ var veldCrypto = (function() {
   // last reported (i, n) localises the hang.
   function injectSignatures(unsignedTxHex, inputs, seedHex, onProgress) {
     _veldAssertActiveSignerSeed(seedHex);
+    _veldAssertPreparedRelaySize(unsignedTxHex, inputs);
     var tx = hexToBytes(unsignedTxHex);
     var pos = 0;
     function readBytes(n) { var s = tx.slice(pos, pos+n); pos += n; return s; }
@@ -5577,7 +5578,7 @@ function _veldAuthenticatePreparedPrevouts(prep, expectedFeeUnits) {
         throw new Error('Refusing to sign: live-prevout value/script is malformed.');
       return rpc('gettransaction', [txid, String(Number(live.block_height))]).then(function(parent) {
         var raw = String(parent && parent.raw_hex || '').toLowerCase();
-        if (!raw || raw.length > 16777216 || !/^(?:[0-9a-f]{2})+$/.test(raw))
+        if (!raw || raw.length > 16777216 || raw.length % 2 !== 0 || !/^[0-9a-f]+$/.test(raw))
           throw new Error('Refusing to sign: canonical parent transaction is unavailable.');
         if (String(parent.txid || '').toLowerCase() !== txid ||
             String(veldCrypto.sha256d(raw)).toLowerCase() !== txid)
@@ -5599,17 +5600,44 @@ function _veldAuthenticatePreparedPrevouts(prep, expectedFeeUnits) {
   return Promise.resolve().then(next);
 }
 
-// Broadcast only the exact transaction bytes produced by the active
-// self-custody signer.
-// A remote or compromised RPC endpoint must not be able to acknowledge a
-// different transaction id and poison confirmation/recovery state in the UI.
+function _veldAssertPreparedRelaySize(unsignedTxHex, inputs) {
+  var limit = 1024 * 1024;
+  var cleanup = 'Transaction is too large. In Wallet, use Combine my outputs, wait for confirmation, then try again.';
+  if (typeof unsignedTxHex !== 'string' || !unsignedTxHex || unsignedTxHex.length % 2 !== 0)
+    throw new Error('Cannot sign malformed transaction bytes.');
+  if (unsignedTxHex.length > limit * 2) throw new Error(cleanup);
+  if (/[^0-9a-fA-F]/.test(unsignedTxHex))
+    throw new Error('Cannot sign malformed transaction bytes.');
+  var tx = _veldParseUnsignedTx(unsignedTxHex);
+  if (!Array.isArray(inputs) || inputs.length !== tx.inputs.length)
+    throw new Error('Cannot sign: transaction input details are incomplete.');
+  var size = unsignedTxHex.length / 2;
+  tx.inputs.forEach(function(input, index) {
+    var meta = inputs[index];
+    if (!meta || typeof meta !== 'object')
+      throw new Error('Cannot sign: transaction input details are incomplete.');
+    if (meta.sigless === true || meta.sigless === 1 || meta.sigless === '1') return;
+    if (input.scriptSigHex !== '')
+      throw new Error('Cannot sign: transaction already contains an input signature.');
+    // Canonical ML-DSA-65 script plus the two extra CompactSize bytes.
+    size += 5269 + 2;
+  });
+  if (size > limit) throw new Error(cleanup);
+  return size;
+}
+
+// Accept only the transaction ID derived from the exact locally signed bytes.
 function _veldBroadcastExactSigned(signedHex, expectedSeedHex) {
   if (typeof expectedSeedHex !== 'string' || !/^[0-9a-fA-F]{64}$/.test(expectedSeedHex))
     throw new Error('Refusing to broadcast without the exact reviewed signer key.');
   _veldAssertActiveSignerSeed(expectedSeedHex);
-  signedHex = String(signedHex || '').toLowerCase();
-  if (!/^(?:[0-9a-f]{2})+$/.test(signedHex) || signedHex.length > 33554432)
-    return Promise.reject(new Error('Refusing to broadcast malformed or oversized signed transaction bytes.'));
+  if (typeof signedHex !== 'string' || !signedHex || signedHex.length % 2 !== 0)
+    return Promise.reject(new Error('Refusing to broadcast malformed signed transaction bytes.'));
+  if (signedHex.length > 2 * 1024 * 1024)
+    return Promise.reject(new Error('Transaction is too large. In Wallet, use Combine my outputs, wait for confirmation, then try again.'));
+  if (!/^[0-9a-fA-F]+$/.test(signedHex))
+    return Promise.reject(new Error('Refusing to broadcast malformed signed transaction bytes.'));
+  signedHex = signedHex.toLowerCase();
   var localTxid = String(veldCrypto.sha256d(signedHex)).toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(localTxid))
     return Promise.reject(new Error('Refusing to broadcast: local signed transaction id is invalid.'));
@@ -5704,6 +5732,7 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
     var budget = prepareMethod === 'prepareconsolidatetx'
       ? (consolidationBudget || _veldConsolidationBudget(1)) : null;
     return rpc(prepareMethod, params).then(function(prep) {
+    _veldAssertPreparedRelaySize(prep && prep.unsigned_tx_hex, prep && prep.inputs);
     var consolidation = budget ? _veldConsolidationProgress(prep, ownerPrevSpk) : null;
     if (Array.isArray(expectedOutputs) && expectedOutputs.length > 0) {
       _veldVerifyUnsignedTxOutputs(prep, expectedOutputs);

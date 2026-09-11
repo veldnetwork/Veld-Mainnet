@@ -52,6 +52,7 @@ const signing = vm.createContext({
   _veldAssertAllP2PKHOutputsInAllowed: () => {},
   _veldAssertOpReturnExact: (_, policy) => assert.equal(policy, ""),
   _veldVerifyInputSighashes: () => {},
+  _veldAssertPreparedRelaySize: () => {},
   _veldAuthenticatePreparedPrevouts: async () => { ++authenticated; },
   veldCrypto: {
     injectSignatures: async () => { ++signed; return "inert-signer-result"; },
