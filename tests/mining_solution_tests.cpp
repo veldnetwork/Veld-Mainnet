@@ -30,8 +30,24 @@ int main() {
         miner.script_override.push_back(0x88);
         miner.script_override.push_back(0xac);
         for (unsigned workers : {1u, 7u, 8u, 15u, 16u}) {
-            const auto found = MineOnly(chain, mempool, miner, 0, nullptr, {}, workers);
+            uint64_t prepared_timestamp = 0;
+            uint64_t search_started = 0;
+            const auto delayed_preflight = [&](const Block& candidate) {
+                prepared_timestamp = candidate.header.timestamp;
+                // Slow template preparation must not leave the search hashing
+                // a stale timestamp until a worker completes 65,536 hashes.
+                std::this_thread::sleep_for(std::chrono::milliseconds(2100));
+                search_started = static_cast<uint64_t>(std::time(nullptr));
+                return true;
+            };
+            const auto found = MineOnly(chain, mempool, miner, 0, nullptr, {}, workers,
+                                       nullptr, {}, nullptr, nullptr, {}, delayed_preflight);
             check(found.success && found.hashes_tried > 0, "fixture did not return a solution");
+            check(search_started > prepared_timestamp &&
+                      found.block.header.timestamp >= search_started,
+                  "worker hashed the stale template timestamp after a slow start");
+            check(found.block.header.timestamp <= static_cast<uint64_t>(std::time(nullptr)),
+                  "worker advanced the timestamp beyond the wall clock");
             const auto verified =
                 mining::VeldHash(found.block.header.Serialize(), found.new_height);
             check(found.hash == verified && verified < found.block.header.GetTarget(),
@@ -43,7 +59,8 @@ int main() {
             check(chain.Height() == 0 && chain.TipCopy().GetHash() == genesis.GetHash(),
                   "offline search committed a block");
         }
-        std::cout << "PASS 1/7/8/15/16-worker solution verification and unchanged coinbase split\n";
+        std::cout << "PASS delayed 1/7/8/15/16-worker timestamp refresh, exact solution "
+                     "verification and unchanged coinbase split\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL " << error.what() << '\n';

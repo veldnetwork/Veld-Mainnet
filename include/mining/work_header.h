@@ -36,10 +36,10 @@ class MiningWorkHeader {
     bool RefreshTimestamp(uint64_t expected_generation, uint64_t now) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (generation_.load(std::memory_order_relaxed) != expected_generation ||
-            header_.timestamp == std::numeric_limits<uint64_t>::max() ||
+            now <= header_.timestamp ||
             expected_generation == std::numeric_limits<uint64_t>::max())
             return false;
-        header_.timestamp = now > header_.timestamp ? now : header_.timestamp + 1;
+        header_.timestamp = now;
         generation_.store(expected_generation + 1, std::memory_order_release);
         return true;
     }

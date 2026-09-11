@@ -901,10 +901,14 @@ inline MineBlockResult MineOnly(
                     stop_local = true; break;
                 }
             }
+            // Check before each hash so slow workers and resumed searches use
+            // current time. Only a later, valid clock reading changes the work.
+            const std::time_t now = std::time(nullptr);
+            if (now > 0 && static_cast<uint64_t>(now) > work.header.timestamp)
+                work_header.RefreshTimestamp(work.generation, static_cast<uint64_t>(now));
             if (work_header.Generation() != work.generation) {
                 rebuild_local();
                 nonce = mining::MiningWorkerNonceStart(nonce_base, worker_id);
-                continue;
             }
 
             tw64(80, nonce);
@@ -995,11 +999,6 @@ inline MineBlockResult MineOnly(
             }
 
             nonce += N;
-            constexpr uint64_t REFRESH_EVERY_HASHES = 65536ULL;
-            if (local_hashes > 0 && (local_hashes % REFRESH_EVERY_HASHES) == 0) {
-                work_header.RefreshTimestamp(work.generation,
-                    static_cast<uint64_t>(std::time(nullptr)));
-            }
         }
 
         total_hashes_accum += local_hashes;

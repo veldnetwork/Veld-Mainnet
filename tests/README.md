@@ -60,14 +60,16 @@ single profile to every test or add test hooks to a production build.
 
 `mining_primitive_tests.cpp` compares stream buffering and integer square roots
 with the prior implementations, published known answers, and arithmetic bounds.
-`mining_work_header_tests.cpp` exercises concurrent timestamp refreshes and the
-identity of headers reported by workers. `mining_search_tests.cpp` runs the
+`mining_work_header_tests.cpp` exercises concurrent timestamp refreshes, equal
+and backward clock readings, and the identity of headers reported by workers.
+`mining_search_tests.cpp` runs the
 actual search loop in a disposable in-memory chain, including concurrent seven-
 and eight-worker groups and accounting for canceled searches. It does not open
 network connections or submit blocks.
 `mining_solution_tests.cpp` uses the existing fixed-difficulty test profile to
-check found blocks, including the exact hashed header and canonical coinbase
-split, with one, seven, eight and sixteen workers. Both search tests link the C
+check found blocks after slow template preparation, including fresh timestamps,
+the exact hashed header and canonical coinbase split, with one, seven, eight,
+fifteen and sixteen workers. Both search tests link the C
 objects listed in `vendor/pqc/provenance/release-c-sources.txt`, as shown in the
 source-checks workflow.
 

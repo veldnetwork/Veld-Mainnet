@@ -23,6 +23,25 @@ int main() {
     if (before.WithNonce(UINT64_MAX).timestamp != 1000)
         return 1;
 
+    // Repeated or backward clock readings must not invent future seconds or
+    // reset a worker onto nonces it already tried for this exact header.
+    for (uint64_t now : {1001ULL, 1000ULL, 0ULL}) {
+        if (shared.RefreshTimestamp(after.generation, now) ||
+            shared.Read().header.Serialize() != after.header.Serialize() ||
+            shared.Generation() != after.generation)
+            return 1;
+    }
+    // A slow worker with one hash per second must see each new wall-clock
+    // second, including after a suspension, without a hash-count threshold.
+    MiningWorkHeader slow(original);
+    for (uint64_t now : {1001ULL, 1002ULL, 1600ULL, 2200ULL}) {
+        const auto snapshot = slow.Read();
+        if (!slow.RefreshTimestamp(snapshot.generation, now) ||
+            slow.Read().header.timestamp != now ||
+            snapshot.header.timestamp >= now)
+            return 1;
+    }
+
     std::atomic<bool> failed{false};
     std::vector<std::thread> workers;
     for (unsigned worker = 0; worker < 16; ++worker) {
@@ -37,7 +56,7 @@ int main() {
                 if (header.Serialize() != expected.Serialize())
                     failed = true;
                 if (i % 31 == 0)
-                    shared.RefreshTimestamp(snapshot.generation, 0);
+                    shared.RefreshTimestamp(snapshot.generation, snapshot.header.timestamp + 1);
                 // Reporting a result from the prior generation must preserve its bytes.
                 if (snapshot.WithNonce(nonce).Serialize() != header.Serialize())
                     failed = true;
@@ -48,11 +67,13 @@ int main() {
         worker.join();
     original.timestamp = UINT64_MAX - 1;
     MiningWorkHeader boundary(original);
-    if (!boundary.RefreshTimestamp(0, 0) || boundary.RefreshTimestamp(1, 0) ||
+    if (!boundary.RefreshTimestamp(0, UINT64_MAX) || boundary.RefreshTimestamp(1, 0) ||
+        boundary.RefreshTimestamp(1, UINT64_MAX) ||
         boundary.Read().header.timestamp != UINT64_MAX)
         return 1;
     if (failed)
         return 1;
-    std::cout << "PASS 80000 concurrent header snapshots, stale refreshes, nonce wraparound, "
+    std::cout << "PASS clock rollback and equal-time guards, slow-worker clock changes, "
+                 "80000 concurrent snapshots, stale refreshes, nonce wraparound, "
                  "near-miss header identity and timestamp boundary\n";
 }
