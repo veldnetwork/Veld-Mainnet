@@ -75,6 +75,7 @@ Thumbs.db
 !/scripts/rebuild-pqc-wasm.py
 !/scripts/generate-mldsa65-nist-kat.py
 !/scripts/veld-topology-rpc-collector.py
+!/scripts/checkpoints/
 /swap/
 /*.bat
 /*.csv
@@ -97,6 +98,7 @@ Thumbs.db
 !/src/veld-validator.cpp
 !/src/veld-keygen.cpp
 !/src/veld-miner-portal.py
+!/src/veld-checkpoint-tool.cpp
 
 # Sources not used by a public mainnet program
 /include/compat/avx512_guards.h

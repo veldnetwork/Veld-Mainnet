@@ -1,0 +1,21 @@
+[Unit]
+Description=Verify Veld checkpoint publication health
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/veld-checkpoints/remote_store.py health
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+MemoryDenyWriteExecute=yes
+ReadWritePaths=/var/lib/veld-checkpoints
+TimeoutStartSec=30

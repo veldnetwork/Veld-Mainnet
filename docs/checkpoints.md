@@ -85,5 +85,51 @@ The compiled pin has no expiry and remains active through restarts. The signed
 record also has no age-based expiry in 3.1.1. Clearnet clients refresh the feed
 every five minutes; a network failure does not remove the compiled pin. New
 enforced heights require a qualified client update. New advisory records
-require independent block verification, local signing, and verified public
-readback. Future records are not automatically signed by the fleet.
+require independent block verification, protected signing, and verified public
+readback.
+
+## Automatic advisory publication
+
+The checkpoint publisher runs on n4 under its own service account. It checks
+every fifteen minutes and selects the latest 100-block boundary at least 120
+blocks behind the agreed tip. The 120-block depth exceeds the 100-block
+reorganization limit. A run with no new eligible boundary succeeds without
+signing another record.
+
+Before signing and again before publication, n2, n3, and n4 must agree on the
+tip, state digest, and candidate block hash. Each must have completed independent
+historical validation, have a stable process and synchronized clock, and have
+two fresh outbound peers that agree with its tip. A failed check preserves the
+previous feed and reports an error.
+
+The checkpoint authority remains separate from Windows release signing. Its
+encrypted keystore and unlock credential are stored on n4 as root-owned,
+host-bound encrypted systemd credentials. Only the checkpoint service receives
+the decrypted credentials during execution. The service has no web listener,
+no administrative shell access to the other nodes, no core dumps, restricted
+outbound networking, and bounded CPU and memory usage. This is host-bound
+software protection, not a hardware security module.
+
+n3 accepts already signed records through a restricted SSH command. It verifies
+the compiled checkpoint authority, preserves every previous record, and accepts
+only one appended record per transaction. Installation uses an expected prior
+hash, an atomic replacement, and a durable rollback journal. The signer verifies
+public HTTPS readback through n2 before committing publication. Retries recover
+an interrupted transaction and do not sign a conflicting hash at an existing
+height.
+
+A separate health timer on n3 checks the feed and the signer's last successful
+check-in. It fails if the signer has not checked in for three hours or if an
+uncommitted transaction remains. The hourly recovery snapshot job is separate
+from checkpoint signing. Neither checkpoint creation nor publication depends
+on an operator's PC.
+
+The implementation is in `scripts/checkpoints/` and
+`src/veld-checkpoint-tool.cpp`. `scripts/checkpoints/build-tool.sh` builds the
+tool from the pinned public-mainnet authority and verifies the signed fixture.
+Run `tests/checkpoint_publication_tests.py` and `tests/checkpoint_tool_tests.py`
+against the built tool before changing the deployed workflow. Deployment
+configuration must pin SSH host keys, restrict the service transport key to the
+forced checkpoint gateway, and give that identity no arbitrary command or
+forwarding privileges. Preserve the existing encrypted authority recovery
+backup when enrolling or recovering a signer.

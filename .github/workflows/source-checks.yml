@@ -103,6 +103,13 @@ jobs:
           python -m pip install --only-binary=:all: -r tests/requirements.txt
       - name: Run portable checks
         run: python tests/run_checks.py
+      - name: Verify checkpoint publication and recovery
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bash scripts/checkpoints/build-tool.sh "$RUNNER_TEMP/checkpoint-tool"
+          python3 tests/checkpoint_publication_tests.py
+          python3 tests/checkpoint_tool_tests.py "$RUNNER_TEMP/checkpoint-tool/veld-checkpoint-tool"
       - name: Verify native mining launcher recovery limits
         if: runner.os == 'Windows'
         run: python tests/windows_mining_restart_tests.py

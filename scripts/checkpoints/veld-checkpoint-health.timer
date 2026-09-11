@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Veld checkpoint publisher freshness
+
+[Timer]
+OnCalendar=*-*-* *:5/15:00
+Persistent=true
+Unit=veld-checkpoint-health.service
+
+[Install]
+WantedBy=timers.target
