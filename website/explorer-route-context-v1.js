@@ -151,11 +151,8 @@
       document.querySelectorAll('table.tbl tbody tr').forEach(function (row) {
         var cells = row.querySelectorAll('td');
         if (cells.length !== 3 || !/^Minimum (Ordinary )?Stake$/.test(cells[0].textContent.trim())) return;
-        cells[0].textContent = 'Minimum Ordinary Stake';
-        var minimum = Number.parseFloat(cells[1].textContent.replace(/,/g, ''));
-        cells[2].textContent = minimum > 500
-          ? '500 VELD from block 3,840'
-          : 'Per new ordinary stake; transaction fee is additional';
+        cells[0].textContent = 'Minimum Stake';
+        cells[2].textContent = 'Transaction fee is additional.';
       });
     }
     if (window.location.pathname === '/validators') {
