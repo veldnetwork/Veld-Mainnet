@@ -19,15 +19,15 @@
     <section class="content-section" id="download">
       <p class="stage-label">01 / Download</p><h2>Use the official release</h2>
       <p>Download the Windows client only from the Veld website. Avoid copies sent through chat, file-sharing services, advertisements, or third-party download pages.</p>
-      <a class="url" href="https://veld.network/downloads/VeldClient-Windows-x64-3.1.7.zip">https://veld.network/downloads/VeldClient-Windows-x64-3.1.7.zip</a>
-      <ul class="checklist"><li>Supported system: Windows 10 or Windows 11, 64-bit.</li><li>Expected archive name: <code>VeldClient-Windows-x64-3.1.7.zip</code>.</li><li>Keep the download page open so you can compare its published SHA-256.</li></ul>
+      <a class="url" href="https://veld.network/downloads/VeldClient-Windows-x64-3.1.8.zip">https://veld.network/downloads/VeldClient-Windows-x64-3.1.8.zip</a>
+      <ul class="checklist"><li>Supported system: Windows 10 or Windows 11, 64-bit.</li><li>Expected archive name: <code>VeldClient-Windows-x64-3.1.8.zip</code>.</li><li>Keep the download page open so you can compare its published SHA-256.</li></ul>
     </section>
 
     <section class="content-section" id="verify">
       <p class="stage-label">02 / Verify</p><h2>Authenticate the first archive</h2>
       <p>The verifier inside a newly downloaded archive cannot be its own first-install trust anchor. Compare the ZIP digest with the value published on the official download page or an independently authenticated release announcement.</p>
       <ol class="step-list">
-        <li class="step"><div><h3>Open Windows PowerShell</h3><p>Run the following command using the real path to the downloaded ZIP:</p><code class="command">Get-FileHash -Algorithm SHA256 "C:\Users\&lt;your name&gt;\Downloads\VeldClient-Windows-x64-3.1.7.zip"</code></div></li>
+        <li class="step"><div><h3>Open Windows PowerShell</h3><p>Run the following command using the real path to the downloaded ZIP:</p><code class="command">Get-FileHash -Algorithm SHA256 "C:\Users\&lt;your name&gt;\Downloads\VeldClient-Windows-x64-3.1.8.zip"</code></div></li>
         <li class="step"><div><h3>Compare all 64 hexadecimal characters</h3><p>The computed SHA-256 must exactly match the ZIP SHA256 shown at <strong>veld.network</strong>. A partial match is not sufficient.</p></div></li>
         <li class="step"><div><h3>Stop on any mismatch</h3><p>Delete the untrusted archive and obtain the published value through an independent trusted channel before trying again.</p></div></li>
       </ol>
@@ -55,7 +55,7 @@
 
     <section class="content-section"><h2>Installation checklist</h2><ul class="checklist"><li>The ZIP came from <code>veld.network</code>.</li><li>The complete SHA-256 matched an authenticated published value.</li><li>The whole archive was extracted.</li><li><strong>Start Veld Node.bat</strong> opened the client on Clearnet without a release-verification failure.</li><li>The Overview page reports the local node state.</li></ul></section>
     <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/send-receive-veld/"><span>Previous guide</span><strong>Send and receive VELD safely</strong></a><a class="next-guide" href="/how-to/first-sync/"><span>Next guide</span><strong>Understand first synchronization</strong></a></nav>
-    <p class="article-foot">Reviewed <time datetime="2026-09-10">10 September 2026</time> for Veld Mainnet and Windows 3.1.7. Checked against the current source for the Windows package, signed-manifest policy, and Veld Node launch flow.</p>
+    <p class="article-foot">Reviewed <time datetime="2026-09-11">11 September 2026</time> for Veld Mainnet and Windows 3.1.8. Checked against the current source for the Windows package, signed-manifest policy, and Veld Node launch flow.</p>
   </article></div>
 </main>
 <footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>

@@ -42,16 +42,16 @@
         <li class="step"><div><h3>Allow the atomic install to finish</h3><p>Replacement is staged before installation and keeps rollback material. Do not move, rename, or edit the client folder during this phase.</p></div></li>
         <li class="step"><div><h3>Let Veld Node restart</h3><p>On success the app reports <strong>Signed update ready · restarting</strong> and reopens from the installed release.</p></div></li>
       </ol>
-      <div class="note"><strong>A failed update should fail safely.</strong> If the app reports <strong>Update failed safely</strong>, retain the installation and read the detailed reason in Settings and Logs. An older updater can be repaired using the complete signed 3.1.7 package.</div>
+      <div class="note"><strong>A failed update should fail safely.</strong> If the app reports <strong>Update failed safely</strong>, retain the installation and read the detailed reason in Settings and Logs. Close the app, run Start Veld Node.bat, and retry from Settings after recovery finishes.</div>
     </section>
 
-    <section class="content-section"><h2>Repair an older updater</h2>
+    <section class="content-section"><h2>Recover an interrupted update</h2>
       <ol class="step-list">
-        <li class="step"><div><h3>Extract the complete signed package</h3><p>Download the official 3.1.7 Windows ZIP and extract it into a separate folder. Keep the existing installation and data directory in place.</p></div></li>
-        <li class="step"><div><h3>Run Repair Veld Update.bat</h3><p>Open the repair launcher in the newly extracted folder and select the existing folder containing <code>Veld Node.exe</code> and <code>veld-data</code>.</p></div></li>
-        <li class="step"><div><h3>Allow verification and restart</h3><p>The repair helper authenticates its package and uses the fresh signed updater against the selected installation. If the node is still stopping, wait for it to stop before retrying repair.</p></div></li>
+        <li class="step"><div><h3>Keep the existing installation</h3><p>Leave the client folder and <code>veld-data</code> in place. Read the detailed update result in Settings and Logs.</p></div></li>
+        <li class="step"><div><h3>Reopen the normal launcher</h3><p>Close Veld Node and run <strong>Start Veld Node.bat</strong>. The launcher verifies the package and recovers an interrupted transaction.</p></div></li>
+        <li class="step"><div><h3>Retry from Settings</h3><p>After recovery finishes, select <strong>Check now</strong> and then <strong>Update now</strong>. Unlock your node identity locally after the app restarts if prompted.</p></div></li>
       </ol>
-      <div class="note">If Logs report a shutdown fallback, preserve the data directory and inspect the next startup. A forced exit is not a completed clean shutdown.</div>
+      <div class="note">If the update still fails, preserve the installation and use the detailed log to diagnose it. Do not delete chain data or replace individual files.</div>
     </section>
 
     <section class="content-section" id="confirm">
@@ -62,7 +62,7 @@
 
     <section class="content-section"><h2>Updater protections</h2><dl class="path-list"><div class="path-row"><dt>Signature required</dt><dd>A missing, malformed, or invalid release signature is rejected.</dd></div><div class="path-row"><dt>Exact manifest</dt><dd>Shipping files must match the signed list and hashes.</dd></div><div class="path-row"><dt>No downgrade</dt><dd>An older signed version cannot replace the installed version.</dd></div><div class="path-row"><dt>No same-version swap</dt><dd>A same-version manifest with a different node hash is rejected.</dd></div><div class="path-row"><dt>Atomic replacement</dt><dd>Files are staged and installed with rollback protection rather than overwritten piecemeal.</dd></div></dl></section>
     <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/no-peers-or-mining/"><span>Previous guide</span><strong>Fix no peers or mining waiting</strong></a><a class="next-guide" href="/how-to/pair-veld-portal/"><span>Next guide</span><strong>Pair Veld Node with the Portal</strong></a></nav>
-    <p class="article-foot">Reviewed <time datetime="2026-09-10">10 September 2026</time> for Veld Mainnet and Windows 3.1.7. Checked against the current source for the signed-feed check, safe-stop, updater, restart, and rollback behavior in Veld Node.</p>
+    <p class="article-foot">Reviewed <time datetime="2026-09-11">11 September 2026</time> for Veld Mainnet and Windows 3.1.8. Checked against the current source for the signed-feed check, safe-stop, updater, restart, and rollback behavior in Veld Node.</p>
   </article></div>
 </main>
 <footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
