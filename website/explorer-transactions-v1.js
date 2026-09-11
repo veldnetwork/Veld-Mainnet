@@ -75,12 +75,6 @@
     }
     return page('', 1);
   }
-  function element(tag, className, text) {
-    var node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text;
-    return node;
-  }
   function setFee(cell, entry, coinbase) {
     if (coinbase) { cell.textContent = 'Not applicable'; return; }
     var fee = entry ? feeText(entry.fee_veld) : null;
@@ -102,7 +96,6 @@
       table.querySelectorAll('tbody tr').forEach(function (row, ordinal) {
         var cells = row.querySelectorAll('td');
         if (cells.length !== 5) return;
-        cells.forEach(function (cell, index) { cell.dataset.label = headers[index] === 'Fee' ? 'Network fee' : headers[index]; });
         var link = cells[0].querySelector('a[href^="/tx/"]');
         var txid = link && link.getAttribute('href').split('/').pop();
         if (!txIdPattern.test(txid || '')) return;
@@ -124,8 +117,6 @@
           return transaction(txid, height).then(function (tx) {
             if (!row.isConnected || !isConsolidation(entry, tx, address)) return;
             badge.textContent = 'CONSOLIDATION';
-            var note = element('div', 'transaction-explanation', tx.vin.length + ' outputs combined into 1 in the same wallet. No new VELD created.');
-            cells[2].appendChild(note);
           });
         }).catch(function () {});
       });

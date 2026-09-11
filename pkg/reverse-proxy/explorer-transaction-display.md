@@ -1,10 +1,10 @@
 # Explorer transaction details
 
-The hosted Explorer uses `website/explorer-transactions-v1.js` and its scoped
-stylesheet to identify consolidations, show indexed fees, and resolve output
-sources omitted by the native page's historical-read budget. Serve both assets
-from `/assets/` with their SHA-256 prefixes in the page URLs. Load the stylesheet
-in the document head and the deferred script after the existing Explorer scripts.
+The hosted Explorer uses `website/explorer-transactions-v1.js` to identify
+consolidations, show indexed fees, and resolve output sources omitted by the
+native page's historical-read budget. Serve the script from `/assets/` with its
+SHA-256 prefix in the page URL and load it after the existing Explorer scripts.
+The original transaction table layout is retained on desktop and mobile.
 
 Include `veld-explorer-transaction-data.conf` once in the Explorer server block.
 Its exact locations take precedence over the existing `/api/` prefix. They expose
