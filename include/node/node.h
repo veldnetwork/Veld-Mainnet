@@ -24,6 +24,7 @@
 #include "../mining/genesis_pow.h"
 #include "../mining/preflight_selector.h"
 #include "../mining/nonce_search.h"
+#include "../mining/nms_submission.h"
 #include "../mining/work_header.h"
 #include "../mining/worker_policy.h"
 #include "../consensus/staking.h"
@@ -14490,18 +14491,9 @@ private:
             return;
         }
 
-        {
-            static std::atomic<uint64_t> last_nms_window{0};
-            uint64_t cur_window = chain_.Height() / COMINE_WINDOW_BLOCKS;
-            uint64_t prev = last_nms_window.load(std::memory_order_relaxed);
-            if (cur_window <= prev && prev != 0) {
-                return;
-            }
-            if (!last_nms_window.compare_exchange_strong(prev, cur_window,
-                    std::memory_order_acq_rel)) {
-                return;
-            }
-        }
+        static mining::NmsSubmissionGate submissions;
+        auto attempt = submissions.TryBegin(chain_.Height() / COMINE_WINDOW_BLOCKS);
+        if (!attempt) return;
 
         auto miner_script = miner_keypair_.script_override.empty()
                           ? miner_keypair_.GetP2PKHScript()
@@ -14618,6 +14610,7 @@ private:
             return;
         }
 
+        attempt.CommitAccepted();
         if (tcp_server_) tcp_server_->BroadcastTransaction(tx);
         std::cerr << "  [nms] broadcast: nonce=" << nms_header.nonce
                   << " height=" << (chain_.Height() + 1) << "\n";
@@ -15000,7 +14993,7 @@ private:
           << "\"blocks_in_window\":" << blocks_in_window << ","
           << "\"blocks_until_payout\":" << blocks_until_payout << ","
           << "\"window_size\":" << COMINE_WINDOW_BLOCKS << ","
-          << "\"pool_pct\":27,"
+          << "\"pool_pct\":20,"
           << "\"participants\":" << chain_entries.size() << ","
           << "\"total_near_misses\":" << total_near_misses << ","
           << "\"entries\":[";

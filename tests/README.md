@@ -73,6 +73,11 @@ fifteen and sixteen workers. Both search tests link the C
 objects listed in `vendor/pqc/provenance/release-c-sources.txt`, as shown in the
 source-checks workflow.
 
+`nms_submission_tests.cpp` checks that failed co-mining eligibility, signing, or
+mempool admission attempts leave the current window available for retry. It
+also checks that concurrent attempts cannot exceed one accepted submission per
+window, including window zero.
+
 `mining_worker_policy_tests.cpp` checks worker bounds, physical-core presets,
 SMT/non-SMT/mixed-core masks, partial affinity and the native Windows detector.
 Its Windows affinity check changes only the disposable test process. The

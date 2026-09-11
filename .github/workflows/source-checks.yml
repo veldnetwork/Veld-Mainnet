@@ -159,7 +159,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for test in mining_primitive_tests mining_work_header_tests mining_worker_policy_tests mining_hash_vectors; do
+          for test in mining_primitive_tests mining_work_header_tests nms_submission_tests mining_worker_policy_tests mining_hash_vectors; do
             c++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -DVELD_PUBLIC_MAINNET \
               -Iinclude "tests/$test.cpp" -o "$RUNNER_TEMP/$test"
             if [[ $test == mining_hash_vectors ]]; then
