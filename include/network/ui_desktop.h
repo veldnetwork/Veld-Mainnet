@@ -7725,7 +7725,7 @@ function showKeystoreModal() {
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
           '<button class="btn btn-gold btn-sm" id="sk-bio-register-btn" data-act-click="hbio_register" type="button" style="font-size:11px">Register</button>' +
           '<button class="btn btn-gold btn-sm" id="sk-bio-unlock-btn"   data-act-click="hbio_unlock"   type="button" style="font-size:11px;display:none">Unlock with biometric</button>' +
-          '<button class="btn btn-ghost btn-sm" id="sk-bio-clear-btn"   data-act-click="hbio_clear"    type="button" style="font-size:11px;display:none;color:var(--gold)">Remove biometric sign-in</button>' +
+          (unlocked ? '<button class="btn btn-ghost btn-sm" id="sk-bio-clear-btn" data-act-click="hbio_clear" type="button" style="font-size:11px;display:none;color:var(--gold)">Remove biometric sign-in</button>' : '') +
         '</div>' +
         '<div id="sk-bio-status" style="margin-top:8px;font-size:11px;color:var(--muted);min-height:14px"></div>' +
       '</div>';
