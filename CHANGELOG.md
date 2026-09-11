@@ -3,6 +3,18 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## 3.1.8 - 2026-09-11
+
+- Refresh mining timestamps by elapsed wall-clock time on every worker.
+- Retry failed near-miss submissions without consuming the submission window.
+- Correct co-mining pool percentage metadata to the existing 20% allocation.
+- Remove the separate Windows update-repair launcher and the wallet login
+  dialog's biometric-removal button.
+- Include connection self-dial prevention and checkpoint publisher maintenance.
+
+Existing mainnet consensus rules remain unchanged. See the
+[release notes](docs/release-notes.md) for behavior and compatibility.
+
 ## 3.1.7
 
 Connection-owned background tip announcements, durable updater and settings

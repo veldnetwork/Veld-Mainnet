@@ -1,9 +1,22 @@
-## Unreleased - Windows client package cleanup
+## 3.1.8 - Mining timestamp and near-miss reliability
 
-Removes the standalone update-repair launcher and its companion script from
-the Windows client package. Updates remain in Settings; the normal launcher
-retains interrupted-update recovery. Signed package verification and
-preservation of local settings, identity, and chain data remain enforced.
+Mining workers refresh their block timestamp as the clock advances, including
+on slow CPUs and after a paused search. This prevents a long hash search from
+submitting a stale timestamp that distorts the following difficulty adjustment.
+The 180-second target remains an average; individual block times still vary.
+
+Failed near-miss submissions can be retried within the same co-mining window.
+The local submission allowance is consumed only when the transaction enters
+the mempool. Pool metadata reports the existing 20% reward allocation.
+
+The Windows package removes the separate update-repair launcher. Updates and
+interrupted-update recovery remain available through Settings and the normal
+launcher. Existing chain data, identity, worker count, and pairing are retained.
+The wallet login dialog no longer offers biometric removal while locked.
+
+Includes the intervening connection, checkpoint publisher, and wallet display
+maintenance in published source. No consensus rules, stake requirements,
+reward allocations, or activation heights change. No hard fork is required.
 
 ## 3.1.7 - Connection and update reliability
 

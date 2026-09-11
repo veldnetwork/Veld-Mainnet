@@ -24,21 +24,17 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
-**3.1.7** adds connection-owned background peer liveness, durable Windows
-update and settings storage, protected pairing-state retention, and bounded
-RPC shutdown. The complete Windows package retains static runtime dependencies
-and the repair helper for older installations. See the
-[release notes](docs/release-notes.md) and
-[download the signed client](https://veld.network/#download).
+**3.1.8** keeps mining timestamps current on slow workers and permits retries
+after unsuccessful near-miss submissions. It includes the connection and
+updater reliability fixes, preserves saved settings and chain data, and removes
+the separate update-repair launcher. See the [release notes](docs/release-notes.md)
+and [download the signed client](https://veld.network/#download).
 
-The consensus rules introduced in 3.1.3 are unchanged: ASERT and the **500 VELD**
-ordinary-staking minimum apply from block **3,840**. The co-mining lottery
-minimum is **1,000 VELD**; validator registration uses a separate bond.
+The stake minimum is **500 VELD**. Co-mining eligibility requires **1,000 VELD**
+staked under the mining address; validator registration uses a separate bond.
+The existing mainnet consensus rules and checkpoint authority are unchanged.
 
-The verified historical checkpoint at block **2,800**, checkpoint authority from
-3.1.1, and consensus rules activated at **block 2,880** remain unchanged.
-
-The [`v3.1.7` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.7)
+The [`v3.1.8` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.8)
 identifies the published release source. Signed package manifests identify
 the distributed binaries. `main` may contain later maintenance and documentation updates. [CHANGELOG.md](CHANGELOG.md)
 distinguishes hosted updates from packaged changes.

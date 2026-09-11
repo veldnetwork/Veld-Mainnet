@@ -25,6 +25,15 @@ Verify downloaded binaries using the official package manifest and signature.
 Building from source does not grant the official release signature. Different
 toolchains or paths can produce different binary hashes.
 
+## Veld 3.1.8
+
+The `v3.1.8` tag identifies the mining timestamp and near-miss reliability
+release. Its [signed release identity](https://veld.network/downloads/RELEASE-IDENTITY-3.1.8.json)
+binds the source commit and tree to the package hashes. The
+[source archive](https://veld.network/downloads/Veld-3.1.8-source.tar.gz)
+is generated from that commit. Verify the detached release-assets signature
+and package manifest before installing the client.
+
 ## Veld 3.1.7
 
 The `v3.1.7` tag identifies the consolidated reliability source. The
