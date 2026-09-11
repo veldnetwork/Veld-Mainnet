@@ -1,3 +1,10 @@
+## Unreleased - Windows client package cleanup
+
+Removes the standalone update-repair launcher and its companion script from
+the Windows client package. Updates remain in Settings; the normal launcher
+retains interrupted-update recovery. Signed package verification and
+preservation of local settings, identity, and chain data remain enforced.
+
 ## 3.1.7 - Connection and update reliability
 
 Independent background validation now sends tip announcements from each

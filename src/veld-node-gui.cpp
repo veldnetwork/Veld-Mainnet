@@ -6150,8 +6150,8 @@ private:
                 update_status_color_ = RGB(231, 126, 126);
                 InvalidateRect(hwnd_, nullptr, FALSE);
                 const std::wstring message = Utf8ToWide(detail) +
-                    L"\n\nYou can restart the node. To repair the updater, download "
-                    L"the complete package from veld.network and run Repair Veld Update.bat.";
+                    L"\n\nClose Veld and run Start Veld Node.bat to recover an "
+                    L"interrupted update, then retry from Settings.";
                 MessageBoxW(hwnd_, message.c_str(), L"Veld update could not finish", MB_OK | MB_ICONERROR);
             }
             return;

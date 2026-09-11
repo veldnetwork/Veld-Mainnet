@@ -1111,7 +1111,7 @@ if (Test-Path -LiteralPath $Transaction) {
         try { Invoke-TransactionRecovery }
         catch { Abort-Update ('interrupted update recovery failed: ' + $_.Exception.Message) }
     } else {
-        Abort-Update 'an update transaction needs recovery before feed access; close Veld and run Start Veld Node.bat or Repair Veld Update.bat'
+        Abort-Update 'an update transaction needs recovery before feed access; close Veld and run Start Veld Node.bat'
     }
 }
 
