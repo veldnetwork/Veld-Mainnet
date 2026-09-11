@@ -2213,6 +2213,35 @@ html[data-theme="light"] .bv-overview-kicker>span,
 html:not([data-theme="light"]) .bv-inactive-mark,
 html[data-theme="light"] .bv-inactive-mark{background-size:125% 125%!important;border:0!important;outline:0!important}
 
+
+#ks-modal .wallet-settings-intro{margin:-6px 0 20px;color:var(--muted);font-size:13px;line-height:1.5}
+#ks-modal .wallet-settings-status{padding:14px 16px;border:1px solid var(--b1);border-radius:12px;background:var(--s2);margin-bottom:20px}
+#ks-modal .wallet-settings-status strong{display:flex;align-items:center;gap:8px;color:var(--em);font-size:12px;margin-bottom:8px}
+#ks-modal .wallet-settings-status strong::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+#ks-modal .wallet-settings-address{font-family:var(--mono);font-size:12px;line-height:1.6;overflow-wrap:anywhere;user-select:all}
+#ks-modal .wallet-settings-heading{font-size:10px;font-weight:600;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;margin:22px 0 9px}
+#ks-modal .wallet-settings-actions{border:1px solid var(--b1);border-radius:12px;overflow:hidden}
+#ks-modal .wallet-settings-action{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:64px;padding:13px 15px;text-align:left;gap:14px;border:0;border-radius:0;background:transparent;color:var(--text);font:inherit;cursor:pointer;box-shadow:none}
+#ks-modal .wallet-settings-action+.wallet-settings-action{border-top:1px solid var(--b1)}
+#ks-modal .wallet-settings-action:hover{background:var(--s2)}
+#ks-modal .wallet-settings-action strong{display:block;font-size:14px;font-weight:600;line-height:1.4}
+#ks-modal .wallet-settings-action small{display:block;font-size:12px;color:var(--muted);line-height:1.5;margin-top:3px;font-weight:400}
+#ks-modal .wallet-settings-action .settings-chevron{color:var(--muted);font-size:20px;flex:none}
+#ks-modal .wallet-settings-action:focus-visible{outline:2px solid var(--em);outline-offset:-3px}
+#ks-modal .wallet-settings-session{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#ks-modal .wallet-settings-session .btn{min-width:0;min-height:48px}
+#ks-modal .wallet-settings-remove{display:block;width:100%;min-height:48px;margin-top:12px;background:transparent;border:1px solid var(--b1);border-radius:10px;color:var(--red);font:inherit;font-size:13px;cursor:pointer}
+#ks-modal .wallet-settings-help{font-size:12px;line-height:1.5;color:var(--muted);margin:8px 0 0}
+#ks-modal .wallet-settings-done{width:100%;min-height:48px;margin-top:22px}
+#ks-modal .wallet-settings-toggle{gap:16px;padding:14px 0;margin:0;align-items:center}
+#ks-modal .wallet-settings-toggle .toggle-label{font-size:14px;line-height:1.5;min-width:0}
+#ks-modal .wallet-settings-toggle .toggle-label small{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+#ks-modal .wallet-settings-toggle .toggle{flex:none}
+#ks-modal #sk-bio-card{border-radius:12px;background:var(--s2)!important;border-color:var(--b1)!important;margin-top:10px!important;padding:14px 15px!important}
+#ks-modal #sk-bio-card .btn{min-height:44px;font-size:12px!important}
+#ks-modal #sk-bio-status:empty{display:none}
+#ks-modal .wallet-settings-toggle input:focus-visible+.toggle-track{outline:2px solid var(--em);outline-offset:3px}
+
 /* Keep every keystore control reachable on short and keyboard-reduced viewports. */
 #ks-modal{align-items:flex-start!important;justify-content:center!important;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch;padding:calc(14px + env(safe-area-inset-top,0px)) 12px calc(86px + env(safe-area-inset-bottom,0px))!important}
 #ks-modal .modal{width:min(460px,calc(100vw - 24px))!important;max-width:none!important;max-height:none!important;margin:auto 0!important}
@@ -2429,7 +2458,7 @@ __VELD_DEPLOYMENT_BANNER_HTML__
 
 <!-- Keystore Modal -->
 <div class="modal-overlay" id="ks-modal">
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ks-modal-title">
     <div class="modal-title" id="ks-modal-title">Keystore</div>
     <div id="ks-modal-body"></div>
   </div>
@@ -2868,9 +2897,9 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     <!-- Wallet cleanup is manual unless explicitly enabled in this browser. -->
     <div class="card" id="w-cleanup-card" style="margin-top:14px;min-width:0">
       <div class="card-title">Wallet cleanup <span id="w-utxo-dust-chip" style="display:none;font-weight:400"></span></div>
-      <p class="cleanup-copy">Combine small outputs in your wallet. Network fees apply.</p>
+      <p class="cleanup-copy">Combine VELD you already own into fewer outputs in the same wallet. This does not earn or create VELD; your balance decreases by the network fee.</p>
       <div id="w-utxo-consolidate" style="display:none;margin-bottom:12px" role="status"><span id="w-utxo-dust-msg" style="color:var(--muted);line-height:1.5;overflow-wrap:anywhere"></span></div>
-      <button class="btn" id="w-utxo-consolidate-btn" data-act-click="hconsolidate">Consolidate now</button>
+      <button class="btn" id="w-utxo-consolidate-btn" data-act-click="hconsolidate">Combine my outputs</button>
       <div id="w-utxo-consolidate-msg" aria-live="polite" style="margin-top:10px;overflow-wrap:anywhere"></div>
       <div class="cleanup-auto">
         <div class="cleanup-auto-heading">
@@ -7690,61 +7719,57 @@ function showKeystoreModal() {
           '<span style="font-size:13px;font-weight:600;color:var(--text)">Biometric sign-in</span>' +
           '<span id="sk-bio-state" style="font-weight:400;font-size:10.5px;color:var(--muted2)">not registered</span>' +
         '</div>' +
-        '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Unlock with Touch ID or Face ID.</div>' +
+        '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Use Face ID, Touch ID or Windows Hello on this device.</div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
           '<button class="btn btn-gold btn-sm" id="sk-bio-register-btn" data-act-click="hbio_register" type="button" style="font-size:11px">Register</button>' +
           '<button class="btn btn-gold btn-sm" id="sk-bio-unlock-btn"   data-act-click="hbio_unlock"   type="button" style="font-size:11px;display:none">Unlock with biometric</button>' +
-          '<button class="btn btn-ghost btn-sm" id="sk-bio-clear-btn"   data-act-click="hbio_clear"    type="button" style="font-size:11px;display:none;color:var(--gold)">Clear</button>' +
+          '<button class="btn btn-ghost btn-sm" id="sk-bio-clear-btn"   data-act-click="hbio_clear"    type="button" style="font-size:11px;display:none;color:var(--gold)">Remove biometric sign-in</button>' +
         '</div>' +
         '<div id="sk-bio-status" style="margin-top:8px;font-size:11px;color:var(--muted);min-height:14px"></div>' +
       '</div>';
 
     var sectionLabel = function(text) {
-      return '<div style="font-size:9.5px;font-weight:600;letter-spacing:1.5px;color:var(--muted2);text-transform:uppercase;margin:14px 0 6px 2px">' + text + '</div>';
+      return '<div class="wallet-settings-heading">' + text + '</div>';
+    };
+    var settingsAction = function(label, help, attributes) {
+      return '<button class="wallet-settings-action" type="button" ' + attributes + '><span><strong>' + label +
+        '</strong><small>' + help + '</small></span><span class="settings-chevron" aria-hidden="true">&#8250;</span></button>';
     };
 
     if (unlocked) {
       body.innerHTML =
-        // Status header
-        '<div style="padding:10px 12px;border-radius:8px;background:rgba(50,240,110,.06);border:1px solid rgba(50,240,110,.18);margin-bottom:12px">' +
-          '<div style="font-size:11px;color:var(--em);margin-bottom:4px;font-weight:600">Unlocked for this session</div>' +
-          '<div style="font-size:10.5px;color:var(--muted);word-break:break-all;font-family:var(--font)">' + (currentAddr || 'unknown') + '</div>' +
-        '</div>' +
+        '<p class="wallet-settings-intro">Manage your wallet, backups and access on this device.</p>' +
+        '<div class="wallet-settings-status"><strong>Wallet unlocked</strong>' +
+          '<div class="wallet-settings-address">' + escHtml(currentAddr || 'Address unavailable') + '</div></div>' +
         (rotationRequired ? '<div class="alert alert-err" style="margin-bottom:12px">This wallet unlocked with an older weak passphrase. Change it now, then save a fresh keyfile and securely remove old copies.</div>' : '') +
-        // Session settings
-        '<div class="toggle-row" style="margin-bottom:4px">' +
-          '<span class="toggle-label">Stay signed in on this device</span>' +
-          '<label class="toggle"><input type="checkbox" id="ks-stay-toggle" '+(stayChecked?'checked':'')+' data-act-change="h5d853ce4"><span class="toggle-track"><span class="toggle-knob"></span></span></label>' +
+        sectionLabel('Wallet &amp; backup') +
+        '<div class="wallet-settings-actions">' +
+          settingsAction('My wallets', 'Choose a wallet saved on this device', 'data-act-click="hmw_open"') +
+          settingsAction('Save backup file', 'Download an encrypted .veld-keys file', 'data-act-click="h52e7656d"') +
+          settingsAction('Change passphrase', 'Update the password for your keyfile', 'id="ks-change-passphrase"') +
+          settingsAction('Reveal private key', 'View your secret key briefly; never share it', 'data-act-click="h7e5a1f2c"') +
         '</div>' +
-        // WALLETS section — primary action (gold) + secondary (ghost)
-        sectionLabel('Wallets &amp; key') +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
-          '<button class="btn btn-gold btn-sm" data-act-click="hmw_open" style="font-size:12px;flex:1;min-width:140px">My Wallets</button>' +
-          '<button class="btn btn-ghost btn-sm" data-act-click="h52e7656d" style="font-size:12px">Save file</button>' +
-          '<button class="btn btn-ghost btn-sm" id="ks-change-passphrase" type="button" style="font-size:12px">Change passphrase</button>' +
-          '<button class="btn btn-ghost btn-sm" data-act-click="h7e5a1f2c" style="font-size:12px">Reveal key</button>' +
-        '</div>' +
-        '<div id="ks-pk-reveal" style="display:none;margin-top:10px;padding:10px;background:var(--surface2);border:1px solid rgba(201,168,76,.3);border-radius:6px">' +
-          '<div style="font-size:10px;color:var(--red);margin-bottom:6px">⚠ KEEP THIS PRIVATE — never share. Hides in <span id="ks-pk-countdown">30</span>s.</div>' +
-          '<div id="ks-pk-display" style="font-family:monospace;font-size:10px;color:var(--gold);word-break:break-all;user-select:all"></div>' +
-          '<div style="margin-top:6px;display:flex;gap:6px">' +
-            '<button class="btn btn-ghost btn-sm" id="ks-pk-copy-btn" style="flex:1;font-size:10px">Copy</button>' +
-            '<button class="btn btn-ghost btn-sm" id="ks-pk-hide-btn" style="flex:1;font-size:10px">Hide now</button>' +
+        '<div id="ks-pk-reveal" style="display:none;margin-top:10px;padding:12px;background:var(--s2);border:1px solid var(--b1);border-radius:10px">' +
+          '<div style="font-size:12px;color:var(--red);margin-bottom:6px">Keep this private. Hides in <span id="ks-pk-countdown">30</span>s.</div>' +
+          '<div id="ks-pk-display" style="font-family:monospace;font-size:12px;word-break:break-all;user-select:all"></div>' +
+          '<div class="wallet-settings-session" style="margin-top:10px">' +
+            '<button class="btn btn-ghost btn-sm" id="ks-pk-copy-btn" type="button">Copy</button>' +
+            '<button class="btn btn-ghost btn-sm" id="ks-pk-hide-btn" type="button">Hide now</button>' +
           '</div>' +
         '</div>' +
-        // BIOMETRIC section (gold theme)
-        sectionLabel('Sign-in') +
-        bioBlock +
-        // DANGER section
+        sectionLabel('Sign-in on this device') +
+        '<div class="toggle-row wallet-settings-toggle">' +
+          '<label class="toggle-label" for="ks-stay-toggle">Stay signed in<small>Use only on a device you trust.</small></label>' +
+          '<label class="toggle"><input type="checkbox" role="switch" aria-label="Stay signed in on this device" id="ks-stay-toggle" '+(stayChecked?'checked':'')+' data-act-change="h5d853ce4"><span class="toggle-track"><span class="toggle-knob"></span></span></label>' +
+        '</div>' + bioBlock +
         sectionLabel('Session') +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
-          '<button class="btn btn-danger btn-sm" data-act-click="hc512df74" style="font-size:12px;flex:1;min-width:90px">Lock</button>' +
-          '<button class="btn btn-ghost btn-sm" data-act-click="h3fecbcb1" style="font-size:12px;flex:1;min-width:90px">↻ Sign out</button>' +
-          '<button class="btn btn-danger btn-sm" data-act-click="h365b8723" style="font-size:12px;flex:1;min-width:90px">Delete</button>' +
+        '<div class="wallet-settings-session">' +
+          '<button class="btn btn-ghost btn-sm" data-act-click="hc512df74" type="button">Lock wallet</button>' +
+          '<button class="btn btn-ghost btn-sm" data-act-click="h3fecbcb1" type="button">Sign out</button>' +
         '</div>' +
-        '<div style="margin-top:14px;text-align:center">' +
-          '<button class="btn btn-ghost btn-sm" data-act-click="hb5a8e04a" style="font-size:11.5px;padding:7px 24px">Close</button>' +
-        '</div>';
+        '<button class="wallet-settings-remove" data-act-click="h365b8723" type="button">Remove saved keyfile</button>' +
+        '<p class="wallet-settings-help">Removes the active keyfile from this browser. Keep a backup to regain access.</p>' +
+        '<button class="btn btn-ghost wallet-settings-done" data-act-click="hb5a8e04a" type="button">Done</button>';
     } else {
       body.innerHTML =
         '<p style="color:var(--muted);font-size:12px;margin-bottom:12px">Enter your password — or use biometric below if registered on this device.</p>' +
@@ -8166,7 +8191,7 @@ function lockKeystore() {
 }
 
 function deleteKeystore() {
-  if (confirm('Delete keystore? This cannot be undone.')) {
+  if (confirm('Remove the active keyfile from this browser? Make sure you have an encrypted backup and its passphrase. This does not delete funds from the blockchain.')) {
     localStorage.removeItem('veld_ks');
     __veldKey.clear();
     localStorage.removeItem('veld_stay_signed_in');
@@ -9908,9 +9933,9 @@ function loadDustUtxoCount() {
       chip.innerHTML = '<span style="color:var(--gold)">' + n + ' ' + label + '</span> of ' + total + ' total';
       row.style.display = 'flex';
       if (fragmented && dust < 2) {
-        msg.textContent = total + ' separate outputs. Consolidating can help swaps and liquidity transactions complete.';
+        msg.textContent = total + ' separate outputs hold your existing VELD. Combining them can help larger transactions complete. Fee: ' + formatHistoryFee(Number(VELD_MIN_TX_FEE_UNITS) / 1e8) + ' VELD per cleanup transaction.';
       } else {
-        msg.textContent = dust + ' small outputs can be combined (' + fmt(dustVeld, 4) + ' VELD).';
+        msg.textContent = dust + ' small outputs hold ' + fmt(dustVeld, 4) + ' VELD already included in your balance. Fee: ' + formatHistoryFee(Number(VELD_MIN_TX_FEE_UNITS) / 1e8) + ' VELD per transaction; larger cleanups may need several. Only eligible outputs will be combined.';
       }
     } else {
       chip.style.display = 'none';
@@ -10089,28 +10114,7 @@ setInterval(function() {
   try { autoConsolidateMaybe(); } catch (_) {}
 }, 30 * 60 * 1000);
 
-// Consolidate-dust handler.
-// Calls prepareconsolidatetx + signs client-side via the unlocked
-// keystore. Mirrors signAndBroadcast for normal sends but uses a
-// custom allowed-output guard (self only).
-// BATCH UPGRADE.
-// One PQ-signed consolidation TX with 200 inputs is ~2.12 MB hex —
-// brushes against nginx's /rpc body limit and produces a 413 on big
-// dust sets. More importantly, an address with 6,000+ dust UTXOs
-// would need ~32 manual button-clicks at 200-per-call. This version:
-//   1. Queries getdustutxocount up front to learn the total
-//   2. Loops 200-at-a-time, firing each batch sequentially
-//   3. Each prepareconsolidatetx call sees the previous batch's
-//      inputs as mempool-spent and naturally skips them (server-
-//      side filter at rpc.h:prepareconsolidatetx already excludes
-//      mempool_spent), so batches don't conflict
-//   4. Stops on first error and reports cumulative progress
-//   5. Shows live "batch N/M" status in the message banner
-//
-// Per-batch cap stays at 200 inputs because 200 × 5263 byte PQ
-// signatures = 1.05 MB raw → 2.12 MB hex JSON-RPC body. nginx is
-// proxy limit leaves headroom, while the batch cap preserves margin for JSON
-// and request metadata.
+// Combine owned outputs using the existing bounded signing policy.
 function doConsolidateUtxos() {
   var msg = document.getElementById('w-utxo-consolidate-msg');
   var btn = document.getElementById('w-utxo-consolidate-btn');
@@ -10140,7 +10144,6 @@ function doConsolidateUtxos() {
   var allowed = [_veldAddrToHash160Hex(currentAddr)];
   var guard   = _veldAddrToHash160Hex(currentAddr);
   var totalInputsSwept = 0;
-  var totalVeldConsolidated = 0;
   var batchTxids = [];
   var signingBudget = _veldConsolidationBudget(64);
 
@@ -10177,8 +10180,8 @@ function doConsolidateUtxos() {
         : '';
       paint(
         '&#x2713; Consolidated ' + totalInputsSwept.toLocaleString() +
-        ' dust UTXOs into ' + batchTxids.length + ' TX(s) totalling '
-        + fmt(totalVeldConsolidated, 4) + ' VELD.' + firstTxLink + hint,
+        ' outputs in ' + batchTxids.length + ' cleanup transaction(s). Network fees: '
+        + formatHistoryFee(batchTxids.length * Number(VELD_MIN_TX_FEE_UNITS) / 1e8) + ' VELD. Your existing funds remain in this wallet and become spendable after confirmation.' + firstTxLink + hint,
         'alert-ok'
       );
       __opUnlock('consolidate', ['w-utxo-consolidate-btn']);
@@ -10232,7 +10235,6 @@ function doConsolidateUtxos() {
         null, guard, allowed, null, '', signingBudget
       ).then(function(r) {
         var inputs = r.verified_consolidation_inputs;
-        var outAmt = Number(r.verified_consolidation_output_units) / 1e8;
         var txid = r && r.txid ? r.txid : '';
         if (inputs <= 0) {
           // Server says nothing left to consolidate at this threshold.
@@ -10242,7 +10244,6 @@ function doConsolidateUtxos() {
           return null;
         }
         totalInputsSwept += inputs;
-        totalVeldConsolidated += outAmt;
         if (txid) batchTxids.push(txid);
         // Small inter-batch pause so the new TX hits the local mempool
         // before the next prepareconsolidatetx queries spent-UTXOs.
@@ -10266,8 +10267,8 @@ function doConsolidateUtxos() {
         : '';
       paint(
         '&#x2713; Consolidated ' + totalInputsSwept.toLocaleString() +
-        ' dust UTXOs into ' + batchTxids.length + ' TX(s) totalling '
-        + fmt(totalVeldConsolidated, 4) + ' VELD.' +
+        ' outputs in ' + batchTxids.length + ' cleanup transaction(s). Network fees: '
+        + formatHistoryFee(batchTxids.length * Number(VELD_MIN_TX_FEE_UNITS) / 1e8) + ' VELD. Your existing funds remain in this wallet and become spendable after confirmation.' +
         (signingBudget.remaining() === 0 ? ' Run limit reached; click Consolidate again to continue.' : '') + firstTxLink,
         'alert-ok'
       );
@@ -11791,9 +11792,9 @@ async function bioRefreshUi() {
   if (cfg && cfg.credential_id) {
     if (state) { state.textContent = '● registered'; state.style.color = 'var(--em)'; }
     if (regBtn) regBtn.style.display = 'none';
-    if (unlBtn) unlBtn.style.display = '';
+    if (unlBtn) unlBtn.style.display = unlocked ? 'none' : '';
     if (clrBtn) clrBtn.style.display = '';
-    if (status && !status.textContent) status.textContent = 'Tap Unlock to sign in.';
+    if (status && !status.textContent) status.textContent = unlocked ? 'Ready for your next sign-in.' : 'Use biometric sign-in to unlock your wallet.';
   } else {
     if (state) {
       state.textContent = unlocked ? 'ready to register' : 'unlock first';

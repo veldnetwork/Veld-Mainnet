@@ -1,0 +1,19 @@
+.transaction-explanation{margin-top:10px;color:var(--muted);font-size:12px;line-height:1.5;white-space:normal}
+.transaction-table td:last-child{white-space:nowrap}
+@media(max-width:700px){
+  .transaction-table-wrap{overflow:visible!important}
+  .transaction-table{display:block!important;width:100%!important;min-width:0!important}
+  .transaction-table thead{display:none}
+  .transaction-table tbody{display:grid;gap:12px}
+  .transaction-table tr{display:grid;grid-template-columns:minmax(0,1fr) auto;padding:14px;border:1px solid var(--border);border-radius:12px;gap:12px;min-width:0}
+  .transaction-table td{display:block!important;padding:0!important;border:0!important;min-width:0;white-space:normal!important;overflow-wrap:anywhere}
+  .transaction-table td::before{display:block;content:attr(data-label);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;font-weight:500}
+  .transaction-table td:nth-child(1){grid-column:1/-1;grid-row:1}
+  .transaction-table td:nth-child(2){grid-column:1;grid-row:2}
+  .transaction-table td:nth-child(4){grid-column:2;grid-row:2;text-align:right}
+  .transaction-table td:nth-child(3){grid-column:1/-1;grid-row:3}
+  .transaction-table td:nth-child(5){grid-column:1/-1;grid-row:4;border-top:1px solid var(--border)!important;padding-top:10px!important;display:flex!important;justify-content:space-between;align-items:baseline;gap:12px}
+  .transaction-table td:nth-child(5)::before{margin:0;flex-shrink:0}
+  .transaction-table td:nth-child(3) div{min-width:0;flex-wrap:wrap}
+  .transaction-table td:nth-child(3) a{overflow-wrap:anywhere}
+}

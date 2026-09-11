@@ -24,3 +24,11 @@ and verifies the exact document through an isolated nginx fixture. Browser
 checks cover the supplied artwork and a recorded seven-page history. Deployment
 uses file-hash guards, backups, `nginx -t`, a graceful reload and public readback.
 Node and miner processes are not restarted.
+
+The September 11 frontend includes grouped wallet settings, session-aware
+biometric controls, clearer backup actions, and cleanup copy that distinguishes
+existing funds from rewards and states the network fee. The hosted consolidation
+function retains the running frontend's signing calls; the overlay changes its
+success messages only. The current source header retains its existing bounded
+signing implementation. Qualification also checks both themes at phone and
+tablet widths, action wiring, and access to controls in a short viewport.

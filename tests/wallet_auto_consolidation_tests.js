@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(process.argv[2] || path.join(__dirname, '../include/network/ui_desktop.h'), 'utf8');
 const begin = source.indexOf('// Optional automatic cleanup.');
-const end = source.indexOf('// Consolidate-dust handler.', begin);
+const end = source.indexOf('function doConsolidateUtxos()', begin);
 assert(begin > 0 && end > begin);
 function extract(name) {
   const start=source.indexOf('function '+name+'('); assert(start>=0,name);
@@ -29,7 +29,7 @@ function setup() {
     __opLock:(name)=>{if(ctx.__opLocks[name])return false;ctx.__opLocks[name]=true;return true;},
     __opUnlock:(name)=>{ctx.__opLocks[name]=false;}
   });
-  vm.runInContext(extract('_veldConsolidationBudget')+'\n'+source.slice(begin,end)+'\n'+extract('loadDustUtxoCount')+'\n'+extract('doConsolidateUtxos'),ctx);
+  vm.runInContext(extract('formatHistoryFee')+'\n'+extract('_veldConsolidationBudget')+'\n'+source.slice(begin,end)+'\n'+extract('loadDustUtxoCount')+'\n'+extract('doConsolidateUtxos'),ctx);
   ctx.autoConsolidateNotify=()=>{};
   state.ctx=ctx;
   state.enable=()=>ctx.setAutoConsolidatePreference(true);

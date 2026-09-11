@@ -2226,6 +2226,12 @@ private:
     }
 
     std::string ClassifyUTXOSource(const UTXO& u, ExplorerHistoryBudget& budget) const {
+        if (u.is_coinbase) {
+            const auto address = ScriptToAddress(u.script_pubkey);
+            if (address == VAULT_ADDRESS || address == POOL_ADDRESS ||
+                address == ENDORSEMENT_POOL_ADDRESS) return "block_allocation";
+            return "mining_reward";
+        }
         try {
             Block blk = budget.Read(chain_, u.block_height);
             for (size_t i = 0; i < blk.transactions.size(); ++i) {
@@ -5386,7 +5392,7 @@ setInterval(loadStats,2000);
                 total_val << std::fixed << std::setprecision(2) << (double)tx.TotalOutput()/VELD_UNITS;
             }
 
-            std::string fee_cell = "<td style=\"color:var(--muted);font-size:11px\">—</td>";
+            std::string fee_cell = "<td style=\"color:var(--muted);font-size:11px\">" + std::string(is_cb ? "Not applicable" : "Unavailable") + "</td>";
             if (!is_cb) {
                 uint64_t in_total = 0, out_total = tx.TotalOutput();
                 bool all_resolved = true;
@@ -5402,11 +5408,11 @@ setInterval(loadStats,2000);
                 if (all_resolved && in_total >= out_total) {
                     uint64_t fee_units = in_total - out_total;
                     if (fee_units == 0) {
-                        fee_cell = "<td style=\"color:var(--muted);font-size:11px\">—</td>";
+                        fee_cell = "<td style=\"color:var(--muted);font-size:11px\">0 VELD</td>";
                     } else {
                         std::ostringstream fv;
-                        fv << std::fixed << std::setprecision(3) << (double)fee_units / VELD_UNITS;
-                        fee_cell = "<td style=\"color:var(--red,#ff5c5c);white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600\" title=\"Network fee paid to the block miner\">-" + fv.str() + "</td>";
+                        fv << std::fixed << std::setprecision(8) << (double)fee_units / VELD_UNITS;
+                        fee_cell = "<td style=\"color:var(--red,#ff5c5c);white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600\" title=\"Confirmed network fee\">-" + fv.str() + "</td>";
                     }
                 }
             }
@@ -5684,7 +5690,7 @@ setInterval(loadStats,2000);
                 std::string txid = HashToHex(u.tx_hash);
                 std::string source = sources_coherent ? source_labels.at(txid) : "unknown";
                 std::string ic_class = "ic-v";
-                std::string type_label = "Output (source unavailable)";
+                std::string type_label = "Output details unavailable";
                 if      (source == "mining_reward")     { ic_class = "ic-b"; type_label = "Mining reward"; }
                 else if (source == "staking_reward")    { ic_class = "ic-s"; type_label = "Staking reward"; }
                 else if (source == "endorsement_reward"){ ic_class = "ic-p"; type_label = "Validator reward"; }
@@ -5692,6 +5698,7 @@ setInterval(loadStats,2000);
                 else if (source == "endorsement_payout"){ ic_class = "ic-p"; type_label = "Validator reward"; }
                 else if (source == "vault_payout")      { ic_class = "ic-v"; type_label = "Staking rewards"; }
                 else if (source == "transfer_in")       { ic_class = "ic-h"; type_label = "Transfer received"; }
+                else if (source == "block_allocation")  { type_label = "Block reward allocation"; }
                 c << "<a class=\"rl-row\" href=\"/tx/" << txid << "\" style=\"text-decoration:none\">";
                 c << "<div class=\"rl-ic " << ic_class << "\" style=\"font-size:11px\">"
                   << type_label.substr(0, 1) << "</div>";
