@@ -2897,7 +2897,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     <!-- Wallet cleanup is manual unless explicitly enabled in this browser. -->
     <div class="card" id="w-cleanup-card" style="margin-top:14px;min-width:0">
       <div class="card-title">Wallet cleanup <span id="w-utxo-dust-chip" style="display:none;font-weight:400"></span></div>
-      <p class="cleanup-copy">Combine VELD you already own into fewer outputs in the same wallet. This does not earn or create VELD; your balance decreases by the network fee.</p>
+      <p class="cleanup-copy">Combine small outputs already in your wallet.</p>
       <div id="w-utxo-consolidate" style="display:none;margin-bottom:12px" role="status"><span id="w-utxo-dust-msg" style="color:var(--muted);line-height:1.5;overflow-wrap:anywhere"></span></div>
       <button class="btn" id="w-utxo-consolidate-btn" data-act-click="hconsolidate">Combine my outputs</button>
       <div id="w-utxo-consolidate-msg" aria-live="polite" style="margin-top:10px;overflow-wrap:anywhere"></div>
@@ -9923,7 +9923,6 @@ function loadDustUtxoCount() {
   rpc('getdustutxocount', [address, '5.0']).then(function(d) {
     if (currentAddr !== address) return;
     var dust = parseInt(d && d.dust_count || 0, 10) || 0;
-    var dustVeld = parseFloat(d && d.dust_value_veld || 0) || 0;
     var total = parseInt(d && d.total_count || 0, 10) || 0;
     var fragmented = total > 24;
     if (dust >= 2 || fragmented) {
@@ -9932,11 +9931,7 @@ function loadDustUtxoCount() {
       var label = fragmented && dust < 2 ? 'fragmented' : 'small';
       chip.innerHTML = '<span style="color:var(--gold)">' + n + ' ' + label + '</span> of ' + total + ' total';
       row.style.display = 'flex';
-      if (fragmented && dust < 2) {
-        msg.textContent = total + ' separate outputs hold your existing VELD. Combining them can help larger transactions complete. Fee: ' + formatHistoryFee(Number(VELD_MIN_TX_FEE_UNITS) / 1e8) + ' VELD per cleanup transaction.';
-      } else {
-        msg.textContent = dust + ' small outputs hold ' + fmt(dustVeld, 4) + ' VELD already included in your balance. Fee: ' + formatHistoryFee(Number(VELD_MIN_TX_FEE_UNITS) / 1e8) + ' VELD per transaction; larger cleanups may need several. Only eligible outputs will be combined.';
-      }
+      msg.textContent = 'Fee: ' + formatHistoryFee(Number(VELD_MIN_TX_FEE_UNITS) / 1e8) + ' VELD per transaction.';
     } else {
       chip.style.display = 'none';
       row.style.display = 'none';

@@ -90,7 +90,7 @@ const tick=()=>new Promise(r=>setImmediate(r));
   s=setup();s.enable();s.sign=()=>{throw Error('fixture signing failed');};await s.ctx.autoConsolidateMaybe();
   assert.equal(s.ctx.__opLocks.consolidate,false);assert.equal(s.ctx.__autoConsolidateActive,false);assert.equal(s.ctx.__autoConsolidateChecking,false);
   s=setup();s.ctx.loadDustUtxoCount();await tick();
-  assert.equal(s.el('w-utxo-consolidate').style.display,'flex');assert.match(s.el('w-utxo-dust-msg').textContent,/small outputs/);
+  assert.equal(s.el('w-utxo-consolidate').style.display,'flex');assert.match(s.el('w-utxo-dust-msg').textContent,/0\.001 VELD/);
   assert(source.includes('id="w-utxo-consolidate-btn" data-act-click="hconsolidate"'));
   assert(source.includes('hauto_consolidate: function(event){ setAutoConsolidatePreference(this.checked === true); }'));
   // Manual cleanup still reaches the existing signing flow with automation off.
