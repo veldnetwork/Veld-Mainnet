@@ -15,10 +15,11 @@ from publisher import Publisher
 from remote_store import Store, atomic_json, atomic_write
 
 FIXTURE = parse((ROOT/'tests/fixtures/mainnet-checkpoint.json').read_bytes())[0]
+SIGNED_TIME = int(time.time())
 
 
 def record(height=4000):
-    return dict(FIXTURE,height=height,hash='a'*64,signed_at=int(time.time()))
+    return dict(FIXTURE,height=height,hash='a'*64,signed_at=SIGNED_TIME)
 
 
 def observations(tip=4163):
