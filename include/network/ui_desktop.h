@@ -2873,6 +2873,7 @@ __VELD_DEPLOYMENT_BANNER_HTML__
 #w-cleanup-card{overflow:visible!important}
 #w-cleanup-card .card-title{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 8px}
 #w-cleanup-card .cleanup-copy{color:var(--muted);line-height:1.5;margin:0 0 12px}
+#w-cleanup-card .cleanup-help{color:var(--muted);font-size:13px;line-height:1.5;margin:0 0 12px}
 #w-cleanup-card .cleanup-auto{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px;padding-top:12px;border-top:1px solid var(--b1);position:relative}
 #w-cleanup-card .cleanup-auto-heading{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0}
 #w-cleanup-card .cleanup-auto-heading label{margin:0;font-size:14px;line-height:1.4;font-weight:600;cursor:pointer}
@@ -2899,6 +2900,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <div class="card-title">Wallet cleanup <span id="w-utxo-dust-chip" style="display:none;font-weight:400"></span></div>
       <p class="cleanup-copy">Combine small outputs already in your wallet.</p>
       <div id="w-utxo-consolidate" style="display:none;margin-bottom:12px" role="status"><span id="w-utxo-dust-msg" style="color:var(--muted);line-height:1.5;overflow-wrap:anywhere"></span></div>
+      <p class="cleanup-help">Fewer outputs make future transactions smaller and easier to process.</p>
       <button class="btn" id="w-utxo-consolidate-btn" data-act-click="hconsolidate">Combine my outputs</button>
       <div id="w-utxo-consolidate-msg" aria-live="polite" style="margin-top:10px;overflow-wrap:anywhere"></div>
       <div class="cleanup-auto">
