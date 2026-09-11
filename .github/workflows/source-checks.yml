@@ -318,8 +318,12 @@ jobs:
           if [[ '${{ matrix.standalone }}' == 'true' ]]; then fixture_args=(); fi
           extra_args=()
           if [[ -n '${{ matrix.members }}' ]]; then read -r -a extra_args <<< '${{ matrix.members }}'; fi
-          sudo unshare --net bash -eu -c 'ip link set lo up; exec runuser -u "$1" -- "${@:2}"' \
-            _ "$(id -un)" "$RUNNER_TEMP/${{ matrix.fixture }}" "${fixture_args[@]}" "${extra_args[@]}"
+          sudo unshare --net bash -eu -c '
+            ip link set lo up
+            if [[ "$1" == self_dial_tests ]]; then ip address add 192.0.2.1/32 dev lo; fi
+            shift
+            exec runuser -u "$1" -- "${@:2}"
+          ' _ '${{ matrix.fixture }}' "$(id -un)" "$RUNNER_TEMP/${{ matrix.fixture }}" "${fixture_args[@]}" "${extra_args[@]}"
       - name: Verify private fixture exclusion from public profiles
         if: matrix.fixture == 'coinbase_cap_admission_tests'
         run: python3 tests/coinbase_fixture_profile_tests.py --compiler c++ --output-dir "$RUNNER_TEMP/coinbase-profiles"
