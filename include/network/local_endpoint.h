@@ -6,6 +6,9 @@
 
 #ifdef _WIN32
 #include <iphlpapi.h>
+#elif defined(__linux__)
+#include <net/if.h>
+#include <sys/ioctl.h>
 #else
 #include <ifaddrs.h>
 #endif
@@ -37,6 +40,30 @@ inline bool IsLocalIPv4Address(const in_addr& address) {
             }
         }
         return false;
+    }
+#elif defined(__linux__)
+    // Hardened services can prohibit AF_NETLINK, which glibc getifaddrs uses.
+    // SIOCGIFCONF reads the same IPv4 interface ownership through AF_INET.
+    struct SocketGuard {
+        int fd;
+        ~SocketGuard() { if (fd >= 0) ::close(fd); }
+    } socket{::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)};
+    if (socket.fd < 0) return false;
+    for (size_t count = 32; count <= 16384; count *= 2) {
+        std::vector<ifreq> interfaces(count);
+        ifconf config{};
+        config.ifc_len = static_cast<int>(interfaces.size() * sizeof(ifreq));
+        config.ifc_req = interfaces.data();
+        if (::ioctl(socket.fd, SIOCGIFCONF, &config) != 0 || config.ifc_len < 0 ||
+            static_cast<size_t>(config.ifc_len) > interfaces.size() * sizeof(ifreq))
+            return false;
+        const size_t returned = static_cast<size_t>(config.ifc_len) / sizeof(ifreq);
+        for (size_t i = 0; i < returned; ++i) {
+            if (interfaces[i].ifr_addr.sa_family != AF_INET) continue;
+            const auto* local = reinterpret_cast<const sockaddr_in*>(&interfaces[i].ifr_addr);
+            if (local->sin_addr.s_addr == address.s_addr) return true;
+        }
+        if (returned < interfaces.size()) return false;
     }
 #else
     ifaddrs* raw = nullptr;

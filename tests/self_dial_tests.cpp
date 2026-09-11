@@ -4,6 +4,14 @@
 
 #include <iostream>
 #include <stdexcept>
+#ifdef __linux__
+#include <cstddef>
+#include <ifaddrs.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
+#endif
 
 using namespace veld;
 using namespace std::chrono_literals;
@@ -26,11 +34,52 @@ template<class Predicate> void Wait(Predicate predicate, const char* message) {
         std::this_thread::sleep_for(10ms);
     Check(predicate(), message);
 }
+#ifdef __linux__
+std::string RestrictAddressFamilies() {
+    ifaddrs* interfaces = nullptr;
+    Check(::getifaddrs(&interfaces) == 0, "enumerate fixture address before sandbox");
+    std::string assigned;
+    for (auto* item = interfaces; item; item = item->ifa_next) {
+        if (!item->ifa_addr || item->ifa_addr->sa_family != AF_INET) continue;
+        const auto* address = reinterpret_cast<const sockaddr_in*>(item->ifa_addr);
+        if ((ntohl(address->sin_addr.s_addr) >> 24) == 127) continue;
+        char text[INET_ADDRSTRLEN]{};
+        if (::inet_ntop(AF_INET, &address->sin_addr, text, sizeof(text))) assigned = text;
+        if (!assigned.empty()) break;
+    }
+    ::freeifaddrs(interfaces);
+    Check(!assigned.empty(), "fixture has an assigned non-loopback IPv4 address");
+    const sock_filter filter[] = {
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, nr)),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket, 0, 5),
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, args[0])),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_INET, 3, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_INET6, 2, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, 1, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EAFNOSUPPORT),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog program{static_cast<unsigned short>(std::size(filter)), const_cast<sock_filter*>(filter)};
+    Check(::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0, "enable fixture sandbox");
+    Check(::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) == 0, "apply fleet address-family restriction");
+    const int probe = ::socket(AF_NETLINK, SOCK_RAW, 0);
+    const int error = errno;
+    if (probe >= 0) ::close(probe);
+    Check(probe < 0 && error == EAFNOSUPPORT, "AF_NETLINK is unavailable as in the fleet service");
+    return assigned;
+}
+#endif
 }
 
 int main() {
     try {
         compat::InitNetwork();
+#ifdef __linux__
+        const std::string local_ip = RestrictAddressFamilies();
+#else
+        const char* configured_ip = std::getenv("VELD_TEST_LOCAL_IP");
+        const std::string local_ip = configured_ip ? configured_ip : "";
+#endif
         Blockchain chain, other_chain, background_chain;
         InitChain(chain); InitChain(other_chain); InitChain(background_chain);
         Mempool pool, other_pool, background_pool;
@@ -49,7 +98,7 @@ int main() {
         Check(!node.ConnectTo("127.0.0.1", port), "reject direct self dial");
         Check(!node.ConnectTo("localhost", port), "reject resolved self dial");
         Check(!node.ConnectTo("127.0.0.2", port), "reject self dial through alias");
-        if (const char* local_ip = std::getenv("VELD_TEST_LOCAL_IP")) {
+        if (!local_ip.empty()) {
             Check(node.IsLocalListenerEndpoint(local_ip, port), "recognize assigned interface address");
             Check(!node.ConnectTo(local_ip, port), "reject self dial through assigned interface");
         }
