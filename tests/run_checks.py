@@ -45,6 +45,7 @@ SUITES = {
         "tests/web_freshness_tests.js",
         "tests/explorer_pwa_navigation_tests.js",
         "tests/explorer_block_feed_tests.js",
+        "tests/explorer_transaction_display_tests.js",
     ],
     "provenance": [
         "scripts/verify-pqc-provenance.py",
