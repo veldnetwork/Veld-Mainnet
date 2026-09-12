@@ -9,6 +9,8 @@ are tracked separately; publishing source does not release new binaries.
 - Keep mining during download and verification, then resume the previously running node with its saved workers after installation.
 - Transfer the session unlock through a one-use Windows-protected handoff bound to the identity and exact packages.
 - Delay automatic retries after failures and defer installation while the local wallet is open.
+- Reopen the verified node app directly after updates and rollbacks, preserving custom data directories and avoiding another launcher prompt.
+- Allow the old node and app to complete their bounded shutdown before committing an update.
 
 ## 3.1.10 - 2026-09-11
 

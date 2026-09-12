@@ -15,6 +15,12 @@ with its saved mining preference, worker count, identity, data directory,
 sync progress, and pairing. A stopped node stays stopped. Automatic
 installation waits while the local wallet is open.
 
+An update or rollback reopens the verified node app directly. It does not
+return to the launcher's interactive update question. The selected data
+directory is carried through the updater and restart, including when the
+node was stopped. The handoff allows up to 90 seconds for the old app's
+bounded node shutdown and worker cleanup.
+
 No passphrase is sent to the update service or stored in settings. Immediately
 before an update restart, the app creates a one-use unlock handoff protected
 by Windows for the current user. It is bound to the installation, identity,
@@ -37,3 +43,9 @@ the original process remains alive. Portal tests cover the signed opt-in
 command, persistence, authentication, and replay rejection. Release
 qualification must additionally exercise the final signed package upgrade
 and mining on mainnet before publication.
+
+Opting in removes the routine need to install each release manually while
+the app stays open and has internet access. It cannot guarantee recovery
+from every Windows, disk, permission, or package-integrity failure. An
+unrecoverable failure preserves the installation and requires attention;
+the updater never bypasses signature checks to force an installation.

@@ -955,7 +955,8 @@ function Remove-TransactionTree() {
 
 function Wait-ForParentExit([int]$ProcessId) {
     if ($ProcessId -le 0) { throw 'commit handoff has no valid parent process id' }
-    $deadline = (Get-Date).AddSeconds(30)
+    # Allow the GUI's bounded node shutdown and worker cleanup to finish.
+    $deadline = (Get-Date).AddSeconds(90)
     while ((Get-Date) -lt $deadline) {
         if ($null -eq (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) { return }
         Start-Sleep -Milliseconds 200
@@ -964,13 +965,32 @@ function Wait-ForParentExit([int]$ProcessId) {
 }
 
 function Relaunch-InstalledClient() {
-    # Re-enter the signed launcher so recovery, package verification and launch
-    # arguments are the same as when the operator starts the client normally.
-    # PrimaryLauncher remains the final payload promoted by the transaction.
     $installed = Get-VerifiedInstalled
-    $launcherName = if ($Distribution -eq 'Terminal') {
-        'Start Mining.bat'
-    } else { 'Start Veld Node.bat' }
+    if ($Distribution -eq 'Node') {
+        # Recovery and package verification have already completed. Reopening
+        # the interactive batch would prompt again after a rollback or when
+        # another release appears during installation.
+        if (-not $installed.Entries.ContainsKey('Veld Node.exe')) {
+            throw 'installed release has no signed node app'
+        }
+        $start = @{
+            FilePath = (Join-Path $InstallDir 'Veld Node.exe')
+            WorkingDirectory = $InstallDir
+            WindowStyle = 'Hidden'
+        }
+        if (-not [string]::IsNullOrWhiteSpace($env:VELD_UPDATE_NODE_DATA_DIR)) {
+            $data = [IO.Path]::GetFullPath($env:VELD_UPDATE_NODE_DATA_DIR)
+            if ($data.IndexOfAny([char[]]"`"`r`n") -ge 0) {
+                throw 'node restart data directory is invalid'
+            }
+            # A quoted native argument must double its trailing backslashes.
+            $trailing = [regex]::Match($data, '\\+$').Value
+            $start.ArgumentList = '--datadir "' + $data + $trailing + '"'
+        }
+        Start-Process @start | Out-Null
+        return
+    }
+    $launcherName = 'Start Mining.bat'
     if (-not $installed.Entries.ContainsKey($launcherName)) {
         throw 'installed release has no signed restart launcher'
     }

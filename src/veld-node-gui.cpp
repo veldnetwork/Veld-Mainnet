@@ -6271,9 +6271,22 @@ private:
         si.hStdOutput = output;
         si.hStdError = output;
         PROCESS_INFORMATION pi{};
+        std::error_code directory_error;
+        const auto restart_directory = std::filesystem::weakly_canonical(data_dir_, directory_error);
+        auto environment = ChildEnvironmentWithValue(
+            L"VELD_UPDATE_NODE_DATA_DIR=", restart_directory.wstring());
+        if (directory_error || environment.empty()) {
+            CloseHandle(output);
+            CloseHandle(nul);
+            update_status_ = L"Update could not preserve the data directory";
+            update_status_color_ = C_WARN;
+            return false;
+        }
         const BOOL created = CreateProcessW(powershell.c_str(), mutable_command.data(),
-            nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, root.c_str(),
+            nullptr, nullptr, TRUE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+            environment.data(), root.c_str(),
             &si, &pi);
+        SecureZeroMemory(environment.data(), environment.size() * sizeof(wchar_t));
         CloseHandle(output);
         CloseHandle(nul);
         if (!created) {
