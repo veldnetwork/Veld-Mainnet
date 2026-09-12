@@ -39,6 +39,8 @@ jobs:
             standalone: true
           - fixture: reliability_gui_state_tests
           - fixture: stake_fragmentation_tests
+          - fixture: nms_mempool_lifecycle_tests
+            standalone: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -191,7 +193,7 @@ jobs:
               -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"
           done
-          for test in co_mining_stake_floor_tests coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests; do
+          for test in co_mining_stake_floor_tests nms_mempool_lifecycle_tests coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests; do
             c++ -std=c++20 -O1 -pthread -Iinclude -Ivendor/pqc "tests/$test.cpp" "${objects[@]}" \
               -lssl -lcrypto -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"

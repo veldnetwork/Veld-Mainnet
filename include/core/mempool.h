@@ -1625,6 +1625,9 @@ public:
             // be a public mempool root.  This also cleans legacy/imported state
             // that predates the admission guard.
             bool invalid = !entry.tx.IsValid() || entry.tx.IsCoinbase();
+            if (const auto nms = ExtractNmsFromTx(entry.tx);
+                nms && !chain.NmsMatchesNextBlockContext(*nms))
+                invalid = true;
             bool all_inputs_now_canonical = true;
             for (const auto& inp : entry.tx.inputs) {
                 if (inp.IsCoinbase()) continue;
@@ -2038,6 +2041,11 @@ private:
             if (entry_it == entries_.end()) return false;
 
             const MempoolEntry& entry = entry_it->second;
+            if (chain) {
+                const auto nms = ExtractNmsFromTx(entry.tx);
+                if (nms && !chain->NmsMatchesNextBlockContext(*nms))
+                    return false;
+            }
             if (bytes > max_bytes ||
                 entry.tx_size_bytes > max_bytes - bytes) return false;
 
@@ -2131,6 +2139,9 @@ private:
                     }
                 }
                 if (!canonical_root) continue;
+                if (const auto nms = ExtractNmsFromTx(eit->second.tx);
+                    nms && !chain->NmsMatchesNextBlockContext(*nms))
+                    continue;
                 const bool locking_ok = eit->second.base_locking_validated
                     ? chain->ValidateCachedMempoolLockingContext(
                           eit->second.tx)

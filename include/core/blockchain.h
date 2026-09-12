@@ -1445,6 +1445,19 @@ public:
         nms_tally_.Clear();
     }
 
+    // Selection and maintenance must expire a claim when its parent changes,
+    // even if its funding input is still unspent. This check does no PoW work.
+    bool NmsMatchesNextBlockContext(const veld::NmsRecord& rec) const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        if (chain_.empty() ||
+            rec.header.prev_block_hash != chain_.back().GetHash())
+            return false;
+        CanonicalPowTarget target;
+        return DecodeExpectedVeldTarget(
+            rec.header.bits, ComputeNextBitsAtLocked(chain_.size() - 1),
+            target);
+    }
+
     NmsValidationDisposition ValidateNmsLocking(
                             const veld::NmsRecord& rec,
                             uint64_t enclosing_block_height,

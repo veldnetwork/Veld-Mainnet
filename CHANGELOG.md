@@ -7,6 +7,8 @@ are tracked separately; publishing source does not release new binaries.
 
 - Refresh mining timestamps by elapsed wall-clock time on every worker.
 - Retry failed near-miss submissions without consuming the submission window.
+- Exclude expired near-miss claims from new blocks and remove their pending
+  descendants; report the reason when a locally mined block is rejected.
 - Check signed transaction size before staking and explain when wallet cleanup
   is needed; avoid browser failures when validating large transaction hex.
 - Correct co-mining pool percentage metadata to the existing 20% allocation.

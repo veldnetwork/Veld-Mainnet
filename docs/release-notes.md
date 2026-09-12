@@ -9,6 +9,11 @@ Failed near-miss submissions can be retried within the same co-mining window.
 The local submission allowance is consumed only when the transaction enters
 the mempool. Pool metadata reports the existing 20% reward allocation.
 
+Expired near-miss claims are removed from the mempool and excluded from new
+mining candidates. Previously, a claim left pending after its target block
+passed could invalidate repeated block attempts. Valid claims and ordinary
+transactions remain eligible, and local rejection logs include the reason.
+
 The Windows package removes the separate update-repair launcher. Updates and
 interrupted-update recovery remain available through Settings and the normal
 launcher. Existing chain data, identity, worker count, and pairing are retained.

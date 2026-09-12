@@ -16081,7 +16081,8 @@ private:
                                   << " stale — peer already mined this height\n";
                     } else {
                         std::cerr << "  [Mining] Block " << result.new_height
-                                  << " rejected by chain\n";
+                                  << " rejected by chain: "
+                                  << Blockchain::GetLastRejectTag() << "\n";
                     }
                 }
             } catch (const std::exception& e) {
