@@ -284,8 +284,6 @@
   var state = { pending: false, target: '', loaded: '', retryAt: 0, failures: 0, controller: null,
     tip: null, continuous: false, lastPoll: null, epoch: 0 };
   var firstSeen = new Map();
-  var badges = new Map();
-  var badgeTypes = {btcveld_mint:['Mint','gold'],btcveld_redeem:['Redeem','gold'],btcveld_transfer:['btcVELD','gold'],amm_op:['AMM','blue'],stake_lock:['Stake','veld-reward-stake'],stake_unlock:['Unstake','veld-reward-stake'],endorsement:['Endorse','veld-reward-validator'],validator_register:['Validator','veld-reward-validator'],staking_distribution:['Payout','veld-reward-stake'],endorsement_distribution:['Val payout','veld-reward-validator'],anchor_post:['Anchor','gold'],btc_header_relay:['BTC hdr','gold']};
 
   function textElement(tag, className, text) {
     var el = document.createElement(tag);
@@ -367,30 +365,6 @@
     state.tip = blocks[0]; state.continuous = true;
     updateTipAge(blocks[0].hash);
   }
-  async function paintBadges(blocks, key, signal) {
-    for (var block of blocks) {
-      if (key !== state.target || document.hidden || signal.aborted) return;
-      if ((block.tx_count || block.ntx || 0) <= 1) continue;
-      try {
-        var types = badges.get(block.hash);
-        if (!types) {
-          var response = await fetch('/api/v1/events/' + block.height, {cache:'no-store', signal:signal});
-          if (!response.ok) return;
-          var data = await response.json();
-          if (!data || !Array.isArray(data.events)) return;
-          types = Array.from(new Set(data.events.map(function (event) { return event && event.type; }))).filter(function (type) { return Boolean(badgeTypes[type]); });
-          badges.set(block.hash, types);
-          if (badges.size > 40) badges.delete(badges.keys().next().value);
-        }
-        if (key !== state.target) return;
-        var slot = document.querySelector('.bk-badges[data-block-hash="' + block.hash + '"]');
-        if (slot) {
-          slot.replaceChildren();
-          types.forEach(function (type) { slot.appendChild(textElement('span', 'bk-badge ' + badgeTypes[type][1], badgeTypes[type][0])); });
-        }
-      } catch (_) { return; }
-    }
-  }
   window.veldExplorerDashboard = {
     load: function (height, hash) {
       if (!Number.isSafeInteger(height) || height < 0) return;
@@ -423,7 +397,6 @@
             (tip.height === previous.height + 1 && tip.prev_hash === previous.hash) ||
             (tip.height === previous.height && tip.hash !== previous.hash && tip.prev_hash === previous.prev_hash));
           paint(blocks, observed); state.loaded = key; state.failures = 0; state.retryAt = 0;
-          return paintBadges(blocks, key, controller.signal);
         }).catch(function (error) {
           if (epoch !== state.epoch || (controller.signal.aborted && document.hidden)) return;
           if (key !== state.target) return;
@@ -443,6 +416,104 @@
   };
   document.addEventListener('visibilitychange', function () { if (document.hidden) pauseObservation(); });
   window.addEventListener('pagehide', pauseObservation);
+})();
+
+// Both block lists derive their badges from the same event feed and renderer.
+(function () {
+  'use strict';
+  if (location.pathname !== '/' && location.pathname !== '/blocks') return;
+  var badgeTypes = {btcveld_mint:['Mint','gold'],btcveld_redeem:['Redeem','gold'],btcveld_transfer:['btcVELD','gold'],amm_op:['AMM','blue'],stake_lock:['Stake','veld-reward-stake'],stake_unlock:['Unstake','veld-reward-stake'],endorsement:['Endorse','veld-reward-validator'],validator_register:['Validator','veld-reward-validator'],staking_distribution:['Payout','veld-reward-stake'],endorsement_distribution:['Val payout','veld-reward-validator'],anchor_post:['Anchor','gold'],btc_header_relay:['BTC hdr','gold'],near_miss:['Near miss','veld-near-miss']};
+  var cache = new Map(), pending = new Map(), retries = new Map();
+  var retryTimer = null, list = null;
+  function visible() { return !document.hidden && (location.pathname === '/' || location.pathname === '/blocks'); }
+  function describe(row) {
+    var match = /^\/block\/height\/(\d+)$/.exec(row.getAttribute('href') || '');
+    var meta = row.querySelector('.info .s'), count = row.querySelector('.tx');
+    if (!match || !meta || !count || parseInt(count.textContent, 10) <= 1) return null;
+    var height = Number(match[1]);
+    if (!Number.isSafeInteger(height)) return null;
+    return {row:row, height:height, key:height + ':' + meta.textContent.trim().split(/\s/)[0]};
+  }
+  function render(item, types) {
+    if (!list.contains(item.row)) return;
+    var current = describe(item.row);
+    if (!current || current.key !== item.key) return;
+    var heading = item.row.querySelector('.info .h');
+    if (!heading) return;
+    var slot = heading.querySelector('.bk-badges');
+    if (!slot && !types.length) return;
+    if (!slot) {
+      slot = document.createElement('span'); slot.className = 'bk-badges';
+      heading.appendChild(slot);
+    }
+    if (slot.dataset.eventsKey === item.key) return;
+    slot.replaceChildren();
+    types.forEach(function (type) {
+      var badge = document.createElement('span');
+      badge.className = 'bk-badge ' + badgeTypes[type][1]; badge.textContent = badgeTypes[type][0];
+      slot.appendChild(badge);
+    });
+    slot.dataset.eventsKey = item.key;
+  }
+  function scheduleRetry() {
+    if (retryTimer !== null || !visible()) return;
+    retryTimer = setTimeout(function () { retryTimer = null; refresh(); }, 2000);
+  }
+  function refresh() {
+    if (!list || !visible()) return;
+    var items = Array.from(list.querySelectorAll('a.bk')).map(describe).filter(Boolean);
+    var keys = new Set(items.map(function (item) { return item.key; }));
+    pending.forEach(function (controller, key) { if (!keys.has(key)) controller.abort(); });
+    retries.forEach(function (_, key) { if (!keys.has(key)) retries.delete(key); });
+    items.forEach(function (item) {
+      if (cache.has(item.key)) { render(item, cache.get(item.key)); return; }
+      if (pending.has(item.key)) return;
+      if (Date.now() < (retries.get(item.key) || 0)) { scheduleRetry(); return; }
+      if (pending.size >= 2) return;
+      var controller = new AbortController(); pending.set(item.key, controller);
+      var timer = setTimeout(function () { controller.abort(); }, 8000);
+      fetch('/api/v1/events/' + item.height, {cache:'no-store', signal:controller.signal})
+        .then(function (response) {
+          if (!response.ok) {
+            var error = new Error('Events unavailable');
+            var hint = response.headers && response.headers.get('Retry-After');
+            var delay = /^\d+$/.test(hint || '') ? Number(hint) * 1000 : Date.parse(hint) - Date.now();
+            error.retryMs = Number.isFinite(delay) && delay > 0 ? delay : (response.status === 429 ? 60000 : 5000);
+            throw error;
+          }
+          return response.json();
+        }).then(function (data) {
+          if (controller.signal.aborted || !visible()) return;
+          if (!data || data.height !== item.height || !Array.isArray(data.events)) throw new Error('Invalid events');
+          var types = Array.from(new Set(data.events.map(function (event) { return event && event.type; })))
+            .filter(function (type) { return Object.prototype.hasOwnProperty.call(badgeTypes, type); });
+          cache.set(item.key, types); retries.delete(item.key);
+          if (cache.size > 128) cache.delete(cache.keys().next().value);
+          render(item, types);
+        }).catch(function (error) {
+          retries.set(item.key, Date.now() + Math.max(5000, error.retryMs || 0)); scheduleRetry();
+        }).finally(function () {
+          clearTimeout(timer); pending.delete(item.key); refresh();
+        });
+    });
+  }
+  function start() {
+    list = document.getElementById(location.pathname === '/' ? 'blocks-list' : 'blocks-container');
+    if (!list) return;
+    var observer = new MutationObserver(refresh);
+    observer.observe(list, {childList:true});
+    refresh();
+  }
+  function pause() {
+    if (retryTimer !== null) clearTimeout(retryTimer);
+    retryTimer = null;
+    pending.forEach(function (controller) { controller.abort(); });
+  }
+  document.addEventListener('visibilitychange', function () { if (document.hidden) pause(); else refresh(); });
+  window.addEventListener('pagehide', pause);
+  window.addEventListener('popstate', refresh);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, {once:true});
+  else start();
 })();
 
 // Keep the installed app's navigation controls mounted when opening Mempool.

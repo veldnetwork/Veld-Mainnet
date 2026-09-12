@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const asset = fs.readFileSync(path.join(__dirname, '../website/explorer-route-context-v1.js'), 'utf8');
 const start = asset.lastIndexOf('(function () {', asset.indexOf('var state = { pending: false'));
-const end = asset.indexOf('// Keep the installed app\'s navigation controls mounted when opening Mempool.');
+const end = asset.indexOf('// Both block lists derive their badges from the same event feed and renderer.');
 assert(start >= 0 && end > start);
 const source = asset.slice(start, end);
 const flush = async () => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };

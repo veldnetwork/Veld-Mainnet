@@ -250,12 +250,14 @@ html[data-theme="light"] .supply-bar-fill::after{background:#344038;border-color
 .bk:last-child{border-bottom:0!important}
 .bk:hover{background:var(--veld-preview-panel-2)!important}
 .bk .ic{width:52px!important;height:52px!important;border-radius:10px!important;background:var(--veld-preview-panel-3)!important;border:1px solid var(--veld-preview-border-strong)!important;color:var(--veld-preview-green)!important;box-shadow:none!important}
-.bk .info .h{display:flex!important;align-items:center!important;gap:8px!important;color:var(--veld-preview-text)!important;font:700 18px var(--veld-preview-mono)!important}
+.bk .info .h{display:flex!important;align-items:center!important;flex-wrap:wrap!important;gap:8px!important;color:var(--veld-preview-text)!important;font:700 18px var(--veld-preview-mono)!important}
 .bk-badges{display:inline-flex!important;align-items:center!important;gap:5px!important;margin-left:2px!important}
-.bk-badge{border-radius:6px!important;padding:3px 7px!important;font:750 8px var(--veld-preview-mono)!important;letter-spacing:.07em!important;background:var(--veld-preview-panel-3)!important;border:1px solid var(--veld-preview-border-strong)!important;color:var(--veld-preview-muted)!important}
+.bk-badge{border-radius:6px!important;padding:3px 7px!important;white-space:nowrap;font:750 8px var(--veld-preview-mono)!important;letter-spacing:.07em!important;background:var(--veld-preview-panel-3)!important;border:1px solid var(--veld-preview-border-strong)!important;color:var(--veld-preview-muted)!important}
 .bk-badge.gold{background:#251e08!important;border-color:#5b4a14!important;color:var(--veld-preview-gold)!important}
 .bk-badge.blue,.bk-badge.em{background:#102d1a!important;border-color:#285b38!important;color:var(--veld-preview-green)!important}
 html[data-theme="light"] .bk-badge.gold{background:#f3ead0!important;border-color:#d3bb78!important;color:#805c00!important}
+.bk-badge.veld-near-miss{background:rgba(76,184,255,.10)!important;border-color:rgba(76,184,255,.4)!important;color:#4CB8FF!important}
+html[data-theme="light"] .bk-badge.veld-near-miss{background:#e1f2fc!important;border-color:#94c8e8!important;color:#12658f!important}
 .bk .info .s{margin-top:7px!important;color:var(--veld-preview-muted)!important;font:500 11px var(--veld-preview-mono)!important}
 .bk .right{gap:7px!important}
 .bk .right .ago{color:var(--veld-preview-text)!important;font:600 12px var(--veld-preview-mono)!important}
