@@ -71,6 +71,33 @@ struct GuiStateQualification {
         assert(!app.automatic_install_pending_);
         assert(app.next_auto_update_ > std::chrono::steady_clock::now() + std::chrono::minutes(29));
     }
+    static void AutomaticCycle(const std::filesystem::path& profile, const std::filesystem::path& root) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        app.next_auto_update_ = std::chrono::steady_clock::now();
+        app.TickAutomaticUpdates();
+        assert(app.update_operation_.load() == UpdateOperation::None);
+        app.auto_update_enabled_.store(true);
+        app.TickAutomaticUpdates();
+        assert(app.update_operation_.load() == UpdateOperation::Check);
+        const HANDLE check = app.update_process_;
+        app.TickAutomaticUpdates();
+        assert(app.update_process_ == check);
+        assert(WaitForSingleObject(check, 15000) == WAIT_OBJECT_0);
+        DWORD exit_code = 0;
+        assert(GetExitCodeProcess(check, &exit_code) && exit_code == 2);
+        app.OnUpdateProcessComplete(exit_code);
+        assert(app.automatic_install_pending_);
+        app.TickAutomaticUpdates();
+        assert(app.update_operation_.load() == UpdateOperation::Install);
+        assert(WaitForSingleObject(app.update_process_, 15000) == WAIT_OBJECT_0);
+        assert(GetExitCodeProcess(app.update_process_, &exit_code) && exit_code == 1);
+        app.OnUpdateProcessComplete(exit_code);
+        app.TickAutomaticUpdates();
+        assert(app.update_operation_.load() == UpdateOperation::None);
+        assert(!app.automatic_install_pending_);
+        assert(!app.update_resume_pending_ && !app.HasSessionUnlock());
+    }
 };
 
 void Write(const std::filesystem::path& path, const std::string& text) {
@@ -168,4 +195,7 @@ int main(int argc, char** argv) {
     Write(install / L"veld-update.ps1", "param($Mode,$InstallDir,$Distribution)\nWrite-Output '[update] FAILED: fixture download interrupted'\nexit 1\n");
     GuiStateQualification::DownloadFailure(profile, install);
     std::cout << "PASS real updater child download failure leaves process and session running; retry delayed\n";
+    Write(install / L"veld-update.ps1", "param($Mode,$InstallDir,$Distribution)\nif($Mode -eq 'Check'){Write-Output 'Remote version: 3.1.11';exit 2}\nWrite-Output '[update] FAILED: interrupted fixture download'\nexit 1\n");
+    GuiStateQualification::AutomaticCycle(profile, install);
+    std::cout << "PASS automatic check-to-install dispatch, opt-out, single in-flight operation and failure backoff; stopped node stays stopped\n";
 }
