@@ -78,6 +78,7 @@ constexpr UINT WM_TRAY_ICON = WM_APP + 13;
 constexpr UINT WM_UPDATE_CHECK_COMPLETE = WM_APP + 14;
 constexpr UINT WM_REMOTE_COMMAND = WM_APP + 15;
 constexpr UINT TIMER_REPAINT = 21;
+constexpr auto AUTO_UPDATE_INTERVAL = std::chrono::hours(1);
 constexpr UINT ID_TRAY_RESTORE = 4101;
 constexpr UINT ID_TRAY_TOGGLE_NODE = 4102;
 constexpr UINT ID_TRAY_EXIT = 4103;
@@ -1947,7 +1948,7 @@ public:
             update_status_ = L"Previous update failed · " +
                 Utf8ToWide(prior_update_failure.substr(0, 160));
             update_status_color_ = RGB(231, 126, 126);
-            next_auto_update_ = std::chrono::steady_clock::now() + std::chrono::hours(6);
+            next_auto_update_ = std::chrono::steady_clock::now() + AUTO_UPDATE_INTERVAL;
         }
         if (force_clearnet_) {
             tor_choice_ = false;
@@ -5713,7 +5714,7 @@ private:
         DrawToggle(dc, auto_update_toggle_, auto_update_enabled_, !update_busy);
         RECT automatic_note{release.left + S(22), release.top + S(169),
                             release.right - S(22), release.bottom - S(10)};
-        DrawTextAt(dc, L"Install signed updates while Veld is open and resume mining with your saved workers. Sign in once to enable mining resume.",
+        DrawTextAt(dc, L"Check hourly for signed updates while Veld is open. Resume mining with your saved workers without signing in again after an update.",
                    automatic_note, font_small_, C_MUTED, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
     }
 
@@ -6192,16 +6193,15 @@ private:
         update_status_ = L"Signed update verified · resuming node";
     }
 
-    void TickAutomaticUpdates() {
+    void TickAutomaticUpdates(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now()) {
         if (update_operation_.load() != UpdateOperation::None || tor_preparing_.load() || stopping_node_.load()) return;
         if (update_resume_pending_) {
             update_resume_pending_ = false;
             if (HasSessionUnlock() && FindNodeProcess(node_path_) == 0) StartNode();
         }
         if (!auto_update_enabled_) return;
-        const auto now = std::chrono::steady_clock::now();
         if (!automatic_install_pending_ && now < next_auto_update_) return;
-        next_auto_update_ = now + std::chrono::minutes(30);
+        next_auto_update_ = now + AUTO_UPDATE_INTERVAL;
         if (automatic_install_pending_) {
             automatic_install_pending_ = false;
             if (FindNodeProcess(node_path_) != 0 && (!HasSessionUnlock() || !session_unlock_confirmed_.load())) {
@@ -6333,7 +6333,7 @@ private:
             update_operation_.exchange(UpdateOperation::None);
         const bool automatic = automatic_update_operation_;
         automatic_update_operation_ = false;
-        next_auto_update_ = std::chrono::steady_clock::now() + std::chrono::minutes(30);
+        next_auto_update_ = std::chrono::steady_clock::now() + AUTO_UPDATE_INTERVAL;
         if (operation == UpdateOperation::Install) {
             automatic_install_pending_ = false;
             if (exit_code == 4) {

@@ -8,7 +8,8 @@ Turn on **Automatic updates** in Node Settings or in the paired portal's
 the node once, locally or through **Sign in & mine** in the portal.
 
 While the Veld app remains open, it checks the signed release feed every
-30 minutes. Mining continues while the package downloads and its signatures
+hour, with an initial check shortly after startup or enabling the setting.
+Mining continues while the package downloads and its signatures
 and file hashes are checked. The node stops only when the verified package
 is ready. After installation, the app resumes the previously running node
 with its saved mining preference, worker count, identity, data directory,
@@ -31,8 +32,8 @@ unlock a node. This feature does not configure unattended Windows login or
 mining after a normal PC reboot.
 
 Download and verification failures leave the running node alone. Automatic
-checks retry after 30 minutes; a failed installation defers the next check
-for six hours after restart. A successful rollback to a client supporting
+checks retry after one hour; a failed installation also defers the next check
+for one hour after restart. A successful rollback to a client supporting
 the handoff can also resume the prior node. Legacy clients cannot consume
 the handoff and require one sign-in when first upgraded to this feature.
 

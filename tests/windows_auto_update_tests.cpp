@@ -69,7 +69,8 @@ struct GuiStateQualification {
         app.OnUpdateProcessComplete(exit_code);
         assert(app.HasSessionUnlock());
         assert(!app.automatic_install_pending_);
-        assert(app.next_auto_update_ > std::chrono::steady_clock::now() + std::chrono::minutes(29));
+        assert(app.next_auto_update_ > std::chrono::steady_clock::now() + std::chrono::minutes(59));
+        assert(app.next_auto_update_ <= std::chrono::steady_clock::now() + std::chrono::hours(1));
     }
     static void AutomaticCycle(const std::filesystem::path& profile, const std::filesystem::path& root) {
         NodeGuiApp app(profile);
@@ -97,6 +98,35 @@ struct GuiStateQualification {
         assert(app.update_operation_.load() == UpdateOperation::None);
         assert(!app.automatic_install_pending_);
         assert(!app.update_resume_pending_ && !app.HasSessionUnlock());
+    }
+    static void HourlyChecks(const std::filesystem::path& profile, const std::filesystem::path& root) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        app.auto_update_enabled_.store(true);
+        app.next_auto_update_ = std::chrono::steady_clock::now();
+        for (int cycle = 0; cycle < 3; ++cycle) {
+            const auto due = app.next_auto_update_;
+            app.TickAutomaticUpdates(due - std::chrono::minutes(30));
+            assert(app.update_operation_.load() == UpdateOperation::None);
+            app.TickAutomaticUpdates(due - std::chrono::milliseconds(1));
+            assert(app.update_operation_.load() == UpdateOperation::None);
+            app.TickAutomaticUpdates(due);
+            assert(app.update_operation_.load() == UpdateOperation::Check);
+            assert(app.next_auto_update_ == due + std::chrono::hours(1));
+            const HANDLE check = app.update_process_;
+            app.TickAutomaticUpdates(due + std::chrono::hours(2));
+            assert(app.update_process_ == check);
+            assert(WaitForSingleObject(check, 15000) == WAIT_OBJECT_0);
+            DWORD exit_code = 1;
+            assert(GetExitCodeProcess(check, &exit_code) && exit_code == 0);
+            app.OnUpdateProcessComplete(exit_code);
+            assert(!app.automatic_install_pending_);
+            assert(app.next_auto_update_ > std::chrono::steady_clock::now() + std::chrono::minutes(59));
+            assert(app.next_auto_update_ <= std::chrono::steady_clock::now() + std::chrono::hours(1));
+        }
+        app.auto_update_enabled_.store(false);
+        app.TickAutomaticUpdates(app.next_auto_update_ + std::chrono::hours(24));
+        assert(app.update_operation_.load() == UpdateOperation::None);
     }
 };
 
@@ -198,4 +228,7 @@ int main(int argc, char** argv) {
     Write(install / L"veld-update.ps1", "param($Mode,$InstallDir,$Distribution)\nif($Mode -eq 'Check'){Write-Output 'Remote version: 3.1.11';exit 2}\nWrite-Output '[update] FAILED: interrupted fixture download'\nexit 1\n");
     GuiStateQualification::AutomaticCycle(profile, install);
     std::cout << "PASS automatic check-to-install dispatch, opt-out, single in-flight operation and failure backoff; stopped node stays stopped\n";
+    Write(install / L"veld-update.ps1", "param($Mode,$InstallDir,$Distribution)\nexit 0\n");
+    GuiStateQualification::HourlyChecks(profile, install);
+    std::cout << "PASS hourly check boundaries, repeated current-version checks, no concurrent check and opt-out\n";
 }
