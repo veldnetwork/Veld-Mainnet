@@ -1,6 +1,6 @@
 # Automatic Windows node updates
 
-Available in Windows node client 3.1.11. Clients on 3.1.10 or earlier need
+Available in Windows node client 3.2.0. Clients on 3.1.10 or earlier need
 one initial update and sign-in to enable this feature.
 
 Turn on **Automatic updates** in Node Settings or in the paired portal's

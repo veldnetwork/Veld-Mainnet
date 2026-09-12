@@ -1,4 +1,4 @@
-## 3.1.11 - Automatic updates with mining resume
+## 3.2.0 - Automatic updates with mining resume
 
 Mining now re-evaluates the clock guard after local time corrections, without
 waiting for a peer reconnect. Worker status text stays within its column.

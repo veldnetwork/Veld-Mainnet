@@ -3,11 +3,10 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
-## 3.1.11 - 2026-09-12
+## 3.2.0 - 2026-09-12
 
 - Re-evaluate the mining clock guard after local time corrections without waiting for peers to reconnect.
 - Keep worker status text inside its column.
-
 - Add optional automatic signed updates, configurable in Node Settings or the paired portal.
 - Keep mining during download and verification, then resume the previously running node with its saved workers after installation.
 - Transfer the session unlock through a one-use Windows-protected handoff bound to the identity and exact packages.
