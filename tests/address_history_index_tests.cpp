@@ -1,4 +1,5 @@
 #include "../include/core/address_history.h"
+#include "../include/consensus/nms.h"
 
 #include <algorithm>
 #include <iostream>
@@ -152,6 +153,8 @@ int main() {
     std::vector<Block> chain{b0, b1, b2};
 
     MemoryStore store;
+    store.Put("ah1:r:legacy", "stale received label");
+    store.Put("ah1:tip_hash", HashToHex(b2.GetHash()));
     size_t block_loads = 0;
     const bool rebuilt = Rebuild(
         store, std::make_pair<uint64_t, Hash256>(2, b2.GetHash()),
@@ -164,6 +167,8 @@ int main() {
             return height == 2 && hash == b2.GetHash();
         });
     Check(rebuilt, "canonical history rebuild succeeds");
+    Check(!store.Get("ah1:r:legacy") && !store.Get("ah1:tip_hash"),
+          "upgrade removes obsolete history labels and markers");
     Check(block_loads == 3, "rebuild loads each canonical block once");
     Check(MarkersMatch(store, 2, b2.GetHash()),
           "rebuild publishes exact canonical marker");
@@ -247,10 +252,60 @@ int main() {
           "fixed-width index integer accepts required zero padding");
     Check(!ParseFixedDecimal("0000000000000000004x", 20, fixed),
           "fixed-width index integer rejects non-decimal bytes");
+    // Production pool settlements contain no text marker. Their source is
+    // established by the spent outputs, including after a history rebuild.
+    Transaction funding = Coinbase(alice_script, 10 * VELD_UNITS, "rewards");
+    const std::vector<std::pair<std::string, std::string>> pools{
+        {VAULT_ADDRESS, "staking_distribution"},
+        {POOL_ADDRESS, "comine_payout"},
+        {ENDORSEMENT_POOL_ADDRESS, "endorsement_reward"}};
+    for (const auto& pool : pools)
+        funding.outputs.emplace_back(100 * VELD_UNITS, AddressToScript(pool.first));
+    Block rewards0 = MakeBlock(0, ZeroHash(), {funding});
+    std::vector<Transaction> payouts;
+    for (size_t i = 0; i < pools.size(); ++i) {
+        Transaction payout;
+        TxInput pool_input;
+        pool_input.prev_tx_hash = funding.GetTxID();
+        pool_input.prev_out_index = static_cast<uint32_t>(i + 1);
+        payout.inputs.push_back(pool_input);
+        payout.outputs.emplace_back(20 * VELD_UNITS, alice_script);
+        payout.outputs.emplace_back(80 * VELD_UNITS, AddressToScript(pools[i].first));
+        payouts.push_back(payout);
+    }
+    Block rewards1 = MakeBlock(1, rewards0.GetHash(), payouts);
+    MemoryStore rewards;
+    Check(Advance(rewards, rewards0) && Advance(rewards, rewards1),
+          "markerless pool payouts indexed");
+    auto reward_page = ReadPage(rewards, alice_script, 50, "");
+    for (size_t i = 0; i < pools.size(); ++i) {
+        const auto found = std::find_if(reward_page->entries.begin(), reward_page->entries.end(),
+            [&](const Entry& entry) { return entry.txid == HashToHex(payouts[i].GetTxID()); });
+        Check(found != reward_page->entries.end() && found->type == pools[i].second &&
+                  found->net_units == 20 * VELD_UNITS && found->fee_units == 0,
+              "markerless payout classified from its funding pool with exact value");
+    }
+    Transaction nms;
+    TxInput nms_input;
+    nms_input.prev_tx_hash = funding.GetTxID();
+    nms_input.prev_out_index = 0;
+    nms.inputs.push_back(nms_input);
+    nms.outputs.emplace_back(MIN_TX_FEE, alice_script);
+    BlockHeader claim;
+    claim.prev_block_hash = rewards1.GetHash();
+    claim.bits = GENESIS_BITS;
+    nms.outputs.emplace_back(0, BuildNmsOpReturnScript(EncodeNmsPayload(claim)));
+    nms.outputs.emplace_back(10 * VELD_UNITS - 2 * MIN_TX_FEE, alice_script);
+    Block rewards2 = MakeBlock(2, rewards1.GetHash(), {nms});
+    Check(Advance(rewards, rewards2), "near-miss history indexed");
+    reward_page = ReadPage(rewards, alice_script, 1, "");
+    Check(reward_page && reward_page->entries[0].type == "near_miss_submission" &&
+              reward_page->entries[0].fee_units == MIN_TX_FEE &&
+              reward_page->entries[0].net_units == 0,
+          "near-miss is a fee-paying entry rather than a self-transfer");
     Check(EntryType(spend, 0, static_cast<int64_t>(VELD_UNITS),
-                    "VELD_DIST|STAKING|fixture") ==
-              "staking_distribution",
-          "distribution marker retains its public history classification");
+                    "VELD_DIST|STAKING|fixture") == "received",
+          "an ordinary sender cannot label a transfer as a staking reward");
 
     std::cout << (failures == 0 ? "PASS " : "FAIL ")
               << "address_history_index_tests checks=" << checks

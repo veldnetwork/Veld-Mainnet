@@ -584,6 +584,7 @@ inline MineBlockResult MineOnly(
         return result;
     }
     mempool_count_budget = std::min<size_t>(mempool_count_budget, 999);
+    const uint64_t nms_template_revision = mempool.NmsTemplateRevision();
     auto mempool_raw = mempool.GetBlockTransactionsWithFees(
         mempool_count_budget, mempool_byte_budget, &chain);
     std::vector<std::pair<Transaction, uint64_t>> mempool_with_fees;
@@ -758,6 +759,9 @@ inline MineBlockResult MineOnly(
     }
 #endif
 
+    size_t selected_nms_claims = 0;
+    for (const auto& tx : candidate.transactions)
+        if (ExtractNmsFromTx(tx)) ++selected_nms_claims;
     auto global_pow_lease = mining::GlobalExpensivePowBudget().TryAcquire(
         mining::ExpensivePowUse::InternalMine);
     if (!global_pow_lease) {
@@ -899,6 +903,14 @@ inline MineBlockResult MineOnly(
                 }
                 auto live_tip_hash = chain.Tip().GetHash();
                 if (live_tip_hash != candidate.header.prev_block_hash) {
+                    stop_local = true; break;
+                }
+                if (mining::NmsTemplateRefreshNeeded(
+                        nms_template_revision, mempool.NmsTemplateRevision(),
+                        static_cast<uint64_t>(std::chrono::duration_cast<
+                            std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() - start).count()),
+                        selected_nms_claims, MAX_NMS_RECORDS_PER_BLOCK)) {
                     stop_local = true; break;
                 }
             }
@@ -14492,7 +14504,7 @@ private:
         }
 
         static mining::NmsSubmissionGate submissions;
-        auto attempt = submissions.TryBegin(chain_.Height() / COMINE_WINDOW_BLOCKS);
+        auto attempt = submissions.TryBegin();
         if (!attempt) return;
 
         auto miner_script = miner_keypair_.script_override.empty()
@@ -14503,6 +14515,10 @@ private:
             std::cerr.flush();
             return;
         }
+
+        if (!mining::NeedsNmsSubmission(chain_, mempool_, miner_script,
+                                        nms_header.prev_block_hash))
+            return;
 
         if (!chain_.NmsBondSatisfied(miner_script, NextInclusionHeight(chain_.Height()))) {
             std::cerr << "  [nms] skip: NMS bond not satisfied (need >= "
@@ -14595,6 +14611,10 @@ private:
             return;
         }
 
+        // Signing can overlap a peer's submission or a tip change.
+        if (!mining::NeedsNmsSubmission(chain_, mempool_, miner_script,
+                                        nms_header.prev_block_hash))
+            return;
         auto res = mempool_.Add(tx, MIN_TX_FEE, (uint32_t)chain_.Height(), chain_);
         if (res != Mempool::AddResult::ACCEPTED) {
             const char* reason = "INVALID";
@@ -14610,7 +14630,7 @@ private:
             return;
         }
 
-        attempt.CommitAccepted();
+        attempt.unlock();
         if (tcp_server_) tcp_server_->BroadcastTransaction(tx);
         std::cerr << "  [nms] broadcast: nonce=" << nms_header.nonce
                   << " height=" << (chain_.Height() + 1) << "\n";
@@ -14949,11 +14969,11 @@ private:
 
     std::string GetPoolInfoJSON() const {
         uint64_t h = chain_.Height();
-        uint64_t window_start = h > COMINE_WINDOW_BLOCKS ? (h - COMINE_WINDOW_BLOCKS + 1) : 1;
+        uint64_t window_start = h - (h % COMINE_WINDOW_BLOCKS) + 1;
         uint64_t window_end   = h;
         uint64_t blocks_in_window = (COMINE_WINDOW_BLOCKS == 0) ? 0 : (h % COMINE_WINDOW_BLOCKS);
         uint64_t blocks_until_payout = (COMINE_WINDOW_BLOCKS == 0) ? 0
-            : (blocks_in_window == 0 ? 0 : (COMINE_WINDOW_BLOCKS - blocks_in_window));
+            : (COMINE_WINDOW_BLOCKS - blocks_in_window);
 
         double pool_veld = 0.0;
         {

@@ -1,43 +1,37 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <mutex>
-#include <optional>
 
 namespace veld::mining {
 
-// Serialize local submissions and count only transactions accepted by the mempool.
+// Serialize the check-and-submit operation. Eligibility comes from canonical
+// credits and the current mempool, so it survives restarts and follows reorgs.
 class NmsSubmissionGate {
     std::mutex mutex_;
-    std::optional<uint64_t> accepted_window_;
-
   public:
-    class Attempt {
-        friend class NmsSubmissionGate;
-        NmsSubmissionGate& gate_;
-        std::unique_lock<std::mutex> lock_;
-        uint64_t window_;
-        bool eligible_;
-
-        Attempt(NmsSubmissionGate& gate, uint64_t window)
-            : gate_(gate), lock_(gate.mutex_, std::try_to_lock), window_(window),
-              eligible_(lock_.owns_lock() &&
-                        (!gate.accepted_window_ || window > *gate.accepted_window_)) {}
-
-      public:
-        Attempt(const Attempt&) = delete;
-        Attempt& operator=(const Attempt&) = delete;
-        explicit operator bool() const { return eligible_; }
-
-        void CommitAccepted() {
-            if (!eligible_) return;
-            gate_.accepted_window_ = window_;
-            eligible_ = false;
-            lock_.unlock();
-        }
-    };
-
-    Attempt TryBegin(uint64_t window) { return Attempt(*this, window); }
+    std::unique_lock<std::mutex> TryBegin() {
+        return std::unique_lock<std::mutex>(mutex_, std::try_to_lock);
+    }
 };
+
+template<typename Chain, typename Pool, typename Script, typename Hash>
+bool NeedsNmsSubmission(const Chain& chain, const Pool& pool,
+                        const Script& script, const Hash& parent) {
+    return chain.NmsNeedsSubmission(script, parent) &&
+           !pool.HasNmsSubmission(script, parent);
+}
+
+inline bool NmsTemplateRefreshNeeded(uint64_t selected_revision,
+                                     uint64_t current_revision,
+                                     uint64_t elapsed_ms,
+                                     size_t selected_claims,
+                                     size_t claim_limit) {
+    // Rebuild at most once per five seconds, and only when a new claim could
+    // fit. The proof search will reuse the dataset for the unchanged parent.
+    return selected_revision != current_revision && elapsed_ms >= 5000 &&
+           selected_claims < claim_limit;
+}
 
 } // namespace veld::mining

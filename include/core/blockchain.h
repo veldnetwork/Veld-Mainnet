@@ -1271,6 +1271,17 @@ public:
         return it == nms_tally_.nms_credits.end() ? 0ull : it->second;
     }
 
+    bool NmsNeedsSubmission(const std::vector<uint8_t>& script,
+                            const Hash256& parent) const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        if (script.empty() || chain_.empty() || chain_.back().GetHash() != parent)
+            return false;
+        // A payout is computed from the parent state. Claims included in the
+        // payout block itself would be cleared without entering that draw.
+        if (chain_.size() % COMINE_WINDOW_BLOCKS == 0) return false;
+        return NmsGetCredit(BytesToHex(script)) == 0;
+    }
+
     std::vector<std::pair<std::string, uint64_t>> NmsSnapshot() const {
         std::shared_lock<std::shared_mutex> lock(nms_tally_mutex_);
         std::vector<std::pair<std::string, uint64_t>> out;
@@ -5938,17 +5949,13 @@ public:
             return false;
         }
 
-        {
-            uint64_t new_tip_height = chain_.empty() ? 0 : chain_.size() - 1;
-            std::unique_lock<std::shared_mutex> nms_lock(nms_tally_mutex_);
-            for (auto it = nms_tally_.seen_payloads.begin();
-                 it != nms_tally_.seen_payloads.end(); ) {
-                if (it->second > new_tip_height) {
-                    it = nms_tally_.seen_payloads.erase(it);
-                } else {
-                    ++it;
-                }
-            }
+        try {
+            if (chain_.empty()) NmsReset();
+            else RebuildNmsTallyToHeight_(chain_.size() - 1);
+        } catch (...) {
+            durability_compromised_.store(true, std::memory_order_release);
+            std::cerr << "  [rollback] co-mining state recovery failed; restart required.\n";
+            return false;
         }
 
         bool durable_callback_ok = true;

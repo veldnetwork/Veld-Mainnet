@@ -1388,6 +1388,7 @@ private:
 
         if (auto admitted_nms = ExtractNmsFromTx(tx); admitted_nms) {
             nms_payload_hashes_.insert(HashToHex(Hash256d(admitted_nms->raw)));
+            nms_template_revision_.fetch_add(1, std::memory_order_release);
         }
 
         return AddResult::ACCEPTED;
@@ -1524,6 +1525,22 @@ public:
             if (e != entries_.end()) out.push_back(e->second.tx);
         }
         return out;
+    }
+
+    uint64_t NmsTemplateRevision() const {
+        return nms_template_revision_.load(std::memory_order_acquire);
+    }
+
+    bool HasNmsSubmission(const std::vector<uint8_t>& script,
+                          const Hash256& parent) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& [key, entry] : entries_) {
+            const auto claim = ExtractNmsFromTx(entry.tx);
+            if (claim && claim->header.prev_block_hash == parent &&
+                ExtractNmsMinerScript(entry.tx) == script)
+                return true;
+        }
+        return false;
     }
 
     std::vector<Transaction> GetBlockTransactions(
@@ -2120,6 +2137,7 @@ private:
             std::vector<size_t> candidate_sizes;
             std::vector<bool> candidate_is_token;
             std::vector<bool> candidate_token_authorized;
+            std::unordered_set<std::string> candidate_nms_miners;
             candidate_keys.reserve(entries_.size());
             candidate_txs.reserve(entries_.size());
             candidate_sizes.reserve(entries_.size());
@@ -2145,9 +2163,16 @@ private:
                     }
                 }
                 if (!canonical_root) continue;
-                if (const auto nms = ExtractNmsFromTx(eit->second.tx);
-                    nms && !chain->NmsMatchesNextBlockContext(*nms))
-                    continue;
+                std::string nms_miner;
+                if (const auto nms = ExtractNmsFromTx(eit->second.tx)) {
+                    const auto script = ExtractNmsMinerScript(eit->second.tx);
+                    nms_miner = BytesToHex(script);
+                    if (!chain->NmsMatchesNextBlockContext(*nms) ||
+                        !chain->NmsNeedsSubmission(script, nms->header.prev_block_hash) ||
+                        candidate_nms_miners.count(nms_miner) ||
+                        bytes > max_bytes || eit->second.tx_size_bytes > max_bytes - bytes)
+                        continue;
+                }
                 const bool locking_ok = eit->second.base_locking_validated
                     ? chain->ValidateCachedMempoolLockingContext(
                           eit->second.tx)
@@ -2168,6 +2193,7 @@ private:
                     continue;
 
                 candidate_keys.push_back(key);
+                if (!nms_miner.empty()) candidate_nms_miners.insert(nms_miner);
                 candidate_txs.push_back(&eit->second.tx);
                 candidate_sizes.push_back(eit->second.tx_size_bytes);
                 candidate_is_token.push_back(is_token);
@@ -2208,6 +2234,7 @@ private:
     mutable std::mutex mutex_;
     std::unordered_map<std::string, MempoolEntry> entries_;
     std::unordered_set<std::string> nms_payload_hashes_;
+    std::atomic<uint64_t> nms_template_revision_{0};
     std::unordered_map<std::string, std::string> pending_stakers_;
     std::string                                   pending_amm_tx_;
     std::multimap<uint64_t, std::string>          fee_index_;

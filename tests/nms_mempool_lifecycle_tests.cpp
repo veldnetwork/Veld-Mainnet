@@ -8,6 +8,7 @@
 #include "core/mempool.h"
 #include "crypto/veld_signing.h"
 #include "network/tcp.h"
+#include "mining/nms_submission.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -63,12 +64,31 @@ Block Candidate(Blockchain& chain, const RealKeyPair& signer,
     b.header = Claim(chain, b.height * 101);
     uint64_t fees = 0;
     for (const auto& entry : entries) fees += entry.second;
-    const uint64_t subsidy = Blockchain::ExpectedBlockSubsidy(b.height);
-    b.transactions.push_back(Transaction::CreateProportionalCoinbase({
-        {signer.GetP2PKHScript(), subsidy / 2},
-        {AddressToScript(VaultAddressAtHeight(b.height)), subsidy - subsidy / 2 + fees}
-    }, "Veld block " + std::to_string(b.height)));
+    b.transactions.push_back(Blockchain::BuildCanonicalCoinbase(
+        b.height, chain.TotalSupplyUnits(), fees, signer.GetP2PKHScript()));
     for (const auto& entry : entries) b.transactions.push_back(entry.first);
+    if (b.height % COMINE_WINDOW_BLOCKS == 0) {
+        auto inputs = chain.GetUTXOsForScript(AddressToScript(POOL_ADDRESS));
+        uint64_t value = 0;
+        for (const auto& input : inputs) value += input.value;
+        const auto outputs = chain.ComputeExpectedPoolOutputs(
+            b.header.prev_block_hash, value, b.height);
+        if (!outputs.empty()) {
+            std::sort(inputs.begin(), inputs.end(), [](const UTXO& a, const UTXO& z) {
+                return a.tx_hash != z.tx_hash ? a.tx_hash < z.tx_hash : a.output_index < z.output_index;
+            });
+            Transaction payout;
+            for (const auto& source : inputs) {
+                TxInput in;
+                in.prev_tx_hash = source.tx_hash;
+                in.prev_out_index = source.output_index;
+                payout.inputs.push_back(in);
+            }
+            for (const auto& [script, amount] : outputs)
+                payout.outputs.emplace_back(amount, script);
+            b.transactions.push_back(payout);
+        }
+    }
     b.UpdateMerkleRoot();
     return b;
 }
@@ -89,8 +109,16 @@ int main() {
         Mempool pool;
         const auto old_input = Funding(chain, signer, 0x81);
         const auto old = Spend(old_input, signer, Claim(chain, 111));
+        const auto script = signer.GetP2PKHScript();
+        Check(mining::NeedsNmsSubmission(chain, pool, script, chain.TipCopy().GetHash()),
+              "initial wallet needs a near-miss entry");
+        const auto revision = pool.NmsTemplateRevision();
         Check(pool.Add(old, MIN_TX_FEE, chain.Height(), chain) ==
             Mempool::AddResult::ACCEPTED, "current signed claim admission");
+        Check(pool.NmsTemplateRevision() != revision,
+              "accepted near-miss wakes a mining template");
+        Check(!mining::NeedsNmsSubmission(chain, pool, script, chain.TipCopy().GetHash()),
+              "pending peer or local claim blocks a duplicate");
         Check(Contains(pool.GetBlockTransactionsWithFees(20, MAX_BLOCK_SIZE, &chain), old),
             "current claim selectable");
         Check(chain.ValidateNmsLocking(*ExtractNmsFromTx(old), chain.Height() + 1) ==
@@ -100,6 +128,8 @@ int main() {
             mining::PowAdmissionContext::Internal()).IsAccepted(), "competing block");
         Check(chain.ValidateNmsLocking(*ExtractNmsFromTx(old), chain.Height() + 1) ==
             NmsValidationDisposition::ConsensusInvalid, "old claim expires at next tip");
+        Check(mining::NeedsNmsSubmission(chain, pool, script, chain.TipCopy().GetHash()),
+              "expired unconfirmed entry can be replaced in the same window");
         const auto fresh = Spend(Funding(chain, signer, 0x82), signer, Claim(chain, 222));
         const auto payment = Spend(Funding(chain, signer, 0x83), signer);
         Check(pool.Add(fresh, MIN_TX_FEE, chain.Height(), chain) ==
@@ -204,6 +234,45 @@ int main() {
         Check(!pool.Contains(fresh.GetTxID()) && !pool.Contains(payment.GetTxID()),
             "confirmed entries removed");
         Check(chain.Height() == 3, "chain advances through expired claim");
+        chain.NmsReset();
+        chain.RebuildNmsTallyToHeight_(chain.Height());
+        Check(chain.NmsGetCredit(BytesToHex(script)) == 1 &&
+                  !mining::NeedsNmsSubmission(chain, pool, script, chain.TipCopy().GetHash()),
+              "confirmed credit blocks a duplicate with an empty mempool");
+        const auto duplicate = Spend(Funding(chain, signer, 0x91), signer, Claim(chain, 444));
+        Check(pool.Add(duplicate, MIN_TX_FEE, chain.Height(), chain) ==
+                  Mempool::AddResult::ACCEPTED,
+              "extra claims remain consensus-compatible");
+        Check(!Contains(pool.GetBlockTransactionsWithFees(20, MAX_BLOCK_SIZE, &chain), duplicate),
+              "miner avoids charging an already-entered wallet another fee");
+        Check(chain.RollbackTip(), "disconnect confirmed entry");
+        Check(chain.NmsGetCredit(BytesToHex(script)) == 0 &&
+                  mining::NeedsNmsSubmission(chain, pool, script, chain.TipCopy().GetHash()),
+              "reorg restores eligibility without clearing a local cache");
+        Mempool simultaneous;
+        const auto first = Spend(Funding(chain, signer, 0x92), signer, Claim(chain, 555));
+        const auto second = Spend(Funding(chain, signer, 0x93), signer, Claim(chain, 666));
+        Check(simultaneous.Add(first, MIN_TX_FEE, chain.Height(), chain) == Mempool::AddResult::ACCEPTED &&
+                  simultaneous.Add(second, MIN_TX_FEE, chain.Height(), chain) == Mempool::AddResult::ACCEPTED,
+              "two machines can relay independently valid claims");
+        const auto one = simultaneous.GetBlockTransactionsWithFees(20, MAX_BLOCK_SIZE, &chain);
+        Check(one.size() == 1 && (Contains(one, first) || Contains(one, second)),
+              "template includes only one fee-paying entry per wallet");
+        Check(chain.AddBlockDirect(Candidate(chain, signer, one), false, false, false,
+                  mining::PowAdmissionContext::Internal()).IsAccepted(),
+              "one selected entry confirms under unchanged consensus");
+        while (chain.Height() < 99)
+            Check(chain.AddBlockDirect(Candidate(chain, signer), false, false, false,
+                      mining::PowAdmissionContext::Internal()).IsAccepted(), "advance window fixture");
+        Check(!chain.NmsNeedsSubmission(script, chain.TipCopy().GetHash()),
+              "confirmed entry remains sufficient through payout boundary");
+        Check(chain.AddBlockDirect(Candidate(chain, signer), false, false, false,
+                  mining::PowAdmissionContext::Internal()).IsAccepted(), "window boundary");
+        Check(chain.NmsGetCredit(BytesToHex(script)) == 0 &&
+                  chain.NmsNeedsSubmission(script, chain.TipCopy().GetHash()),
+              "new window clears eligibility for one new entry");
+        Check(chain.RollbackTip() && chain.NmsGetCredit(BytesToHex(script)) == 1,
+              "disconnect payout boundary restores prior window credits");
 #endif
         std::cout << "PASS " << checks << " checks; synthetic PoW, real signed transactions\n";
         return 0;

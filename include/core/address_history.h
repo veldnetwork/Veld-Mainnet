@@ -5,6 +5,7 @@
 #include "hash.h"
 #include "leveldb.h"
 #include "../wallet/wallet.h"
+#include "../consensus/nms.h"
 
 #include <atomic>
 #include <cstddef>
@@ -28,11 +29,11 @@ namespace veld::address_history {
 inline constexpr size_t MAX_PAGE_SIZE = 50;
 inline constexpr size_t DEFAULT_PAGE_SIZE = 25;
 inline constexpr size_t MAX_CURSOR_SIZE = 192;
-inline constexpr const char* ROW_PREFIX = "ah1:r:";
-inline constexpr const char* OUTPOINT_PREFIX = "ah1:o:";
-inline constexpr const char* BLOCK_PREFIX = "ah1:b:";
-inline constexpr const char* TIP_HEIGHT_KEY = "ah1:tip_height";
-inline constexpr const char* TIP_HASH_KEY = "ah1:tip_hash";
+inline constexpr const char* ROW_PREFIX = "ah2:r:";
+inline constexpr const char* OUTPOINT_PREFIX = "ah2:o:";
+inline constexpr const char* BLOCK_PREFIX = "ah2:b:";
+inline constexpr const char* TIP_HEIGHT_KEY = "ah2:tip_height";
+inline constexpr const char* TIP_HASH_KEY = "ah2:tip_hash";
 
 struct Entry {
     std::string txid;
@@ -270,14 +271,18 @@ inline std::string OpReturnPayload(const Transaction& tx) {
 }
 
 inline std::string EntryType(const Transaction& tx, uint64_t input,
-                             int64_t net, std::string_view marker) {
+                             int64_t net, std::string_view marker,
+                             std::string_view funding_address = {}) {
     if (tx.IsCoinbase()) return "coinbase";
-    if (marker.find("VELD_DIST|STAKING") != std::string_view::npos)
+    // Canonical settlements spend a protocol pool without an OP_RETURN tag.
+    // Text supplied by an ordinary sender is not proof of a reward payment.
+    if (funding_address == VAULT_ADDRESS)
         return "staking_distribution";
-    if (marker.find("VELD_DIST|ENDORSEMENT") != std::string_view::npos)
+    if (funding_address == ENDORSEMENT_POOL_ADDRESS)
         return "endorsement_reward";
-    if (marker.find("VELD_DIST|COMINE") != std::string_view::npos)
+    if (funding_address == POOL_ADDRESS)
         return "comine_payout";
+    if (ExtractNmsFromTx(tx)) return "near_miss_submission";
     if (marker.find("VELD_VALIDATOR|ENDORSE") != std::string_view::npos)
         return "endorsement";
     if (marker.find("VELD_VALIDATOR|REGISTER") != std::string_view::npos)
@@ -298,6 +303,8 @@ inline std::string EntryType(const Transaction& tx, uint64_t input,
     if (marker.rfind("VELD_ANCHOR|", 0) == 0) return "anchor_post";
     if (marker.rfind("VELD_BHDR|", 0) == 0) return "btc_header_relay";
     if (marker.rfind("VELD_FRAUD|", 0) == 0) return "fraud_proof";
+    if (input > 0 && net == 0 && tx.inputs.size() > 1 && tx.outputs.size() == 1)
+        return "consolidation";
     if (input > 0 && net < 0) return "sent";
     if (input > 0 && net == 0) return "self";
     return "received";
@@ -318,6 +325,8 @@ inline bool AppendBlock(const Block& block,
         std::map<std::string, Effect> effects;
         uint64_t total_input = 0;
         uint64_t total_output = 0;
+        std::optional<std::vector<uint8_t>> funding_script;
+        bool single_funding_script = true;
 
         if (!tx.IsCoinbase()) {
             for (const auto& input : tx.inputs) {
@@ -332,6 +341,9 @@ inline bool AppendBlock(const Block& block,
                     total_input > MAX_SUPPLY_UNITS - parent->value)
                     return false;
                 total_input += parent->value;
+                if (!funding_script) funding_script = parent->script;
+                else if (*funding_script != parent->script)
+                    single_funding_script = false;
                 if (IsCanonicalAddressScript(parent->script)) {
                     auto& effect = effects[BytesToHex(parent->script)];
                     if (effect.input > MAX_SUPPLY_UNITS - parent->value)
@@ -365,6 +377,8 @@ inline bool AppendBlock(const Block& block,
         if (!tx.IsCoinbase() && total_output > total_input) return false;
         const uint64_t fee = tx.IsCoinbase() ? 0 : total_input - total_output;
         const std::string marker = OpReturnPayload(tx);
+        const std::string funding_address = single_funding_script && funding_script
+            ? ScriptToAddress(*funding_script) : std::string{};
 
         for (const auto& [script_hex, effect] : effects) {
             if (effect.input > static_cast<uint64_t>(INT64_MAX) ||
@@ -390,7 +404,7 @@ inline bool AppendBlock(const Block& block,
                 script.push_back(static_cast<uint8_t>(
                     (nibble(script_hex[i]) << 4) | nibble(script_hex[i + 1])));
             const std::string type = EntryType(
-                tx, effect.input, net, marker);
+                tx, effect.input, net, marker, funding_address);
             const std::string row_key = RowKey(
                 script, block.height, static_cast<uint32_t>(tx_pos), txid);
             batch.Put(row_key, EncodeEntryValue(
@@ -424,7 +438,8 @@ inline bool Rebuild(
     if (!store.Write(invalidate) ||
         !DeletePrefixBatched(store, ROW_PREFIX) ||
         !DeletePrefixBatched(store, OUTPOINT_PREFIX) ||
-        !DeletePrefixBatched(store, BLOCK_PREFIX))
+        !DeletePrefixBatched(store, BLOCK_PREFIX) ||
+        !DeletePrefixBatched(store, "ah1:"))
         return false;
     if (!tip) return true;
 

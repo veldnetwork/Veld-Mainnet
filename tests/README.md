@@ -73,10 +73,15 @@ fifteen and sixteen workers. Both search tests link the C
 objects listed in `vendor/pqc/provenance/release-c-sources.txt`, as shown in the
 source-checks workflow.
 
-`nms_submission_tests.cpp` checks that failed co-mining eligibility, signing, or
-mempool admission attempts leave the current window available for retry. It
-also checks that concurrent attempts cannot exceed one accepted submission per
-window, including window zero.
+`nms_submission_tests.cpp` checks concurrent submission control, pending and
+confirmed entries, restart recovery, expiry retries and template refresh limits.
+`nms_mempool_lifecycle_tests.cpp` uses real signed transactions to exercise
+confirmation, redundant entries, rollback and the payout boundary.
+`nms_template_refresh_tests.cpp` exercises an active proof search, arrival of a
+new claim, candidate rebuilding, confirmation and a sole participant's payout.
+Its disposable chain uses a reduced dataset and synthetic admission proofs.
+`address_history_index_tests.cpp` verifies pool-funded reward classification,
+near-miss fees, history migration and bounded queries without changing layout.
 
 `mining_worker_policy_tests.cpp` checks worker bounds, physical-core presets,
 SMT/non-SMT/mixed-core masks, partial affinity and the native Windows detector.

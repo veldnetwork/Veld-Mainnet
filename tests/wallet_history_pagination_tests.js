@@ -120,5 +120,20 @@ function history(rows) {
   await duplicate.ctx.loadHistory();
   assert.equal(duplicate.ctx.historyData.length,2);
   assert.match(duplicate.element('h-summary').innerHTML,/0.002 VELD fees paid/);
+  const classified = fixture(history([
+    {txid:id(48001),block_height:4800,type:'staking_distribution',net_veld:143.06942449,fee_veld:0},
+    {txid:id(48002),block_height:4800,type:'comine_payout',net_veld:162.91552480,fee_veld:0},
+    {txid:id(48003),block_height:4800,type:'endorsement_reward',net_veld:2,fee_veld:0},
+    {txid:id(4701),block_height:4701,type:'near_miss_submission',net_veld:0,fee_veld:0.001},
+    {txid:id(4799),block_height:4799,type:'received',net_veld:10,fee_veld:0}
+  ]));
+  classified.ctx.historyFilter='received'; await classified.ctx.loadHistory();
+  assert.match(classified.element('h-list').innerHTML,/Staking Reward/);
+  assert.match(classified.element('h-list').innerHTML,/Co-Mine Payout/);
+  assert.match(classified.element('h-list').innerHTML,/Validator Rewards/);
+  assert.doesNotMatch(classified.element('h-list').innerHTML,/Received|Near-miss submission/);
+  classified.ctx.historyFilter='transfers'; classified.ctx.renderHistory();
+  assert.match(classified.element('h-list').innerHTML,/Received/);
+  assert.doesNotMatch(classified.element('h-list').innerHTML,/Staking Reward|Co-Mine Payout|Validator Rewards/);
   console.log('PASS wallet history pagination: older sends, all fee rows, bounded cursor batches, explicit partial/error states, deduplication, refresh coalescing and address races');
 })().catch(e=>{console.error(e);process.exitCode=1;});

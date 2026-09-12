@@ -5,6 +5,10 @@ are tracked separately; publishing source does not release new binaries.
 
 ## 3.2.0 - 2026-09-12
 
+- Classify staking and co-mining payouts from their funding pools and restore them to the Rewards tab, including existing history.
+- Stop near-miss submissions after a confirmed entry, retain eligibility across restarts, and retry claims that expire without confirming.
+- Refresh mining candidates for newly received near-miss claims and select at most one entry per wallet in a window.
+- Restore co-mining credits when rolling back a block and report the correct lottery window boundaries.
 - Re-evaluate the mining clock guard after local time corrections without waiting for peers to reconnect.
 - Keep worker status text inside its column.
 - Add optional automatic signed updates, configurable in Node Settings or the paired portal.
