@@ -1,3 +1,21 @@
+## 3.1.11 - Automatic updates with mining resume
+
+Enable **Automatic updates** in Node Settings or the paired portal. While the
+app stays open, it checks every 30 minutes and keeps mining during download and
+verification. Once the signed package is ready, it updates and resumes the
+previously running node with the same workers, identity, settings, pairing,
+data directory, and sync progress. A stopped node stays stopped.
+
+The session unlock crosses the update through a one-use Windows-protected
+handoff. No passphrase is sent to the update service or saved in settings.
+Installation waits while the local wallet is open. Download failures retry
+without stopping mining, and an installation failure rolls back when possible.
+
+Clients on 3.1.10 or earlier need one initial update and sign-in. The feature
+does not enable mining after a normal Windows reboot. Keep the app open and
+Automatic updates enabled; disk, permission, or integrity failures may still
+need attention. No consensus rules or mining parameters change.
+
 ## 3.1.10 - Unattended portal control
 
 Completing the pair-code setup now enables remote start, stop, encrypted

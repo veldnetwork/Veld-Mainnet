@@ -3,7 +3,7 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
-## Unreleased
+## 3.1.11 - 2026-09-12
 
 - Add optional automatic signed updates, configurable in Node Settings or the paired portal.
 - Keep mining during download and verification, then resume the previously running node with its saved workers after installation.
