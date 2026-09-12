@@ -1458,6 +1458,16 @@ public:
             target);
     }
 
+    bool NmsHasExpiredCanonicalParent(const veld::NmsRecord& rec) const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        const auto parent = GetHeightByHashLocked(rec.header.prev_block_hash);
+        if (!parent || chain_.empty() || *parent >= chain_.size() - 1)
+            return false;
+        CanonicalPowTarget target;
+        return DecodeExpectedVeldTarget(
+            rec.header.bits, ComputeNextBitsAtLocked(*parent), target);
+    }
+
     NmsValidationDisposition ValidateNmsLocking(
                             const veld::NmsRecord& rec,
                             uint64_t enclosing_block_height,

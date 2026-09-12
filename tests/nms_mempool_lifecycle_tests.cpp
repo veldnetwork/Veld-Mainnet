@@ -7,6 +7,7 @@
 
 #include "core/mempool.h"
 #include "crypto/veld_signing.h"
+#include "network/tcp.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -125,6 +126,64 @@ int main() {
             Blockchain::GetLastRejectTag() == "nms_validation_failed",
             "baseline completed candidate rejected for expired claim");
 #else
+        Mempool relay;
+#ifdef EXPECT_STALE_RELAY_DEFECT
+        const auto expired_result = Mempool::AddResult::INVALID;
+#else
+        const auto expired_result = Mempool::AddResult::EXPIRED_NMS;
+#endif
+        for (unsigned retry = 0; retry < 12; ++retry)
+            Check(relay.Add(old, MIN_TX_FEE, chain.Height(), chain) ==
+                expired_result,
+                "expired relay is not an invalid-transaction offence");
+        Check(!relay.Contains(old.GetTxID()), "expired relay never admitted");
+        Check(!relay.GetSpender(old_input.tx_hash, old_input.output_index),
+            "expired relay never reserves funds");
+        auto forged = old;
+        forged.inputs[0].script_sig.back() ^= 1;
+        forged.InvalidateTxIDCache();
+        Check(relay.Add(forged, MIN_TX_FEE, chain.Height(), chain) ==
+            Mempool::AddResult::INVALID, "forged expired claim still invalid");
+        auto unknown_header = Claim(chain, 333);
+        unknown_header.prev_block_hash.fill(0xa4);
+        const auto unknown = Spend(old_input, signer, unknown_header);
+        Check(relay.Add(unknown, MIN_TX_FEE, chain.Height(), chain) ==
+            Mempool::AddResult::INVALID, "unknown parent is not expiry");
+        auto wrong_target = ExtractNmsFromTx(old)->header;
+        wrong_target.bits ^= 1;
+        const auto malformed = Spend(old_input, signer, wrong_target);
+        Check(relay.Add(malformed, MIN_TX_FEE, chain.Height(), chain) ==
+            Mempool::AddResult::INVALID, "incorrect old target still invalid");
+        compat::InitNetwork();
+        {
+            Mempool peer_pool;
+            net::NodeServer server(0, MAINNET_MAGIC, chain, peer_pool);
+            const std::string peer_ip = "198.51.100.68";
+            const auto fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            Check(compat::IsValidSocket(fd), "peer fixture socket");
+            net::Connection peer(fd, peer_ip, 32068, true);
+            const P2PMessage message(MAINNET_MAGIC, MessageType::TX, old.Serialize());
+            for (unsigned retry = 0; retry < 12; ++retry)
+                server.TestDispatchPeerMessage(peer, message);
+#ifdef EXPECT_STALE_RELAY_DEFECT
+            Check(server.IsBanned(peer_ip), "baseline reproduces stale relay ban");
+#else
+            Check(!server.IsBanned(peer_ip) &&
+                server.TestViolationScore(peer_ip) == 0,
+                "repeated expired relay has zero peer penalty");
+            Check(net::NodeServer::MempoolRejectBanScore(expired_result) == 0,
+                "expiration carries no ban score");
+#endif
+            Check(!peer_pool.Contains(old.GetTxID()), "peer expiry never admitted");
+            const auto invalid_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            Check(compat::IsValidSocket(invalid_fd), "invalid peer fixture socket");
+            const std::string invalid_ip = "198.51.100.69";
+            net::Connection invalid_peer(invalid_fd, invalid_ip, 32069, true);
+            server.TestDispatchPeerMessage(invalid_peer,
+                P2PMessage(MAINNET_MAGIC, MessageType::TX, malformed.Serialize()));
+            Check(server.TestViolationScore(invalid_ip) == 10,
+                "invalid target still penalized through peer handler");
+        }
         Check(!Contains(selected, old), "expired claim excluded before maintenance");
         const auto direct = pool.GetBlockTransactions(20, MAX_BLOCK_SIZE, &chain);
         for (const auto& tx : direct)

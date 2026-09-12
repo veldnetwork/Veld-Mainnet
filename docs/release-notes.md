@@ -13,6 +13,9 @@ Expired near-miss claims are removed from the mempool and excluded from new
 mining candidates. Previously, a claim left pending after its target block
 passed could invalidate repeated block attempts. Valid claims and ordinary
 transactions remain eligible, and local rejection logs include the reason.
+Authenticated claims for an older canonical parent are discarded without
+penalizing the sending peer. Invalid signatures and invalid targets retain
+their existing rejection and peer penalties.
 
 The Windows package removes the separate update-repair launcher. Updates and
 interrupted-update recovery remain available through Settings and the normal

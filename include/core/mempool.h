@@ -97,6 +97,9 @@ public:
         // source/global work budget or the local dataset was unavailable.
         // This is retryable local state, not peer-authored invalid consensus.
         DEFERRED_LOCAL_WORK,
+        // A signed claim names an older canonical parent with its correct
+        // target. Expiration is local relay policy, not a peer offence.
+        EXPIRED_NMS,
         // The referenced outpoint is absent from both the canonical UTXO set
         // and the current mempool.  This is an orphan/race classification, not
         // proof that the peer authored an intrinsically invalid transaction.
@@ -119,6 +122,7 @@ public:
             case AddResult::FEE_TOO_LOW: return "fee_too_low";
             case AddResult::INVALID: return "invalid";
             case AddResult::DEFERRED_LOCAL_WORK: return "deferred_local_work";
+            case AddResult::EXPIRED_NMS: return "expired_nms";
             case AddResult::MISSING_INPUT: return "missing_input";
             case AddResult::FULL: return "full";
             case AddResult::DOUBLE_SPEND: return "double_spend";
@@ -883,6 +887,8 @@ private:
         // parents cannot rotate dataset identities.
         if (nms_rec_for_admission) {
             if (!all_inputs_on_chain_pre) return AddResult::MISSING_INPUT;
+            if (chain.NmsHasExpiredCanonicalParent(*nms_rec_for_admission))
+                return AddResult::EXPIRED_NMS;
             const auto nms_validation = chain.ValidateNmsLocking(
                 *nms_rec_for_admission,
                 static_cast<uint64_t>(current_height) + 1,

@@ -1114,8 +1114,8 @@ public:
     }
 
     // Ban-credit policy for the mempool results whose distinction is
-    // security-critical. Missing parents and deferred local NMS work carry
-    // zero credit; an intrinsically invalid transaction remains punishable.
+    // security-critical. Missing parents, expired claims and deferred local
+    // NMS work carry zero credit; invalid transactions remain punishable.
     // Kept callable so the regression suite locks both sides of the policy.
     static uint32_t MempoolRejectBanScore(Mempool::AddResult result) {
         return result == Mempool::AddResult::INVALID ? 10u : 0u;
@@ -7215,6 +7215,10 @@ private:
                             RecordViolation(conn.RemoteAddr(),
                                             MempoolRejectBanScore(add_res),
                                             "tx_nms_local_work_deferred");
+                            break;
+                        case Mempool::AddResult::EXPIRED_NMS:
+                            // Older clients can relay a claim after its
+                            // parent advances. Drop it without ban credit.
                             break;
                         case Mempool::AddResult::MALFORMED_VALIDATOR_OP:
                             RecordViolation(conn.RemoteAddr(), 10,

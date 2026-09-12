@@ -9,6 +9,8 @@ are tracked separately; publishing source does not release new binaries.
 - Retry failed near-miss submissions without consuming the submission window.
 - Exclude expired near-miss claims from new blocks and remove their pending
   descendants; report the reason when a locally mined block is rejected.
+- Discard authenticated claims for an expired canonical parent without
+  penalizing peers that still relay them.
 - Check signed transaction size before staking and explain when wallet cleanup
   is needed; avoid browser failures when validating large transaction hex.
 - Correct co-mining pool percentage metadata to the existing 20% allocation.
