@@ -4880,6 +4880,7 @@ if (__veldTxChannel) {
       try { if (window._wCachedPoolInfo) delete window._wCachedPoolInfo; } catch(_){}
       try { if (window._wStakePerDayByAddr) window._wStakePerDayByAddr = {}; } catch(_){}
       try { if (window._wCachedUtxos) delete window._wCachedUtxos; } catch(_){}
+      refreshWalletAfterBroadcast(ev.data.from_addr || currentAddr);
     }
   };
 }
@@ -5798,6 +5799,7 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
           }
         }
       } catch(_){}
+      try { refreshWalletAfterBroadcast(identity.address); } catch(_){}
       // Cross-tab notification so every other open wallet tab drops
       // its stale UTXO view.
       try {
@@ -5805,6 +5807,7 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
           __veldTxChannel.postMessage({
             kind: 'tx_sent',
             method: prepareMethod,
+            from_addr: identity.address,
             txid: _txid_str,
             at: Date.now()
           });
@@ -9337,6 +9340,7 @@ function copyAddr() {
   if (addr) { var oc=addr.style.color; addr.style.color='var(--em)'; setTimeout(function(){ addr.style.color=oc; }, 1500); }
 }
 
+var walletBalanceRevision = 0;
 function loadWalletAddr(addr) {
   if (!addr) addr = document.getElementById('w-addr-input').value.trim();
   if (!addr) return;
@@ -9365,6 +9369,8 @@ function loadWalletAddr(addr) {
   // anything non-V) never lands in localStorage. If it fails the guard
   // the wallet simply stays on the previous selection.
   if (!_setCurrentAddr(addr)) return;
+  var balanceRevision = ++walletBalanceRevision;
+  var balanceIsCurrent = function() { return balanceRevision === walletBalanceRevision && addr === currentAddr; };
   if (savedAddrs.indexOf(addr) === -1) {
     savedAddrs.unshift(addr);
     if (savedAddrs.length > 5) savedAddrs.pop();
@@ -9379,6 +9385,7 @@ function loadWalletAddr(addr) {
   if (subEl) subEl.textContent = addr;
     generateWalletQR(addr);
   rpc('getbalance',[addr]).then(function(r) {
+    if (!balanceIsCurrent()) return;
     var total     = typeof r === 'object' ? (r.balance_veld   || 0) : (r || 0);
     var staked    = typeof r === 'object' ? (r.staked_veld    || 0) : 0;
     // ZERO-SPENDABLE FIX. The `||` fallback treats 0 as
@@ -9551,6 +9558,7 @@ function loadWalletAddr(addr) {
   // failure (or old node) the row stays hidden and the hero shows the
   // address total exactly as before.
   rpc('getvalidators', []).then(function(vd) {
+    if (!balanceIsCurrent()) return;
     var bonded = 0;
     if (vd && typeof vd === 'object' && Array.isArray(vd.validators)) {
       for (var i = 0; i < vd.validators.length; i++) {
@@ -10857,24 +10865,46 @@ function renderSavedChips() {
 // ═══════════════════════════════════════
 // SEND
 // ═══════════════════════════════════════
+var sendBalanceRevision = 0;
+function sendSourceAddress() {
+  var row = document.getElementById('s-from-row');
+  var input = document.getElementById('s-from');
+  return row && row.style.display === 'none' ? currentAddr : (input ? input.value.trim() : '');
+}
+
+function refreshWalletAfterBroadcast(address) {
+  try { if (address && address === sendSourceAddress()) onFromChange(); } catch(_){}
+  try { if (address && address === currentAddr) loadWalletAddr(address); } catch(_){}
+}
+
 function onFromChange() {
-  var addr = document.getElementById('s-from').value.trim();
-  if (!addr) return;
-  rpc('getbalance',[addr]).then(function(r) {
+  var addr = sendSourceAddress();
+  var revision = ++sendBalanceRevision;
+  var available = document.getElementById('s-avail');
+  if (available) available.textContent = addr ? 'Updating…' : '—';
+  window._sUtxoData = [];
+  window._sUtxoPage = 1;
+  renderSendUtxos();
+  if (!addr) return Promise.resolve();
+  var stillCurrent = function() { return revision === sendBalanceRevision && addr === sendSourceAddress(); };
+  var balance = rpc('getbalance',[addr]).then(function(r) {
+    if (!stillCurrent()) return;
     var total     = typeof r === 'object' ? (r.balance_veld   || 0) : (r || 0);
     // !=null check preserves a real 0 from `||`-falsy fallback.
     var spendable = (typeof r === 'object' && r.spendable_veld != null) ? r.spendable_veld : total;
     // v2: compact inline readout, just the spendable number.
     // Previously appended "(X staked)" suffix which was too loud now that
     // the field lives next to the Amount label.
-    document.getElementById('s-avail').textContent = fmt(spendable,2) + ' VELD';
-  }).catch(function(){});
-  rpc('listunspent',[addr]).then(function(utxos) {
+    if (available) available.textContent = fmt(spendable,2) + ' VELD';
+  }).catch(function(){ if (stillCurrent() && available) available.textContent = 'Unavailable'; });
+  var outputs = rpc('listunspent',[addr]).then(function(utxos) {
+    if (!stillCurrent()) return;
     window._sUtxoData = utxos || [];
     window._sUtxoPage = 1;
     renderSendUtxos();
   }).catch(function(){});
   updateConfirm();
+  return Promise.all([balance, outputs]);
 }
 
 function updateConfirm() {
@@ -10991,7 +11021,6 @@ function doSend() {
     if (result && result.txid) {
       rpc('getblockchaininfo').then(function(d){var tip=Number(d&&(d.blocks!=null?d.blocks:d.height));if(!Number.isSafeInteger(tip)||tip<0)throw new Error('invalid chain height');var nextBlock=tip+1;msgEl.innerHTML='<div class="alert alert-ok">✓ Sent!<br><span style="font-size:10px;color:var(--muted)">TXID: </span><a href="https://explorer.veld.network/tx/'+escHtml(result.txid)+'" target="_blank" rel="noopener noreferrer" class="hash-orange" style="font-size:10px;word-break:break-all">'+escHtml(result.txid)+'</a><br><span style="font-size:10px;color:var(--muted)">Expected in block </span><a href="https://explorer.veld.network/block/height/'+escHtml(nextBlock)+'" target="_blank" rel="noopener noreferrer" style="color:var(--em);font-size:11px">'+escHtml(nextBlock)+'</a></div>';}).catch(function(){msgEl.innerHTML='<div class="alert alert-ok">✓ Sent! TXID: <a href="https://explorer.veld.network/tx/'+escHtml(result.txid)+'" target="_blank" rel="noopener noreferrer" class="hash-orange" style="font-size:10px;word-break:break-all">'+escHtml(result.txid)+'</a></div>';});
       clearSend();
-      if (currentAddr === from) loadWalletAddr(from);
     } else {
       // Keep the dynamic server response out of the HTML parser.
       msgEl.innerHTML = '<div class="alert alert-err">⚠ Unexpected response: <span id="send-err-detail"></span></div>';

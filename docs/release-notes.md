@@ -25,6 +25,10 @@ retried in the same window. Mining candidates refresh when eligible near-miss
 claims arrive. Wallet history identifies staking and co-mining distributions
 from their pool funding, including older payouts.
 
+After a send, available funds and the output list refresh in the sending tab
+and other open wallet tabs. Older responses cannot overwrite the current
+balance. Explorer transaction history accepts the rebuilt reward index.
+
 ## 3.1.10 - Unattended portal control
 
 Completing the pair-code setup now enables remote start, stop, encrypted

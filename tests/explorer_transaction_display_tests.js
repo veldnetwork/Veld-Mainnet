@@ -31,3 +31,27 @@ for (const change of [{coinbase:true}, {coinbase:undefined}, {vin:[]}, {vin:[tx.
 assert.equal(isConsolidation(null,tx,address),false);
 assert.equal(isConsolidation(entry,null,address),false);
 console.log('Explorer transaction display tests passed.');
+
+const {extractFunction} = require('./javascript_function_source');
+const script = fs.readFileSync(path.join(__dirname, '../website/explorer-transactions-v1.js'), 'utf8');
+const proxy = fs.readFileSync(path.join(__dirname, '../pkg/reverse-proxy/veld-explorer-transaction-data.conf'), 'utf8');
+const cursorRule = new RegExp(proxy.match(/\$arg_cursor !~ "([^"]+)"/)[1]);
+(async () => {
+  for (const version of [1, 2]) {
+    const cursor = 'ah' + version + ':r:' + '1'.repeat(50) + ':' + '9'.repeat(20) + ':' + '0'.repeat(10) + ':' + '2'.repeat(64);
+    assert(cursorRule.test(cursor));
+    let calls = 0;
+    const history = vm.createContext({addressPattern:/^V[1-9A-HJ-NP-Za-km-z]{25,40}$/,
+      read:async url => {
+        if (++calls === 1) return {entries:[{txid:'3'.repeat(64),block_height:4406}],has_more:true,next_cursor:cursor};
+        assert(url.endsWith('&cursor=' + cursor));
+        return {entries:[entry],has_more:false,next_cursor:''};
+      }});
+    vm.runInContext(extractFunction(script, 'historyEntry'), history);
+    assert.equal((await history.historyEntry(address, entry.txid, 4405)).txid, entry.txid);
+    assert.equal(calls, 2);
+  }
+  for (const invalid of ['ah3:r:', 'ah2:r:invalid', '"', 'ah2:r:' + '1'.repeat(300)])
+    assert(!cursorRule.test(invalid));
+  console.log('PASS: old and rebuilt reward-history cursors across Explorer and proxy');
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -59,7 +59,7 @@
     function page(cursor, count) {
       var path = '/api/v1/transaction-history?address=' + address;
       if (cursor) {
-        if (!/^ah1:r:[a-f0-9]{50}:[0-9]{20}:[0-9]{10}:[a-f0-9]{64}$/.test(cursor))
+        if (!/^ah[12]:r:[a-f0-9]{50}:[0-9]{20}:[0-9]{10}:[a-f0-9]{64}$/.test(cursor))
           throw new Error('Invalid history cursor');
         path += '&cursor=' + cursor;
       }

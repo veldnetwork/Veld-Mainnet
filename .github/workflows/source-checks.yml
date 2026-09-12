@@ -74,6 +74,7 @@ jobs:
           - fixture: reliability_gui_state_tests
           - fixture: windows_auto_update_tests
           - fixture: stake_fragmentation_tests
+          - fixture: wallet_pending_spend_tests
           - fixture: nms_mempool_lifecycle_tests
             standalone: true
           - fixture: nms_template_refresh_tests
