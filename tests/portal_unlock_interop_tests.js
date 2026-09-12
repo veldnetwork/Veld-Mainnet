@@ -33,6 +33,16 @@ vm.runInContext(['encryptNodePassphrase','canonicalPayload','commandEnvelope','n
   const signature = await webcrypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,new TextEncoder().encode(context.commandEnvelope(command)));
   command.signature = b64url(context.normalizeEcdsaSignature(signature));
   fs.writeFileSync(path.join(root,'signed-command.json'),JSON.stringify({portal_protocol:4,device_id:17,paired:true,pair_code:null,pair_expires:0,report_interval:5,command_key:commandKey,command:{...command,id:1}}));
+  for (const action of ['node.start','node.stop','node.signin','updates.check','updates.install']) {
+    const control = {...command,action,payload:action==='node.signin'?payload:{}};
+    const signature = await webcrypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,new TextEncoder().encode(context.commandEnvelope(control)));
+    control.signature = b64url(context.normalizeEcdsaSignature(signature));
+    fs.writeFileSync(path.join(root,action+'.json'),JSON.stringify({portal_protocol:4,device_id:17,paired:true,pair_code:null,pair_expires:0,report_interval:5,command_key:commandKey,command:{...control,id:1}}));
+  }
+  const otherPair = await webcrypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
+  const otherJwk = await webcrypto.subtle.exportKey('jwk',otherPair.publicKey);
+  const otherKey = {x:otherJwk.x,y:otherJwk.y,id:Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(`VELD_PORTAL_KEY_V1\n${otherJwk.x}\n${otherJwk.y}`))).toString('hex')};
+  fs.writeFileSync(path.join(root,'other-pairing.json'),JSON.stringify({portal_protocol:4,device_id:17,paired:true,pair_code:null,pair_expires:0,report_interval:5,command_key:otherKey,command:null}));
   const output = execFileSync(binary, ['verify', root], {encoding:'utf8'});
   assert(output.includes('PASS:'));
   for (const value of ['', 'x'.repeat(1025), 'hello\0world']) {
@@ -40,5 +50,5 @@ vm.runInContext(['encryptNodePassphrase','canonicalPayload','commandEnvelope','n
   }
   console.log(output.trim());
   console.log('PASS: shipping browser encryptor and native decryptor agree; invalid input rejected');
-  if (process.argv[4]) console.log(execFileSync(path.resolve(process.argv[4]),[root],{encoding:'utf8'}).trim());
+  if (process.argv[4]) console.log(execFileSync(path.resolve(process.argv[4]),[root],{encoding:'utf8',timeout:30000}).trim());
 })().catch(error=>{console.error(error);process.exitCode=1;});

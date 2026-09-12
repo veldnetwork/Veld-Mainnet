@@ -18,7 +18,7 @@ require(
     '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
     "portal uses the wallet iOS standalone viewport mode",
 )
-require("const CACHE='veld-portal-shell-v19';", "PWA shell cache advances with remote sign-in support")
+require("const CACHE='veld-portal-shell-v20';", "PWA shell cache advances with unattended portal control")
 require('id="mobile-nav" aria-label="Primary" hidden', "mobile nav starts hidden until session recovery")
 require('$("mobile-nav").hidden=!d', "mobile nav visibility follows paired-machine availability")
 require('$("app-view").classList.toggle("unpaired",!d)', "pair screen receives the unpaired layout state")

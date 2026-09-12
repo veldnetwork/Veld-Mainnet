@@ -3,6 +3,13 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## 3.1.10 - 2026-09-11
+
+- Completing portal pairing enables remote start, stop, encrypted sign-in, and signed updates without another PC prompt.
+- Preserve existing pairing keys and replay state when enabling remote control after an update.
+- Reject changed pairing keys, corrupt saved trust, replayed commands, and revoked remote access.
+- Explain when an older installed client needs an initial update before unattended control is available.
+
 ## 3.1.9 - 2026-09-11
 
 - Start and stop a paired Windows node and run signed updates from the portal

@@ -24,9 +24,9 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
-**3.1.9** adds portal start, stop, encrypted sign-in, and signed updates after
-one approval on the paired PC. The node app must remain open with Remote access
-enabled. It includes the 3.1.8 mining and updater reliability fixes and preserves
+**3.1.10** enables portal start, stop, encrypted sign-in, and signed updates as
+soon as pairing is complete, without another PC approval. The node app must
+remain open with Remote access enabled. It includes the mining and updater reliability fixes and preserves
 saved settings, pairing, and chain data. See the [release notes](docs/release-notes.md)
 and [download the signed client](https://veld.network/#download).
 
@@ -34,7 +34,7 @@ The stake minimum is **500 VELD**. Co-mining eligibility requires **1,000 VELD**
 staked under the mining address; validator registration uses a separate bond.
 The existing mainnet consensus rules and checkpoint authority are unchanged.
 
-The [`v3.1.8` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.8)
+The [`v3.1.10` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.1.10)
 identifies the published release source. Signed package manifests identify
 the distributed binaries. `main` may contain later maintenance and documentation updates. [CHANGELOG.md](CHANGELOG.md)
 distinguishes hosted updates from packaged changes.

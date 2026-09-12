@@ -1,3 +1,21 @@
+## 3.1.10 - Unattended portal control
+
+Completing the pair-code setup now enables remote start, stop, encrypted
+sign-in, and signed updates. These actions no longer ask for approval on the
+paired PC. Existing pairings keep their command key and replay protection.
+
+Keep the Veld Node app open with Remote access enabled. From the portal, choose
+**Settings → Release and updates → Check now → Update now**. After the app
+reconnects, use **Sign in & mine** and enter the node passphrase in the portal.
+The browser encrypts it for that PC; the relay cannot read it and the passphrase
+is not saved to disk. Mining starts after identity and chain checks pass.
+
+An older installed client that still asks for PC approval needs this update
+once before it can accept unattended commands. Existing pairing, worker count,
+identity, chain data, and other settings are retained. Disabling Remote access
+or creating a new pair code revokes control. Other settings changes retain their
+existing local confirmation. No consensus or mining rules change.
+
 ## 3.1.9 - Portal control
 
 The Windows node supports remote start, stop, sign-in, and signed updates.

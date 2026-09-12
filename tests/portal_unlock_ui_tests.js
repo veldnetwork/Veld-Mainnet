@@ -17,7 +17,7 @@ async function main() {
   const id = hex(new Uint8Array(await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(`VELD_PORTAL_UNLOCK_KEY_V1\n${jwk.n}\n${jwk.e}`))));
   const unlock = {alg:'RSA-OAEP-256', n:jwk.n, e:jwk.e, id, identity:'a'.repeat(64)};
   const pair = await webcrypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']);
-  const elements = new Map(), pins = new Map(), requests = [];
+  const elements = new Map(), pins = new Map(), requests = [], notices = [];
   const $ = name => {
     if (!elements.has(name)) elements.set(name, {value:'',textContent:'',disabled:false,open:false,
       showModal(){this.open=true},close(){this.open=false},focus(){}});
@@ -37,10 +37,10 @@ async function main() {
     snap:d=>d.snapshot,current:()=>device,openCommandDb:async()=>db,commandStore:'keys',
     commandKey:async()=>({pair,id:'b'.repeat(64)}),ensureDeviceCommandKey:async()=>{},
     api:async(url,method,body)=>{requests.push(JSON.parse(JSON.stringify({url,method,body})))},
-    toast(){},refresh:async()=>{}});
+    toast(message){notices.push(message)},refresh:async()=>{}});
   vm.runInContext('let nodeSignInTarget=null,nodeSignInBusy=false,actionQueue=Promise.resolve();',context);
   vm.runInContext(['encryptNodePassphrase','pinUnlockKey','openNodeSignIn','closeNodeSignIn',
-    'submitNodeSignIn','signedAction','canonicalPayload','commandEnvelope','normalizeEcdsaSignature']
+    'submitNodeSignIn','signedAction','portalControlStatus','canonicalPayload','commandEnvelope','normalizeEcdsaSignature']
     .map(name=>extractFunction(script,name)).join('\n'),context);
   await context.openNodeSignIn();
   assert.equal(pins.get('node-unlock-17'),unlock.id);
@@ -51,6 +51,10 @@ async function main() {
   await Promise.all([first,second]);
   assert.equal(requests.length,1);
   assert.equal(requests[0].body.action,'node.signin');
+  assert.equal(notices[0],'Signed command sent to the node');
+  assert.match(context.portalControlStatus({snapshot:{pairing_control:true}}),/Pairing is finishing/);
+  assert.match(context.portalControlStatus({snapshot:{unlock_key:unlock}}),/one update on the PC/);
+  assert.match(context.portalControlStatus({snapshot:{}}),/one update on the PC/);
   assert.deepEqual(Object.keys(requests[0].body.payload).sort(),['ciphertext','identity','iv','key_id','wrapped_key']);
   assert(!JSON.stringify(requests).includes('Synthetic browser-only passphrase'));
   assert.equal($('node-signin-password').value,'');

@@ -925,6 +925,31 @@ std::string CanonicalPortalCommandPayload(
     return {};
 }
 
+bool EvaluatePortalPairing(const MonitoringReply& reply,
+                           const PortalTrustState& current,
+                           PortalTrustState& next, std::string& error) {
+    next = {};
+    error = "Complete pairing in the portal before sending commands";
+    if (!reply.paired || !reply.command_key_present || reply.device_id == 0 ||
+        !IsPortalCommandKey(reply.command_key_x, reply.command_key_y,
+                            reply.command_key_id)) return false;
+    if (current.Valid() && (current.device_id != reply.device_id ||
+            current.key_id != reply.command_key_id ||
+            current.key_x != reply.command_key_x ||
+            current.key_y != reply.command_key_y)) {
+        error = "The paired command key changed; create a new pair code to reconnect";
+        return false;
+    }
+    next = current;
+    next.device_id = reply.device_id;
+    next.key_id = reply.command_key_id;
+    next.key_x = reply.command_key_x;
+    next.key_y = reply.command_key_y;
+    next.unattended = true;
+    error.clear();
+    return true;
+}
+
 std::string PortalCommandEnvelope(const MonitoringReply::Command& command) {
     const std::string payload = CanonicalPortalCommandPayload(command);
     if (payload.empty()) return {};
@@ -1888,7 +1913,9 @@ public:
 #ifdef VELD_GUI_TEST_INSTANCE
     // Console qualification never runs the GUI constructor's machine discovery,
     // service management or network workers. All state is explicitly disposable.
-    explicit NodeGuiApp(const std::filesystem::path& state) : state_dir_(state) {}
+    explicit NodeGuiApp(const std::filesystem::path& state) : state_dir_(state) {
+        LoadRemoteTrust();
+    }
     friend struct GuiStateQualification;
 #endif
     explicit NodeGuiApp(HINSTANCE instance) : instance_(instance) {
@@ -1909,7 +1936,7 @@ public:
         ParseArguments();
         std::error_code state_error;
         std::filesystem::create_directories(state_dir_, state_error);
-        (void)LoadPortalTrust(state_dir_ / L"remote-trust.dat", remote_trust_);
+        LoadRemoteTrust();
         LoadSettings();
         const auto prior_update_failure = ReadLastUpdateFailure(InstallRoot());
         if (!prior_update_failure.empty()) {
@@ -2030,6 +2057,8 @@ private:
     std::atomic<bool> stopping_node_{false};
     std::atomic<bool> session_unlock_confirmed_{false};
     veld::node_gui::PortalUnlockKey remote_unlock_key_;
+    bool portal_trust_load_failed_{false};
+    std::atomic<bool> portal_control_ready_{false};
     std::mutex session_passphrase_mutex_;
     std::vector<BYTE> protected_session_passphrase_;
     size_t protected_session_passphrase_chars_{0};
@@ -5800,11 +5829,12 @@ private:
                     L"portal command access will be revoked.",
                     L"Reset Veld Portal pairing",
                     MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES) {
-                portal_pair_reset_requested_.store(true);
+                const bool saved = BeginRemotePairReset();
                 {
                     std::lock_guard<std::mutex> lock(remote_monitor_mutex_);
-                    remote_monitor_status_.detail =
-                        L"Requesting a new one-time pairing code...";
+                    remote_monitor_status_.detail = saved
+                        ? L"Requesting a new one-time pairing code..."
+                        : L"Pairing reset could not be saved. Remote commands are blocked; retrying.";
                     remote_monitor_status_.report_ok = false;
                 }
                 worker_cv_.notify_all();
@@ -6739,27 +6769,76 @@ private:
         return {};
     }
 
-    bool ConfirmRemoteCommand(const MonitoringReply::Command& command,
-                              bool new_trust, bool grant_control = false) const {
+    bool ConfirmRemoteCommand(const MonitoringReply::Command& command) const {
         const std::wstring action = RemoteCommandDescription(command);
         if (action.empty()) return false;
         std::wstring message = L"The Veld Portal requests this exact action:\n\n" +
             action + L"\n\n";
-        if (new_trust) {
-            std::wstring fingerprint = Utf8ToWide(command.key_id.substr(0, 16));
-            message += L"This is a new portal pairing identity. Approving will "
-                       L"also trust command key " + fingerprint +
-                       L" for this pairing.\n\n";
-        }
-        if (grant_control) {
-            message += L"Allow this paired browser to start, stop, sign in, and install signed updates without further local prompts. "
-                       L"Turn off Remote access or create a new pair code to revoke access.\n\n";
-        }
         message += L"The command is signed and time-limited. No action will be "
                    L"taken unless you choose Yes.";
         return MessageBoxW(hwnd_, message.c_str(),
             L"Approve Veld Portal action",
             MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2 | MB_SETFOREGROUND) == IDYES;
+    }
+
+    void LoadRemoteTrust() {
+        const auto path = state_dir_ / L"remote-trust.dat";
+        std::error_code error;
+        const bool exists = std::filesystem::exists(path, error);
+        portal_trust_load_failed_ = error ||
+            (exists && !LoadPortalTrust(path, remote_trust_));
+        error.clear();
+        const bool reset_pending = std::filesystem::exists(
+            state_dir_ / L"remote-pair-reset.dat", error);
+        portal_pair_reset_requested_.store(reset_pending || bool(error));
+    }
+
+    bool BeginRemotePairReset() {
+        std::lock_guard<std::mutex> lock(remote_trust_mutex_);
+        portal_pair_reset_requested_.store(true);
+        portal_control_ready_.store(false);
+        const std::string marker = "VELD_PORTAL_RESET_V1\n";
+        return veld::node_gui::WriteStateFile(state_dir_ / L"remote-pair-reset.dat",
+            reinterpret_cast<const BYTE*>(marker.data()), marker.size());
+    }
+
+    bool CompleteRemotePairReset() {
+        std::lock_guard<std::mutex> lock(remote_trust_mutex_);
+        const auto trust_path = state_dir_ / L"remote-trust.dat";
+        std::error_code error;
+        const bool exists = std::filesystem::exists(trust_path, error);
+        if (error || (exists && !DeleteFileW(trust_path.c_str()))) return false;
+        if (!DeleteFileW((state_dir_ / L"remote-pair-reset.dat").c_str())) return false;
+        remote_trust_ = {};
+        portal_trust_load_failed_ = false;
+        portal_control_ready_.store(false);
+        portal_pair_reset_requested_.store(false);
+        return true;
+    }
+
+    bool EnrollPortalControl(const MonitoringReply& reply, std::string& rejection) {
+        std::lock_guard<std::mutex> lock(remote_trust_mutex_);
+        portal_control_ready_.store(false);
+        if (!remote_monitoring_enabled_.load() || portal_pair_reset_requested_.load()) {
+            rejection = "Remote access is disabled or pairing is being reset";
+            return false;
+        }
+        if (portal_trust_load_failed_) {
+            rejection = "Saved pairing could not be verified; create a new pair code to reconnect";
+            return false;
+        }
+        PortalTrustState enrolled;
+        if (!EvaluatePortalPairing(reply, remote_trust_, enrolled, rejection)) return false;
+        if (!remote_trust_.Valid() || !remote_trust_.unattended) {
+            if (!SavePortalTrust(state_dir_ / L"remote-trust.dat", enrolled)) {
+                rejection = "Pairing could not be saved securely; retrying automatically";
+                return false;
+            }
+            remote_trust_ = std::move(enrolled);
+        }
+        portal_control_ready_.store(true);
+        rejection.clear();
+        return true;
     }
 
     bool AuthorizeRemoteCommand(const MonitoringReply::Command& command,
@@ -6771,6 +6850,10 @@ private:
         PortalTrustState current;
         {
             std::lock_guard<std::mutex> lock(remote_trust_mutex_);
+            if (!portal_control_ready_.load() || portal_trust_load_failed_) {
+                rejection = "Pairing is not ready for control; wait for the node to reconnect";
+                return false;
+            }
             current = remote_trust_;
         }
         PortalTrustState next;
@@ -6778,32 +6861,28 @@ private:
             command, current, static_cast<uint64_t>(std::time(nullptr)), next,
             rejection);
         if (verdict == PortalCommandTrustVerdict::Reject) return false;
-        const bool new_trust = verdict == PortalCommandTrustVerdict::NewPairing;
+        if (verdict != PortalCommandTrustVerdict::ExistingPairing || !current.unattended) {
+            rejection = "Pairing is not ready for control; wait for the node to reconnect";
+            return false;
+        }
         const bool control = UnattendedPortalAction(command.action);
-        const bool needs_consent = new_trust || !control || !current.unattended;
-        if (needs_consent && !ConfirmRemoteCommand(command, new_trust, control)) {
+        if (!control && !ConfirmRemoteCommand(command)) {
             rejection = "Command was denied on the paired machine";
             return false;
         }
+        std::lock_guard<std::mutex> trust_lock(remote_trust_mutex_);
         if (!remote_monitoring_enabled_.load() || portal_pair_reset_requested_.load() ||
-            EvaluatePortalCommandTrust(command, current, static_cast<uint64_t>(std::time(nullptr)), next,
-                rejection) == PortalCommandTrustVerdict::Reject) {
+            !portal_control_ready_.load() || portal_trust_load_failed_ || !remote_trust_.unattended ||
+            EvaluatePortalCommandTrust(command, remote_trust_, static_cast<uint64_t>(std::time(nullptr)), next,
+                rejection) != PortalCommandTrustVerdict::ExistingPairing) {
             if (rejection.empty()) rejection = "Remote access changed while approval was pending";
             return false;
         }
-        if (control) next.unattended = true;
         if (!SavePortalTrust(state_dir_ / L"remote-trust.dat", next)) {
-            MessageBoxW(hwnd_,
-                L"The command was not run because replay protection could not "
-                L"be saved securely.", L"Veld Portal command blocked",
-                MB_OK | MB_ICONERROR);
             rejection = "Replay protection could not be saved";
             return false;
         }
-        {
-            std::lock_guard<std::mutex> lock(remote_trust_mutex_);
-            remote_trust_ = next;
-        }
+        remote_trust_ = std::move(next);
         rejection.clear();
         return true;
     }
@@ -7042,7 +7121,7 @@ private:
         bool control_ready = false;
         {
             std::lock_guard<std::mutex> lock(remote_trust_mutex_);
-            control_ready = remote_trust_.Valid() && remote_trust_.unattended;
+            control_ready = portal_control_ready_.load() && remote_trust_.Valid() && remote_trust_.unattended;
         }
         std::ostringstream json;
         json << '{'
@@ -7063,6 +7142,7 @@ private:
              << ",\"mining_state\":\"" << state
              << "\",\"warning\":\"" << JsonEscape(warning) << "\""
              << ",\"snapshot\":{\"remote_control\":" << (control_ready ? "true" : "false")
+             << ",\"pairing_control\":true"
              << ",\"identity_unlocked\":" << (HasSessionUnlock() ? "true" : "false")
              << ",\"unlock_key\":" << unlock_json
              << ",\"diagnostics\":{\"schema\":1"
@@ -7234,7 +7314,11 @@ private:
                 remote_ack_message_.clear();
             }
         }
-        if (reply.command.present) {
+        std::string pairing_error;
+        const bool control_enrolled = EnrollPortalControl(reply, pairing_error);
+        if (reply.command.present && !control_enrolled) {
+            AcknowledgeRemoteCommand(reply.command.id, "failed", pairing_error);
+        } else if (reply.command.present) {
             bool dispatch = false;
             {
                 std::lock_guard<std::mutex> lock(remote_command_mutex_);
@@ -7254,24 +7338,9 @@ private:
             connection_detail =
                 L"Monitoring is connected. Open the portal once to enroll secure control.";
         } else {
-            PortalTrustState trusted;
-            {
-                std::lock_guard<std::mutex> lock(remote_trust_mutex_);
-                trusted = remote_trust_;
-            }
-            if (trusted.Valid() && trusted.device_id == reply.device_id &&
-                trusted.key_id != reply.command_key_id) {
-                connection_detail =
-                    L"The portal command key changed. Remote control is blocked until you re-pair locally.";
-            } else if (trusted.Valid() && trusted.device_id == reply.device_id &&
-                       trusted.key_id == reply.command_key_id) {
-                connection_detail =
-                    trusted.unattended ? L"Remote start, stop, sign-in, and signed updates are enabled." :
-                        L"Approve the next portal control request here once to enable remote access.";
-            } else {
-                connection_detail =
-                    L"Signed control is enrolled. The first action will ask you to trust this pairing locally.";
-            }
+            connection_detail = control_enrolled
+                ? L"Paired. Remote start, stop, sign-in, and signed updates are enabled."
+                : Utf8ToWide(pairing_error);
         }
         {
             std::lock_guard<std::mutex> lock(remote_monitor_mutex_);
@@ -7295,32 +7364,26 @@ private:
                 L"The protected device credential could not be loaded.";
             return false;
         }
-        const auto trust_path = state_dir_ / L"remote-trust.dat";
-        std::error_code exists_error;
-        const bool trust_exists = std::filesystem::exists(trust_path, exists_error);
-        if (exists_error || (trust_exists && !DeleteFileW(trust_path.c_str()))) {
+        if (!BeginRemotePairReset()) {
             std::lock_guard<std::mutex> lock(remote_monitor_mutex_);
             remote_monitor_status_.report_ok = false;
             remote_monitor_status_.detail =
-                L"Local portal trust could not be cleared securely.";
+                L"Pairing reset could not be saved. Remote commands are blocked; retrying.";
             return false;
-        }
-        {
-            std::lock_guard<std::mutex> lock(remote_trust_mutex_);
-            remote_trust_ = {};
         }
         const HttpResult response = HttpPostJson(
             L"portal.veld.network", INTERNET_DEFAULT_HTTPS_PORT,
             L"/api/v1/device/reset-pairing", "{}", token, 2500);
+        const bool reset = response.ok && CompleteRemotePairReset();
         std::lock_guard<std::mutex> lock(remote_monitor_mutex_);
         remote_monitor_status_.credential_ready = true;
         remote_monitor_status_.report_ok = false;
         remote_monitor_status_.pair_code.clear();
         remote_monitor_status_.paired = false;
-        remote_monitor_status_.detail = response.ok
+        remote_monitor_status_.detail = reset
             ? L"Pairing reset. Fetching the new one-time code..."
-            : L"Pairing reset failed. Try New pair code again.";
-        return response.ok;
+            : L"Pairing reset is pending. Remote commands remain blocked; retrying automatically.";
+        return reset;
     }
 
     void PollLoop() {
@@ -7588,14 +7651,13 @@ private:
             next.log_lines = ReadLogTail(LogPath());
 
             if (remote_monitoring_enabled_.load()) {
-                if (portal_pair_reset_requested_.exchange(false)) {
-                    (void)ResetRemotePairing(monitoring_token);
-                    last_monitor_report = {};
-                }
                 if (last_monitor_report.time_since_epoch().count() == 0 ||
                     now - last_monitor_report >= std::chrono::seconds(5)) {
                     last_monitor_report = now;
-                    ReportRemoteStatus(next, monitoring_token);
+                    if (portal_pair_reset_requested_.load())
+                        (void)ResetRemotePairing(monitoring_token);
+                    if (!portal_pair_reset_requested_.load())
+                        ReportRemoteStatus(next, monitoring_token);
                 }
             } else {
                 last_monitor_report = {};

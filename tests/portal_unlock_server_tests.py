@@ -31,9 +31,9 @@ class RemoteUnlock(unittest.TestCase):
         n = b64(rsa_key.n.to_bytes(256, 'big'))
         self.unlock_key = dict(alg='RSA-OAEP-256', n=n, e='AQAB', identity='a' * 64,
             id=hashlib.sha256(('VELD_PORTAL_UNLOCK_KEY_V1\n' + n + '\nAQAB').encode()).hexdigest())
-        self.report = portal.validate_report(dict(portal_protocol=4, name='Synthetic node', version='3.1.8', height=0,
+        self.report = portal.validate_report(dict(portal_protocol=4, name='Synthetic node', version='3.1.10', height=0,
             sync_lag=0, hashrate=0, workers=15, peers=0, inbound=0, blocks=0, mining_state='Stopped', warning='',
-            snapshot=dict(unlock_key=self.unlock_key, remote_control=False, identity_unlocked=False)))
+            snapshot=dict(unlock_key=self.unlock_key, remote_control=False, pairing_control=True, identity_unlocked=False)))
         self.token = 'synthetic-node-token-' + '0' * 32
         reply = self.store.report(self.token, self.report)
         self.device = reply['device_id']
@@ -55,10 +55,14 @@ class RemoteUnlock(unittest.TestCase):
         return portal.validate_command(command)
 
     def test_signed_relay_acknowledgement_and_ciphertext_cleanup(self):
+        self.assertTrue(self.report['snapshot']['pairing_control'])
         command = self.command()
         command_id = self.store.queue_command(self.account, command)
         reply = self.store.report(self.token, self.report)
         self.assertEqual(reply['portal_protocol'], 4)
+        self.assertTrue(reply['paired'])
+        self.assertEqual(reply['command_key'], self.command_key)
+        self.assertEqual(reply['device_id'], self.device)
         self.assertEqual(reply['command']['payload'], command['payload'])
         self.assertEqual(reply['command']['signature'], command['signature'])
         self.report.update(ack_id=command_id, ack_status='completed', ack_message='Node start requested')
@@ -80,7 +84,9 @@ class RemoteUnlock(unittest.TestCase):
             self.store.queue_command(self.account, command)
 
     def test_old_client_monitoring_stays_compatible(self):
+        self.report['version'] = '3.1.6'
         self.report['portal_protocol'] = 3
+        self.report['snapshot'].pop('pairing_control')
         self.report['snapshot'].pop('unlock_key')
         reply = self.store.report(self.token, self.report)
         self.assertEqual(reply['portal_protocol'], 3)
