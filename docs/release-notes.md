@@ -5,6 +5,10 @@ on slow CPUs and after a paused search. This prevents a long hash search from
 submitting a stale timestamp that distorts the following difficulty adjustment.
 The 180-second target remains an average; individual block times still vary.
 
+Stopping the node also cancels every active hash worker. Previously, the
+monitoring thread could exit on node shutdown without forwarding cancellation,
+leaving the search running until the shutdown watchdog ended the process.
+
 Failed near-miss submissions can be retried within the same co-mining window.
 The local submission allowance is consumed only when the transaction enters
 the mempool. Pool metadata reports the existing 20% reward allocation.

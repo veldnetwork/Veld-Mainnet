@@ -53,6 +53,11 @@ jobs:
             mingw-w64-clang-x86_64-clang
             mingw-w64-clang-x86_64-openssl
             mingw-w64-clang-x86_64-leveldb
+            mingw-w64-clang-x86_64-python
+      - name: Verify active mining cancellation
+        if: matrix.fixture == 'reliability_node_shutdown_tests'
+        shell: msys2 {0}
+        run: python tests/mining_monitor_shutdown_tests.py --cxx clang++
       - name: Compile and exercise the native Windows fixture
         shell: msys2 {0}
         run: |
@@ -334,6 +339,9 @@ jobs:
             shift
             exec runuser -u "$1" -- "${@:2}"
           ' _ '${{ matrix.fixture }}' "$(id -un)" "$RUNNER_TEMP/${{ matrix.fixture }}" "${fixture_args[@]}" "${extra_args[@]}"
+      - name: Verify active mining cancellation
+        if: matrix.fixture == 'reliability_node_shutdown_tests'
+        run: python3 tests/mining_monitor_shutdown_tests.py --cxx c++
       - name: Verify private fixture exclusion from public profiles
         if: matrix.fixture == 'coinbase_cap_admission_tests'
         run: python3 tests/coinbase_fixture_profile_tests.py --compiler c++ --output-dir "$RUNNER_TEMP/coinbase-profiles"

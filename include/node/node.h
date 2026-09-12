@@ -15590,6 +15590,7 @@ private:
                         }
                         std::this_thread::sleep_for(std::chrono::milliseconds(500));
                     }
+                    stop_now.store(true, std::memory_order_release);
                 });
 
                 uint32_t effective_bits = mining_bits_ ? mining_bits_

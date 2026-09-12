@@ -6,6 +6,7 @@ are tracked separately; publishing source does not release new binaries.
 ## 3.1.8 - 2026-09-11
 
 - Refresh mining timestamps by elapsed wall-clock time on every worker.
+- Cancel active hash workers when the node stops, avoiding the shutdown timeout.
 - Retry failed near-miss submissions without consuming the submission window.
 - Exclude expired near-miss claims from new blocks and remove their pending
   descendants; report the reason when a locally mined block is rejected.
