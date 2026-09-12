@@ -3322,7 +3322,9 @@ private:
                                     conn->IsInbound()});
         }
 
-        const uint64_t now = MonotonicSeconds();
+        const uint64_t now = ClockSampleMonotonicNow_();
+        const int64_t wall_now = ClockSampleWallNow_();
+        if (wall_now < 0) return {};
         std::vector<int64_t> samples;
         {
             std::lock_guard<std::mutex> drift_lock(clock_drift_mutex_);
@@ -3339,7 +3341,8 @@ private:
             for (const auto& live : live_sources) {
                 auto it = clock_drift_samples_.find(live.connection_id);
                 if (it == clock_drift_samples_.end()) continue;
-                if (now > it->second.updated_at + CLOCK_DRIFT_TTL_SECONDS)
+                if (now < it->second.updated_at ||
+                    now - it->second.updated_at > CLOCK_DRIFT_TTL_SECONDS)
                     continue;
                 if (it->second.source_ip != live.source_ip ||
                     it->second.inbound != live.inbound) continue;
@@ -3348,9 +3351,19 @@ private:
                     it->second.updated_at > chosen->second.updated_at ||
                     (it->second.updated_at == chosen->second.updated_at &&
                      live.connection_id > chosen->second.connection_id)) {
+                    const uint64_t elapsed = now - it->second.updated_at;
+                    if (it->second.peer_seconds >
+                        std::numeric_limits<uint64_t>::max() - elapsed) continue;
+                    const uint64_t peer_now = it->second.peer_seconds + elapsed;
+                    const uint64_t local_now = static_cast<uint64_t>(wall_now);
+                    const uint64_t distance = peer_now >= local_now
+                        ? peer_now - local_now : local_now - peer_now;
+                    const int64_t magnitude = static_cast<int64_t>(
+                        std::min<uint64_t>(distance,
+                            std::numeric_limits<int64_t>::max()));
                     selected[live.source_ip] = SelectedSample{
-                        it->second.delta_seconds, it->second.updated_at,
-                        live.connection_id};
+                        peer_now >= local_now ? magnitude : -magnitude,
+                        it->second.updated_at, live.connection_id};
                 }
             }
             samples.reserve(selected.size());
@@ -4638,12 +4651,22 @@ public:
         return InboundPeerCachePort_();
     }
 
+    void TestSetClockSampleTime(uint64_t monotonic, int64_t wall) {
+        test_clock_monotonic_.store(monotonic, std::memory_order_release);
+        test_clock_wall_.store(wall, std::memory_order_release);
+    }
+
     void TestRecordClockDrift(const std::shared_ptr<Connection>& conn,
                               int64_t seconds, uint64_t updated_at) {
         if (!conn) return;
         std::lock_guard<std::mutex> lock(clock_drift_mutex_);
+        const int64_t wall = ClockSampleWallNow_();
+        if (wall < 0 || seconds < -wall ||
+            (seconds > 0 && wall > std::numeric_limits<int64_t>::max() - seconds))
+            throw std::invalid_argument("invalid fixture clock sample");
         clock_drift_samples_[conn->Identity()] = ClockDriftSample{
-            seconds, updated_at, conn->RemoteAddr(), conn->IsInbound()};
+            static_cast<uint64_t>(wall + seconds), updated_at,
+            conn->RemoteAddr(), conn->IsInbound()};
     }
 
     void TestRecordVersionClaim(
@@ -6134,8 +6157,29 @@ private:
     std::atomic<uint64_t> genesis_mismatch_count_{0};
     static constexpr size_t   CLOCK_DRIFT_WINDOW = 16;
     static constexpr uint64_t CLOCK_DRIFT_TTL_SECONDS = 3600;
+    uint64_t ClockSampleMonotonicNow_() const {
+#ifdef VELD_TEST_HOOKS
+        const auto value = test_clock_monotonic_.load(std::memory_order_acquire);
+        if (value != 0) return value;
+#endif
+        return MonotonicSeconds();
+    }
+    int64_t ClockSampleWallNow_() const {
+#ifdef VELD_TEST_HOOKS
+        if (test_clock_monotonic_.load(std::memory_order_acquire) != 0)
+            return test_clock_wall_.load(std::memory_order_acquire);
+#endif
+        return static_cast<int64_t>(std::time(nullptr));
+    }
+#ifdef VELD_TEST_HOOKS
+    std::atomic<uint64_t> test_clock_monotonic_{0};
+    std::atomic<int64_t> test_clock_wall_{0};
+#endif
     struct ClockDriftSample {
-        int64_t  delta_seconds{0};
+        // Advance the observed peer time by monotonic elapsed time and compare
+        // it with current wall time. A Windows/NTP correction must immediately
+        // change the mining gate without waiting for a new connection.
+        uint64_t peer_seconds{0};
         uint64_t updated_at{0};
         std::string source_ip;
         bool        inbound{false};
@@ -6638,11 +6682,9 @@ private:
                     uint64_t peer_ts = 0;
                     for (int i = 0; i < 8; ++i)
                         peer_ts |= ((uint64_t)msg.payload[12 + i] << (i * 8));
-                    const int64_t local_ts_signed =
-                        static_cast<int64_t>(std::time(nullptr));
+                    const int64_t local_ts_signed = ClockSampleWallNow_();
                     constexpr uint64_t MAX_CLOCK_SAMPLE_DELTA =
                         86400ull * 365ull;
-                    int64_t delta = 0;
                     bool admissible_delta = false;
                     if (local_ts_signed >= 0) {
                         const uint64_t local_ts =
@@ -6650,20 +6692,18 @@ private:
                         if (peer_ts >= local_ts) {
                             const uint64_t distance = peer_ts - local_ts;
                             if (distance < MAX_CLOCK_SAMPLE_DELTA) {
-                                delta = static_cast<int64_t>(distance);
                                 admissible_delta = true;
                             }
                         } else {
                             const uint64_t distance = local_ts - peer_ts;
                             if (distance < MAX_CLOCK_SAMPLE_DELTA) {
-                                delta = -static_cast<int64_t>(distance);
                                 admissible_delta = true;
                             }
                         }
                     }
                     if (admissible_delta) {
                         std::lock_guard<std::mutex> lock(clock_drift_mutex_);
-                        const uint64_t now_mono = MonotonicSeconds();
+                        const uint64_t now_mono = ClockSampleMonotonicNow_();
                         for (auto it = clock_drift_samples_.begin();
                              it != clock_drift_samples_.end();) {
                             if (now_mono > it->second.updated_at +
@@ -6687,7 +6727,7 @@ private:
                                 clock_drift_samples_.erase(oldest);
                         }
                         clock_drift_samples_[connection_id] =
-                            ClockDriftSample{delta, now_mono,
+                            ClockDriftSample{peer_ts, now_mono,
                                              conn.RemoteAddr(),
                                              conn.IsInbound()};
                     }

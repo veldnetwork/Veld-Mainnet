@@ -3788,8 +3788,9 @@ private:
         const int available = table.bottom - header.bottom - S(44);
         const int row_h = std::max(S(42), available / static_cast<int>(shown));
         const bool active = live.mining.mining_active;
-        const std::wstring worker_state = active
-            ? L"Hashing" : MiningStateLabel(live.mining.work_state);
+        const std::wstring worker_state = active ? L"Hashing"
+            : (live.mining.work_state == "clock-drift" ? L"Check PC clock"
+                : MiningStateLabel(live.mining.work_state));
         const double per_worker = thread_count > 0
             ? live.mining.hashrate / static_cast<double>(thread_count) : 0.0;
         for (uint64_t i = 0; i < shown; ++i) {
@@ -3805,8 +3806,14 @@ private:
             }
             DrawTextAt(dc, L"CPU " + std::to_wstring(i + 1),
                        cell(2, 20, y1, y2), font_body_, C_TEXT);
-            DrawTextAt(dc, worker_state, cell(20, 42, y1, y2),
-                       font_body_, active ? C_GREEN : C_SUBTEXT);
+            RECT state_cell = cell(20, 42, y1, y2);
+            state_cell.right -= S(10);
+            DrawTextAt(dc, worker_state, state_cell,
+                       FitSingleLineFont(dc, worker_state, state_cell,
+                           {font_body_, font_small_}),
+                       active ? C_GREEN : C_SUBTEXT,
+                       DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX |
+                           DT_END_ELLIPSIS);
             DrawTextAt(dc, FormatHashrate(per_worker),
                        cell(42, 66, y1, y2), font_body_, C_TEXT);
             DrawTextAt(dc, L"VeldHash", cell(66, 84, y1, y2),

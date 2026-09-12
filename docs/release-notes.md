@@ -1,5 +1,8 @@
 ## 3.1.11 - Automatic updates with mining resume
 
+Mining now re-evaluates the clock guard after local time corrections, without
+waiting for a peer reconnect. Worker status text stays within its column.
+
 Enable **Automatic updates** in Node Settings or the paired portal. While the
 app stays open, it checks every 30 minutes and keeps mining during download and
 verification. Once the signed package is ready, it updates and resumes the

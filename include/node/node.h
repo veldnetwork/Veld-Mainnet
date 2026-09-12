@@ -15272,10 +15272,9 @@ private:
                 // peers cannot Sybil the miner offline. The all-peer median is
                 // retained for diagnostics only.
                 //
-                // Tolerance is 600s — same as MAX_FUTURE_BLOCK_TIME, so a
-                // drift we allow to mine is mathematically impossible to
-                // drift further in the time it takes to propagate the
-                // block.
+                // The 600s guard matches MAX_FUTURE_BLOCK_TIME. Actual block
+                // admission still checks its timestamp at the receiving peer;
+                // this local clock estimate is not a propagation guarantee.
                 if (tcp_server_) {
                     const auto clock =
                         tcp_server_->GetActiveClockDriftSnapshot();
