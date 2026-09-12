@@ -106,3 +106,5 @@ Thumbs.db
 /include/network/covenant_client.js
 /include/network/dilithium.build.json
 /include/network/dilithium.js
+!scripts/veld-public-stats.py
+!scripts/veld-explorer-block-pages.conf
