@@ -3,6 +3,13 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## Unreleased
+
+- Add optional automatic signed updates, configurable in Node Settings or the paired portal.
+- Keep mining during download and verification, then resume the previously running node with its saved workers after installation.
+- Transfer the session unlock through a one-use Windows-protected handoff bound to the identity and exact packages.
+- Delay automatic retries after failures and defer installation while the local wallet is open.
+
 ## 3.1.10 - 2026-09-11
 
 - Completing portal pairing enables remote start, stop, encrypted sign-in, and signed updates without another PC prompt.

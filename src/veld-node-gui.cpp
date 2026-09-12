@@ -32,6 +32,7 @@
 #include "../include/gui/node_gui_model.h"
 #include "../include/gui/node_log_display.h"
 #include "../include/gui/state_file.h"
+#include "../include/gui/update_resume.h"
 #include "../include/gui/portal_unlock.h"
 #include "../include/node/client_exit_policy.h"
 #include "../include/network/chainparams.h"
@@ -869,7 +870,8 @@ bool ParseMonitoringReply(const std::string& body, MonitoringReply& out) {
         } else if (parsed.command.action == "mining.enabled" ||
             parsed.command.action == "privacy.tor" ||
             parsed.command.action == "network.reachable" ||
-            parsed.command.action == "display.reference") {
+            parsed.command.action == "display.reference" ||
+            parsed.command.action == "updates.automatic") {
             if (payload->object.size() != 1) return false;
             if (!veld::node_gui::ParseBool(payload->Get("enabled"),
                                            parsed.command.enabled))
@@ -913,7 +915,8 @@ std::string CanonicalPortalCommandPayload(
     if (command.action == "mining.enabled" ||
         command.action == "privacy.tor" ||
         command.action == "network.reachable" ||
-        command.action == "display.reference")
+        command.action == "display.reference" ||
+        command.action == "updates.automatic")
         return std::string("{\"enabled\":") +
             (command.enabled ? "true}" : "false}");
     if (command.action == "mining.workers" &&
@@ -1938,11 +1941,13 @@ public:
         std::filesystem::create_directories(state_dir_, state_error);
         LoadRemoteTrust();
         LoadSettings();
+        LoadUpdateResume();
         const auto prior_update_failure = ReadLastUpdateFailure(InstallRoot());
         if (!prior_update_failure.empty()) {
             update_status_ = L"Previous update failed · " +
                 Utf8ToWide(prior_update_failure.substr(0, 160));
             update_status_color_ = RGB(231, 126, 126);
+            next_auto_update_ = std::chrono::steady_clock::now() + std::chrono::hours(6);
         }
         if (force_clearnet_) {
             tor_choice_ = false;
@@ -2069,6 +2074,13 @@ private:
     HANDLE update_process_{nullptr};
     std::atomic<UpdateOperation> update_operation_{UpdateOperation::None};
     bool update_available_{false};
+    std::atomic<bool> auto_update_enabled_{false};
+    bool automatic_update_operation_{false};
+    bool automatic_install_pending_{false};
+    bool update_resume_pending_{false};
+    bool explicit_data_directory_{false};
+    std::chrono::steady_clock::time_point next_auto_update_{
+        std::chrono::steady_clock::now() + std::chrono::seconds(60)};
     std::wstring update_status_{L"Not checked"};
     COLORREF update_status_color_{C_MUTED};
     std::atomic<bool> full_ibd_choice_{true};
@@ -2140,6 +2152,7 @@ private:
     RECT preset_minus_button_{};
     RECT preset_plus_button_{};
     RECT check_update_button_{};
+    RECT auto_update_toggle_{};
     RECT view_changelog_button_{};
     RECT chain_range_buttons_[3]{};
     RECT rate_range_buttons_[3]{};
@@ -2168,7 +2181,7 @@ private:
     }
 
     int PageContentHeight(const RECT& client) const {
-        const int minimum = page_ == Page::Settings ? S(930) : S(900);
+        const int minimum = page_ == Page::Settings ? S(1030) : S(900);
         return std::max(static_cast<int>(client.bottom), minimum);
     }
 
@@ -2280,7 +2293,7 @@ private:
                     &create_key_button_, &preset_eco_button_,
                     &preset_balanced_button_, &preset_max_button_,
                     &preset_minus_button_, &preset_plus_button_,
-                    &check_update_button_, &view_changelog_button_}))
+                    &check_update_button_, &auto_update_toggle_, &view_changelog_button_}))
                 return true;
         }
         return false;
@@ -2571,6 +2584,7 @@ private:
             case WM_TIMER:
             case WM_NODE_REFRESH:
                 ObserveOwnedNodeExit();
+                TickAutomaticUpdates();
                 InvalidateRect(hwnd_, nullptr, FALSE);
                 return 0;
             case WM_TOR_SETUP_COMPLETE:
@@ -2614,8 +2628,10 @@ private:
         if (!argv) return;
         for (int i = 1; i < argc; ++i) {
             const std::wstring arg = argv[i];
-            if (arg == L"--datadir" && i + 1 < argc)
+            if (arg == L"--datadir" && i + 1 < argc) {
                 data_dir_ = argv[++i];
+                explicit_data_directory_ = true;
+            }
             else if (arg == L"--node" && i + 1 < argc)
                 node_path_ = argv[++i];
             else if (arg == L"--clearnet")
@@ -2634,7 +2650,9 @@ private:
         std::string line;
         while (std::getline(input, line)) {
             veld::node_gui::NormalizeSettingsLine(line);
-            if (line == "reachable=0") reachable_choice_ = false;
+            if (line == "auto_update=1") auto_update_enabled_ = true;
+            else if (line == "auto_update=0") auto_update_enabled_ = false;
+            else if (line == "reachable=0") reachable_choice_ = false;
             else if (line == "reachable=1") reachable_choice_ = true;
             else if (line == "tor=0") tor_choice_ = false;
             else if (line == "tor=1") tor_choice_ = true;
@@ -2712,13 +2730,14 @@ private:
             rate_range_minutes_ != 60) rate_range_minutes_ = 15;
     }
 
-    bool SaveSettings() {
+    bool SaveSettings(bool show_error = true) {
         std::error_code ec;
         std::filesystem::create_directories(state_dir_, ec);
         const auto path = state_dir_ / L"node-gui.conf";
         std::string error;
         std::ostringstream output;
-            output << "reachable=" << (reachable_choice_ ? 1 : 0) << "\n"
+            output << "auto_update=" << (auto_update_enabled_ ? 1 : 0) << "\n"
+                   << "reachable=" << (reachable_choice_ ? 1 : 0) << "\n"
                    << "tor=" << (tor_choice_ ? 1 : 0) << "\n"
                    << "mining=" << (mining_enabled_ ? 1 : 0) << "\n"
                    << "sync=" << (full_ibd_choice_ ? "full" : "snapshot")
@@ -2743,7 +2762,7 @@ private:
                    << "\n";
         const bool saved = !ec && !settings_load_failed_ &&
             veld::node_gui::WriteStateText(path, output.str(), &error);
-        if (!saved && IsWindow(hwnd_)) {
+        if (!saved && show_error && IsWindow(hwnd_)) {
             MessageBoxW(hwnd_,
                 L"Veld could not confirm that your settings were saved. "
                 L"Check available disk space and close other Veld windows, "
@@ -2906,6 +2925,7 @@ private:
         preset_minus_button_ = {};
         preset_plus_button_ = {};
         check_update_button_ = {};
+        auto_update_toggle_ = {};
         view_changelog_button_ = {};
         for (RECT& button : chain_range_buttons_) button = {};
         for (RECT& button : rate_range_buttons_) button = {};
@@ -5641,7 +5661,7 @@ private:
                    paths_note, font_small_, C_MUTED);
 
         RECT release{left, paths.bottom + S(10), right,
-                     std::min(client.bottom - S(20), paths.bottom + S(132))};
+                     std::min(client.bottom - S(20), paths.bottom + S(220))};
         FillRound(dc, release, C_PANEL_ALT, C_BORDER);
         RECT release_title{release.left + S(22), release.top + S(7),
                            release.right - S(350), release.top + S(32)};
@@ -5673,11 +5693,21 @@ private:
         DrawButton(dc, check_update_button_, update_action, !update_busy);
         DrawButton(dc, view_changelog_button_, L"View changelog", true);
         RECT security_note{release.left + S(22), release.top + S(86),
-                           release.right - S(22), release.bottom - S(10)};
+                           release.right - S(22), release.top + S(126)};
         DrawTextAt(dc,
             L"Updates require the pinned release signature and exact signed package hash, then install atomically with rollback. Wallet secrets never enter the updater.",
             security_note, font_small_, C_MUTED,
             DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
+        RECT automatic_label{release.left + S(22), release.top + S(136),
+                             release.right - S(100), release.top + S(162)};
+        DrawTextAt(dc, L"Automatic updates", automatic_label, font_body_, C_TEXT);
+        auto_update_toggle_ = {release.right - S(78), release.top + S(138),
+                               release.right - S(26), release.top + S(164)};
+        DrawToggle(dc, auto_update_toggle_, auto_update_enabled_, !update_busy);
+        RECT automatic_note{release.left + S(22), release.top + S(169),
+                            release.right - S(22), release.bottom - S(10)};
+        DrawTextAt(dc, L"Install signed updates while Veld is open and resume mining with your saved workers. Sign in once to enable mining resume.",
+                   automatic_note, font_small_, C_MUTED, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
     }
 
     void OnClick(int x, int y) {
@@ -5840,6 +5870,14 @@ private:
                 worker_cv_.notify_all();
             }
         } else if (page_ == Page::Settings &&
+                   PtInRect(&auto_update_toggle_, p)) {
+            if (update_operation_.load() == UpdateOperation::None) {
+                auto_update_enabled_ = !auto_update_enabled_;
+                if (!SaveSettings()) auto_update_enabled_ = !auto_update_enabled_;
+                automatic_install_pending_ = false;
+                next_auto_update_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            }
+        } else if (page_ == Page::Settings &&
                    PtInRect(&check_update_button_, p)) {
             if (update_operation_.load() == UpdateOperation::None) {
                 if (update_available_) BeginUpdateInstall();
@@ -5897,7 +5935,7 @@ private:
 
     static bool UnattendedPortalAction(const std::string& action) {
         return action == "node.start" || action == "node.stop" || action == "node.signin" ||
-            action == "updates.check" || action == "updates.install";
+            action == "updates.check" || action == "updates.install" || action == "updates.automatic";
     }
 
     void ClearSessionPassphrase() {
@@ -6076,8 +6114,8 @@ private:
         InvalidateRect(hwnd_, nullptr, FALSE);
         UpdateWindow(hwnd_);
 
-        const LiveState live = SnapshotState();
-        if (live.process_running && !StopProcessForUpdate(live.pid)) {
+        const DWORD pid = FindNodeProcess(node_path_);
+        if (pid != 0 && !StopProcessForUpdate(pid)) {
             update_status_ = L"Node did not stop cleanly · update not started";
             update_status_color_ = RGB(231, 126, 126);
             InvalidateRect(hwnd_, nullptr, FALSE);
@@ -6086,7 +6124,99 @@ private:
         return true;
     }
 
+    std::filesystem::path UpdateResumePath() const {
+        const auto context = veld::node_gui::UpdateInstallContext(InstallRoot());
+        return state_dir_ / (L"update-resume-" + Utf8ToWide(
+            veld::node_gui::PortalDigest(WideToUtf8(context))) + L".dat");
+    }
+
+    bool PrepareUpdateResume() {
+        veld::node_gui::UpdateResume resume;
+        if (!HasSessionUnlock() || !session_unlock_confirmed_.load() ||
+            !LoadSessionPassphrase(resume.passphrase)) return false;
+        std::error_code error;
+        resume.data_directory = std::filesystem::weakly_canonical(data_dir_, error).wstring();
+        if (error) return false;
+        resume.created = static_cast<uint64_t>(std::time(nullptr));
+        resume.identity = Utf8ToWide(RemoteIdentityFingerprint());
+        const auto root = InstallRoot();
+        const auto previous = ReadTextBounded(root / L"SHA256SUMS.txt", 8 * 1024 * 1024);
+        const auto target = ReadTextBounded(root / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt", 8 * 1024 * 1024);
+        if (previous.empty() || target.empty()) return false;
+        resume.previous_manifest = Utf8ToWide(veld::node_gui::PortalDigest(previous));
+        resume.target_manifest = Utf8ToWide(veld::node_gui::PortalDigest(target));
+        return veld::node_gui::SaveUpdateResume(UpdateResumePath(),
+            veld::node_gui::UpdateInstallContext(root), resume, resume.created);
+    }
+
+    void LoadUpdateResume() {
+        veld::node_gui::UpdateResume resume;
+        if (!veld::node_gui::ConsumeUpdateResume(UpdateResumePath(),
+                veld::node_gui::UpdateInstallContext(InstallRoot()), resume,
+                static_cast<uint64_t>(std::time(nullptr)))) return;
+        const auto root = InstallRoot();
+        const auto manifest = ReadTextBounded(root / L"SHA256SUMS.txt", 8 * 1024 * 1024);
+        const auto digest = Utf8ToWide(veld::node_gui::PortalDigest(manifest));
+        const auto receipt_path = root / L"update-last-result.json";
+        const auto receipt = ReadTextBounded(receipt_path, 8192);
+        veld::btc_buy::JsonValue value;
+        std::string error;
+        veld::btc_buy::StrictJsonParser parser(receipt, 8192, true);
+        if (manifest.empty() || !parser.Parse(value, error)) return;
+        const auto* status = value.Get("status");
+        WIN32_FILE_ATTRIBUTE_DATA attributes{};
+        if (!status || status->kind != veld::btc_buy::JsonValue::Kind::String ||
+            !GetFileAttributesExW(receipt_path.c_str(), GetFileExInfoStandard, &attributes)) return;
+        const uint64_t written = ((uint64_t(attributes.ftLastWriteTime.dwHighDateTime) << 32) |
+            attributes.ftLastWriteTime.dwLowDateTime) / 10000000ULL - 11644473600ULL;
+        if (written < resume.created ||
+            !((status->text == "installed" && digest == resume.target_manifest) ||
+              (status->text == "failed" && digest == resume.previous_manifest))) return;
+        std::error_code ec;
+        if (std::filesystem::exists(root / L".veld-update-transaction", ec) || ec || settings_load_failed_) return;
+        const std::filesystem::path restored(resume.data_directory);
+        if (explicit_data_directory_ && std::filesystem::weakly_canonical(data_dir_, ec) != restored) return;
+        if (ec) return;
+        const auto identity = ReadTextBounded(restored / L"miner.key", 65536);
+        if (identity.empty() || Utf8ToWide(veld::node_gui::PortalDigest(identity)) != resume.identity) return;
+        if (!StoreSessionPassphrase(resume.passphrase)) return;
+        data_dir_ = restored;
+        update_resume_pending_ = true;
+        update_status_ = L"Signed update verified · resuming node";
+    }
+
+    void TickAutomaticUpdates() {
+        if (update_operation_.load() != UpdateOperation::None || tor_preparing_.load() || stopping_node_.load()) return;
+        if (update_resume_pending_) {
+            update_resume_pending_ = false;
+            if (HasSessionUnlock() && FindNodeProcess(node_path_) == 0) StartNode();
+        }
+        if (!auto_update_enabled_) return;
+        const auto now = std::chrono::steady_clock::now();
+        if (!automatic_install_pending_ && now < next_auto_update_) return;
+        next_auto_update_ = now + std::chrono::minutes(30);
+        if (automatic_install_pending_) {
+            automatic_install_pending_ = false;
+            if (FindNodeProcess(node_path_) != 0 && (!HasSessionUnlock() || !session_unlock_confirmed_.load())) {
+                update_status_ = L"Automatic update waiting · sign in once to resume mining";
+                update_status_color_ = C_WARN;
+                return;
+            }
+            if (wallet_process_ && WaitForSingleObject(wallet_process_, 0) == WAIT_TIMEOUT) {
+                update_status_ = L"Automatic update waiting · local wallet is open";
+                update_status_color_ = C_MUTED;
+                return;
+            }
+            automatic_update_operation_ = true;
+            if (!BeginUpdateInstall()) automatic_update_operation_ = false;
+        } else {
+            automatic_update_operation_ = true;
+            if (!BeginUpdateCheck()) automatic_update_operation_ = false;
+        }
+    }
+
     bool BeginUpdateProcess(UpdateOperation operation) {
+        if (update_operation_.load() != UpdateOperation::None) return false;
         const auto root = InstallRoot();
         const auto updater = root / L"veld-update.ps1";
         if (!std::filesystem::is_regular_file(updater)) {
@@ -6103,8 +6233,7 @@ private:
             return false;
         }
         const bool installing = operation == UpdateOperation::Install;
-        if (installing && !SaveSettings()) return false;
-        if (installing && !StopServicesForUpdate()) return false;
+        if (installing && !SaveSettings(!automatic_update_operation_)) return false;
         std::error_code ec;
         std::filesystem::create_directories(state_dir_, ec);
         SECURITY_ATTRIBUTES inherit{};
@@ -6182,13 +6311,26 @@ private:
     void OnUpdateProcessComplete(DWORD exit_code) {
         const UpdateOperation operation =
             update_operation_.exchange(UpdateOperation::None);
+        const bool automatic = automatic_update_operation_;
+        automatic_update_operation_ = false;
+        next_auto_update_ = std::chrono::steady_clock::now() + std::chrono::minutes(30);
         if (operation == UpdateOperation::Install) {
+            automatic_install_pending_ = false;
             if (exit_code == 4) {
                 update_available_ = false;
-                update_status_ = L"This signed release is already installed. You can start the node.";
+                update_status_ = L"This signed release is already installed.";
                 update_status_color_ = C_TEXT;
                 InvalidateRect(hwnd_, nullptr, FALSE);
             } else if (exit_code == 0) {
+                if (FindNodeProcess(node_path_) != 0 && !PrepareUpdateResume()) {
+                    update_status_ = L"Update postponed · sign in to preserve mining through restart";
+                    update_status_color_ = C_WARN;
+                    return;
+                }
+                if (!StopServicesForUpdate()) {
+                    DeleteFileW(UpdateResumePath().c_str());
+                    return;
+                }
                 update_status_ = L"Signed update ready · restarting…";
                 update_status_color_ = C_TEXT;
                 InvalidateRect(hwnd_, nullptr, FALSE);
@@ -6219,7 +6361,7 @@ private:
                 const std::wstring message = Utf8ToWide(detail) +
                     L"\n\nClose Veld and run Start Veld Node.bat to recover an "
                     L"interrupted update, then retry from Settings.";
-                MessageBoxW(hwnd_, message.c_str(), L"Veld update could not finish", MB_OK | MB_ICONERROR);
+                if (!automatic) MessageBoxW(hwnd_, message.c_str(), L"Veld update could not finish", MB_OK | MB_ICONERROR);
             }
             return;
         }
@@ -6245,6 +6387,7 @@ private:
                 L"Signed update available · " + Utf8ToWide(version);
             update_status_color_ = C_WARN;
             update_available_ = true;
+            automatic_install_pending_ = automatic && auto_update_enabled_;
         } else {
             update_available_ = false;
             update_status_ = L"Signed feed could not be verified · try again";
@@ -6957,6 +7100,21 @@ private:
                 InvalidateRect(hwnd_, nullptr, FALSE);
                 complete("Graceful stop requested");
             }
+        } else if (command.action == "updates.automatic") {
+            if (update_operation_.load() != UpdateOperation::None) {
+                reject("Wait for the current update operation to finish");
+            } else {
+                const bool previous = auto_update_enabled_.load();
+                auto_update_enabled_.store(command.enabled);
+                if (SaveSettings(false)) {
+                    automatic_install_pending_ = false;
+                    next_auto_update_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+                    complete(command.enabled ? "Automatic signed updates enabled" : "Automatic updates disabled");
+                } else {
+                    auto_update_enabled_.store(previous);
+                    reject("Automatic update preference could not be saved");
+                }
+            }
         } else if (command.action == "updates.check") {
             if (update_operation_.load() != UpdateOperation::None)
                 reject("An update operation is already running");
@@ -7143,6 +7301,7 @@ private:
              << "\",\"warning\":\"" << JsonEscape(warning) << "\""
              << ",\"snapshot\":{\"remote_control\":" << (control_ready ? "true" : "false")
              << ",\"pairing_control\":true"
+             << ",\"automatic_updates\":" << (auto_update_enabled_.load() ? "true" : "false")
              << ",\"identity_unlocked\":" << (HasSessionUnlock() ? "true" : "false")
              << ",\"unlock_key\":" << unlock_json
              << ",\"diagnostics\":{\"schema\":1"

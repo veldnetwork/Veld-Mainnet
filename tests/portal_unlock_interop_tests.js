@@ -33,8 +33,8 @@ vm.runInContext(['encryptNodePassphrase','canonicalPayload','commandEnvelope','n
   const signature = await webcrypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,new TextEncoder().encode(context.commandEnvelope(command)));
   command.signature = b64url(context.normalizeEcdsaSignature(signature));
   fs.writeFileSync(path.join(root,'signed-command.json'),JSON.stringify({portal_protocol:4,device_id:17,paired:true,pair_code:null,pair_expires:0,report_interval:5,command_key:commandKey,command:{...command,id:1}}));
-  for (const action of ['node.start','node.stop','node.signin','updates.check','updates.install']) {
-    const control = {...command,action,payload:action==='node.signin'?payload:{}};
+  for (const action of ['node.start','node.stop','node.signin','updates.check','updates.install','updates.automatic']) {
+    const control = {...command,action,payload:action==='node.signin'?payload:action==='updates.automatic'?{enabled:true}:{}};
     const signature = await webcrypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,new TextEncoder().encode(context.commandEnvelope(control)));
     control.signature = b64url(context.normalizeEcdsaSignature(signature));
     fs.writeFileSync(path.join(root,action+'.json'),JSON.stringify({portal_protocol:4,device_id:17,paired:true,pair_code:null,pair_expires:0,report_interval:5,command_key:commandKey,command:{...control,id:1}}));

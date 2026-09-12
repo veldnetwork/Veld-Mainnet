@@ -134,7 +134,7 @@ struct GuiStateQualification {
     }
 
     static void CheckControlActions(const std::filesystem::path& root) {
-        for (const auto* action : {"node.start", "node.stop", "node.signin", "updates.check", "updates.install"}) {
+        for (const auto* action : {"node.start", "node.stop", "node.signin", "updates.check", "updates.install", "updates.automatic"}) {
             MonitoringReply reply;
             assert(ParseMonitoringReply(ReadTextBounded(root / (std::string(action) + ".json"), 16384), reply));
             const auto dir = root / (std::string(action) + "-state");
@@ -143,7 +143,18 @@ struct GuiStateQualification {
             app.remote_monitoring_enabled_.store(true);
             std::string rejection;
             assert(app.EnrollPortalControl(reply, rejection));
-            assert(app.AuthorizeRemoteCommand(reply.command, rejection));
+            if (reply.command.action == "updates.automatic") {
+                app.pending_remote_command_ = reply.command;
+                app.remote_command_pending_ = true;
+                app.ExecuteRemoteCommand();
+                assert(app.remote_ack_status_ == "completed");
+                assert(app.auto_update_enabled_);
+                NodeGuiApp restarted(dir);
+                restarted.LoadSettings();
+                assert(restarted.auto_update_enabled_);
+            } else {
+                assert(app.AuthorizeRemoteCommand(reply.command, rejection));
+            }
             assert(!app.AuthorizeRemoteCommand(reply.command, rejection));
         }
     }
@@ -233,5 +244,5 @@ int main(int argc, char** argv) {
     assert(EvaluatePortalCommandTrust(changed, current, now, next, rejection) == PortalCommandTrustVerdict::Reject);
     const auto before = ReadTextBounded(path);
     assert(before.find("VELD_PORTAL_TRUST") == std::string::npos);
-    std::cout << "PASS: pairing grants remote control without prompts; five signed actions, restart, legacy migration, corrupt trust, storage failure, revocation, replay, expiry, tamper, and device binding\n";
+    std::cout << "PASS: pairing grants remote control without prompts; six signed actions, restart, legacy migration, corrupt trust, storage failure, revocation, replay, expiry, tamper, and device binding\n";
 }

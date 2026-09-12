@@ -1101,7 +1101,9 @@ if ($Mode -eq 'Commit') {
         try { Write-UpdateResult 'failed' $_.Exception.Message } catch { }
         Write-Host ('   [update] COMMIT FAILED: ' + $_.Exception.Message)
         if ($null -ne $script:InstallLock) { $script:InstallLock.Dispose(); $script:InstallLock = $null }
-        try { Relaunch-InstalledClient } catch { }
+        if ($ParentPid -gt 0 -and $null -eq (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) {
+            try { Relaunch-InstalledClient } catch { }
+        }
         exit 1
     }
 }

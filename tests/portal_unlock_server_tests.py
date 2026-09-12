@@ -33,7 +33,7 @@ class RemoteUnlock(unittest.TestCase):
             id=hashlib.sha256(('VELD_PORTAL_UNLOCK_KEY_V1\n' + n + '\nAQAB').encode()).hexdigest())
         self.report = portal.validate_report(dict(portal_protocol=4, name='Synthetic node', version='3.1.10', height=0,
             sync_lag=0, hashrate=0, workers=15, peers=0, inbound=0, blocks=0, mining_state='Stopped', warning='',
-            snapshot=dict(unlock_key=self.unlock_key, remote_control=False, pairing_control=True, identity_unlocked=False)))
+            snapshot=dict(unlock_key=self.unlock_key, remote_control=False, pairing_control=True, automatic_updates=False, identity_unlocked=False)))
         self.token = 'synthetic-node-token-' + '0' * 32
         reply = self.store.report(self.token, self.report)
         self.device = reply['device_id']
@@ -45,7 +45,7 @@ class RemoteUnlock(unittest.TestCase):
     def command(self, sequence=1, action='node.signin'):
         issued = int(time.time())
         payload = dict(ciphertext=b64(b'x' * 40), identity=self.unlock_key['identity'], iv=b64(b'i' * 12),
-            key_id=self.unlock_key['id'], wrapped_key=b64(b'k' * 256)) if action == 'node.signin' else {}
+            key_id=self.unlock_key['id'], wrapped_key=b64(b'k' * 256)) if action == 'node.signin' else {'enabled': True} if action == 'updates.automatic' else {}
         command = dict(id=self.device, sequence=sequence, issued_at=issued, expires_at=issued + 180,
             nonce=b64(sequence.to_bytes(16, 'big')), action=action, payload=payload, key_id=self.command_key['id'])
         signature = self.signer.sign(portal.command_envelope(command).encode(), ec.ECDSA(hashes.SHA256()))
@@ -53,6 +53,16 @@ class RemoteUnlock(unittest.TestCase):
         order = int('ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551', 16)
         command['signature'] = b64(r.to_bytes(32, 'big') + min(s, order-s).to_bytes(32, 'big'))
         return portal.validate_command(command)
+
+    def test_automatic_updates_command_and_capability(self):
+        self.assertIs(self.report['snapshot']['automatic_updates'], False)
+        command = self.command(action='updates.automatic')
+        self.store.queue_command(self.account, command)
+        reply = self.store.report(self.token, self.report)
+        self.assertEqual(reply['command']['action'], 'updates.automatic')
+        self.assertEqual(reply['command']['payload'], {'enabled': True})
+        with self.assertRaises(ValueError):
+            portal.validate_command(dict(command, payload={'enabled': 'true'}))
 
     def test_signed_relay_acknowledgement_and_ciphertext_cleanup(self):
         self.assertTrue(self.report['snapshot']['pairing_control'])

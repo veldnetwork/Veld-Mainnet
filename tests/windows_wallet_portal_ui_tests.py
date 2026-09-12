@@ -36,7 +36,7 @@ for forbidden in (
         f"Wallet button must not use the retired local RPC launch path: {forbidden}",
     )
 
-require("const CACHE='veld-portal-shell-v20'" in PORTAL, "portal cache version")
+require("const CACHE='veld-portal-shell-v21'" in PORTAL, "portal cache version")
 require('id="mobile-nav"' in PORTAL, "portal needs a dedicated mobile navbar")
 require('$("mobile-nav").hidden=!d' in PORTAL,
         "unpaired portal must not expose inactive navigation")

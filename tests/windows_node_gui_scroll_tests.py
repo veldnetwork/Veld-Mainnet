@@ -18,7 +18,7 @@ require("case WM_MOUSEWHEEL:", "mouse wheel scrolling is handled")
 require("case WM_VSCROLL:", "scrollbar input is handled")
 require("wp == VK_PRIOR", "keyboard page scrolling is handled")
 require("std::array<int, 8> page_scroll_offsets_", "each page keeps its own offset")
-require("page_ == Page::Settings ? S(930) : S(900)",
+require("page_ == Page::Settings ? S(1030) : S(900)",
         "settings receives enough virtual height for all controls")
 require("point.y += CurrentPageScroll(client)",
         "content hit testing follows the visible scroll offset")

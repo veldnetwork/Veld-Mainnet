@@ -70,6 +70,7 @@ jobs:
           - fixture: self_dial_tests
             standalone: true
           - fixture: reliability_gui_state_tests
+          - fixture: windows_auto_update_tests
           - fixture: stake_fragmentation_tests
           - fixture: nms_mempool_lifecycle_tests
             standalone: true
