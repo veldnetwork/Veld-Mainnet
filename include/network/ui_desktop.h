@@ -1624,19 +1624,11 @@ html[data-theme="light"] .tier-bronze{color:#CD7F32!important}
 html[data-theme="light"] .tier-silver{color:#7A8591!important}
 html[data-theme="light"] .tier-gold{color:#B77900!important}
 html[data-theme="light"] .tier-platinum{color:#667080!important}
-/* Diamond: kill the prismatic gradient + text-clip in light mode and
-   render a flat saturated violet instead. Dark mode keeps the full
-   prismatic shimmer effect. */
+/* Keep the shared diamond shimmer legible against light surfaces. */
 html[data-theme="light"] .diamond-prismatic{
-  background:none!important;
-  -webkit-background-clip:initial!important;
-  background-clip:initial!important;
-  -webkit-text-fill-color:#2E8692!important;
-  color:#2E8692!important;
-  animation:none!important;
-  filter:none!important;
-  text-shadow:none!important;
   font-weight:700!important;
+  -webkit-text-stroke:.35px #376b75;
+  text-shadow:0 1px 1px rgba(25,65,75,.55)!important;
 }
 
 /* ====================================================================
@@ -2085,12 +2077,10 @@ html[data-theme="light"] #w-tier.tier-bronze,html[data-theme="light"] #w-tier[da
 html[data-theme="light"] #w-tier.tier-silver,html[data-theme="light"] #w-tier[data-tier="silver"]{color:#7A8591!important;-webkit-text-fill-color:#7A8591!important}
 html[data-theme="light"] #w-tier.tier-gold,html[data-theme="light"] #w-tier[data-tier="gold"]{color:#B77900!important;-webkit-text-fill-color:#B77900!important}
 html[data-theme="light"] #w-tier.tier-platinum,html[data-theme="light"] #w-tier[data-tier="platinum"]{color:#667080!important;-webkit-text-fill-color:#667080!important}
-html[data-theme="light"] #w-tier.tier-diamond .diamond-prismatic{color:#2E8692!important;-webkit-text-fill-color:#2E8692!important;background:none!important;filter:none!important}
 html[data-theme="light"] #page-staking .tier-bronze{color:#CD7F32!important;-webkit-text-fill-color:#CD7F32!important}
 html[data-theme="light"] #page-staking .tier-silver{color:#7A8591!important;-webkit-text-fill-color:#7A8591!important}
 html[data-theme="light"] #page-staking .tier-gold{color:#B77900!important;-webkit-text-fill-color:#B77900!important}
 html[data-theme="light"] #page-staking .tier-platinum{color:#667080!important;-webkit-text-fill-color:#667080!important}
-html[data-theme="light"] #page-staking .diamond-prismatic{color:#2E8692!important;-webkit-text-fill-color:#2E8692!important}
 html[data-theme="light"] .balance-hero,html[data-theme="light"] .wallet-bal-hero,html[data-theme="light"] .bv-lp-hero{background:#fff!important;border:1px solid #cfd1d0!important;border-top-color:#cfd1d0!important;border-radius:10px!important;box-shadow:0 12px 30px rgba(18,21,20,.07)!important;animation:none!important}
 html[data-theme="light"] .wallet-bal-hero .balance-amount,html[data-theme="light"] .balance-amount#w-total-bal{background:none!important;-webkit-background-clip:initial!important;background-clip:initial!important;-webkit-text-fill-color:#121514!important;color:#121514!important;text-shadow:none!important}
 /* Light-mode action buttons share the My Wallet palette. */
@@ -2153,6 +2143,14 @@ html[data-theme="light"] #h-list .history-reward-staking{--history-reward-color:
 html[data-theme="light"] #h-list .history-reward-comining{--history-reward-color:#156A9F}
 html[data-theme="light"] #h-list .history-reward-validator{--history-reward-color:#7749A8}
 #h-list .history-reward-label,#h-list .history-reward-amount{color:var(--history-reward-color)!important;-webkit-text-fill-color:var(--history-reward-color)!important}
+
+#ks-change-generate,#ks-passphrase-generate,#ks-gen-passphrase-generate{
+  background:#F7931A!important;color:#172119!important;
+  -webkit-text-fill-color:#172119!important;border-color:#F7931A!important;
+}
+#ks-change-generate:hover,#ks-passphrase-generate:hover,#ks-gen-passphrase-generate:hover{
+  background:#f6b900!important;border-color:#f6b900!important;
+}
 
 /* Unified controls and mobile form sizing. */
 .theme-tog{width:34px!important;height:32px!important;padding:0!important;gap:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important}
@@ -2591,7 +2589,7 @@ __VELD_DEPLOYMENT_BANNER_HTML__
         <div class="health-c">
           <div class="lbl">Difficulty</div>
           <div class="v" id="d-nh-diff">&mdash;</div>
-          <div style="font-size:11px;color:var(--muted2);margin-top:6px;font-family:var(--font)">retargets / 144 blk</div>
+          <div style="font-size:11px;color:var(--muted2);margin-top:6px;font-family:var(--font)">ASERT · adjusts every block</div>
         </div>
         <div class="health-c">
           <div class="lbl">Tip age</div>
@@ -10583,158 +10581,148 @@ function loadMiningSession() {
   }, 5000);
 })();
 
-// Pending sends card.
-// Reads veld_pending_txs from localStorage, filters by currentAddr,
-// pings the local node to decide each entry's state, and renders
-// the In-flight transactions card. Auto-prunes confirmed entries
-// and any entry older than 24h that's no longer in the local
-// mempool (catch-all for dropped TXs the user never re-sent).
+// Pending records are display metadata. Only canonical confirmation removes one;
+// missing, busy or offline lookups never release funds or discard a record.
+var pendingSendsLoad = null;
+
+function _veldIsConfirmedTransaction(tx, txid, height) {
+  return !!(tx && tx.txid === txid &&
+    Number.isSafeInteger(tx.block_height) && tx.block_height >= 0 &&
+    Number.isSafeInteger(tx.confirmations) && tx.confirmations > 0 &&
+    (height == null || tx.block_height === height));
+}
+
+function _veldPruneConfirmedPending(address, txids) {
+  if (!txids.length) return;
+  try {
+    var entries = JSON.parse(localStorage.getItem('veld_pending_txs') || '[]');
+    if (!Array.isArray(entries)) return;
+    var kept = entries.filter(function(e) {
+      return !e || (address != null && e.from_addr !== address) || txids.indexOf(e.txid) === -1;
+    });
+    if (kept.length !== entries.length)
+      localStorage.setItem('veld_pending_txs', JSON.stringify(kept));
+  } catch (_) {}
+}
+
+async function _veldPendingHistoryHints(address, entries, isCurrent) {
+  var wanted = new Set(entries.map(function(e) { return e.txid; }));
+  var hints = new Map(), cursors = new Set(), cursor = '';
+  // Indexed, bounded pages avoid repeated whole-chain transaction searches.
+  for (var pageNo = 0; wanted.size && pageNo < 20 && isCurrent(); pageNo++) {
+    try {
+      var params = [address, '50'];
+      if (cursor) params.push(cursor);
+      var page = await rpc('getaddresshistory', params);
+      if (!isCurrent()) break;
+      if (!page || !Array.isArray(page.entries) || page.entries.length > 50 ||
+          typeof page.has_more !== 'boolean' || typeof page.next_cursor !== 'string') break;
+      page.entries.forEach(function(row) {
+        if (row && wanted.has(row.txid) && Number.isSafeInteger(row.block_height) && row.block_height >= 0) {
+          hints.set(row.txid, row.block_height);
+          wanted.delete(row.txid);
+        }
+      });
+      if (!page.has_more) break;
+      if (!page.entries.length || !page.next_cursor || page.next_cursor.length > 192 ||
+          cursors.has(page.next_cursor)) break;
+      cursor = page.next_cursor;
+      cursors.add(cursor);
+    } catch (_) { break; }
+  }
+  return hints;
+}
+
 function loadPendingSends() {
   var card = document.getElementById('w-pending-card');
-  if (!card) return;
-  var list = document.getElementById('w-pending-list');
-  var countEl = document.getElementById('w-pending-count');
-  var key = 'veld_pending_txs';
+  if (!card) return Promise.resolve();
+  var address = currentAddr;
+  if (pendingSendsLoad && pendingSendsLoad.address === address) return pendingSendsLoad.promise;
   var arr = [];
-  try { arr = JSON.parse(localStorage.getItem(key) || '[]') || []; } catch(_) { arr = []; }
+  try { arr = JSON.parse(localStorage.getItem('veld_pending_txs') || '[]'); } catch (_) {}
   if (!Array.isArray(arr)) arr = [];
-  // Filter to entries belonging to this wallet
   var mine = arr.filter(function(e) {
-    return e && e.txid && e.from_addr === currentAddr;
+    return e && typeof e.txid === 'string' && e.txid.length === 64 &&
+      !/[^0-9a-f]/.test(e.txid) && e.from_addr === address;
   });
-  if (!mine.length) {
-    card.style.display = 'none';
-    return;
-  }
-  card.style.display = 'block';
-  // First render: show what we have locally with "checking..." status.
-  // Then poll getrawmempool once to get the current pending set, plus
-  // gettransactionrecent for any txid not in mempool to confirm-or-drop.
-  var nowSec = Math.floor(Date.now() / 1000);
-  var typeLabel = {
-    preparerawtransaction: 'Send',
-    preparestake: 'Stake Lock',
-    prepareunstake: 'Stake Unlock',
-    prepareregistervalidator: 'Validator Register',
-    preparederegistervalidator: 'Validator Deregister',
-    preparegovproposal: 'Gov Proposal',
-    preparegovvote: 'Gov Vote'
-  };
-  rpc('getrawmempool', []).then(function(mp) {
-    var inMempool = {};
-    if (Array.isArray(mp)) {
-      for (var i = 0; i < mp.length; ++i) inMempool[mp[i]] = true;
-    }
-    // For txids not in mempool, optimistically mark them as
-    // "checking" and resolve via gettransactionrecent.
-    var confirmChecks = [];
-    var stillPending = [];
-    var unknown = [];
-    mine.forEach(function(e) {
-      if (inMempool[e.txid]) { stillPending.push(e); return; }
-      // Might be confirmed; check recent blocks
-      confirmChecks.push(
-        rpc('gettransactionrecent', [e.txid]).then(function(d) {
-          return {entry: e, confirmed: !!(d && d.block_height != null), block_height: d && d.block_height};
-        }).catch(function() {
-          return {entry: e, confirmed: false, block_height: null};
-        })
-      );
-    });
-    return Promise.all(confirmChecks).then(function(res) {
-      var confirmed = [];
-      res.forEach(function(r) {
-        if (r.confirmed) confirmed.push(r);
-        else unknown.push(r.entry);
-      });
-      return {pending: stillPending, confirmed: confirmed, unknown: unknown};
-    });
-  }).then(function(state) {
-    // Remove only confirmed entries. A busy/incomplete lookup cannot prove
-    // a transaction was dropped, regardless of its age.
-    var keptTxids = {};
-    state.pending.forEach(function(e) { keptTxids[e.txid] = true; });
-    state.unknown.forEach(function(e) {
-      keptTxids[e.txid] = true;
-    });
-    var pruned = arr.filter(function(e) {
-      // Keep all other wallets' entries untouched
-      if (e.from_addr !== currentAddr) return true;
-      return keptTxids[e.txid] === true;
-    });
-    if (pruned.length !== arr.length) {
-      try { localStorage.setItem(key, JSON.stringify(pruned)); } catch(_){}
-    }
-    // Render
-    var rows = state.pending.concat(state.unknown);
-    if (!rows.length) {
-      document.getElementById('w-pending-card').style.display = 'none';
-      return;
-    }
-    // Newest first
-    rows.sort(function(a, b) { return (b.ts || 0) - (a.ts || 0); });
-    countEl.textContent = '(' + rows.length + ')';
-    var html = '<div class="tbl-scroll list-box"><table class="tbl"><thead><tr>' +
-      '<th>Type</th><th>TXID</th><th>Age</th><th>Status</th><th></th>' +
-      '</tr></thead><tbody>';
-    rows.forEach(function(e) {
-      var ageSec = nowSec - (e.ts || 0);
-      var ageLabel = ageSec < 60 ? (ageSec + 's')
-                   : ageSec < 3600 ? (Math.floor(ageSec / 60) + 'm')
-                   : (Math.floor(ageSec / 3600) + 'h');
-      var inMp = state.pending.indexOf(e) !== -1;
-      var status = inMp
-        ? '<span style="color:var(--gold)">In mempool</span>'
-        : '<span style="color:var(--muted)">Not seen by node</span>';
-      var canRebroadcast = ageSec >= 300;  // 5 minutes
-      var btn = '';
-      if (canRebroadcast) {
-        btn = '<button class="btn btn-ghost btn-sm" data-act-click="hreb27cast" data-txid="' + escHtml(e.txid) + '" style="font-size:10px;padding:4px 10px">Rebroadcast</button>';
-      } else {
-        var waitSec = 300 - ageSec;
-        btn = '<span style="color:var(--muted2);font-size:10px">Rebroadcast in ' + waitSec + 's</span>';
+  if (!mine.length) { pendingSendsLoad = null; card.style.display = 'none'; return Promise.resolve(); }
+  var load = {address:address, promise:null};
+  pendingSendsLoad = load;
+  var isCurrent = function() { return pendingSendsLoad === load && currentAddr === address; };
+  var state = {pending:[], unknown:[], confirmed:[], offline:false};
+  load.promise = rpc('getrawmempool', []).then(async function(mp) {
+    if (!Array.isArray(mp)) throw new Error('Invalid mempool response');
+    if (!isCurrent()) return;
+    var mempool = new Set(mp);
+    state.pending = mine.filter(function(e) { return mempool.has(e.txid); });
+    var checking = mine.filter(function(e) { return !mempool.has(e.txid); });
+    var hints = await _veldPendingHistoryHints(address, checking, isCurrent);
+    var next = 0;
+    async function checkNext() {
+      while (next < checking.length && isCurrent()) {
+        var entry = checking[next++], confirmed = false;
+        if (hints.has(entry.txid)) {
+          var height = hints.get(entry.txid);
+          try {
+            var hinted = await rpc('gettransaction', [entry.txid, String(height)]);
+            confirmed = _veldIsConfirmedTransaction(hinted, entry.txid, height);
+          } catch (_) {}
+        }
+        if (!confirmed && isCurrent()) {
+          try {
+            var recent = await rpc('gettransactionrecent', [entry.txid]);
+            confirmed = _veldIsConfirmedTransaction(recent, entry.txid);
+          } catch (_) {}
+        }
+        if (confirmed) state.confirmed.push(entry.txid);
+        else state.unknown.push(entry);
       }
-      var label = typeLabel[e.prepare_method] || 'Tx';
-      html += '<tr>' +
-        '<td style="font-size:11px;color:var(--muted)">' + escHtml(label) + '</td>' +
-        '<td><a href="https://explorer.veld.network/tx/' + escHtml(e.txid) + '" target="_blank" rel="noopener noreferrer" class="hash-orange" style="font-size:10px">' + escHtml(shortHash(e.txid)) + '</a></td>' +
-        '<td style="font-size:11px;color:var(--muted)">' + ageLabel + '</td>' +
-        '<td style="font-size:11px">' + status + '</td>' +
-        '<td style="text-align:right">' + btn + '</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table></div>';
-    list.innerHTML = html;
+    }
+    await Promise.all([checkNext(), checkNext()]);
   }).catch(function() {
-    // RPC unreachable — render best-effort from localStorage with
-    // unknown status so the user still sees their pending sends.
-    var rows = mine.filter(function(e) { return (nowSec - (e.ts || 0)) < 24 * 3600; });
-    rows.sort(function(a, b) { return (b.ts || 0) - (a.ts || 0); });
-    if (!rows.length) { card.style.display = 'none'; return; }
-    countEl.textContent = '(' + rows.length + ')';
-    var html = '<div class="tbl-scroll list-box"><table class="tbl"><thead><tr>' +
-      '<th>Type</th><th>TXID</th><th>Age</th><th>Status</th><th></th>' +
-      '</tr></thead><tbody>';
-    rows.forEach(function(e) {
-      var ageSec = nowSec - (e.ts || 0);
-      var ageLabel = ageSec < 60 ? (ageSec + 's')
-                   : ageSec < 3600 ? (Math.floor(ageSec / 60) + 'm')
-                   : (Math.floor(ageSec / 3600) + 'h');
-      var label = typeLabel[e.prepare_method] || 'Tx';
-      var btn = (ageSec >= 300)
-        ? '<button class="btn btn-ghost btn-sm" data-act-click="hreb27cast" data-txid="' + escHtml(e.txid) + '" style="font-size:10px;padding:4px 10px">Rebroadcast</button>'
-        : '<span style="color:var(--muted2);font-size:10px">Rebroadcast in ' + (300 - ageSec) + 's</span>';
-      html += '<tr>' +
-        '<td style="font-size:11px;color:var(--muted)">' + escHtml(label) + '</td>' +
-        '<td><a href="https://explorer.veld.network/tx/' + escHtml(e.txid) + '" target="_blank" rel="noopener noreferrer" class="hash-orange" style="font-size:10px">' + escHtml(shortHash(e.txid)) + '</a></td>' +
-        '<td style="font-size:11px;color:var(--muted)">' + ageLabel + '</td>' +
-        '<td style="font-size:11px;color:var(--muted)">Status unknown (RPC offline)</td>' +
-        '<td style="text-align:right">' + btn + '</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table></div>';
-    list.innerHTML = html;
+    state.offline = true;
+    state.unknown = mine;
+  }).then(function() {
+    if (!isCurrent()) return;
+    // Re-read storage so a send in another tab is never overwritten by this poll.
+    _veldPruneConfirmedPending(address, state.confirmed);
+    renderPendingSends(state);
+  }).finally(function() {
+    if (pendingSendsLoad === load) pendingSendsLoad = null;
   });
+  return load.promise;
+}
+
+function renderPendingSends(state) {
+  var card = document.getElementById('w-pending-card');
+  var rows = state.pending.concat(state.unknown);
+  card.style.display = rows.length ? 'block' : 'none';
+  document.getElementById('w-pending-count').textContent = '(' + rows.length + ')';
+  if (!rows.length) { document.getElementById('w-pending-list').textContent = ''; return; }
+  var typeLabel = {
+    preparerawtransaction:'Send', preparestake:'Stake Lock', prepareunstake:'Stake Unlock',
+    prepareregistervalidator:'Validator Register', preparederegistervalidator:'Validator Deregister',
+    preparegovproposal:'Gov Proposal', preparegovvote:'Gov Vote'
+  };
+  var nowSec = Math.floor(Date.now() / 1000);
+  rows.sort(function(a, b) { return (b.ts || 0) - (a.ts || 0); });
+  var html = '<div class="tbl-scroll list-box"><table class="tbl"><thead><tr>' +
+    '<th>Type</th><th>TXID</th><th>Age</th><th>Status</th><th></th></tr></thead><tbody>';
+  rows.forEach(function(e) {
+    var ageSec = Math.max(0, nowSec - (e.ts || 0));
+    var age = ageSec < 60 ? ageSec + 's' : ageSec < 3600 ? Math.floor(ageSec / 60) + 'm' : Math.floor(ageSec / 3600) + 'h';
+    var inMp = state.pending.indexOf(e) !== -1;
+    var status = inMp ? 'In mempool' : state.offline ? 'Status unavailable' : 'Checking confirmation';
+    var button = ageSec >= 300
+      ? '<button class="btn btn-ghost btn-sm" data-act-click="hreb27cast" data-txid="' + escHtml(e.txid) + '" style="font-size:10px;padding:4px 10px">Rebroadcast</button>'
+      : '<span style="color:var(--muted2);font-size:10px">Rebroadcast in ' + (300 - ageSec) + 's</span>';
+    html += '<tr><td style="font-size:11px;color:var(--muted)">' + escHtml(typeLabel[e.prepare_method] || 'Tx') + '</td>' +
+      '<td><a href="https://explorer.veld.network/tx/' + escHtml(e.txid) + '" target="_blank" rel="noopener noreferrer" class="hash-orange" style="font-size:10px">' + escHtml(shortHash(e.txid)) + '</a></td>' +
+      '<td style="font-size:11px;color:var(--muted)">' + age + '</td>' +
+      '<td style="font-size:11px"><span style="color:' + (inMp ? 'var(--gold)' : 'var(--muted)') + '">' + status + '</span></td>' +
+      '<td style="text-align:right">' + button + '</td></tr>';
+  });
+  document.getElementById('w-pending-list').innerHTML = html + '</tbody></table></div>';
 }
 
 // Rebroadcast button handler. Pulls the txid out of the row's
@@ -13267,7 +13255,8 @@ function __waitForTxConfirm(txid, maxSeconds, onConfirmed, onTimeout, onTick) {
       // gettransactionrecent returns an object with block_height when
       // the tx is confirmed on the canonical chain. Anything else
       // (mempool, not-found, error) falls through to the attempt counter.
-      if (res && typeof res === 'object' && res.block_height != null) {
+      if (_veldIsConfirmedTransaction(res, txid)) {
+        _veldPruneConfirmedPending(null, [txid]);
         done = true;
         clearInterval(timer);
         try { onConfirmed && onConfirmed(res); } catch(_){}

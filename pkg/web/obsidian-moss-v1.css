@@ -908,7 +908,6 @@ html[data-theme="light"] #page-staking .tier-bronze{color:#CD7F32!important;-web
 html[data-theme="light"] #page-staking .tier-silver{color:#7A8591!important;-webkit-text-fill-color:#7A8591!important}
 html[data-theme="light"] #page-staking .tier-gold{color:#B77900!important;-webkit-text-fill-color:#B77900!important}
 html[data-theme="light"] #page-staking .tier-platinum{color:#667080!important;-webkit-text-fill-color:#667080!important}
-html[data-theme="light"] #page-staking .diamond-prismatic{color:#2E8692!important;-webkit-text-fill-color:#2E8692!important}
 
 /* Wallet mobile navigation: Option A precision line icons. */
 #mobile-nav .mob-tab .mob-icon{display:block!important;width:23px!important;height:23px!important;max-height:none!important;font-size:0!important;background-color:currentColor!important;-webkit-mask-repeat:no-repeat!important;mask-repeat:no-repeat!important;-webkit-mask-position:center!important;mask-position:center!important;-webkit-mask-size:23px 23px!important;mask-size:23px 23px!important}
@@ -1229,9 +1228,6 @@ html[data-theme="light"] #w-tier[data-tier="gold"]{color:#B77900!important;-webk
 html[data-theme="light"] #w-tier.tier-platinum,
 html[data-theme="light"] #w-tier[data-tier="Platinum"],
 html[data-theme="light"] #w-tier[data-tier="platinum"]{color:#667080!important;-webkit-text-fill-color:#667080!important}
-html[data-theme="light"] #w-tier.tier-diamond .diamond-prismatic,
-html[data-theme="light"] #w-tier[data-tier="Diamond"] .diamond-prismatic,
-html[data-theme="light"] #w-tier[data-tier="diamond"] .diamond-prismatic{color:#2E8692!important;-webkit-text-fill-color:#2E8692!important;background:none!important;filter:none!important}
 
 html:not([data-theme="light"]) .activity-icon.ai-block,html:not([data-theme="light"]) .activity-icon.ai-recv{background:rgba(126,217,73,.05)!important}
 html:not([data-theme="light"]) #d-dist-countdown,html:not([data-theme="light"]) #sk-apy,html:not([data-theme="light"]) #earn-30d,html:not([data-theme="light"]) .val.em{text-shadow:0 0 14px rgba(126,217,73,.30)!important}
