@@ -4,7 +4,7 @@ Mining now re-evaluates the clock guard after local time corrections, without
 waiting for a peer reconnect. Worker status text stays within its column.
 
 Enable **Automatic updates** in Node Settings or the paired portal. While the
-app stays open, it checks every 30 minutes and keeps mining during download and
+app stays open, it checks hourly and keeps mining during download and
 verification. Once the signed package is ready, it updates and resumes the
 previously running node with the same workers, identity, settings, pairing,
 data directory, and sync progress. A stopped node stays stopped.
@@ -18,6 +18,12 @@ Clients on 3.1.10 or earlier need one initial update and sign-in. The feature
 does not enable mining after a normal Windows reboot. Keep the app open and
 Automatic updates enabled; disk, permission, or integrity failures may still
 need attention. No consensus rules or mining parameters change.
+
+Near-miss submissions now use confirmed participation and pending claims to
+avoid redundant fees after a restart. An expired, unconfirmed claim can be
+retried in the same window. Mining candidates refresh when eligible near-miss
+claims arrive. Wallet history identifies staking and co-mining distributions
+from their pool funding, including older payouts.
 
 ## 3.1.10 - Unattended portal control
 
