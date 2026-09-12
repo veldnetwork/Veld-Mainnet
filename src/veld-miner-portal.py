@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 LOGGER = logging.getLogger(__name__)
 
-VELD_OPERATOR_VERSION = "3.1.8"
+VELD_OPERATOR_VERSION = "3.1.9"
 VELD_OPERATOR_PROFILE = "veld-public-mainnet-v2"
 
 MAX_MINING_WORKERS = 64
@@ -73,6 +73,7 @@ ALLOWED_ACTIONS = (
     | {
         "mining.workers",
         "sync.mode",
+        "node.signin",
     }
 )
 
@@ -120,8 +121,43 @@ def validate_command_key(value: Any) -> dict[str, str]:
     }
 
 
+def validate_unlock_payload(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict) or set(value) != {"ciphertext", "identity", "iv", "key_id", "wrapped_key"}:
+        raise ValueError("invalid encrypted sign-in")
+    if not all(isinstance(item, str) for item in value.values()):
+        raise ValueError("invalid encrypted sign-in")
+    for field in ("identity", "key_id"):
+        if not COMMAND_KEY_ID_RE.fullmatch(value[field]):
+            raise ValueError("invalid sign-in identity")
+    decode_base64url_canonical(value["iv"], 12)
+    decode_base64url_canonical(value["wrapped_key"], 256)
+    size = len(value["ciphertext"]) * 3 // 4
+    if not 17 <= size <= 1040:
+        raise ValueError("invalid encrypted passphrase size")
+    decode_base64url_canonical(value["ciphertext"], size)
+    return value
+
+
+def validate_unlock_key(value: Any) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"alg", "n", "e", "id", "identity"}:
+        raise ValueError("invalid node encryption key")
+    if not all(isinstance(item, str) for item in value.values()) or value["alg"] != "RSA-OAEP-256" or value["e"] != "AQAB":
+        raise ValueError("invalid node encryption key")
+    modulus = decode_base64url_canonical(value["n"], 256)
+    if not modulus[0] & 0x80 or not COMMAND_KEY_ID_RE.fullmatch(value["identity"]):
+        raise ValueError("invalid node identity")
+    digest = hashlib.sha256(("VELD_PORTAL_UNLOCK_KEY_V1\n" + value["n"] + "\n" + value["e"]).encode()).hexdigest()
+    if value["id"] != digest:
+        raise ValueError("invalid node key fingerprint")
+    return dict(value)
+
+
 def canonical_command_payload(action: str, payload: dict[str, Any]) -> str:
-    if action in NO_PAYLOAD_ACTIONS:
+    if action == "node.signin":
+        validate_unlock_payload(payload)
+    elif action in NO_PAYLOAD_ACTIONS:
         if payload:
             raise ValueError("unexpected command payload")
     elif action in BOOL_ACTIONS:
@@ -209,7 +245,7 @@ PORTAL_MANIFEST = {
     ],
 }
 PORTAL_OFFLINE_HTML = b"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a09"><title>Veld Portal offline</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#080a09;color:#f2f5f2;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(430px,100%);padding:25px;border:1px solid #343a36;border-radius:10px;background:#101311}h1{margin:0 0 8px;font:700 24px ui-monospace,Consolas,monospace}p{margin:0;color:#c5cbc7}</style><main class="card"><h1>Portal offline</h1><p>Reconnect to the internet, then reopen or refresh the app. Your node continues running independently.</p></main></html>"""
-PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v18';
+PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v19';
 const ASSETS=['/manifest.webmanifest','/icon.png?v=6','/offline'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
@@ -341,6 +377,16 @@ PORTAL_HTML = r"""<!doctype html>
   <button type="button" data-more-page="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1A7 7 0 0 0 15 6l-.4-2.6h-4L10 6a7 7 0 0 0-1.6 1L6 6 4 9.4 6.1 11a7 7 0 0 0 0 2L4 14.6 6 18l2.4-1a7 7 0 0 0 1.6 1l.5 2.6h4L15 18a7 7 0 0 0 1.6-1l2.4 1 2-3.4-2.1-1.6a7 7 0 0 0 .1-1Z"/></svg><span>Settings</span></button>
 <button id="logout" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v16h5M13 8l4 4-4 4M8 12h12"/></svg><span>Log out</span></button>
 </div>
+<dialog id="node-signin-dialog" class="pair-dialog" aria-labelledby="node-signin-title">
+  <form id="node-signin-form">
+    <h2 id="node-signin-title">Sign in &amp; mine</h2>
+    <p id="node-signin-machine"></p>
+    <div class="field"><label for="node-signin-password">Node passphrase</label><input id="node-signin-password" type="password" maxlength="512" autocomplete="off" spellcheck="false" required style="text-transform:none"></div>
+    <p>Your browser encrypts the passphrase for this paired PC. It is not saved by the portal.</p>
+    <div id="node-signin-error" class="error" role="alert"></div>
+    <div class="controls"><button type="button" class="button ghost" data-portal-action="cancelNodeSignIn">Cancel</button><button id="node-signin-submit" type="submit" class="button">Sign in &amp; mine</button></div>
+  </form>
+</dialog>
 <dialog id="pair-dialog" class="pair-dialog" aria-labelledby="pair-dialog-title">
   <form id="pair-form">
     <h2 id="pair-dialog-title">Add machine</h2>
@@ -362,12 +408,103 @@ function hex(bytes){return Array.from(bytes,byte=>byte.toString(16).padStart(2,"
 function openCommandDb(){return new Promise((resolve,reject)=>{const request=indexedDB.open(commandDbName,1);request.onupgradeneeded=()=>request.result.createObjectStore(commandStore);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(new Error("Secure command storage is unavailable"))})}
 async function commandKey(){if(commandKeyPromise)return commandKeyPromise;commandKeyPromise=(async()=>{if(!window.isSecureContext||!crypto?.subtle||!window.indexedDB)throw new Error("Secure command signing is unavailable in this browser");const db=await openCommandDb();let pair=await new Promise((resolve,reject)=>{const request=db.transaction(commandStore,"readonly").objectStore(commandStore).get(commandKeyName);request.onsuccess=()=>resolve(request.result||null);request.onerror=()=>reject(new Error("Secure command key could not be read"))});if(!pair){pair=await crypto.subtle.generateKey({name:"ECDSA",namedCurve:"P-256"},false,["sign","verify"]);await new Promise((resolve,reject)=>{const transaction=db.transaction(commandStore,"readwrite");transaction.objectStore(commandStore).put(pair,commandKeyName);transaction.oncomplete=resolve;transaction.onerror=()=>reject(new Error("Secure command key could not be saved"));transaction.onabort=transaction.onerror})}if(!pair.privateKey||pair.privateKey.extractable||!pair.privateKey.usages.includes("sign"))throw new Error("Secure command key is invalid");const jwk=await crypto.subtle.exportKey("jwk",pair.publicKey);if(jwk.kty!=="EC"||jwk.crv!=="P-256"||!jwk.x||!jwk.y)throw new Error("Secure command public key is invalid");const key={kty:"EC",crv:"P-256",x:jwk.x,y:jwk.y};const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(`VELD_PORTAL_KEY_V1\n${key.x}\n${key.y}`));return {pair,key,id:hex(new Uint8Array(digest))}})().catch(error=>{commandKeyPromise=null;throw error});return commandKeyPromise}
 function normalizeEcdsaSignature(buffer){const bytes=new Uint8Array(buffer);if(bytes.length===64)return bytes;if(bytes.length<8||bytes[0]!==0x30||bytes[1]!==bytes.length-2)throw new Error("Browser returned an invalid command signature");let offset=2;const integer=()=>{if(bytes[offset++]!==0x02)throw new Error("Browser returned an invalid command signature");const length=bytes[offset++];if(!length||offset+length>bytes.length)throw new Error("Browser returned an invalid command signature");let value=bytes.slice(offset,offset+length);offset+=length;while(value.length>32&&value[0]===0)value=value.slice(1);if(value.length>32)throw new Error("Browser returned an invalid command signature");const out=new Uint8Array(32);out.set(value,32-value.length);return out};const r=integer(),s=integer();if(offset!==bytes.length)throw new Error("Browser returned an invalid command signature");const out=new Uint8Array(64);out.set(r);out.set(s,32);return out}
-function canonicalPayload(action,payload){if(["node.start","node.stop","updates.check","updates.install"].includes(action)){if(Object.keys(payload).length)throw new Error("Invalid command payload");return "{}"}if(["mining.enabled","privacy.tor","network.reachable","display.reference"].includes(action)){if(Object.keys(payload).length!==1||typeof payload.enabled!=="boolean")throw new Error("Invalid command payload");return JSON.stringify({enabled:payload.enabled})}if(action==="mining.workers"){const workers=Number(payload.workers);if(Object.keys(payload).length!==1||!Number.isInteger(workers)||workers<1||workers>64)throw new Error("Invalid command payload");return JSON.stringify({workers})}if(action==="sync.mode"&&Object.keys(payload).length===1&&payload.mode==="full")return JSON.stringify({mode:"full"});throw new Error("Unsupported command")}
+function canonicalPayload(action,payload){if(action==="node.signin"){const fields=["ciphertext","identity","iv","key_id","wrapped_key"];if(Object.keys(payload).length!==5||fields.some(key=>typeof payload[key]!=="string")||!/^[a-f0-9]{64}$/.test(payload.identity)||!/^[a-f0-9]{64}$/.test(payload.key_id)||!/^[A-Za-z0-9_-]{16}$/.test(payload.iv)||!/^[A-Za-z0-9_-]{342}$/.test(payload.wrapped_key)||!/^[A-Za-z0-9_-]{23,1387}$/.test(payload.ciphertext))throw new Error("Invalid encrypted sign-in");return JSON.stringify(Object.fromEntries(fields.map(key=>[key,payload[key]])))}if(["node.start","node.stop","updates.check","updates.install"].includes(action)){if(Object.keys(payload).length)throw new Error("Invalid command payload");return "{}"}if(["mining.enabled","privacy.tor","network.reachable","display.reference"].includes(action)){if(Object.keys(payload).length!==1||typeof payload.enabled!=="boolean")throw new Error("Invalid command payload");return JSON.stringify({enabled:payload.enabled})}if(action==="mining.workers"){const workers=Number(payload.workers);if(Object.keys(payload).length!==1||!Number.isInteger(workers)||workers<1||workers>64)throw new Error("Invalid command payload");return JSON.stringify({workers})}if(action==="sync.mode"&&Object.keys(payload).length===1&&payload.mode==="full")return JSON.stringify({mode:"full"});throw new Error("Unsupported command")}
 function commandEnvelope(command){return `VELD_PORTAL_COMMAND_V3\n${command.id}\n${command.sequence}\n${command.issued_at}\n${command.expires_at}\n${command.nonce}\n${command.action}\n${canonicalPayload(command.action,command.payload)}`}
 async function ensureDeviceCommandKey(device,keyInfo){if(device.command_key_id&&device.command_key_id!==keyInfo.id)throw new Error("This browser does not hold the command key trusted by this machine. Remove and pair the machine again locally.");if(!device.command_key_id){await api("/api/v1/devices/trust-key","POST",{id:device.id,command_key:keyInfo.key});device.command_key_id=keyInfo.id;device.command_sequence=0}}
-async function signedAction(name,payload={}){const device=current();if(!device)throw new Error("Select a paired machine");const keyInfo=await commandKey();await ensureDeviceCommandKey(device,keyInfo);const issued=Math.floor(Date.now()/1000),command={id:device.id,action:name,payload,sequence:Number(device.command_sequence||0)+1,issued_at:issued,expires_at:issued+180,nonce:b64url(crypto.getRandomValues(new Uint8Array(16))),key_id:keyInfo.id};const signature=await crypto.subtle.sign({name:"ECDSA",hash:"SHA-256"},keyInfo.pair.privateKey,new TextEncoder().encode(commandEnvelope(command)));command.signature=b64url(normalizeEcdsaSignature(signature));await api("/api/v1/devices/command","POST",command);device.command_sequence=command.sequence;toast("Signed command sent for local approval");await refresh()}
+async function signedAction(name,payload={},preparePayload=null){const device=current();if(!device)throw new Error("Select a paired machine");const keyInfo=await commandKey();await ensureDeviceCommandKey(device,keyInfo);const issued=Math.floor(Date.now()/1000),command={id:device.id,action:name,payload,sequence:Number(device.command_sequence||0)+1,issued_at:issued,expires_at:issued+180,nonce:b64url(crypto.getRandomValues(new Uint8Array(16))),key_id:keyInfo.id};if(preparePayload)command.payload=await preparePayload(command);const signature=await crypto.subtle.sign({name:"ECDSA",hash:"SHA-256"},keyInfo.pair.privateKey,new TextEncoder().encode(commandEnvelope(command)));command.signature=b64url(normalizeEcdsaSignature(signature));await api("/api/v1/devices/command","POST",command);device.command_sequence=command.sequence;toast(snap(device).remote_control?"Signed command sent to the node":snap(device).unlock_key?"Approve this pairing on the PC once to enable remote control":"Approve this request on the paired PC");await refresh()}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}function n(v,d=0){return v==null||!Number.isFinite(Number(v))?"—":Number(v).toLocaleString(undefined,{maximumFractionDigits:d})}function bytes(v){let x=Number(v||0),u="B";for(const k of ["KB","MB","GB","TB"]){if(x<1024)break;x/=1024;u=k}return n(x,1)+" "+u}function current(){return devices.find(x=>x.id===selected)||devices[0]||null}function snap(d){return d&&d.snapshot||{}}
 async function refresh(){const j=await api("/api/v1/devices");csrf=j.csrf||csrf;devices=j.devices||[];if(!devices.some(d=>d.id===selected))selected=devices[0]?.id||0;renderSelector();render()}
+async function encryptNodePassphrase(passphrase, key, deviceId, nonce) {
+  const plain = new TextEncoder().encode(passphrase);
+  let rawKey;
+  try {
+    if (!plain.length || plain.length > 1024 || plain.includes(0)) throw new Error("Enter a valid node passphrase.");
+    const publicKey = await crypto.subtle.importKey("jwk", {kty:"RSA", n:key.n, e:key.e, alg:"RSA-OAEP-256", ext:true},
+      {name:"RSA-OAEP", hash:"SHA-256"}, false, ["encrypt"]);
+    const aesKey = await crypto.subtle.generateKey({name:"AES-GCM", length:256}, true, ["encrypt"]);
+    rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", aesKey));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const context = new TextEncoder().encode(`VELD_PORTAL_UNLOCK_V1\n${deviceId}\n${nonce}\n${key.id}\n${key.identity}`);
+    const ciphertext = await crypto.subtle.encrypt({name:"AES-GCM", iv, additionalData:context, tagLength:128}, aesKey, plain);
+    const wrapped = await crypto.subtle.encrypt({name:"RSA-OAEP"}, publicKey, rawKey);
+    return {ciphertext:b64url(new Uint8Array(ciphertext)), identity:key.identity,
+      iv:b64url(iv), key_id:key.id, wrapped_key:b64url(new Uint8Array(wrapped))};
+  } finally {
+    plain.fill(0);
+    if (rawKey) rawKey.fill(0);
+  }
+}
+
+async function pinUnlockKey(device) {
+  const key = snap(device).unlock_key;
+  if (!key || key.alg !== "RSA-OAEP-256" || key.e !== "AQAB" || !/^[A-Za-z0-9_-]{342}$/.test(key.n) ||
+      !/^[a-f0-9]{64}$/.test(key.id) || !/^[a-f0-9]{64}$/.test(key.identity))
+    throw new Error("Update this node to a client that supports remote sign-in.");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`VELD_PORTAL_UNLOCK_KEY_V1\n${key.n}\n${key.e}`));
+  if (hex(new Uint8Array(digest)) !== key.id) throw new Error("The node encryption key could not be verified.");
+  const db = await openCommandDb(), name = `node-unlock-${device.id}`;
+  await new Promise((resolve,reject)=>{
+    const transaction = db.transaction(commandStore,"readwrite"), store = transaction.objectStore(commandStore);
+    const read = store.get(name);
+    read.onsuccess = ()=>{
+      if (read.result && read.result !== key.id) {
+        transaction.abort();
+        reject(new Error("This node's encryption key changed. Verify the machine and pair it again locally."));
+      } else if (!read.result) store.put(key.id,name);
+    };
+    transaction.oncomplete=resolve;
+    transaction.onerror=()=>reject(new Error("The node encryption key could not be saved."));
+    transaction.onabort=()=>reject(new Error("The node encryption key could not be verified."));
+  });
+  return {...key};
+}
+
+let nodeSignInTarget = null, nodeSignInBusy = false;
+async function openNodeSignIn() {
+  const device = current();
+  if (!device || !device.online) throw new Error("The paired node app must be online.");
+  const key = await pinUnlockKey(device);
+  nodeSignInTarget = {deviceId:device.id, key};
+  $("node-signin-machine").textContent = device.name;
+  $("node-signin-password").value = "";
+  $("node-signin-error").textContent = "";
+  $("node-signin-dialog").showModal();
+  $("node-signin-password").focus();
+}
+function closeNodeSignIn() {
+  if (nodeSignInBusy) return;
+  $("node-signin-password").value = "";
+  nodeSignInTarget = null;
+  $("node-signin-dialog").close();
+}
+async function submitNodeSignIn(event) {
+  event.preventDefault();
+  if (nodeSignInBusy || !nodeSignInTarget) return;
+  const target = nodeSignInTarget, input = $("node-signin-password"), submit = $("node-signin-submit");
+    let passphrase = input.value;
+  input.value = "";
+  nodeSignInBusy = true;
+  submit.disabled = true;
+  let sent = false;
+  try {
+    if (current()?.id !== target.deviceId) throw new Error("Select the same paired machine and retry.");
+    const pending = actionQueue.then(async ()=>{
+      if (current()?.id !== target.deviceId) throw new Error("Select the same paired machine and retry.");
+      await signedAction("node.signin", {}, command=>encryptNodePassphrase(passphrase, target.key, command.id, command.nonce));
+    });
+    actionQueue = pending.catch(()=>{});
+    await pending;
+    sent = true;
+  } catch (error) {
+    $("node-signin-error").textContent = error.message || "Sign-in could not be sent.";
+  } finally {
+    passphrase = "";
+    nodeSignInBusy = false;
+    submit.disabled = false;
+    if (sent) closeNodeSignIn();
+  }
+}
+
 function renderSelector(){const s=$("device-select");setHtml(s,devices.length?devices.map(d=>`<option value="${d.id}" ${d.id===selected?"selected":""}>${esc(d.name)}</option>`).join(""):'<option>No paired machines</option>');s.disabled=!devices.length}
 function metric(value,label,cls=""){return `<article class="card"><div class="value ${cls}">${value}</div><div class="label">${label}</div></article>`}
 function spark(history,key,label,formatter=n){
@@ -410,7 +547,7 @@ function firstPair(){return `<section class="section"><div class="section-head">
 function pageScrollState(){const state={};document.querySelectorAll("#page [data-scroll-key]").forEach(el=>state[el.dataset.scrollKey]=el.scrollLeft);return state}
 function restorePageScroll(state){requestAnimationFrame(()=>document.querySelectorAll("#page [data-scroll-key]").forEach(el=>{const value=state[el.dataset.scrollKey];if(Number.isFinite(value))el.scrollLeft=value}))}
 function render(){const scroll=pageScrollState();const d=current();$("mobile-nav").hidden=!d;$("app-view").classList.toggle("unpaired",!d);$("portal-more-menu").classList.toggle("unpaired",!d);const meta=d?titles[page]:["Pair a machine","Connect your first Veld node or miner."];$("page-title").textContent=meta[0];$("page-subtitle").textContent=meta[1];const extra=["workers","network","logs","settings"];document.querySelectorAll("#nav button,#mobile-nav button").forEach(b=>b.classList.toggle("active",!!d&&(b.dataset.page===page||(b.dataset.page==="more"&&extra.includes(page)))));if(!d){$("online").className="status";$("online").textContent="Offline";setHtml($("page"),firstPair());return}$("online").className="status "+(d.online?"online":"");$("online").textContent=d.online?"Online":"Offline";const fn={overview,blockchain,mining,workers,explorer,network,logs,settings,more}[page];setHtml($("page"),fn(d,snap(d)));restorePageScroll(scroll)}
-function overview(d,s){return `<div class="cards">${metric(n(d.height),"Block height","green")}${metric(d.sync_lag==null?"Unknown":d.sync_lag?n(d.sync_lag)+" behind":s.diagnostics?.daemon?.ibd_complete?"100.0%":"Verifying","Synchronization")}${metric(n(d.peers),"P2P peers")}${metric(n(d.hashrate,1)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(d.workers),"CPU workers")}${metric(n(s.mempool),"Mempool transactions")}${metric(n(s.supply,2)+" VELD","Circulating supply")}</div><section class="section"><div class="section-head"><div><h2>Node status</h2><p>${esc(d.warning||"Consensus validation is active inside veld-node.")}</p></div><div class="controls"><span class="status ${d.online?'online':''}">${esc(d.mining_state)}</span><button class="button" data-command="${s.process_running?'node.stop':'node.start'}"${s.process_running?' data-confirm="Stop this node gracefully?"':''}>${s.process_running?'Stop node':'Start node'}</button></div></div><div class="kv"><div><b>${d.sync_lag==null?'Unknown':d.sync_lag?'Syncing':s.diagnostics?.daemon?.historical_validated?'Validated':'Reported'}</b><span>Chain</span></div><div><b>${n(d.peers)}</b><span>Connections</span></div><div><b>${s.mining_ready==null?'Unknown':s.mining_ready?'Ready':'Waiting'}</b><span>Work admission</span></div><div><b>v${esc(d.gui_version||d.version)}</b><span>GUI version</span></div><div><b>${d.daemon_version?"v"+esc(d.daemon_version):"Unknown"}</b><span>Daemon version</span></div></div>${d.last_command?`<div class="warning">Last command: ${esc(d.last_command.action)} | ${esc(d.last_command.state)}</div>`:""}</section><section class="section"><div class="section-head"><div><h2>Chain activity</h2><p>Locally reported verified chain height over the last hour.</p></div></div>${spark(d.history,"height","Verified chain height")}</section>`}
+function overview(d,s){return `<div class="cards">${metric(n(d.height),"Block height","green")}${metric(d.sync_lag==null?"Unknown":d.sync_lag?n(d.sync_lag)+" behind":s.diagnostics?.daemon?.ibd_complete?"100.0%":"Verifying","Synchronization")}${metric(n(d.peers),"P2P peers")}${metric(n(d.hashrate,1)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(d.workers),"CPU workers")}${metric(n(s.mempool),"Mempool transactions")}${metric(n(s.supply,2)+" VELD","Circulating supply")}</div><section class="section"><div class="section-head"><div><h2>Node status</h2><p>${esc(d.warning||"Consensus validation is active inside veld-node.")}</p></div><div class="controls"><span class="status ${d.online?'online':''}">${esc(d.mining_state)}</span><button class="button" data-command="${s.process_running?'node.stop':'node.start'}"${s.process_running?' data-confirm="Stop this node gracefully?"':''}>${s.process_running?'Stop node':'Start node'}</button>${!s.process_running&&s.unlock_key?'<button type="button" class="button" data-portal-action="signIn">Sign in &amp; mine</button>':''}</div></div><div class="kv"><div><b>${d.sync_lag==null?'Unknown':d.sync_lag?'Syncing':s.diagnostics?.daemon?.historical_validated?'Validated':'Reported'}</b><span>Chain</span></div><div><b>${n(d.peers)}</b><span>Connections</span></div><div><b>${s.mining_ready==null?'Unknown':s.mining_ready?'Ready':'Waiting'}</b><span>Work admission</span></div><div><b>v${esc(d.gui_version||d.version)}</b><span>GUI version</span></div><div><b>${d.daemon_version?"v"+esc(d.daemon_version):"Unknown"}</b><span>Daemon version</span></div></div>${d.last_command?`<div class="warning">Last command: ${esc(d.last_command.action)} | ${esc(d.last_command.state)}${d.last_command.result?" · "+esc(d.last_command.result):""}</div>`:""}</section><section class="section"><div class="section-head"><div><h2>Chain activity</h2><p>Locally reported verified chain height over the last hour.</p></div></div>${spark(d.history,"height","Verified chain height")}</section>`}
 function blockchain(d,s){return `<div class="cards">${metric(n(d.height),"Locally verified height","green")}${metric(d.sync_lag?n(d.sync_lag):"0","Blocks behind")}${metric(bytes(s.chain_bytes),"Chain storage")}${metric("Signed + verified","Snapshot bootstrap")}</div><section class="section"><div class="section-head"><div><h2>Synchronization mode</h2><p>Snapshot starts remain quarantined until an independent genesis validation matches exactly.</p></div></div><div class="control-row"><div><h3>Signed snapshot</h3><p>Fast startup with independent full-chain validation in the background.</p></div><button class="button" data-command="sync.mode" data-mode="snapshot">Select</button></div><div class="control-row"><div><h3>Full initial block download</h3><p>Download and validate the complete chain from genesis before services open.</p></div><button class="button" data-command="sync.mode" data-mode="full">Select</button></div></section>`}
 function mining(d,s){return `<div class="cards">${metric(esc(d.mining_state),"Mining status",s.mining_active?"green":"")}${metric(n(d.hashrate,2)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.workers),"CPU workers")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(s.total_hashes),"Session hashes","wide")}${metric(s.mining_ready==null?"Unknown":s.mining_ready?"Admitted":"Waiting","Work admission","wide")}</div><section class="section"><div class="section-head"><div><h2>Hashrate history</h2><p>Measured aggregate VeldHash rate over the last hour.</p></div></div>${spark(d.history,"hashrate","VeldHash rate",(x,p)=>n(x,p)+" H/s")}</section><section class="section"><div class="control-row"><div><h3>CPU mining</h3><p>Enable mining for the next app-managed start.</p></div><button class="toggle ${s.mining_enabled?'on':''}" aria-label="Toggle mining" data-command="mining.enabled" data-enabled="${!!s.mining_enabled}"></button></div><div class="control-row"><div><h3>Worker count</h3><p>Choose 1 to 64 workers. Applies on the next node start.</p></div><div class="controls"><button class="button ghost" data-worker-delta="-1">-</button><span class="pill">${n(s.configured_workers||d.workers||1)} workers</span><button class="button ghost" data-worker-delta="1">+</button></div></div></section>`}
 function setWorkers(delta){const d=current(),s=snap(d);const value=Math.max(1,Math.min(64,Number(s.configured_workers||d.workers||1)+delta));action('mining.workers',{workers:value})}
@@ -427,7 +564,7 @@ function network(d,s){
 function logs(d,s){const events=Array.isArray(s.events)?s.events:[];return `<section class="section"><div class="section-head"><div><h2>Operational events</h2><p>Sanitized status events only. Raw logs and local paths stay on the machine.</p></div></div><div class="log">${events.length?events.map(esc).join("\n"):"Waiting for sanitized client events..."}</div></section>`}
 function settingRow(title,detail,actionName,value,disabled=false){return `<div class="control-row"><div><h3>${title}</h3><p>${detail}</p></div><button class="toggle ${value?'on':''}" ${disabled?'disabled':''} data-command="${actionName}" data-enabled="${!!value}"></button></div>`}
 function installedPortal(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true}
-function settings(d,s){const pair=`<section class="section"><div class="section-head"><div><h2>Pair another machine</h2><p>Connect another Veld node or miner using its one-time code.</p></div><button type="button" class="button" data-portal-action="addMachine">Add machine</button></div></section>`;return `<section class="section"><div class="section-head"><div><h2>Node preferences</h2><p>Changes that affect transport or sync apply on the next start.</p></div></div>${settingRow("CPU mining","Run VeldHash workers when the node starts.","mining.enabled",s.mining_enabled)}${settingRow("Tor-only privacy","Route peer traffic through Tor.","privacy.tor",s.tor,s.process_running)}${settingRow("Attempt inbound reachability","Ask the router for an inbound P2P mapping.","network.reachable",s.reachable,s.process_running||s.tor)}${settingRow("Show public height reference","Use the public explorer for visual sync progress only.","display.reference",s.reference)}</section><section class="section"><div class="section-head"><div><h2>Release and updates</h2><p>GUI v${esc(d.gui_version||d.version)} · Daemon ${d.daemon_version?"v"+esc(d.daemon_version):"unknown"}</p></div><div class="controls"><button class="button" data-command="updates.check">Check now</button><button class="button" data-command="updates.install" data-confirm="Install the signed update and restart this node?">Update now</button></div></div><div class="local-only">Signed feed verification and package installation run on the paired machine. Identity creation, keyfile import, and passphrase entry stay local and are never sent through this portal.</div></section>${pair}<section class="section"><div class="section-head"><div><h2>Current machine</h2><p>Rename or remove this paired machine.</p></div></div><div class="control-row"><div><h3>Machine name</h3><p>${esc(d.name)}</p></div><div class="controls"><button class="button ghost" data-portal-action="rename">Rename</button><button class="button danger" data-portal-action="remove">Remove</button></div></div></section>`}
+function settings(d,s){const pair=`<section class="section"><div class="section-head"><div><h2>Pair another machine</h2><p>Connect another Veld node or miner using its one-time code.</p></div><button type="button" class="button" data-portal-action="addMachine">Add machine</button></div></section>`;return `<section class="section"><div class="section-head"><div><h2>Node preferences</h2><p>Changes that affect transport or sync apply on the next start.</p></div></div>${settingRow("CPU mining","Run VeldHash workers when the node starts.","mining.enabled",s.mining_enabled)}${settingRow("Tor-only privacy","Route peer traffic through Tor.","privacy.tor",s.tor,s.process_running)}${settingRow("Attempt inbound reachability","Ask the router for an inbound P2P mapping.","network.reachable",s.reachable,s.process_running||s.tor)}${settingRow("Show public height reference","Use the public explorer for visual sync progress only.","display.reference",s.reference)}</section><section class="section"><div class="section-head"><div><h2>Release and updates</h2><p>GUI v${esc(d.gui_version||d.version)} · Daemon ${d.daemon_version?"v"+esc(d.daemon_version):"unknown"}</p></div><div class="controls"><button class="button" data-command="updates.check">Check now</button><button class="button" data-command="updates.install" data-confirm="Install the signed update and restart this node?">Update now</button></div></div><div class="local-only">Signed feed verification and package installation run on the paired machine. Identity creation and keyfile import stay local. Remote sign-in encrypts your passphrase for the paired PC.</div></section>${pair}<section class="section"><div class="section-head"><div><h2>Current machine</h2><p>Rename or remove this paired machine.</p></div></div><div class="control-row"><div><h3>Machine name</h3><p>${esc(d.name)}</p></div><div class="controls"><button class="button ghost" data-portal-action="rename">Rename</button><button class="button danger" data-portal-action="remove">Remove</button></div></div></section>`}
 function more(){const installed=installedPortal();return `<section class="section"><div class="more-grid"><button class="button" data-open-page="workers">Workers</button><button class="button" data-open-page="network">Network</button><button class="button" data-open-page="logs">Logs</button><button class="button" data-open-page="settings">Settings</button>${installed?'':`<button class="button" data-portal-action="install">Install portal</button>`}</div></section>`}
 async function installPortal(){if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;render();return}toast('Open your browser menu and choose Add to Home Screen')}
 let pairingBusy=false;
@@ -480,7 +617,8 @@ window.addEventListener('appinstalled',()=>{installPrompt=null;if(page==='more')
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).catch(()=>{}));
 function closePortalMore(){const menu=$("portal-more-menu");menu.dataset.open="0";menu.setAttribute("aria-hidden","true");document.querySelectorAll('[data-page="more"]').forEach(button=>button.setAttribute("aria-expanded","false"))}
 function togglePortalMore(){const menu=$("portal-more-menu"),opening=menu.dataset.open!=="1";menu.dataset.open=opening?"1":"0";menu.setAttribute("aria-hidden",opening?"false":"true");document.querySelectorAll('[data-page="more"]').forEach(button=>button.setAttribute("aria-expanded",opening?"true":"false"))}
-function handlePortalClick(event){if(!(event.target instanceof Element))return;const target=event.target.closest("[data-portal-action],[data-command],[data-worker-delta],[data-open-page]");if(!target||target.disabled)return;if(target.dataset.openPage){page=target.dataset.openPage;render();return}if(target.dataset.workerDelta){setWorkers(Number(target.dataset.workerDelta));return}if(target.dataset.portalAction){const handlers={addMachine:openAddMachine,cancelPair:closeAddMachine,install:installPortal,rename:renameDevice,remove:removeDevice},handler=handlers[target.dataset.portalAction];if(handler)Promise.resolve(handler()).catch(error=>toast(error.message,true));return}if(target.dataset.command){if(target.dataset.confirm&&!window.confirm(target.dataset.confirm))return;const payload={};if(Object.prototype.hasOwnProperty.call(target.dataset,"enabled"))payload.enabled=target.dataset.enabled!=="true";if(target.dataset.mode)payload.mode=target.dataset.mode;action(target.dataset.command,payload)}}
+function handlePortalClick(event){if(!(event.target instanceof Element))return;const target=event.target.closest("[data-portal-action],[data-command],[data-worker-delta],[data-open-page]");if(!target||target.disabled)return;if(target.dataset.openPage){page=target.dataset.openPage;render();return}if(target.dataset.workerDelta){setWorkers(Number(target.dataset.workerDelta));return}if(target.dataset.portalAction){const handlers={signIn:openNodeSignIn,cancelNodeSignIn:closeNodeSignIn,addMachine:openAddMachine,cancelPair:closeAddMachine,install:installPortal,rename:renameDevice,remove:removeDevice},handler=handlers[target.dataset.portalAction];if(handler)Promise.resolve(handler()).catch(error=>toast(error.message,true));return}if(target.dataset.command){if(target.dataset.confirm&&!window.confirm(target.dataset.confirm))return;const payload={};if(Object.prototype.hasOwnProperty.call(target.dataset,"enabled"))payload.enabled=target.dataset.enabled!=="true";if(target.dataset.mode)payload.mode=target.dataset.mode;action(target.dataset.command,payload)}}
+$("node-signin-form").addEventListener("submit",submitNodeSignIn);$("node-signin-dialog").addEventListener("cancel",event=>{if(nodeSignInBusy)event.preventDefault();else closeNodeSignIn()});
 $("pair-form").addEventListener("submit",claimMachine);$("pair-dialog").addEventListener("cancel",event=>{if(pairingBusy)event.preventDefault()});
 document.addEventListener("click",handlePortalClick);document.querySelectorAll("#nav button,#mobile-nav button,#unpaired-more").forEach(b=>b.addEventListener("click",e=>{if(b.dataset.page==="more"){e.stopPropagation();togglePortalMore();return}closePortalMore();page=b.dataset.page;render()}));document.querySelectorAll("[data-more-page]").forEach(b=>b.addEventListener("click",()=>{page=b.dataset.morePage;closePortalMore();render()}));document.addEventListener("click",e=>{const menu=$("portal-more-menu"),buttons=[...document.querySelectorAll('[data-page="more"]')];if(menu.dataset.open==="1"&&!menu.contains(e.target)&&!buttons.some(button=>button.contains(e.target)))closePortalMore()});document.addEventListener("keydown",e=>{if(e.key==="Escape")closePortalMore()});$("device-select").addEventListener("change",e=>{selected=Number(e.target.value);render()});$("login").addEventListener("click",()=>auth("login"));$("register").addEventListener("click",()=>auth("register"));$("logout").addEventListener("click",async()=>{try{await api("/api/v1/logout","POST",{})}catch{}showAuth()});api("/api/v1/session").then(j=>{csrf=j.csrf;showApp()}).catch(showAuth);setInterval(()=>{if(!$("app-view").classList.contains("hidden"))refresh()},5000);
 </script></body></html>"""
@@ -1041,6 +1179,10 @@ class PortalStore:
                 (now, device_id, now),
             )
             db.execute(
+                "UPDATE commands SET payload_json='{}' WHERE device_id=? AND action='node.signin' AND state NOT IN ('queued','delivered')",
+                (device_id,),
+            )
+            db.execute(
                 "DELETE FROM commands WHERE completed_at IS NOT NULL AND completed_at<?",
                 (now - 30 * 86400,),
             )
@@ -1061,8 +1203,9 @@ class PortalStore:
                        FROM commands
                        WHERE device_id=? AND state IN ('queued','delivered')
                          AND expires_at>=? AND signature<>''
+                         AND (action<>'node.signin' OR ?>=4)
                        ORDER BY sequence LIMIT 1""",
-                    (device_id, now),
+                    (device_id, now, protocol),
                 ).fetchone()
                 if pending:
                     db.execute(
@@ -1082,7 +1225,7 @@ class PortalStore:
                     }
             paired = row["account_id"] is not None
         response = {
-            "portal_protocol": min(protocol, 3),
+            "portal_protocol": min(protocol, 4),
             "paired": paired,
             "pair_code": None if paired else code,
             "pair_expires": 0 if paired else expires,
@@ -1217,13 +1360,20 @@ class PortalStore:
         device_id = command["id"]
         with self.lock, self.database() as db:
             owned = db.execute(
-                """SELECT command_key_x,command_key_y,
+                """SELECT command_key_x,command_key_y,snapshot_json,
                           command_key_id,command_sequence FROM devices
                    WHERE id=? AND account_id=?""",
                 (device_id, account_id),
             ).fetchone()
             if not owned:
                 return None
+            if command["action"] == "node.signin":
+                snapshot = json.loads(owned["snapshot_json"])
+                key = validate_unlock_key(snapshot.get("unlock_key"))
+                if key is None:
+                    raise ValueError("Update this node to enable remote sign-in")
+                if key["id"] != command["payload"]["key_id"] or key["identity"] != command["payload"]["identity"]:
+                    raise ValueError("Node sign-in identity changed; refresh and retry")
             if not owned["command_key_id"]:
                 raise ValueError("Secure control key is not enrolled")
             if not hmac.compare_digest(owned["command_key_id"], command["key_id"]):
@@ -1243,6 +1393,10 @@ class PortalStore:
             db.execute(
                 "UPDATE commands SET state='superseded',completed_at=? WHERE device_id=? AND action=? AND state='queued'",
                 (now, device_id, command["action"]),
+            )
+            db.execute(
+                "UPDATE commands SET payload_json='{}' WHERE device_id=? AND action='node.signin' AND state='superseded'",
+                (device_id,),
             )
             cur = db.execute(
                 """INSERT INTO commands(
@@ -1440,6 +1594,8 @@ def validate_snapshot(value: Any) -> dict[str, Any]:
         "mining_active",
         "mining_ready",
         "port_mapped",
+        "remote_control",
+        "identity_unlocked",
     }
     int_limits = {
         "mempool": 10**7,
@@ -1455,12 +1611,13 @@ def validate_snapshot(value: Any) -> dict[str, Any]:
         bool_fields
         | set(int_limits)
         | set(number_limits)
-        | {"peer_roles", "topology", "recent_blocks", "events", "diagnostics"}
+        | {"peer_roles", "topology", "recent_blocks", "events", "diagnostics", "unlock_key"}
     )
     if set(value) - allowed:
         raise ValueError("unexpected client snapshot field")
     out: dict[str, Any] = {}
     out["diagnostics"] = validate_diagnostics(value.get("diagnostics"))
+    out["unlock_key"] = validate_unlock_key(value.get("unlock_key"))
     for field in bool_fields:
         item = value.get(field, False)
         if not isinstance(item, bool):
@@ -1655,7 +1812,7 @@ def validate_report(data: Any) -> dict[str, Any]:
         raise ValueError("invalid acknowledgement status")
     if not ack_id and (ack_status or ack_message):
         raise ValueError("orphan acknowledgement")
-    protocol = bounded_int(data.get("portal_protocol", 1), 1, 3, "portal protocol")
+    protocol = bounded_int(data.get("portal_protocol", 1), 1, 4, "portal protocol")
     return {
         "portal_protocol": protocol,
         "name": name.strip(),

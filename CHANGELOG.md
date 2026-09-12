@@ -3,6 +3,21 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## 3.1.9 - 2026-09-11
+
+- Start and stop a paired Windows node and run signed updates from the portal
+  after one approval on the PC.
+- Sign in and start mining remotely with a passphrase encrypted in the browser
+  for the paired PC. The portal never receives the plaintext passphrase.
+- Preserve the remote control grant, encryption key, settings, and worker count
+  across updates. Turning off Remote access blocks commands immediately.
+- Keep existing clients and pairings compatible; reject expired, replayed, or
+  altered commands and erase completed sign-in ciphertext from the relay queue.
+- Repair hosted Explorer block history when a valid block exceeds the bulk
+  display budget, including the existing block 4602. Page layout is unchanged.
+
+No consensus rules or mining parameters change.
+
 ## 3.1.8 - 2026-09-11
 
 - Refresh mining timestamps by elapsed wall-clock time on every worker.

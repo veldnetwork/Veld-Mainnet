@@ -24,10 +24,10 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
-**3.1.8** keeps mining timestamps current on slow workers and permits retries
-after unsuccessful near-miss submissions. It includes the connection and
-updater reliability fixes, preserves saved settings and chain data, and removes
-the separate update-repair launcher. See the [release notes](docs/release-notes.md)
+**3.1.9** adds portal start, stop, encrypted sign-in, and signed updates after
+one approval on the paired PC. The node app must remain open with Remote access
+enabled. It includes the 3.1.8 mining and updater reliability fixes and preserves
+saved settings, pairing, and chain data. See the [release notes](docs/release-notes.md)
 and [download the signed client](https://veld.network/#download).
 
 The stake minimum is **500 VELD**. Co-mining eligibility requires **1,000 VELD**

@@ -78,7 +78,7 @@ try{
 }finally{$lock.Dispose()}
 $lock=Open-InstallLock;$lock.Dispose()
 $results+=@{case='installation ownership across cleanup';result='PASS'}
-foreach($name in @('veld-data/db/CURRENT','wallet-data/wallet.dat','node-gui.conf','remote-monitor.dat','remote-trust.dat','miner.key','full-ibd.receipt','.veld-update.lock')) {
+foreach($name in @('veld-data/db/CURRENT','wallet-data/wallet.dat','node-gui.conf','remote-monitor.dat','remote-trust.dat','remote-unlock.dat','miner.key','full-ibd.receipt','.veld-update.lock')) {
     $manifest=Join-Path $InstallDir 'test-manifest.txt'
     [IO.File]::WriteAllText($manifest,"# veld-release-manifest-v1`n# release-version=9.9.9`n"+('a'*64)+' *'+$name+"`n",[Text.UTF8Encoding]::new($false))
     $refused=$false;try{Read-Manifest $manifest|Out-Null}catch{$refused=$_.Exception.Message -like '*persistent user state*'}

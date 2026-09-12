@@ -400,7 +400,7 @@ function Read-Manifest([string]$Path) {
         # Release packages own program files only. A valid signature must not
         # make a packaging mistake overwrite a miner's mutable identity/state.
         if ($rel -match '(?i)(^|/)(veld-data|wallet-data|background-ibd|security)(/|$)' -or
-            $rel -match '(?i)(^|/)(node-gui\.conf|remote-monitor\.dat|remote-trust\.dat|miner\.key|wallet\.dat|full-ibd\.receipt|fleet-full-ibd\.receipt|\.veld-update[^/]*)(/|$)') {
+            $rel -match '(?i)(^|/)(node-gui\.conf|remote-monitor\.dat|remote-trust\.dat|remote-unlock\.dat|miner\.key|wallet\.dat|full-ibd\.receipt|fleet-full-ibd\.receipt|\.veld-update[^/]*)(/|$)') {
             throw ('release manifest attempts to replace persistent user state: ' + $rel)
         }
         if ($rel.StartsWith('/') -or $rel.Contains('\') -or

@@ -32,6 +32,7 @@
 #include "../include/gui/node_gui_model.h"
 #include "../include/gui/node_log_display.h"
 #include "../include/gui/state_file.h"
+#include "../include/gui/portal_unlock.h"
 #include "../include/node/client_exit_policy.h"
 #include "../include/network/chainparams.h"
 #include "../include/wallet/passphrase_policy.h"
@@ -576,6 +577,7 @@ bool IsPortalCommandKey(const std::string& x, const std::string& y,
 struct PortalTrustState {
     uint64_t device_id{0};
     uint64_t last_sequence{0};
+    bool unattended{false};
     std::string key_id;
     std::string key_x;
     std::string key_y;
@@ -599,9 +601,9 @@ bool SavePortalTrust(const std::filesystem::path& path,
                      const PortalTrustState& state) {
     if (!state.Valid()) return false;
     std::ostringstream serialized;
-    serialized << "VELD_PORTAL_TRUST_V1\n" << state.device_id << '\n'
+    serialized << "VELD_PORTAL_TRUST_V2\n" << state.device_id << '\n'
                << state.last_sequence << '\n' << state.key_id << '\n'
-               << state.key_x << '\n' << state.key_y << '\n';
+               << state.key_x << '\n' << state.key_y << '\n' << (state.unattended ? 1 : 0) << '\n';
     std::string text = serialized.str();
     DATA_BLOB plain{static_cast<DWORD>(text.size()),
                     reinterpret_cast<BYTE*>(text.data())};
@@ -666,13 +668,17 @@ bool LoadPortalTrust(const std::filesystem::path& path,
         return result.ec == std::errc{} &&
             result.ptr == value.data() + value.size();
     };
-    const bool ok = lines.size() == 6 && lines[0] == "VELD_PORTAL_TRUST_V1" &&
+    const bool legacy = lines.size() == 6 && lines[0] == "VELD_PORTAL_TRUST_V1";
+    const bool current = lines.size() == 7 && lines[0] == "VELD_PORTAL_TRUST_V2" &&
+        (lines[6] == "0" || lines[6] == "1");
+    const bool ok = (legacy || current) &&
         parse_number(lines[1], parsed.device_id) && parsed.device_id != 0 &&
         parse_number(lines[2], parsed.last_sequence);
     if (ok) {
         parsed.key_id = lines[3];
         parsed.key_x = lines[4];
         parsed.key_y = lines[5];
+        parsed.unattended = current && lines[6] == "1";
     }
     SecureZeroMemory(text.data(), text.size());
     if (!ok || !parsed.Valid()) return false;
@@ -734,6 +740,7 @@ struct MonitoringReply {
         bool enabled{false};
         uint64_t workers{0};
         std::string mode;
+        veld::node_gui::PortalUnlockPayload unlock;
     } command;
     uint64_t protocol{0};
     uint64_t device_id{0};
@@ -758,7 +765,7 @@ bool ParseMonitoringReply(const std::string& body, MonitoringReply& out) {
     if (root.object.size() != 8 ||
         !veld::node_gui::ParseUint(root.Get("portal_protocol"),
                                   parsed.protocol) ||
-        parsed.protocol != 3 ||
+        (parsed.protocol != 3 && parsed.protocol != 4) ||
         !veld::node_gui::ParseUint(root.Get("device_id"), parsed.device_id) ||
         parsed.device_id == 0 ||
         !veld::node_gui::ParseBool(root.Get("paired"), parsed.paired) ||
@@ -847,7 +854,19 @@ bool ParseMonitoringReply(const std::string& body, MonitoringReply& out) {
         parsed.command.key_x = parsed.command_key_x;
         parsed.command.key_y = parsed.command_key_y;
         parsed.command.signature = signature->text;
-        if (parsed.command.action == "mining.enabled" ||
+        if (parsed.command.action == "node.signin") {
+            if (payload->object.size() != 5) return false;
+            const auto read_field = [&](const char* name, std::string& value) {
+                const auto* field = payload->Get(name);
+                if (!field || field->kind != veld::btc_buy::JsonValue::Kind::String) return false;
+                value = field->text;
+                return true;
+            };
+            auto& unlock = parsed.command.unlock;
+            if (!read_field("ciphertext", unlock.ciphertext) || !read_field("identity", unlock.identity) ||
+                !read_field("iv", unlock.iv) || !read_field("key_id", unlock.key_id) ||
+                !read_field("wrapped_key", unlock.wrapped_key) || !unlock.Valid()) return false;
+        } else if (parsed.command.action == "mining.enabled" ||
             parsed.command.action == "privacy.tor" ||
             parsed.command.action == "network.reachable" ||
             parsed.command.action == "display.reference") {
@@ -887,6 +906,7 @@ bool ParseMonitoringReply(const std::string& body, MonitoringReply& out) {
 
 std::string CanonicalPortalCommandPayload(
         const MonitoringReply::Command& command) {
+    if (command.action == "node.signin") return command.unlock.Canonical();
     if (command.action == "node.start" || command.action == "node.stop" ||
         command.action == "updates.check" ||
         command.action == "updates.install") return "{}";
@@ -963,6 +983,7 @@ PortalCommandTrustVerdict EvaluatePortalCommandTrust(
     next.key_id = command.key_id;
     next.key_x = command.key_x;
     next.key_y = command.key_y;
+    next.unattended = same_pairing && current.unattended;
     rejection.clear();
     return same_pairing ? PortalCommandTrustVerdict::ExistingPairing
                         : PortalCommandTrustVerdict::NewPairing;
@@ -2008,6 +2029,7 @@ private:
     std::string wallet_signer_token_;
     std::atomic<bool> stopping_node_{false};
     std::atomic<bool> session_unlock_confirmed_{false};
+    veld::node_gui::PortalUnlockKey remote_unlock_key_;
     std::mutex session_passphrase_mutex_;
     std::vector<BYTE> protected_session_passphrase_;
     size_t protected_session_passphrase_chars_{0};
@@ -5833,6 +5855,21 @@ private:
         return true;
     }
 
+    bool HasSessionUnlock() {
+        std::lock_guard<std::mutex> lock(session_passphrase_mutex_);
+        return !protected_session_passphrase_.empty() && protected_session_passphrase_chars_ != 0;
+    }
+
+    std::string RemoteIdentityFingerprint() const {
+        const std::string bytes = ReadTextBounded(data_dir_ / L"miner.key", 65536);
+        return bytes.empty() ? std::string{} : veld::node_gui::PortalDigest(bytes);
+    }
+
+    static bool UnattendedPortalAction(const std::string& action) {
+        return action == "node.start" || action == "node.stop" || action == "node.signin" ||
+            action == "updates.check" || action == "updates.install";
+    }
+
     void ClearSessionPassphrase() {
         std::lock_guard<std::mutex> lock(session_passphrase_mutex_);
         if (!protected_session_passphrase_.empty()) {
@@ -6669,6 +6706,7 @@ private:
 
     std::wstring RemoteCommandDescription(
             const MonitoringReply::Command& command) const {
+        if (command.action == "node.signin") return L"Sign in to this node and start mining";
         if (command.action == "node.start") return L"Start the Veld node";
         if (command.action == "node.stop") return L"Stop the Veld node gracefully";
         if (command.action == "updates.check")
@@ -6702,7 +6740,7 @@ private:
     }
 
     bool ConfirmRemoteCommand(const MonitoringReply::Command& command,
-                              bool new_trust) const {
+                              bool new_trust, bool grant_control = false) const {
         const std::wstring action = RemoteCommandDescription(command);
         if (action.empty()) return false;
         std::wstring message = L"The Veld Portal requests this exact action:\n\n" +
@@ -6713,6 +6751,10 @@ private:
                        L"also trust command key " + fingerprint +
                        L" for this pairing.\n\n";
         }
+        if (grant_control) {
+            message += L"Allow this paired browser to start, stop, sign in, and install signed updates without further local prompts. "
+                       L"Turn off Remote access or create a new pair code to revoke access.\n\n";
+        }
         message += L"The command is signed and time-limited. No action will be "
                    L"taken unless you choose Yes.";
         return MessageBoxW(hwnd_, message.c_str(),
@@ -6722,6 +6764,10 @@ private:
 
     bool AuthorizeRemoteCommand(const MonitoringReply::Command& command,
                                 std::string& rejection) {
+        if (!remote_monitoring_enabled_.load() || portal_pair_reset_requested_.load()) {
+            rejection = "Remote access is disabled or pairing is being reset";
+            return false;
+        }
         PortalTrustState current;
         {
             std::lock_guard<std::mutex> lock(remote_trust_mutex_);
@@ -6733,10 +6779,19 @@ private:
             rejection);
         if (verdict == PortalCommandTrustVerdict::Reject) return false;
         const bool new_trust = verdict == PortalCommandTrustVerdict::NewPairing;
-        if (new_trust && !ConfirmRemoteCommand(command, true)) {
+        const bool control = UnattendedPortalAction(command.action);
+        const bool needs_consent = new_trust || !control || !current.unattended;
+        if (needs_consent && !ConfirmRemoteCommand(command, new_trust, control)) {
             rejection = "Command was denied on the paired machine";
             return false;
         }
+        if (!remote_monitoring_enabled_.load() || portal_pair_reset_requested_.load() ||
+            EvaluatePortalCommandTrust(command, current, static_cast<uint64_t>(std::time(nullptr)), next,
+                rejection) == PortalCommandTrustVerdict::Reject) {
+            if (rejection.empty()) rejection = "Remote access changed while approval was pending";
+            return false;
+        }
+        if (control) next.unattended = true;
         if (!SavePortalTrust(state_dir_ / L"remote-trust.dat", next)) {
             MessageBoxW(hwnd_,
                 L"The command was not run because replay protection could not "
@@ -6748,10 +6803,6 @@ private:
         {
             std::lock_guard<std::mutex> lock(remote_trust_mutex_);
             remote_trust_ = next;
-        }
-        if (!new_trust && !ConfirmRemoteCommand(command, false)) {
-            rejection = "Command was denied on the paired machine";
-            return false;
         }
         rejection.clear();
         return true;
@@ -6784,13 +6835,35 @@ private:
             AcknowledgeRemoteCommand(command.id, "completed", message);
         };
 
-        if (command.action == "node.start") {
+        if (command.action == "node.start" || command.action == "node.signin") {
             if (live.process_running) {
                 complete("Node is already running");
+            } else if (tor_preparing_.load() || update_operation_.load() != UpdateOperation::None) {
+                reject("Wait for the current setup or update to finish");
+            } else if (RemoteIdentityFingerprint().empty()) {
+                reject("Create or import a node identity on this machine first");
             } else {
-                StartNode();
-                AcknowledgeRemoteCommand(command.id, "local_confirmation",
-                    "Start requested. A passphrase is required locally only when this app session is locked");
+                bool ready = HasSessionUnlock();
+                if (command.action == "node.signin") {
+                    std::wstring passphrase;
+                    ready = remote_unlock_key_.Decrypt(command.unlock, command.device_id,
+                        command.nonce, RemoteIdentityFingerprint(), passphrase) && StoreSessionPassphrase(passphrase);
+                    SecureZeroMemory(passphrase.data(), passphrase.size() * sizeof(wchar_t));
+                    passphrase.clear();
+                    if (ready) {
+                        mining_enabled_.store(true);
+                        ready = SaveSettings();
+                    }
+                }
+                if (!ready) {
+                    reject(command.action == "node.signin" ? "Encrypted sign-in could not be verified. Refresh and retry." :
+                        "This node is locked. Use Sign in & mine in the portal.");
+                } else {
+                    StartNode();
+                    if (owned_pid_.load() != 0 || tor_preparing_.load())
+                        complete("Node start requested; mining begins after identity and sync checks");
+                    else reject("Node could not start. Check its current status and logs.");
+                }
             }
         } else if (command.action == "node.stop") {
             if (!live.process_running) complete("Node is already stopped");
@@ -6962,9 +7035,18 @@ private:
         for (size_t i = 0; i < topology_node_count; ++i)
             topology_ids.insert(live.topology.nodes[i].anonymous_id);
 
+        std::string unlock_json = "null";
+        const std::string identity = RemoteIdentityFingerprint();
+        if (!identity.empty() && remote_unlock_key_.Ensure(state_dir_ / L"remote-unlock.dat"))
+            unlock_json = remote_unlock_key_.PublicJson(identity);
+        bool control_ready = false;
+        {
+            std::lock_guard<std::mutex> lock(remote_trust_mutex_);
+            control_ready = remote_trust_.Valid() && remote_trust_.unattended;
+        }
         std::ostringstream json;
         json << '{'
-             << "\"portal_protocol\":3"
+             << "\"portal_protocol\":4"
              << ",\"name\":\"" << JsonEscape(WideToUtf8(MonitoringMachineName()))
              << "\",\"version\":\"" << JsonEscape(veld::CLIENT_VERSION)
              << "\",\"height\":" << height
@@ -6980,7 +7062,10 @@ private:
                     ? live.mining.blocks_mined_session : 0)
              << ",\"mining_state\":\"" << state
              << "\",\"warning\":\"" << JsonEscape(warning) << "\""
-             << ",\"snapshot\":{\"diagnostics\":{\"schema\":1"
+             << ",\"snapshot\":{\"remote_control\":" << (control_ready ? "true" : "false")
+             << ",\"identity_unlocked\":" << (HasSessionUnlock() ? "true" : "false")
+             << ",\"unlock_key\":" << unlock_json
+             << ",\"diagnostics\":{\"schema\":1"
              << ",\"local_status_valid\":" << (live.local_online ? "true" : "false")
              << ",\"mining_status_valid\":" << (live.mining_status_online ? "true" : "false")
              << ",\"peer_status_valid\":" << (live.peer_details_online ? "true" : "false")
@@ -7181,7 +7266,8 @@ private:
             } else if (trusted.Valid() && trusted.device_id == reply.device_id &&
                        trusted.key_id == reply.command_key_id) {
                 connection_detail =
-                    L"Signed control is active. Every action requires approval on this machine.";
+                    trusted.unattended ? L"Remote start, stop, sign-in, and signed updates are enabled." :
+                        L"Approve the next portal control request here once to enable remote access.";
             } else {
                 connection_detail =
                     L"Signed control is enrolled. The first action will ask you to trust this pairing locally.";

@@ -1,3 +1,27 @@
+## 3.1.9 - Portal control
+
+The Windows node supports remote start, stop, sign-in, and signed updates.
+Install this client locally once, enable Remote access in Settings, and pair it
+with the portal. Approve the first control request on the PC. After that, the
+paired browser can perform these actions without further prompts on the PC.
+The Veld Node app must remain open and connected, even when the node is stopped.
+
+Use **Sign in & mine** when the app is locked, including after an update or PC
+restart. Enter the node passphrase in the portal; the browser encrypts it for
+the paired PC before sending the signed command. The relay stores only the
+encrypted command and removes that ciphertext after completion or expiry.
+The passphrase is not saved to disk. Mining begins after the identity and chain
+checks pass.
+
+Remote updates use the same signed feed, package checks, and recovery procedure
+as Settings. Worker count, identity, chain data, pairing, and the control grant
+remain saved. Turning off Remote access blocks commands; generating a new pair
+code revokes the old pairing. Existing clients continue reporting normally.
+
+The hosted Explorer also recovers complete block pages when an individual valid
+block exceeds the bulk API's display budget. Its layout is unchanged.
+No consensus rules, stake requirements, or mining parameters change.
+
 ## 3.1.8 - Mining and wallet reliability
 
 Mining workers refresh their block timestamp as the clock advances, including
