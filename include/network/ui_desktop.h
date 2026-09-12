@@ -2144,6 +2144,16 @@ html[data-theme="light"] #mobile-more-menu{background:rgba(239,239,239,.99)!impo
 html[data-theme="light"] .mob-more-btn,html[data-theme="light"] .theme-tog{background:#fafafa!important;color:#4f5753!important;border:1px solid #cfd1d0!important;border-radius:8px!important}
 @media(max-width:768px){.page-header{padding-right:14px!important}.page-header .page-title,.pheader .ptitle,.page-title,.ptitle{font-size:24px!important}.page-header .page-sub,.pheader .psub,.page-sub,.psub{font-size:13px!important;margin-top:7px!important}html[data-theme="light"] .page{padding:24px 17px calc(92px + env(safe-area-inset-bottom,0px))!important}html[data-theme="light"] .card{padding:15px!important}html[data-theme="light"] .wallet-bal-hero{padding:22px 15px!important}html[data-theme="light"] .wallet-bal-hero .act-round{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important}html[data-theme="light"] .wallet-bal-hero .ar{width:100%!important;min-width:0!important}}
 
+#h-list .history-reward-mining{--history-reward-color:#7ED949}
+#h-list .history-reward-staking{--history-reward-color:#f6b900}
+#h-list .history-reward-comining{--history-reward-color:#4CB8FF}
+#h-list .history-reward-validator{--history-reward-color:#B07CFF}
+html[data-theme="light"] #h-list .history-reward-mining{--history-reward-color:#168b4b}
+html[data-theme="light"] #h-list .history-reward-staking{--history-reward-color:#a66d00}
+html[data-theme="light"] #h-list .history-reward-comining{--history-reward-color:#156A9F}
+html[data-theme="light"] #h-list .history-reward-validator{--history-reward-color:#7749A8}
+#h-list .history-reward-label,#h-list .history-reward-amount{color:var(--history-reward-color)!important;-webkit-text-fill-color:var(--history-reward-color)!important}
+
 /* Unified controls and mobile form sizing. */
 .theme-tog{width:34px!important;height:32px!important;padding:0!important;gap:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important}
 .theme-tog .tl{display:none!important}
@@ -12438,14 +12448,14 @@ function renderHistory() {
   //   staking / vault              = gold     #FFD84A
   //   endorsement / validator      = purple   #B07CFF
   var htypeMap = {
-    coinbase:{label:'Block Reward',color:'#32F06E'},                    // emerald — miner
-    block_reward:{label:'Block Reward',color:'#32F06E'},
-    miner_reward:{label:'Block Reward',color:'#32F06E'},
-    comine_payout:{label:'Co-Mine Payout',color:'#4CB8FF'},             // blue — co-mining pool
-    staking_distribution:{label:'Staking Reward',color:'#FFD84A'},      // gold — vault → stakers
-    vault_distribution:{label:'Staking Reward',color:'#FFD84A'},        // gold — same source
-    endorsement_reward:{label:'Validator Rewards',color:'#B07CFF'},      // purple — endorsement pool
-    endorsement_payout:{label:'Validator Rewards',color:'#B07CFF'},      // purple — same source
+    coinbase:{label:'Block Reward',color:'#32F06E',reward:'mining'},                    // emerald — miner
+    block_reward:{label:'Block Reward',color:'#32F06E',reward:'mining'},
+    miner_reward:{label:'Block Reward',color:'#32F06E',reward:'mining'},
+    comine_payout:{label:'Co-Mine Payout',color:'#4CB8FF',reward:'comining'},             // blue — co-mining pool
+    staking_distribution:{label:'Staking Reward',color:'#FFD84A',reward:'staking'},      // gold — vault → stakers
+    vault_distribution:{label:'Staking Reward',color:'#FFD84A',reward:'staking'},        // gold — same source
+    endorsement_reward:{label:'Validator Rewards',color:'#B07CFF',reward:'validator'},      // purple — endorsement pool
+    endorsement_payout:{label:'Validator Rewards',color:'#B07CFF',reward:'validator'},      // purple — same source
     endorsement:{label:'Block Endorsement',color:'#B07CFF'},            // purple — validator-role event
     stake_lock:{label:'Stake Lock',color:'#FFD84A'},                    // gold — staking-role action
     stake_unlock:{label:'Stake Unlock',color:'#FFD84A'},                // gold — staking-role action
@@ -12498,12 +12508,12 @@ function renderHistory() {
     if (isFeeOnly) {
       amountCell = '<td style="color:var(--muted);font-weight:600">—</td>';
     } else {
-      amountCell = '<td style="color:'+(pos?'var(--em)':'var(--red)')+';font-weight:600">' + (pos?'+':'') + fmt(t.net_veld,2) + ' VELD</td>';
+      amountCell = '<td'+(tm.reward && pos?' class="history-reward-amount"':'')+' style="color:'+(pos?'var(--em)':'var(--red)')+';font-weight:600">' + (pos?'+':'') + fmt(t.net_veld,2) + ' VELD</td>';
     }
-    html += '<tr style="' + rowStyle + '">' +
+    html += '<tr'+(tm.reward?' class="history-reward-'+tm.reward+'"':'')+' style="' + rowStyle + '">' +
       '<td><a href="https://explorer.veld.network/tx/'+escHtml(t.txid)+'" target="_blank" rel="noopener noreferrer" class="hash-orange">' + escHtml(shortHash(t.txid)) + '</a></td>' +
       '<td><a href="https://explorer.veld.network/block/height/'+escHtml(t.block_height||'')+'" target="_blank" rel="noopener noreferrer" style="color:var(--em);font-weight:600">' + escHtml(t.block_height||'?') + '</a></td>' +
-      '<td style="color:' + tm.color + ';font-size:11px;font-weight:600">' + escHtml(tm.label) + '</td>' +
+      '<td'+(tm.reward?' class="history-reward-label"':'')+' style="color:' + tm.color + ';font-size:11px;font-weight:600">' + escHtml(tm.label) + '</td>' +
       amountCell +
       feeCell +
       '</tr>';
