@@ -34,6 +34,14 @@ Run it with `node tests/wallet_outbox_browser_controls.cjs`; set
 opens an operator's browser profile or wallet. Browser profiles and result
 receipts are retained outside the source tree for review.
 
+`validator_settlement_state_controls.cpp` checks seven-member finality warm-up,
+the separate peg activation latch, and principal/yield settlement scheduling.
+It uses disposable public identities and injected component state, keeps the
+10,000 VELD bond and seven-validator requirements, and creates no slashing
+evidence. Build it with the pinned PQC objects and OpenSSL under the isolated
+test toolchain. Passing it does not qualify funded admission, real validator
+operators, block-level slashing, or physical power-loss recovery.
+
 The [Source checks workflow](../.github/workflows/source-checks.yml) runs these
 checks on Linux and Windows for pushes and pull requests. It also compiles
 and runs the work-admission unit test on Linux. This is separate from the
