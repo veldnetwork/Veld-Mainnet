@@ -1,0 +1,55 @@
+# veld-btcrelayd keeps the consensus Bitcoin-header view current.  Install the
+# source and Python policy helper below /opt/veld/swap as root-owned, non-writable
+# files.  The service user needs read-only Bitcoin Core RPC access and no custody,
+# issuer, validator, pool, or treasury key.
+[Unit]
+Description=Veld permissionless Bitcoin SPV header relay
+After=network-online.target bitcoind.service veld-node.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=veldbtcrelay
+Group=veldbtcrelay
+WorkingDirectory=/opt/veld
+StateDirectory=veld-btcrelayd
+StateDirectoryMode=0700
+EnvironmentFile=/etc/veld/btcrelayd.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONNOUSERSITE=1
+ExecStartPre=/usr/bin/python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,12) else 2)'
+ExecStart=/usr/bin/python3 -I /opt/veld/swap/veld_btcrelayd.py /etc/veld/btcrelayd.json --loop 30
+Restart=always
+RestartSec=10
+RestartPreventExitStatus=64
+StandardInput=null
+LimitCORE=0
+UMask=0077
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+KeyringMode=private
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @obsolete @mount @swap @reboot @raw-io
+
+[Install]
+WantedBy=multi-user.target

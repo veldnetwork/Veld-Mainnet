@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veld.network/schema/c1-wrap-capacity-v1.json",
+  "title": "VELD C1 WRAP capacity policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "record_sequence", "previous_policy_sha256", "pow_bits",
+    "epoch_seconds", "global_allocations_per_epoch",
+    "global_allocations_per_day", "principal_lifetime_sats",
+    "destination_lifetime_sats", "consensus_custody_ceiling_sats",
+    "minimum_allocation_sats", "unfunded_expiry_seconds",
+    "operator_descriptor_range", "public_descriptor_range",
+    "journal_max_rows", "journal_max_bytes", "lifecycle_reserve_percent",
+    "bitcoin_freshness_alert_seconds", "bitcoin_recovery_only_seconds",
+    "peg_unlock_required", "archive_ack_required", "archive_authority_id"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "record_sequence": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+    "previous_policy_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "pow_bits": {"const": 24},
+    "epoch_seconds": {"const": 600},
+    "global_allocations_per_epoch": {"const": 5},
+    "global_allocations_per_day": {"const": 200},
+    "principal_lifetime_sats": {"const": 1000000000},
+    "destination_lifetime_sats": {"const": 1000000000},
+    "consensus_custody_ceiling_sats": {"const": 1000000000},
+    "minimum_allocation_sats": {"const": 10000},
+    "unfunded_expiry_seconds": {"const": 604800},
+    "operator_descriptor_range": {"const": [0, 999]},
+    "public_descriptor_range": {
+      "type": "array", "prefixItems": [{"const": 1000}, {"type": "integer", "minimum": 10999, "maximum": 1000000}], "items": false
+    },
+    "journal_max_rows": {"const": 100000},
+    "journal_max_bytes": {"const": 67108864},
+    "lifecycle_reserve_percent": {"const": 10},
+    "bitcoin_freshness_alert_seconds": {"const": 3600},
+    "bitcoin_recovery_only_seconds": {"const": 7200},
+    "peg_unlock_required": {"const": true},
+    "archive_ack_required": {"const": true},
+    "archive_authority_id": {"type": "string", "minLength": 8, "maxLength": 256}
+  }
+}

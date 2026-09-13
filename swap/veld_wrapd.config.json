@@ -1,0 +1,73 @@
+{
+  "_comment": "veld_wrapd config for the custody box. Production fails closed unless its ranged P2TR wallet, exact C1 operational manifest, and separately pinned compiled Veld consensus custody identity agree.",
+  "production": true,
+  "development_only_allow_unsafe_allocator": false,
+  "cli_base": [
+    "/usr/bin/sudo",
+    "-u",
+    "bitcoin",
+    "/usr/bin/bitcoin-cli"
+  ],
+  "wallet": "btcveld-custody-watchonly",
+  "custody_spk_manifest_file": "/opt/veld-custody/custody-spks-operational.json",
+  "custody_descriptor_sha256": "REPLACE_WITH_64_HEX_SHA256_PRINTED_BY_CUSTODY_BUILDER",
+  "custody_manifest_sha256": "REPLACE_WITH_64_HEX_C1_EXTENDED_MANIFEST_SHA256",
+  "custody_consensus_manifest_sha256": "REPLACE_WITH_COMPILED_0_999_MANIFEST_SHA256_FROM_GETPEGINFO",
+  "veld_rpc": {
+    "url": "http://127.0.0.1:8334",
+    "token_cmd": [
+      "/usr/local/bin/veld-node",
+      "--print-rpc-token",
+      "--datadir",
+      "/var/lib/veld-node"
+    ]
+  },
+  "bind": "127.0.0.1",
+  "port": 8097,
+  "public_capacity_policy_version": 2,
+  "_public_capacity_policy_ack": "C1 production policy is loaded only from the one owner-signed JSON artifact below. The allocator and witness expose and compare its exact byte SHA-256.",
+  "admission_verifier": "/opt/veld-wrapd/veld-keygen",
+  "public_capacity_config_file": "/etc/veld/c1-wrap-capacity.json",
+  "public_capacity_config_signature_file": "/etc/veld/c1-wrap-capacity.json.mldsa65.sighex",
+  "public_capacity_config_public_key_file": "/etc/veld/c1-owner-public-key.hex",
+  "rl_per_ip_per_min": 6,
+  "rl_global_per_min": 60,
+  "allocation_store": "/var/lib/veld-wrapd/allocations.json",
+  "allow_initial_allocation_store_creation": false,
+  "_allocation_store_initialization": "For the audited first-start ceremony only: verify the exact descriptor/Core next index and backups, set true, start once (it creates/fsyncs the empty journal then intentionally exits), immediately set false, and restart. Never leave true or use it to replace a missing/rolled-back journal.",
+  "allocation_witness_command": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "UserKnownHostsFile=/etc/veld/wrap-witness-known-hosts",
+    "wrap-allocation-witness",
+    "veld_wt_allocate"
+  ],
+  "allocation_checkpoint_command": [
+    "/REPLACE_WITH_MONOTONIC_WORM_CHECKPOINT_HOOK"
+  ],
+  "consensus_reservation_command": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "UserKnownHostsFile=/etc/veld/c1-reservation-known-hosts",
+    "c1-reservation-coordinator",
+    "veld_c1_reservationd"
+  ],
+  "_allocation_witness_policy": "This is a dedicated SSH key/forced command, never the mint-signer reservation key. An address is not returned until the independent witness durably registers its exact index, script, recipient and amount and C1E1 reaches canonical depth.",
+  "_allocation_policy": "C1: ML-DSA-65 principal, current-only 24-bit/600-second beacon work, 5/epoch and 200/day, 5,000,000-sat principal/destination ceilings, 10,000-sat minimum, public indices 1000-10999, seven-day unfunded expiry without index reuse, 100,000 rows/64 MiB with 10% lifecycle reserve, C5 freshness phases, authoritative candidate-height launch/liveness gate, and mandatory independent witness/WORM parity.",
+  "max_header_bytes": 32768,
+  "http_max_workers": 32,
+  "http_request_read_timeout_s": 15,
+  "cors_origin": null
+}

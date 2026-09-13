@@ -1,0 +1,55 @@
+# Permissionless Veld-in-Bitcoin checkpoint anchor operator. The service owns
+# only two bounded fee wallets: one legacy Bitcoin wallet/address and one Veld
+# relay-fee key. It must never hold peg custody, issuer, validator, or treasury
+# authority. Install source/policy helpers below /opt/veld as root-owned files.
+[Unit]
+Description=Veld Bitcoin checkpoint anchoring daemon
+After=network-online.target bitcoind.service veld-node.service veld-btcrelayd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=veldanchor
+Group=veldanchor
+WorkingDirectory=/opt/veld
+StateDirectory=veld-anchord
+StateDirectoryMode=0700
+EnvironmentFile=/etc/veld/anchord.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONNOUSERSITE=1
+ExecStartPre=/usr/bin/python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,12) else 2)'
+ExecStart=/usr/bin/python3 -I /opt/veld/swap/veld_anchord.py /etc/veld/anchord.json --loop 30
+Restart=always
+RestartSec=10
+RestartPreventExitStatus=64
+StandardInput=null
+LimitCORE=0
+UMask=0077
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+KeyringMode=private
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @obsolete @mount @swap @reboot @raw-io
+
+[Install]
+WantedBy=multi-user.target

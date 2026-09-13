@@ -1,0 +1,29 @@
+# btcVELD 3-of-5 Taproot custody — canonical PUBLIC descriptor record
+#
+# All 5 xpubs base58check-VALID; hasprivatekeys=False (public data). NUMS internal key =>
+# no key-path spend; any 3 of 5 sign via the script path. Ranged (/0/*) HD custody addresses.
+# NUMS: 50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0
+#
+# Public fingerprint map (network coordinates, local wallet names, and live
+# rollout state belong in the access-controlled operations inventory):
+#   custody-signer-1  6fb9d44d
+#   custody-signer-2  13a9e08c
+#   custody-signer-3  97cc0c0d
+#   custody-signer-4  618e7136
+#   custody-signer-5  963ae5bc
+
+CHECKSUM: 56mycgth
+
+CUSTODY ADDRESS (index 0): bc1puym4jstr9j2qfhtzerzaw4zflmx0zfcmfw8ss0wdq4rcggp60qhq92faza
+
+DESCRIPTOR:
+tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,multi_a(3,[6fb9d44d/86h/0h/0h]xpub6DSb4y5KqULWHBPwHeNxPemNxPqLXtLPEjn2Brp2HbnwbAqTs3U3Tqz36B5po31cF2mbN6uUa6zLV8BvtYAn2GjuiHwCBp3QticGPUagGrr/0/*,[13a9e08c/86h/0h/0h]xpub6Cbk3ubH39rpLEjWkV5XoV4dBAjKXZUTu8y21Y6fKnBW1dtWkJckpTWToeKwVWjdRHJkvfbqLwWwuY8Te923KPWpERG49d4XvMnGFKfKKnX/0/*,[97cc0c0d/86h/0h/0h]xpub6D66nVws6S3dWSBaBGjhDTPmGEJPLZzXfjViXMTgmhx3qZJWnwUAcsBqhAp7sihBUyRDHqyG9N4QpVSS6iKAyamb3YFDi7hAezUWVpfQ4r8/0/*,[618e7136/86h/0h/0h]xpub6CyT537ioEFTpRKaKr45MTa5QQiwDV9bdy8Ehhp5jJxheuaRKZKvfDPa9nFCVQengTvu6GpfNdUckaGQNRDHZfcVBqy8nke53B4iyEz1dcs/0/*,[963ae5bc/86h/0h/0h]xpub6D5WzEFra1qpGAuPQWG8V6zMPosXDKjpbXoU8wp2cLxKT63XzLqgVdkhVTfd6vGwDW6D9X2MzmC5mSDySS7c4hiEhSsnqsnsfdLzm6u6Zhy/0/*))#56mycgth
+
+# The launch coordinator imports the same descriptor over the C1 operational
+# range [0,10999], with its public allocation cursor at index 1000. The separate
+# canonical [0,999] prefix remains the compiled consensus/SPV manifest;
+# redeemd-threshold.json uses the index-0 address above as its change address.
+# Hostnames, IP addresses, SSH aliases, wallet names, coordinator paths, and
+# deployment state are intentionally not published here. Funded 3-of-5 success
+# and 2-of-5 non-finalization drills at indices 0, 1000, and 10999 remain signed
+# launch evidence and are not asserted by this public descriptor record.

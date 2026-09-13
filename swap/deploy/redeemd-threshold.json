@@ -1,0 +1,85 @@
+{
+  "state_dir": "/var/lib/veld-redeemd/runtime",
+  "authority_db": "/mnt/replicated-redemption-authority/obligations.sqlite3",
+  "cli_base": [
+    "/usr/local/bin/bitcoin-cli",
+    "-datadir=/var/lib/bitcoin"
+  ],
+  "wallet": "btcveld-custody-watchonly",
+  "change_addr": "bc1puym4jstr9j2qfhtzerzaw4zflmx0zfcmfw8ss0wdq4rcggp60qhq92faza",
+  "veld_rpc": {
+    "url": "http://127.0.0.1:8334",
+    "token_cmd": [
+      "/usr/local/bin/veld-node",
+      "--print-rpc-token"
+    ]
+  },
+  "custody_spk_manifest_file": "/etc/veld/custody-spks-operational.json",
+  "custody_descriptor_sha256": "REPLACE_WITH_64_HEX_SHA256_PRINTED_BY_CUSTODY_BUILDER",
+  "custody_manifest_sha256": "REPLACE_WITH_64_HEX_C1_EXTENDED_MANIFEST_SHA256",
+  "custody_consensus_manifest_sha256": "REPLACE_WITH_COMPILED_0_999_PREFIX_MANIFEST_SHA256",
+  "custody_script_range": [
+    0,
+    10999
+  ],
+  "btc_input_confirmations": 1,
+  "custody_input_vbytes": 180,
+  "feerate_sat_vb": 5,
+  "payout_signing": {
+    "mode": "threshold_psbt",
+    "threshold": 3,
+    "signer_timeout_secs": 90,
+    "signers": [
+      {
+        "id": "custody-signer-1",
+        "command": [
+          "ssh",
+          "-o",
+          "BatchMode=yes",
+          "custody-signer-1",
+          "veld_payout_signerd"
+        ]
+      },
+      {
+        "id": "custody-signer-2",
+        "command": [
+          "ssh",
+          "-o",
+          "BatchMode=yes",
+          "custody-signer-2",
+          "veld_payout_signerd"
+        ]
+      },
+      {
+        "id": "custody-signer-3",
+        "command": [
+          "ssh",
+          "-o",
+          "BatchMode=yes",
+          "custody-signer-3",
+          "veld_payout_signerd"
+        ]
+      },
+      {
+        "id": "custody-signer-4",
+        "command": [
+          "ssh",
+          "-o",
+          "BatchMode=yes",
+          "custody-signer-4",
+          "veld_payout_signerd"
+        ]
+      },
+      {
+        "id": "custody-signer-5",
+        "command": [
+          "ssh",
+          "-o",
+          "BatchMode=yes",
+          "custody-signer-5",
+          "veld_payout_signerd"
+        ]
+      }
+    ]
+  }
+}

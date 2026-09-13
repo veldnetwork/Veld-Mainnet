@@ -1,0 +1,25 @@
+{
+  "production": true,
+  "state_dir": "/var/lib/veld-btcrelayd",
+  "cli_base": [
+    "/usr/local/bin/bitcoin-cli",
+    "-datadir=/var/lib/bitcoin"
+  ],
+  "btc_rpc_timeout": 30,
+  "veld_rpc": {
+    "url": "http://127.0.0.1:8334",
+    "token_cmd": [
+      "/usr/local/bin/veld-node",
+      "--datadir=/var/lib/veld",
+      "--print-rpc-token"
+    ]
+  },
+  "fund_addr": "REPLACE_WITH_DEDICATED_HEADER_RELAY_FEE_ADDRESS",
+  "signer": {
+    "keygen": "/usr/local/bin/veld-keygen",
+    "keyfile": "/var/lib/veld-btcrelayd/header-relay-fee.key"
+  },
+  "checkpoint_height": 0,
+  "max_headers_per_op": 100,
+  "resubmit_timeout_secs": 600
+}

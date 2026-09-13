@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "state_file": "/var/lib/veld-c1-reservationd/coordinator-state.json",
+  "allow_initial_state_creation": false,
+  "issuer": "REPLACE_WITH_COMPILED_BTCVELD_ISSUER_ADDRESS",
+  "veld_rpc": {
+    "url": "http://127.0.0.1:8334",
+    "token_cmd": [
+      "/usr/local/bin/veld-node",
+      "--print-rpc-token"
+    ]
+  },
+  "reservation_signer_command": [
+    "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+    "-o", "StrictHostKeyChecking=yes",
+    "-o", "UserKnownHostsFile=/etc/veld/c1-signer-known-hosts",
+    "c1-reservation-signer", "veld_signerd"
+  ],
+  "checkpoint_command": [
+    "/REPLACE_WITH_MONOTONIC_WORM_CHECKPOINT_HOOK"
+  ],
+  "terminal_archive_command": [
+    "/REPLACE_WITH_C1_COORDINATOR_COMPLIANCE_ARCHIVE_CLIENT"
+  ]
+}

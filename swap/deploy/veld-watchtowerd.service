@@ -1,0 +1,74 @@
+# veld-watchtowerd — INDEPENDENT btcVELD peg-solvency watchtower (F1).
+# Runs on its OWN box (NOT the custody box, NOT the signer box). It re-derives
+#   custody(BTC, own bitcoind) vs supply(btcVELD, veld-node getbtcveldsupply)
+# every interval and pushes a short-lived SOLVENT heartbeat to the signer, or a
+# sticky HALT on sustained insolvency. The signer refuses to sign without a fresh
+# heartbeat, so a compromised custody box cannot mint unbacked btcVELD.
+#
+# H-10 HARDENED: dedicated unprivileged user + full systemd sandbox (no root).
+# One-time migration from the old root/`/opt/veld-wt` layout:
+#
+#   sudo useradd --system --home-dir /opt/veld-wt --shell /usr/sbin/nologin veldwt
+#   sudo chown -R veldwt:veldwt /opt/veld-wt
+#   sudo install -d -m700 -o veldwt -g veldwt /var/lib/veld-wt   # signer SSH key lives here
+#   # Install veld_peg_solvency.py, veld_custody_binding.py,
+#   # veld_redeem_liability.py, veld_wt_reserve.py, swap_admission.py, and
+#   # rpc_url_policy.py beside veld_watchtowerd.py, then initialize
+#   # mint-reservations.json and the forced-command witness exactly as specified in
+#   # MINT-SIGNER-WITNESS-RUNBOOK.md before enabling mint ingress.
+#   # move the signer key + any state into /var/lib/veld-wt, update watchtowerd.conf paths
+#   sudo cp veld-watchtowerd.service /etc/systemd/system/ && \
+#        sudo systemctl daemon-reload && sudo systemctl enable --now veld-watchtowerd
+#   journalctl -u veld-watchtowerd -f
+[Unit]
+Description=Veld btcVELD peg-solvency watchtower (veld-watchtowerd)
+After=network-online.target
+Wants=network-online.target
+# If this box also runs bitcoind / a veld-node: After=bitcoind.service veld-node.service
+
+[Service]
+Type=simple
+User=veldwt
+Group=veldwt
+WorkingDirectory=/opt/veld-wt
+StateDirectory=veld-wt
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 /opt/veld-wt/veld_watchtowerd.py /opt/veld-wt/watchtowerd.conf
+Restart=always
+RestartSec=10
+# Exit 64 == config error: don't hammer-restart a misconfigured unit.
+RestartPreventExitStatus=64
+# bitcoin-cli + ssh must be on PATH:
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+
+# ---- sandbox (H-10) ----
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+# ssh to the signer needs a known_hosts + the key from the state dir; keep $HOME on the
+# state dir so ssh writes there, not into a protected home.
+Environment=HOME=/var/lib/veld-wt
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @obsolete @mount @swap @reboot @raw-io
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,35 @@
+{
+  "authority_state_activation_marker": "/opt/veld-signer/signer-authority-state.json",
+  "veld_rpc": {
+    "url": "http://127.0.0.1:8334",
+    "token_cmd": [
+      "/usr/local/bin/veld-node",
+      "--print-rpc-token"
+    ]
+  },
+  "min_prevout_confirmations": 6,
+  "c1_reservation_authority": {
+    "enabled": true,
+    "allocation_witness_command": [
+      "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+      "wrap-allocation-witness", "veld_wt_allocate"
+    ],
+    "durable_archive_command": [
+      "/REPLACE_WITH_C1_SIGNER_COMPLIANCE_ARCHIVE_CLIENT"
+    ]
+  },
+  "mint_authority": {
+    "topology": "single-active-shared-witness",
+    "signer_id": "mint-signer-primary",
+    "active_signer_id": "mint-signer-primary",
+    "issuer_id": "REPLACE_WITH_COMPILED_BTCVELD_ISSUER_ADDRESS",
+    "wrap_allocation_witness_required": true,
+    "witness": {
+      "witness_id": "btcveld-watchtower-primary",
+      "command": [
+        "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+        "mint-witness", "veld_wt_reserve"
+      ]
+    }
+  }
+}

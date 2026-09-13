@@ -1,0 +1,27 @@
+{
+  "state_dir": "/var/lib/veld-spvmint",
+  "custody_manifest": "/etc/veld/custody-spks-consensus.json",
+  "bitcoin": {
+    "cli_base": [
+      "/usr/local/bin/bitcoin-cli",
+      "-datadir=/var/lib/bitcoin"
+    ],
+    "wallet": "btcveld-spv-depositor",
+    "rpc_timeout": 60,
+    "deposit_conf_target": 6,
+    "max_deposit_fee_sats": 100000
+  },
+  "veld_rpc": {
+    "url": "http://127.0.0.1:8334",
+    "token_cmd": [
+      "/usr/local/bin/veld-node",
+      "--datadir=/var/lib/veld",
+      "--print-rpc-token"
+    ]
+  },
+  "veld_fee_fund_address": "REPLACE_WITH_DEDICATED_FEES_ONLY_VELD_ADDRESS",
+  "signer": {
+    "keygen": "/usr/local/bin/veld-keygen",
+    "keyfile": "/var/lib/veld-spvmint/relay-fee.key"
+  }
+}

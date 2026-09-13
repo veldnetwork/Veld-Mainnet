@@ -1,0 +1,76 @@
+{
+  "_comment": "veld_watchtowerd.py config. Copy to /opt/veld-wt/watchtowerd.conf and edit.",
+  "production": true,
+  "issuer_id": "REPLACE_WITH_COMPILED_BTCVELD_ISSUER_ADDRESS",
+  "issuer_p2pkh_hex": "76a914REPLACE_WITH_20_BYTE_ISSUER_HASH160_HEX88ac",
+  "witness_id": "btcveld-watchtower-primary",
+
+  "veld_rpc": {
+    "_comment": "A veld-node this box can reach (ideally its OWN node) for getbtcveldsupply.",
+    "url": "http://127.0.0.1:8645/",
+    "token_file": "/opt/veld-wt/veld-rpc.token"
+  },
+
+  "btc": {
+    "_comment": "Production requires this box's OWN fully synced mainnet Bitcoin Core and a watch-only wallet containing exactly the pinned 3-of-5 descriptor. Public APIs and getbalance are forbidden. confirmations MUST equal compiled getpeginfo.spv_k_btc. C5 is fixed: 3600 seconds alerts with full service; 7200 seconds enters recovery-only. The reserve witness then refuses first-seen mint reservations while exact durable retries can use lifecycle-only solvency beats.",
+    "cli_base": ["bitcoin-cli", "-rpcconnect=127.0.0.1", "-rpcport=8332"],
+    "wallet": "custody-watch",
+    "confirmations": 6,
+    "tip_age_alert_secs": 3600,
+    "max_tip_age_secs": 7200
+  },
+
+  "_custody_addresses_comment": "Address mode (no wallet needed): list every custody receive address. If set, this is used instead of the wallet balance.",
+  "custody_addresses": [],
+  "custody_spk_manifest_file": "/opt/veld-wt/custody-spks-operational.json",
+  "custody_descriptor_sha256": "REPLACE_WITH_64_HEX_SHA256_PRINTED_BY_CUSTODY_BUILDER",
+  "custody_manifest_sha256": "REPLACE_WITH_64_HEX_C1_EXTENDED_MANIFEST_SHA256",
+  "custody_consensus_manifest_sha256": "REPLACE_WITH_COMPILED_0_999_MANIFEST_SHA256_FROM_GETPEGINFO",
+  "public_descriptor_range_end": 10999,
+  "public_capacity_config_file": "/etc/veld/c1-wrap-capacity.json",
+  "public_capacity_config_signature_file": "/etc/veld/c1-wrap-capacity.json.mldsa65.sighex",
+  "public_capacity_config_public_key_file": "/etc/veld/c1-owner-public-key.hex",
+
+  "signer": {
+    "_comment": "Our OWN SSH key to the signer box, authorized to run ONLY veld_wt_recv.py (forced-command). This key can pause/HALT the signer, never sign.",
+    "ssh_target": "veldwt@REPLACE_WITH_SIGNER_HOST",
+    "ssh_key": "/var/lib/veld-wt/wt_signer_ed25519",
+    "remote_cmd": "veld_wt_recv",
+    "_beat_sig_comment": "ML-DSA-sign every beat so the signer authenticates its contents, not only the SSH channel. Create an encrypted key with 'veld-keygen new --out /opt/veld-wt/beat.key', store its passphrase in beat_passfile, and pin the public key on the signer as watchtower-beat-pubkey.hex. Leave beat_keyfile empty only in development with the signer's explicit 'beat-unsigned-ok' override.",
+    "beat_keyfile": "/opt/veld-wt/beat.key",
+    "beat_passfile": "/opt/veld-wt/beat-pass.txt"
+  },
+
+  "_keygen_comment": "Path to the veld-keygen binary on THIS box (used to sign beats).",
+  "keygen": "/opt/veld-wt/veld-keygen",
+
+  "_margin_comment": "Require custody to exceed complete backing liability (live supply + every burn without an exact K-confirmed payout) by this many sats before minting is allowed. 100000 = 0.001 BTC.",
+  "margin_sats": 100000,
+
+  "interval_secs": 30,
+  "_ttl_comment": "Heartbeat lifetime the signer honors. Make it a few intervals so a couple of missed beats don't pause minting; the receiver hard-caps it at 600s.",
+  "ttl_secs": 120,
+
+  "_halt_comment": "Consecutive INSOLVENT reads before tripping the STICKY HALT (a human must then clear it). A single insolvent read already withholds the heartbeat, pausing signing within ttl_secs.",
+  "insolvent_reads_before_halt": 2,
+
+  "state_dir": "/var/lib/veld-wt",
+  "reservation_ledger": {
+    "max_active_rows": 10000,
+    "max_active_bytes": 268435456,
+    "max_terminal_rows": 10000,
+    "max_terminal_bytes": 67108864,
+    "min_free_bytes": 1073741824,
+    "terminal_archive_command": ["/REPLACE_WITH_IDEMPOTENT_WORM_ARCHIVE_HOOK"]
+  },
+  "_reservation_ledger_comment": "Production retains a 10,000-row active-allocation buffer beyond the public admission-rate and expiry horizon; allocation amounts are bounded only by live aggregate custody headroom. The archive hook receives one canonical JSON request on stdin and MUST durably store and read back the exact full terminal receipt under COMPLIANCE object lock for at least ten years before returning the exact acknowledgement documented in MINT-SIGNER-WITNESS-RUNBOOK.md. Deep C1 terminal bodies are deleted locally only after that acknowledgement; exhaustion or low free space halts mint authorization.",
+  "wrap_allocation_authority": {
+    "version": 2,
+    "initial_descriptor_index": 1000,
+    "allow_initial_ledger_creation": false,
+    "checkpoint_command": ["/REPLACE_WITH_MONOTONIC_WORM_CHECKPOINT_HOOK"]
+  },
+  "_wrap_allocation_authority_comment": "C1 public allocations start at index 1000. Both hosts verify the exact same owner-signed policy SHA-256. The checkpoint hook must independently store/verify each ledger head and return the exact monotonic acknowledgement. This release implements no authenticated keyed F4 archive index and therefore refuses any signed public range end above 10999 with C1_RANGE_ROTATION_REQUIRED; never delete allocation rows or events manually. At the first ceremony only, arm initialization for one run, then disarm it before either forced-command key is enabled.",
+  "_alert_comment": "Optional shell command; the alert text is piped to its stdin on any insolvency/HALT/read-failure.",
+  "alert_cmd": null
+}
