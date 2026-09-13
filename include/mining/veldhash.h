@@ -635,11 +635,9 @@ private:
 // the dataset:  dataset_[d_addr] is the native-endian u64 at keystream byte
 // offset d_addr*8  ==  ChaCha20 block (d_addr>>3), bytes ((d_addr&7)<<3 .. +8).
 // This is BYTE-IDENTICAL to the held-dataset path on the little-endian targets
-// Veld ships (x86-64 / aarch64) — verified against a real fill at startup by
-// VeldDatasetLightKat(). Only verify-only infra nodes built with
-// -DVELD_LIGHT_VERIFY use it; miners always read the held dataset. Identical
-// output => no consensus divergence; the recompute is just slower per hash,
-// which is irrelevant for a node that verifies rather than mines.
+// Veld ships (x86-64 / aarch64). VeldDatasetLightKat checks it against a real
+// fill at startup. Block verification recomputes only the words it needs;
+// mining workers retain the held dataset for repeated hashes of one template.
 inline uint64_t VeldDatasetWordLight(const uint8_t key[32], size_t d_addr) {
     uint8_t nonce[12] = {};
     ChaCha20 cc(key, nonce, (uint32_t)(d_addr >> 3));
@@ -1005,15 +1003,16 @@ inline std::vector<VeldInstruction> GenerateProgram(uint64_t seed_a, uint64_t se
     return program;
 }
 
-class VeldHashVM {
+template <bool LightDataset>
+class VeldHashVMImpl {
 public:
-    VeldHashVM() {
+    VeldHashVMImpl() {
         scratchpad_.resize(SCRATCHPAD_WORDS);
         Reset();
     }
 
     void SetDataset(const uint64_t* dataset) { dataset_ = dataset; }
-#if defined(VELD_MAINNET_POW) && defined(VELD_LIGHT_VERIFY)
+#if defined(VELD_MAINNET_POW)
     void SetLightKey(const Hash256& seed) { std::memcpy(light_key_, seed.data(), 32); }
 #endif
 
@@ -1144,19 +1143,12 @@ private:
     std::vector<VeldInstruction> program_;
     const uint64_t*              dataset_ = nullptr;
 #ifdef VELD_MAINNET_POW
-#ifdef VELD_LIGHT_VERIFY
-    uint8_t                      light_key_[32]{};   // epoch seed; words recomputed on the fly (no 1 GB held)
-#endif
-    // Dataset word accessor: held 1 GB array (miners / full nodes) or on-the-fly
-    // ChaCha20 recompute (-DVELD_LIGHT_VERIFY infra nodes). Identical value
-    // either way (see VeldDatasetWordLight / VeldDatasetLightKat); inlines to a
-    // plain array read in full builds, so miners are unaffected.
+    uint8_t                      light_key_[32]{};
     inline uint64_t DsWord_(size_t d_addr) const {
-#ifdef VELD_LIGHT_VERIFY
-        return VeldDatasetWordLight(light_key_, d_addr);
-#else
-        return dataset_[d_addr];
-#endif
+        if constexpr (LightDataset)
+            return VeldDatasetWordLight(light_key_, d_addr);
+        else
+            return dataset_[d_addr];
     }
 #endif
 
@@ -1357,6 +1349,13 @@ private:
     }
 };
 
+#ifdef VELD_LIGHT_VERIFY
+inline constexpr bool VELD_DEFAULT_LIGHT_DATASET = true;
+#else
+inline constexpr bool VELD_DEFAULT_LIGHT_DATASET = false;
+#endif
+using VeldHashVM = VeldHashVMImpl<VELD_DEFAULT_LIGHT_DATASET>;
+
 #ifdef VELD_MAINNET_POW
 inline Hash256 ComputeEpochSeed(const Hash256& prev_hash, uint64_t height,
                                 const CanonicalPowTarget& expected_target) {
@@ -1384,9 +1383,10 @@ inline Hash256 ComputeEpochSeed(const Hash256& prev_hash, uint64_t height,
 }
 #endif
 
-inline Hash256 VeldHash(const std::vector<uint8_t>& header_bytes,
-                         uint64_t block_height,
-                         const CanonicalPowTarget& expected_target) {
+template <bool LightDataset>
+inline Hash256 VeldHashWithDataset(const std::vector<uint8_t>& header_bytes,
+                                   uint64_t block_height,
+                                   const CanonicalPowTarget& expected_target) {
 #ifdef VELD_MAINNET_POW
     if (header_bytes.size() != 88) {
         throw std::invalid_argument("VeldHash: header_bytes must be exactly 88 bytes");
@@ -1405,7 +1405,7 @@ inline Hash256 VeldHash(const std::vector<uint8_t>& header_bytes,
     h.update(header_bytes.data(), header_bytes.size());
     Hash256 seed = h.digest();
 
-    VeldHashVM vm;
+    VeldHashVMImpl<LightDataset> vm;
     vm.Initialize(seed);
 
 #ifdef VELD_MAINNET_POW
@@ -1413,37 +1413,25 @@ inline Hash256 VeldHash(const std::vector<uint8_t>& header_bytes,
     std::memcpy(prev_hash.data(), header_bytes.data() + 4, 32);
     Hash256 ds_seed =
         ComputeEpochSeed(prev_hash, block_height, expected_target);
-#ifdef VELD_LIGHT_VERIFY
-    // Light-verify infra node: recompute dataset words on the fly; never hold the
-    // 1 GB. Byte-identical to the full path (proven by VeldDatasetLightKat).
-    g_veldhash_last_dataset_ok() = true;
-    vm.SetLightKey(ds_seed);
-#else
-    DatasetHandle ds = GlobalDataset().get_for_seed(ds_seed);
-
-    if (!ds.get()) {
-        std::cerr << "  [VeldHash] CRITICAL: dataset unavailable for seed "
-                  << HashToHex(ds_seed).substr(0,16) << "... — returning sentinel hash\n";
-        std::cerr.flush();
-        // Set a thread-local status flag so callers that validate
-        // blocks can distinguish "dataset regen failed" from "hash
-        // happens to be huge" — the former is a transient validator
-        // fault (re-queue / retry), the latter is a real PoW failure
-        // (reject the block).
-        //
-        // The 0xFF...FF sentinel VALUE is safe for verification
-        // (Bitcoin-style bits encoding caps mantissa at 0x7FFFFF so
-        // max target = 0x7F7FFF << (8*29) ≪ 0xFF...FF, always rejects).
-        // The side-channel lets callers handle regen-fail specially
-        // without depending on the hash bytes.
-        g_veldhash_last_dataset_ok() = false;
-        Hash256 fail{};
-        fail.fill(0xFF);
-        return fail;
+    DatasetHandle ds;
+    if constexpr (LightDataset) {
+        g_veldhash_last_dataset_ok() = true;
+        vm.SetLightKey(ds_seed);
+    } else {
+        ds = GlobalDataset().get_for_seed(ds_seed);
+        if (!ds.get()) {
+            std::cerr << "  [VeldHash] CRITICAL: dataset unavailable for seed "
+                      << HashToHex(ds_seed).substr(0,16)
+                      << "... — returning sentinel hash\n";
+            std::cerr.flush();
+            g_veldhash_last_dataset_ok() = false;
+            Hash256 fail{};
+            fail.fill(0xFF);
+            return fail;
+        }
+        g_veldhash_last_dataset_ok() = true;
+        vm.SetDataset(ds.get());
     }
-    g_veldhash_last_dataset_ok() = true;
-    vm.SetDataset(ds.get());
-#endif
 
     vm.Execute();
 
@@ -1453,6 +1441,24 @@ inline Hash256 VeldHash(const std::vector<uint8_t>& header_bytes,
     vm.Execute();
     Hash256 vm_hash = vm.Finalize();
     return Hash256d(vm_hash.data(), vm_hash.size());
+#endif
+}
+
+inline Hash256 VeldHash(const std::vector<uint8_t>& header_bytes,
+                        uint64_t block_height,
+                        const CanonicalPowTarget& expected_target) {
+    return VeldHashWithDataset<VELD_DEFAULT_LIGHT_DATASET>(
+        header_bytes, block_height, expected_target);
+}
+
+inline Hash256 VeldHashForVerification(
+        const std::vector<uint8_t>& header_bytes,
+        uint64_t block_height,
+        const CanonicalPowTarget& expected_target) {
+#ifdef VELD_MAINNET_POW
+    return VeldHashWithDataset<true>(header_bytes, block_height, expected_target);
+#else
+    return VeldHash(header_bytes, block_height, expected_target);
 #endif
 }
 

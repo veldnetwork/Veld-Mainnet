@@ -3131,7 +3131,7 @@ public:
         std::vector<uint8_t> header = block.header.Serialize();
         const CanonicalPowTarget& target =
             contextual_target ? *contextual_target : decoded;
-        Hash256 pow_hash = mining::VeldHash(header, block.height, target);
+        Hash256 pow_hash = mining::VeldHashForVerification(header, block.height, target);
 
         // VerifyBlockPoW runs on every ingested block, including peer traffic.
         // AddBlockDirect records the bounded rejection reason.
