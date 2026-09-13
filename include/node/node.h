@@ -14536,40 +14536,26 @@ private:
         }
 
         constexpr uint64_t NMS_MARKER_VEL = MIN_TX_FEE;
-        constexpr uint64_t NMS_MIN_INPUT  = NMS_MARKER_VEL + MIN_TX_FEE;
 
-        auto utxos = chain_.GetUTXOsForScript(miner_script);
-        if (utxos.empty()) {
-            std::cerr << "  [nms] skip: miner has zero UTXOs\n";
+        RpcServer::WalletState funding;
+        uint64_t tip = 0;
+        try {
+            auto transition = chain_.AcquireConsensusTransitionGuard();
+            tip = chain_.Height();
+            funding = rpc_.ComputeWalletState(
+                ScriptToAddress(miner_script, config_.IsTestNetwork()));
+        } catch (const std::exception& error) {
+            std::cerr << "  [nms] skip: funding state unavailable: "
+                      << error.what() << "\n";
             std::cerr.flush();
             return;
         }
-        std::sort(utxos.begin(), utxos.end(),
-                  [](const UTXO& a, const UTXO& b){ return a.value < b.value; });
-        auto mempool_spent = mempool_.GetSpentOutputs();
-        uint64_t tip = chain_.Height();
-        const bool enforce_maturity =
-            (tip + 1) >= COINBASE_MATURITY_CONSENSUS_HEIGHT;
-        const UTXO* input_utxo = nullptr;
-        size_t skipped_pending = 0, skipped_immature = 0;
-        for (const auto& u : utxos) {
-            if (u.value < NMS_MIN_INPUT) continue;
-            std::string ukey = HashToHex(u.tx_hash) + ":"
-                             + std::to_string(u.output_index);
-            if (mempool_spent.count(ukey)) { ++skipped_pending; continue; }
-            if (enforce_maturity
-                && u.is_coinbase
-                && u.block_height <= tip
-                && (tip - u.block_height) < COINBASE_MATURITY) {
-                ++skipped_immature; continue;
-            }
-            input_utxo = &u; break;
-        }
+        const UTXO* input_utxo = mining::SelectNmsFundingOutput(
+            funding.selectable, tip, funding.spendable_units,
+            NMS_MARKER_VEL, MIN_TX_FEE, DUST_THRESHOLD_UNITS);
         if (!input_utxo) {
-            std::cerr << "  [nms] skip: no eligible UTXO (have " << utxos.size()
-                      << " total, " << skipped_pending << " pending in mempool, "
-                      << skipped_immature << " immature coinbase, rest below "
-                      << ((double)NMS_MIN_INPUT / VELD_UNITS) << " VELD min)\n";
+            std::cerr << "  [nms] skip: no spendable output covers the marker "
+                         "and fee with valid change\n";
             std::cerr.flush();
             return;
         }

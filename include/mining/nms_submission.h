@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <limits>
 #include <mutex>
 
 namespace veld::mining {
@@ -21,6 +22,23 @@ bool NeedsNmsSubmission(const Chain& chain, const Pool& pool,
                         const Script& script, const Hash& parent) {
     return chain.NmsNeedsSubmission(script, parent) &&
            !pool.HasNmsSubmission(script, parent);
+}
+
+template<typename Outputs>
+const typename Outputs::value_type* SelectNmsFundingOutput(
+        const Outputs& selectable, uint64_t tip, uint64_t spendable,
+        uint64_t marker, uint64_t fee, uint64_t dust_threshold) {
+    if (spendable < fee || marker > std::numeric_limits<uint64_t>::max() - fee)
+        return nullptr;
+    const uint64_t required = marker + fee;
+    const typename Outputs::value_type* selected = nullptr;
+    for (const auto& output : selectable) {
+        if (output.block_height > tip || output.value < required) continue;
+        const uint64_t change = output.value - required;
+        if (change != 0 && change < dust_threshold) continue;
+        if (!selected || output.value < selected->value) selected = &output;
+    }
+    return selected;
 }
 
 inline bool NmsTemplateRefreshNeeded(uint64_t selected_revision,
