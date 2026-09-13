@@ -3047,7 +3047,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
         Once confirmed, a send is <b style="color:var(--em)">final and cannot be undone</b> &mdash; there is no reversal and no support line, so please double-check the recipient address. A small network fee applies. VELD sent to a wrong or mistyped address is <b>unrecoverable</b>.
       </div>
       <div class="btn-row" style="display:flex;gap:10px">
-        <button class="btn btn-em" data-act-click="h8d147721" id="send-btn" style="flex:1">Review &amp; send →</button>
+        <button class="btn btn-em" data-act-click="h8d147721" id="send-btn" style="flex:1">Send VELD →</button>
         <button class="btn btn-ghost" data-act-click="h4d8b441b">Clear</button>
       </div>
     </div>
@@ -3512,7 +3512,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <div style="margin-bottom:14px" id="sk-addr-row">
         <label style="display:block;font-size:11px;font-weight:600;letter-spacing:1.5px;color:var(--muted2);text-transform:uppercase;margin-bottom:6px">Address</label>
         <input class="form-input" id="sk-addr" placeholder="Your address V..." data-act-input="h5ca85671">
-        <div class="form-hint em" id="sk-balance-hint" style="margin-top:6px"><span title="Stakeable balance — includes immature coinbase (recently mined rewards still in the 100-block maturity window). Staking is an OP_RETURN marker, so it locks immature coinbase into a stake without waiting for maturity. This is intentionally HIGHER than the wallet tab's 'Spendable' (which excludes immature coinbase because you can't SEND those funds in a regular TX yet). Once the coinbase matures, the staked portion stays staked.">Available <span style="opacity:.6">&#9432;</span></span>: <span id="sk-balance">&mdash;</span> VELD &nbsp;&middot;&nbsp; Staked: <span id="sk-current-stake">&mdash;</span> VELD &nbsp;&middot;&nbsp; Unstakeable now: <span id="sk-mature-stake">&mdash;</span> VELD</div>
+        <div class="form-hint em" id="sk-balance-hint" style="margin-top:6px"><span title="Spendable VELD available to stake after the network fee. Pending, staked and maturing funds are excluded.">Available <span style="opacity:.6">&#9432;</span></span>: <span id="sk-balance">&mdash;</span> VELD &nbsp;&middot;&nbsp; Staked: <span id="sk-current-stake">&mdash;</span> VELD &nbsp;&middot;&nbsp; Unstakeable now: <span id="sk-mature-stake">&mdash;</span> VELD</div>
         <div id="sk-unlock-info" style="margin-top:4px;font-size:11px"></div>
         <span id="sk-next-unlock-blocks" style="display:none"></span>
       </div>
@@ -3581,7 +3581,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       </div>
 
       <div style="display:flex;gap:10px">
-        <button class="btn btn-em" data-act-click="h2e4ed19f" disabled aria-disabled="true" title="Staking unlocks at 10,000 VELD mined">Review &amp; lock &rarr;</button>
+        <button class="btn btn-em" data-act-click="h2e4ed19f" disabled aria-disabled="true" title="Staking unlocks at 10,000 VELD mined">Stake VELD &rarr;</button>
         <button class="btn btn-ghost" data-act-click="haa7ba916">Unstake</button>
       </div>
     </div>
@@ -4267,9 +4267,9 @@ var veldCrypto = (function() {
 
   // Internal: run keygen from seed, run `fn(sk_ptr, pk_ptr, m)` while both
   // buffers are live, then free everything.
-  function withKeypair(seedHex, fn, requireActiveSession) {
+  function withKeypair(seedHex, fn, requireActiveSession, expectedGeneration) {
     _veldRequireSelfCustodySigner('private-key derivation or signing');
-    if (requireActiveSession) _veldAssertActiveSignerSeed(seedHex);
+    if (requireActiveSession) _veldAssertActiveSignerSeed(seedHex, expectedGeneration);
     requireInit();
     var seed = hexToBytes(seedHex);
     if (seed.length !== 32) throw new Error('seed must be 32 bytes');
@@ -4304,7 +4304,7 @@ var veldCrypto = (function() {
   // SIGHASH_ALL (0x01) byte appended — matches the pre-PQ contract so every
   // existing caller that trims the trailing byte for message-signature use
   // (signMessage) still works.
-  function sign(seedHex, sighashHex) {
+  function sign(seedHex, sighashHex, expectedGeneration) {
     return withKeypair(seedHex, function(sk_ptr, pk_ptr, m) {
       var msg = hexToBytes(sighashHex);
       var msg_ptr = m._malloc(msg.length);
@@ -4327,7 +4327,7 @@ var veldCrypto = (function() {
       } finally {
         m._free(msg_ptr); m._free(sig_ptr); m._free(siglen_ptr);
       }
-    }, true);
+    }, true, expectedGeneration);
   }
 
   // Build a scriptSig in the post-quantum format:
@@ -4355,7 +4355,7 @@ var veldCrypto = (function() {
   // SCHEME_ID_MLDSA65 (= 0x01) — consistent with what we prepend
   // here.
   var SCHEME_ID_MLDSA65 = 0x01;
-  function buildScriptSig(seedHex, sighashHex) {
+  function buildScriptSig(seedHex, sighashHex, expectedGeneration) {
     return withKeypair(seedHex, function(sk_ptr, pk_ptr, m) {
       var msg = hexToBytes(sighashHex);
       var msg_ptr = m._malloc(msg.length);
@@ -4386,7 +4386,7 @@ var veldCrypto = (function() {
       } finally {
         m._free(msg_ptr); m._free(sig_ptr); m._free(siglen_ptr);
       }
-    }, true);
+    }, true, expectedGeneration);
   }
 
   // Inject PQ scriptSigs into an unsigned tx hex. Walks inputs, signs each
@@ -4408,8 +4408,8 @@ var veldCrypto = (function() {
   // featureless "Signing and broadcasting…" forever message. The user
   // should see it tick if signing is making progress; if it stalls, the
   // last reported (i, n) localises the hang.
-  function injectSignatures(unsignedTxHex, inputs, seedHex, onProgress) {
-    _veldAssertActiveSignerSeed(seedHex);
+  function injectSignatures(unsignedTxHex, inputs, seedHex, onProgress, expectedGeneration) {
+    var signerGeneration = _veldAssertActiveSignerSeed(seedHex, expectedGeneration);
     _veldAssertPreparedRelaySize(unsignedTxHex, inputs);
     var tx = hexToBytes(unsignedTxHex);
     var pos = 0;
@@ -4454,11 +4454,13 @@ var veldCrypto = (function() {
     // each ~0ms overhead, but the UI thread stays responsive throughout.
     var i = 0;
     function signNext() {
+      _veldAssertActiveSignerSeed(seedHex, signerGeneration);
       if (i >= numIn) {
         result = result.concat(Array.from(outsAndLocktime));
         if (typeof onProgress === 'function') {
           try { onProgress(numIn, numIn); } catch(_){}
         }
+        _veldAssertActiveSignerSeed(seedHex, signerGeneration);
         return bytesToHex(result);
       }
       result = result.concat(parsedInputs[i].prevHash);
@@ -4473,7 +4475,7 @@ var veldCrypto = (function() {
         result = result.concat(Array.from(parsedInputs[i].scriptSig));
       } else {
         if (!sighash) throw new Error('Refusing to sign: input #' + i + ' has no verified sighash.');
-        var ss = buildScriptSig(seedHex, sighash);
+        var ss = buildScriptSig(seedHex, sighash, signerGeneration);
         var ssBytes = hexToBytes(ss);
         result = result.concat(writeVarInt(ssBytes.length));
         result = result.concat(ssBytes);
@@ -4500,13 +4502,13 @@ var veldCrypto = (function() {
   // Returns a hex string of the raw ML-DSA signature with the trailing
   // SIGHASH_ALL byte stripped (so governance / ownership-proof verifiers
   // that expect pure signature bytes stay compatible).
-  function signMessage(seedHex, message) {
+  function signMessage(seedHex, message, expectedGeneration) {
     var enc = new TextEncoder();
     var bytes = enc.encode(message);
     var hex = '';
     for (var i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
     var hashHex = sha256d(hex);
-    var sigHex = sign(seedHex, hashHex);
+    var sigHex = sign(seedHex, hashHex, expectedGeneration);
     return sigHex.slice(0, -2);
   }
 
@@ -4738,12 +4740,16 @@ function _veldAutoLockSigner(reason) {
   return true;
 }
 
-function _veldAssertActiveSignerSeed(seedHex) {
+function _veldAssertActiveSignerSeed(seedHex, expectedGeneration) {
   _veldRequireSelfCustodySigner('transaction signing');
   var active = __veldKey.get();
   if (!active || typeof seedHex !== 'string' ||
       active !== seedHex.toLowerCase())
     throw new Error('Wallet locked or changed before signing. Unlock it and review the transaction again.');
+  var generation = __veldKey.generation();
+  if (!Number.isSafeInteger(generation) || generation < 0 ||
+      (expectedGeneration !== undefined && generation !== expectedGeneration))
+    throw new Error('Wallet signing session changed. Review the transaction again.');
   var now = Date.now();
   if (now - _veldSignerLastActivity >= VELD_SIGNER_IDLE_MS) {
     _veldAutoLockSigner('inactivity');
@@ -4751,7 +4757,7 @@ function _veldAssertActiveSignerSeed(seedHex) {
   }
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden')
     throw new Error('Signing stopped because the wallet is not visible. Return to the wallet and review again.');
-  return __veldKey.generation();
+  return generation;
 }
 
 (function installSignerSessionGuards(){
@@ -5114,14 +5120,20 @@ function _veldRequireBoundIdentity(seedHex, claimedPubHex, claimedAddress) {
   return { key: seedHex, publicKey: pubHex, address: address };
 }
 
-function _veldActivateBoundIdentity(identity) {
+function _veldActivateBoundIdentity(identity, preserveActiveSession) {
   if (!identity || !identity.key || !identity.address)
     throw new Error('wallet identity is incomplete');
   // Set the key first so `_setCurrentAddr` can enforce the same local
   // derivation. Roll back on any storage/validation failure; never leave a
   // signing key paired with a stale address.
   try {
-    __veldKey.set(identity.key);
+    // Transaction review may revalidate an already-active identity. Actual
+    // unlock/import calls use the default path and always start a new session.
+    if (preserveActiveSession === true && __veldKey.get() === identity.key &&
+        currentAddr === identity.address)
+      _veldAssertActiveSignerSeed(identity.key);
+    else
+      __veldKey.set(identity.key);
     if (!_setCurrentAddr(identity.address))
       throw new Error('wallet key/address binding failed');
   } catch (e) {
@@ -5636,10 +5648,12 @@ function _veldAssertPreparedRelaySize(unsignedTxHex, inputs) {
 }
 
 // Accept only the transaction ID derived from the exact locally signed bytes.
-function _veldBroadcastExactSigned(signedHex, expectedSeedHex) {
+function _veldBroadcastExactSigned(signedHex, expectedSeedHex, expectedGeneration) {
   if (typeof expectedSeedHex !== 'string' || !/^[0-9a-fA-F]{64}$/.test(expectedSeedHex))
     throw new Error('Refusing to broadcast without the exact reviewed signer key.');
-  _veldAssertActiveSignerSeed(expectedSeedHex);
+  if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 0)
+    throw new Error('Refusing to broadcast without the reviewed signer session.');
+  _veldAssertActiveSignerSeed(expectedSeedHex, expectedGeneration);
   if (typeof signedHex !== 'string' || !signedHex || signedHex.length % 2 !== 0)
     return Promise.reject(new Error('Refusing to broadcast malformed signed transaction bytes.'));
   if (signedHex.length > 2 * 1024 * 1024)
@@ -5695,8 +5709,12 @@ function _veldConsolidationBudget(maxBatches) {
   });
 }
 
-function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2PKHGuardHash160, allowedP2PKHHash160s, onSignProgress, expectedOpReturnHex, consolidationBudget) {
+function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2PKHGuardHash160, allowedP2PKHHash160s, onSignProgress, expectedOpReturnHex, consolidationBudget, expectedGeneration) {
   _veldRequireSelfCustodySigner('transaction signing');
+  // Pin the reviewed session before the first Promise continuation.
+  var signerGeneration;
+  try { signerGeneration = _veldAssertActiveSignerSeed(keyHex, expectedGeneration); }
+  catch (e) { return Promise.reject(e); }
   // Self-custody signing only. Private keys never go to the RPC endpoint;
   // signed-local sessions use the loopback app and PWA sessions retain the
   // decrypted key only in this page's memory.
@@ -5730,6 +5748,7 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
   // validation failures still reach each caller's normal rejection/finally
   // path and cannot strand a UI operation lock.
   return Promise.resolve().then(function() {
+    _veldAssertActiveSignerSeed(keyHex, signerGeneration);
     var claimedAddress = (Array.isArray(params) && typeof params[0] === 'string')
       ? params[0].trim() : '';
     if(prepareMethod === 'prepareconsolidatetx' && expectedOpReturnHex !== '')
@@ -5741,6 +5760,7 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
     var budget = prepareMethod === 'prepareconsolidatetx'
       ? (consolidationBudget || _veldConsolidationBudget(1)) : null;
     return rpc(prepareMethod, params).then(function(prep) {
+    _veldAssertActiveSignerSeed(keyHex, signerGeneration);
     _veldAssertPreparedRelaySize(prep && prep.unsigned_tx_hex, prep && prep.inputs);
     var consolidation = budget ? _veldConsolidationProgress(prep, ownerPrevSpk) : null;
     if (Array.isArray(expectedOutputs) && expectedOutputs.length > 0) {
@@ -5768,14 +5788,15 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
     // then inject signatures.  This may perform bounded local RPC reads for
     // fragmented wallets, so the existing signing-progress UI remains active.
     return _veldAuthenticatePreparedPrevouts(prep, VELD_MIN_TX_FEE_UNITS).then(function() {
+      _veldAssertActiveSignerSeed(keyHex, signerGeneration);
       if (budget) budget.reserve(VELD_MIN_TX_FEE_UNITS);
-      return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, keyHex, onSignProgress);
+      return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, keyHex, onSignProgress, signerGeneration);
     })
       .then(function(signedHex) {
     var localTxid = String(veldCrypto.sha256d(signedHex)).toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(localTxid))
       throw new Error('Refusing to broadcast: local signed transaction id is invalid.');
-    return _veldBroadcastExactSigned(signedHex, keyHex).then(function(_txid_str) {
+    return _veldBroadcastExactSigned(signedHex, keyHex, signerGeneration).then(function(_txid_str) {
       // record this broadcast in localStorage so the
       // wallet's In-flight transactions card can render it (and the
       // Rebroadcast button when it sits unconfirmed for 5+ minutes).
@@ -6385,6 +6406,8 @@ function bvDoSwap(){
   try{veldRequireExternalValue('an AMM swap');}catch(e){bvSwapErr(e);return;}
   var seed=(typeof __veldKey!=='undefined')?__veldKey.get():null;
   if(!seed||!currentAddr){ if(msg) msg.innerHTML='<div class="alert alert-info" style="margin:10px 0">Unlock your wallet to swap.</div>'; return; }
+  var signerGeneration;
+  try{signerGeneration=_veldAssertActiveSignerSeed(seed);}catch(e){bvSwapErr(e);return;}
   var inSats=bvParse((bvG('bv-pay-amt')||{}).value); if(inSats<=0) return;
   var payV=bvPayIsVeld(), dir=payV?'v2b':'b2v', p=bvState.pool;
   var localQuote=bvQuote(p,payV,inSats), expOut=localQuote.out;
@@ -6405,8 +6428,10 @@ function bvDoSwap(){
   if(btn)delete btn.dataset.highImpactReady;
   if(btn){ btn.disabled=true; btn.textContent='Swapping…'; }
   bvRequireFreshFeature('swap').then(function(){
+    _veldAssertActiveSignerSeed(seed,signerGeneration);
     return rpc('prepareammswap',[currentAddr, dir, String(inSats)]);
   }).then(function(prep){
+    _veldAssertActiveSignerSeed(seed,signerGeneration);
     if(!prep||prep.fee_model!==BV_FEE_MODEL) throw new Error('unexpected AMM fee model — refusing to sign');
     if(String(prep.direction)!==dir) throw new Error('the quote direction changed — refusing to sign');
     if(String(prep.anchor_veld)!==String(p.anchor_veld)||String(prep.anchor_btcveld)!==String(p.anchor_btcveld)) throw new Error('the immutable pool anchor changed — refusing to sign');
@@ -6420,8 +6445,8 @@ function bvDoSwap(){
     return _bvVerifyAmmPrepared(prep,{poolInput:true,poolValue:localQuote.postV.toString(),
       requiredSelfValue:payV?null:expOut.toString(),
       op:'VELD_AMM|'+(payV?'SWAP_V2B':'SWAP_B2V')+'|'+currentAddr+'|'+String(inSats)+'|'+(payV?expOut.toString():'0')})
-      .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, seed); })
-      .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, seed); });
+      .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, seed, null, signerGeneration); })
+      .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, seed, signerGeneration); });
   }).then(function(){
     if(msg) msg.innerHTML='<div class="alert alert-ok" style="margin:10px 0">✓ Swapped — about '+escHtml(bvFmt(Number(expOut)))+' '+(payV?'btcVELD':'VELD')+' is on the way. Settles in ~1 block.</div>';
     if(bvG('bv-pay-amt')) bvG('bv-pay-amt').value=''; if(bvG('bv-get-amt')) bvG('bv-get-amt').value='';
@@ -6509,6 +6534,8 @@ function bvDoSeed(){
   try{veldRequireExternalValue('an AMM pool seed');}catch(e){bvSeedErr(e);return;}
   var seed=(typeof __veldKey!=='undefined')?__veldKey.get():null;
   if(!seed||!currentAddr){ if(msg) msg.innerHTML='<div class="alert alert-info" style="margin:8px 0">Unlock your wallet first.</div>'; return; }
+  var signerGeneration;
+  try{signerGeneration=_veldAssertActiveSignerSeed(seed);}catch(e){bvSeedErr(e);return;}
   var vSats=bvParse((bvG('bv-seed-veld')||{}).value), bSats=bvParse((bvG('bv-seed-btc')||{}).value);
   if(vSats<=0||bSats<=0) return;
   var seedQuote=bvSeedQuote(BigInt(vSats),BigInt(bSats));
@@ -6524,8 +6551,10 @@ function bvDoSeed(){
   if(!window.confirm(warning)) return;
   if(btn){ btn.disabled=true; btn.textContent='Opening…'; }
   bvRequireFreshFeature('swap').then(function(){
+    _veldAssertActiveSignerSeed(seed,signerGeneration);
     return rpc('prepareammseed',[currentAddr, String(vSats), String(bSats)]);
   }).then(function(prep){
+    _veldAssertActiveSignerSeed(seed,signerGeneration);
     if(String(prep.d_veld_sats)!==String(vSats)||String(prep.d_btcveld_sats)!==String(bSats)) throw new Error('the seed amounts changed — refusing to sign');
     if(typeof prep.market_seed_anchor_active!=='boolean'||prep.market_seed_anchor_active!==BV_MARKET_SEED_ANCHOR_ACTIVE) throw new Error('the opening-anchor policy changed — refusing to sign');
     var expectedAnchorPolicy=BV_MARKET_SEED_ANCHOR_ACTIVE?'first-valid-seed-anchor-v1':'fixed-ratio-v1';
@@ -6540,8 +6569,8 @@ function bvDoSeed(){
     if(!!prep.seed_fully_locked!==seedQuote.fullyLocked) throw new Error('the seed lock classification changed — refusing to sign');
     return _bvVerifyAmmPrepared(prep,{poolInput:false,poolValue:String(vSats),requiredSelfValue:String(prep.seed_liveness_continuation_units),
       op:'VELD_AMM|ADD|'+currentAddr+'|'+String(vSats)+'|'+String(bSats)})
-      .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, seed); })
-      .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, seed); });
+      .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, seed, null, signerGeneration); })
+      .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, seed, signerGeneration); });
   }).then(function(){
     if(msg) msg.innerHTML=seedQuote.fullyLocked
       ?'<div class="alert alert-ok" style="margin:8px 0">✓ Pool opened. This seed is permanently locked and owns no withdrawable LP; later LP providers earn fees pro rata.</div>'
@@ -6554,6 +6583,8 @@ function bvDoAddLp(){
   try{veldRequireExternalValue('an AMM liquidity addition');}catch(e){bvLpErr(e);return;}
   var seed=(typeof __veldKey!=='undefined')?__veldKey.get():null;
   if(!seed||!currentAddr){ if(msg) msg.innerHTML='<div class="alert alert-info" style="margin:8px 0">Unlock your wallet first.</div>'; return; }
+  var signerGeneration;
+  try{signerGeneration=_veldAssertActiveSignerSeed(seed);}catch(e){bvLpErr(e);return;}
   var vSats=bvParse((bvG('bv-lp-veld')||{}).value); if(vSats<=0) return;
   var p=bvState.pool||{}, pv=BigInt(p.reserve_veld||0), pb=BigInt(p.reserve_btcveld||0);
   if(pv<=0n||pb<=0n){ bvLpErr(new Error('Pool state is unavailable — refresh and retry.')); return; }
@@ -6561,13 +6592,15 @@ function bvDoAddLp(){
   if(extra>walletBtc) extra=walletBtc;
   if(btn){ btn.disabled=true; btn.textContent='Adding…'; }
   bvRequireFreshFeature('swap').then(function(){
+    _veldAssertActiveSignerSeed(seed,signerGeneration);
     return rpc('prepareammadd',[currentAddr, String(vSats)]);
   }).then(function(prep){
+    _veldAssertActiveSignerSeed(seed,signerGeneration);
     if(String(prep.d_veld_sats)!==String(vSats)||String(prep.btcveld_used_sats)!==useBtc.toString()) throw new Error('the pool ratio moved — review and retry');
     return _bvVerifyAmmPrepared(prep,{poolInput:true,poolValue:(pv+BigInt(vSats)).toString(),requiredSelfValue:null,
       op:'VELD_AMM|ADD|'+currentAddr+'|'+String(vSats)+'|'+extra.toString()})
-      .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, seed); })
-      .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, seed); });
+      .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, seed, null, signerGeneration); })
+      .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, seed, signerGeneration); });
   }).then(function(){
     if(msg) msg.innerHTML='<div class="alert alert-ok" style="margin:8px 0">✓ Liquidity added — you now earn a share of every swap fee.</div>';
     if(bvG('bv-lp-veld')) bvG('bv-lp-veld').value='';
@@ -6583,6 +6616,7 @@ function bvDoRemoveLp(){
   if(bvState.lp<=0) return;
   var p=bvState.pool||{}, plan=bvMaxRemovalPlan(p,bvState.lp,bvState.lpSupply);
   if(!plan){ bvLpErr(new Error('No LP amount can currently produce both a non-dust VELD payout and a non-dust pool remainder.')); return; }
+  try{plan.signerGeneration=_veldAssertActiveSignerSeed(seed);}catch(e){bvLpErr(e);return;}
   bvState.removePlan=plan;
   var share=Number(plan.dlp)/Number(plan.supply), myVeld=Number(plan.veldOut), myBtc=Number(plan.btcOut), pct=share*100;
   var residual=plan.userLp-plan.dlp;
@@ -6603,23 +6637,27 @@ function bvDoRemoveLpConfirmed(){
   if(bvState.lp<=0) return;
   var p=bvState.pool||{}, approved=bvState.removePlan;
   var live=bvMaxRemovalPlan(p,bvState.lp,bvState.lpSupply);
-  if(!approved||!live||live.dlp!==approved.dlp||live.reserveV!==approved.reserveV||
+  if(!approved||!Number.isSafeInteger(approved.signerGeneration)||!live||live.dlp!==approved.dlp||live.reserveV!==approved.reserveV||
      live.reserveB!==approved.reserveB||live.supply!==approved.supply||
      live.userLp!==approved.userLp){
     bvState.removePlan=null;
     bvLpErr(new Error('The pool or your LP position changed. Review the withdrawal again before signing.'));
     return;
   }
+  var signerGeneration;
+  try{signerGeneration=_veldAssertActiveSignerSeed(seed,approved.signerGeneration);}catch(e){bvLpErr(e);return;}
   var dlp=approved.dlp, veldOut=approved.veldOut, newReserveV=approved.newReserveV;
   if(btn){ btn.disabled=true; btn.textContent='Withdrawing…'; }
   bvRequireFreshFeature('swap').then(function(){
+    _veldAssertActiveSignerSeed(seed,signerGeneration);
     return rpc('prepareammremove',[currentAddr, dlp.toString()]);
   }).then(function(prep){
+    _veldAssertActiveSignerSeed(seed,signerGeneration);
     if(String(prep.d_lp)!==dlp.toString()||String(prep.veld_out_sats)!==veldOut.toString()) throw new Error('the LP withdrawal quote moved — review and retry');
     return _bvVerifyAmmPrepared(prep,{poolInput:true,poolValue:newReserveV.toString(),requiredSelfValue:veldOut.toString(),
       op:'VELD_AMM|REMOVE|'+currentAddr+'|'+dlp.toString()+'|0'})
-      .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, seed); })
-      .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, seed); });
+      .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, seed, null, signerGeneration); })
+      .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, seed, signerGeneration); });
   }).then(function(){
     bvState.removePlan=null;
     if(msg) msg.innerHTML='<div class="alert alert-ok" style="margin:8px 0">✓ Liquidity withdrawn back to your wallet.</div>';
@@ -6809,11 +6847,14 @@ function _admissionClockExpired(clock,safetySeconds){
   var elapsed=_admissionMonotonicNow()-clock.startedAtMs;
   return !Number.isFinite(elapsed)||elapsed<0||elapsed>=clock.validForMs-safetySeconds*1000;
 }
-function _bvAttachAdmission(payload,seed){
-  try{veldRequireExternalValue('the Bitcoin wrap admission API');}
+function _bvAttachAdmission(payload,seed,expectedGeneration){
+  var signerGeneration;
+  try{veldRequireExternalValue('the Bitcoin wrap admission API');
+    signerGeneration=_veldAssertActiveSignerSeed(seed,expectedGeneration);}
   catch(e){return Promise.reject(e);}
   return (async function(){
    for(var policyAttempt=0;policyAttempt<_ADMISSION_REFRESH_LIMIT;policyAttempt++){
+     _veldAssertActiveSignerSeed(seed,signerGeneration);
     var response=await fetch(BV_WRAP_API+'/admission',{cache:'no-store'});
     var policy=await response.json();if(!response.ok)throw new Error(policy.error||'admission unavailable');
     if(!policy||policy.version!==2
@@ -6828,6 +6869,7 @@ function _bvAttachAdmission(payload,seed){
        ||typeof seed!=='string'||!/^[0-9a-f]{64}$/.test(seed))
       throw new Error('deposit-service admission policy is malformed');
     var admissionClock=_admissionClock(policy,'wrap admission');
+    _veldAssertActiveSignerSeed(seed,signerGeneration);
     var identity=_veldRequireBoundIdentity(seed,null,payload.veld_address);
     var bits=policy.bits,target=1n<<BigInt(256-bits),enc=new TextEncoder(),counter=0n;
     var canonical=['VELD-WRAP-ADMISSION-BODY-v2',payload.request_id,payload.veld_address,
@@ -6837,6 +6879,7 @@ function _bvAttachAdmission(payload,seed){
     var expired={admissionExpired:true};
     try{return await new Promise(function(resolve,reject){
       function batch(){try{
+        _veldAssertActiveSignerSeed(seed,signerGeneration);
         if(_admissionClockExpired(admissionClock,5)){reject(expired);return;}
         for(var n=0;n<2048;n++){
           var nonce=(counter&0xffffffffffffffffn).toString(16).padStart(16,'0');counter++;
@@ -6849,7 +6892,7 @@ function _bvAttachAdmission(payload,seed){
             var prefix=Array.from(enc.encode('VELD-WRAP-ADMISSION-v2\x00'));
             var tail=Array.from(_veldHexToBytes(policy.beacon+nonce+requestHash));
             var messageHex=_veldBytesToHex(Uint8Array.from(prefix.concat(tail)));
-            var signature=veldCrypto.sign(seed,veldCrypto.sha256d(messageHex)).slice(0,-2);
+            var signature=veldCrypto.sign(seed,veldCrypto.sha256d(messageHex),signerGeneration).slice(0,-2);
             if(!/^[0-9a-f]{6618}$/.test(signature))throw new Error('wallet produced a malformed admission signature');
             payload.admission_beacon=policy.beacon;payload.admission_nonce=nonce;
             payload.admission_public_key=identity.publicKey;
@@ -6867,6 +6910,8 @@ function bvGetDeposit(){
   try{veldRequireExternalValue('a Bitcoin wrap request');}catch(e){bvWrapMsg(e.message,'err');return;}
   var seed=(typeof __veldKey!=='undefined')?__veldKey.get():null;
   if(!currentAddr||!seed){ bvWrapMsg('Unlock your wallet first — your deposit address is tied to it.','info'); return; }
+  var signerGeneration;
+  try{signerGeneration=_veldAssertActiveSignerSeed(seed);}catch(e){bvWrapMsg(e.message,'err');return;}
   var amount=bvParse((bvG('bv-wrap-amt')||{}).value||'');
   if(amount<1){ bvWrapMsg('Enter the exact BTC amount before requesting an address.','info'); return; }
   _bvHideDeposit();
@@ -6874,11 +6919,12 @@ function bvGetDeposit(){
   bvWrapMsg('');
   var requestId;
   bvRequireFreshFeature('wrap').then(function(pi){
+    _veldAssertActiveSignerSeed(seed,signerGeneration);
     var max=bvWrapMaxSats(pi);
     if(!max||max<BV_WRAP_MIN_SATS||amount<BV_WRAP_MIN_SATS||amount>max)
       throw new Error('Wrap amount must be between 10,000 sats ('+bvFmt(BV_WRAP_MIN_SATS)+' BTC) and the current custody headroom of '+bvFmt(max||0)+' BTC.');
     requestId=_bvWrapRequestId(currentAddr,amount);
-    return _bvAttachAdmission({veld_address:currentAddr,amount_sats:amount,request_id:requestId},seed);
+    return _bvAttachAdmission({veld_address:currentAddr,amount_sats:amount,request_id:requestId},seed,signerGeneration);
   }).then(function(body){
     // Admission work can take long enough for liveness to change. Refresh once
     // more directly before asking custody to expose a deposit locator.
@@ -6894,6 +6940,7 @@ function bvGetDeposit(){
     }).then(function(){
       // From this point onward the request may have reached custody even if
       // the response is lost, so the retry id must remain pinned.
+      _veldAssertActiveSignerSeed(seed,signerGeneration);
       return fetch(BV_WRAP_API+'/wrap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     });
   })
@@ -6982,6 +7029,8 @@ function bvDoRedeem(){
   try{veldRequireExternalValue('a Bitcoin redemption request');}catch(e){bvRedeemMsg(e.message,'err');return;}
   var seed=(typeof __veldKey!=='undefined')?__veldKey.get():null;
   if(!seed||!currentAddr){ bvRedeemMsg('Unlock your wallet to redeem.','info'); return; }
+  var signerGeneration;
+  try{signerGeneration=_veldAssertActiveSignerSeed(seed);}catch(e){bvRedeemMsg(e.message,'err');return;}
   var sats=bvParse((bvG('bv-redeem-amt')||{}).value); if(sats<=0) return;
   if(sats>bvState.btcSats){ bvRedeemMsg('That’s more than your btcVELD balance.','err'); return; }
   var dest=((bvG('bv-redeem-dest')||{}).value||'').trim();
@@ -6995,8 +7044,10 @@ function bvDoRedeem(){
       var spk=String(res.j.scriptPubKey).toLowerCase();
       // 2. build the unsigned REDEEM tx on the node.
       return bvRequireFreshFeature('redeem').then(function(){
+        _veldAssertActiveSignerSeed(seed,signerGeneration);
         return rpc('preparetokenredeem',[currentAddr,String(sats),spk]);
       }).then(function(prep){
+        _veldAssertActiveSignerSeed(seed,signerGeneration);
         // 3. VERIFY before signing: every non-OP_RETURN output must be P2PKH change
         //    back to us, and the OP_RETURN must be EXACTLY our REDEEM op.
         var ptx=_veldParseUnsignedTx(prep.unsigned_tx_hex);
@@ -7018,8 +7069,8 @@ function bvDoRedeem(){
         // 4. authenticate parent values, enforce the exact network fee, then
         // sign our own inputs + broadcast.
         return _veldAuthenticatePreparedPrevouts(prep,VELD_MIN_TX_FEE_UNITS)
-          .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex,prep.inputs,seed); })
-          .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, seed); });
+          .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex,prep.inputs,seed,null,signerGeneration); })
+          .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, seed, signerGeneration); });
       });
     })
     .then(function(){
@@ -10036,11 +10087,12 @@ function setAutoConsolidatePreference(enabled) {
   renderAutoConsolidatePreference();
 }
 
-function autoConsolidateContextReady(keyHex, address, revision, ownsLock) {
+function autoConsolidateContextReady(keyHex, address, revision, ownsLock, expectedGeneration) {
   if (!autoConsolidateEnabled() || currentAddr !== address || !address ||
       revision !== __autoConsolidatePreferenceRevision) return false;
   var unlocked = (typeof __veldKey !== 'undefined' && __veldKey.get) ? __veldKey.get() : '';
   if (!keyHex || keyHex.length !== 64 || unlocked !== keyHex) return false;
+  if (expectedGeneration !== undefined && __veldKey.generation() !== expectedGeneration) return false;
   if (typeof __opLocks !== 'undefined' && __opLocks) {
     for (var name in __opLocks) {
       if (__opLocks[name] && !(ownsLock && name === 'consolidate')) return false;
@@ -10086,30 +10138,35 @@ function autoConsolidateMaybe() {
   var revision = __autoConsolidatePreferenceRevision;
   var keyHex = (typeof __veldKey !== 'undefined' && __veldKey.get) ? __veldKey.get() : '';
   if (!autoConsolidateContextReady(keyHex, address, revision, false)) return;
+  var signerGeneration;
+  try { signerGeneration = _veldAssertActiveSignerSeed(keyHex); } catch (_) { return; }
   __autoConsolidateChecking = true;
   __autoConsolidateLastRun = now;
   return Promise.resolve().then(function() {
+    _veldAssertActiveSignerSeed(keyHex, signerGeneration);
     return rpc('getbalance', [address]);
   }).then(function(bal) {
-    if (!autoConsolidateContextReady(keyHex, address, revision, false)) return null;
+    if (!autoConsolidateContextReady(keyHex, address, revision, false, signerGeneration)) return null;
     if (!bal || typeof bal !== 'object') return null;
     var pendingIn = Number(bal && bal.pending_in_veld);
     var pendingOut = Number(bal && bal.pending_out_veld);
     if (!Number.isFinite(pendingIn) || !Number.isFinite(pendingOut) || pendingIn !== 0 || pendingOut !== 0) return null;
     return rpc('getdustutxocount', [address, AUTO_CONSOLIDATE_THRESHOLD_VELD]);
   }).then(function(d) {
-    if (!d || !autoConsolidateContextReady(keyHex, address, revision, false)) return;
+    if (!d || !autoConsolidateContextReady(keyHex, address, revision, false, signerGeneration)) return;
     var total = Number(d.total_count), dust = Number(d.dust_count);
     if (!Number.isSafeInteger(total) || !Number.isSafeInteger(dust) || total < 0 || dust < 0 || dust > total) return;
     if (total <= AUTO_CONSOLIDATE_TRIGGER_TOTAL && dust < AUTO_CONSOLIDATE_TRIGGER_DUST) return;
-    return autoConsolidateRun(keyHex, address, revision, total, total > 24 ? '0' : AUTO_CONSOLIDATE_THRESHOLD_VELD);
+    return autoConsolidateRun(keyHex, address, revision, total, total > 24 ? '0' : AUTO_CONSOLIDATE_THRESHOLD_VELD, signerGeneration);
   }).catch(function() {}).then(function() { __autoConsolidateChecking = false; });
 }
 
-function autoConsolidateRun(keyHex, address, revision, totalAtStart, thresholdVeld) {
+function autoConsolidateRun(keyHex, address, revision, totalAtStart, thresholdVeld, expectedGeneration) {
   var signingBudget = _veldAutomaticConsolidationBudget();
   if (signingBudget.remaining() === 0) return;
   if (__autoConsolidateActive || !autoConsolidateContextReady(keyHex, address, revision, false)) return;
+  var signerGeneration;
+  try { signerGeneration = _veldAssertActiveSignerSeed(keyHex, expectedGeneration); } catch (_) { return; }
   var guard = _veldAddrToHash160Hex(address);
   if (!__opLock('consolidate', ['w-utxo-consolidate-btn'], 'Cleaning up…')) return;
   __autoConsolidateActive = true;
@@ -10117,16 +10174,16 @@ function autoConsolidateRun(keyHex, address, revision, totalAtStart, thresholdVe
 
   function runBatch() {
     // Recheck opt-in, unlocked identity and every operation lock before each batch.
-    if (!autoConsolidateContextReady(keyHex, address, revision, true)) return Promise.resolve();
+    if (!autoConsolidateContextReady(keyHex, address, revision, true, signerGeneration)) return Promise.resolve();
     if (signingBudget.remaining() === 0) return Promise.resolve();
     batchN++;
     autoConsolidateNotify('<b>Automatic cleanup</b> &middot; batch ' + batchN + ' &middot; ' + sweptInputs + ' inputs combined');
     return Promise.resolve().then(function() {
-      if (!autoConsolidateContextReady(keyHex, address, revision, true)) return null;
+      if (!autoConsolidateContextReady(keyHex, address, revision, true, signerGeneration)) return null;
       return signAndBroadcast('prepareconsolidatetx', [address, String(AUTO_CONSOLIDATE_PER_BATCH), thresholdVeld],
         keyHex, null, guard, [guard], function(i, n) {
           autoConsolidateNotify('<b>Automatic cleanup</b> &middot; batch ' + batchN + ' &middot; signing ' + i + '/' + n);
-        }, '', signingBudget);
+        }, '', signingBudget, signerGeneration);
     }).then(function(r) {
       var inputs = r && r.verified_consolidation_inputs || 0;
       if (inputs <= 0) return;
@@ -10169,6 +10226,9 @@ function doConsolidateUtxos() {
     if (msg) msg.innerHTML = '<div class="alert alert-err">Unlock your keystore above before consolidating.</div>';
     return;
   }
+  var signerGeneration;
+  try { signerGeneration = _veldAssertActiveSignerSeed(keyHex); }
+  catch (e) { if (msg) msg.textContent = e.message; return; }
   if (!__opLock('consolidate', ['w-utxo-consolidate-btn'], 'Consolidating…')) return;
 
   // A 200-input PQ-signed transaction is approximately 1.05 MB (each
@@ -10243,6 +10303,7 @@ function doConsolidateUtxos() {
 
   paint('Counting dust UTXOs&hellip;');
   rpc('getdustutxocount', [currentAddr, DUST_THRESHOLD_VELD]).then(function(d) {
+    _veldAssertActiveSignerSeed(keyHex, signerGeneration);
     var dustCount = parseInt(d && d.dust_count || 0, 10) || 0;
     var dustVeld  = parseFloat(d && d.dust_value_veld || 0) || 0;
     var totalCount = parseInt(d && d.total_count || 0, 10) || 0;
@@ -10274,7 +10335,7 @@ function doConsolidateUtxos() {
         'prepareconsolidatetx',
         [currentAddr, String(PER_BATCH), DUST_THRESHOLD_VELD],
         keyHex,
-        null, guard, allowed, null, '', signingBudget
+        null, guard, allowed, null, '', signingBudget, signerGeneration
       ).then(function(r) {
         var inputs = r.verified_consolidation_inputs;
         var txid = r && r.txid ? r.txid : '';
@@ -10937,7 +10998,7 @@ function doSend() {
     // Manual-key mode and normal unlocked mode now share one authenticated
     // activation path; a mismatched source address can never be paired with
     // the seed or used as change.
-    _veldActivateBoundIdentity(sendIdentity);
+    _veldActivateBoundIdentity(sendIdentity, true);
     keyHex = sendIdentity.key;
     from = sendIdentity.address;
   } catch (identityOrAmountError) {
@@ -11674,6 +11735,7 @@ async function mwSwitchToWallet(address) {
     try { loadDashboard(); } catch(_){}
     try { loadWalletAddr(parsed.address); } catch(_){}
     try { fillKeyFields(); } catch(_){}
+    try { onStakeAddrChange(); } catch(_){}
   } catch (e) {
     window.alert('Switch failed: ' + (e.message || 'unknown'));
   }
@@ -13248,6 +13310,12 @@ function __waitForTxConfirm(txid, maxSeconds, onConfirmed, onTimeout, onTick) {
   var done = false;
   var timer = setInterval(function(){
     if (done) return;
+    if (attempt >= maxAttempts) {
+      done = true;
+      clearInterval(timer);
+      try { onTimeout && onTimeout(); } catch(_){}
+      return;
+    }
     attempt++;
     try { onTick && onTick(attempt, maxAttempts); } catch(_){}
     rpc('gettransactionrecent', [txid]).then(function(res){
@@ -13266,6 +13334,7 @@ function __waitForTxConfirm(txid, maxSeconds, onConfirmed, onTimeout, onTick) {
         try { onTimeout && onTimeout(); } catch(_){}
       }
     }).catch(function(){
+      if (done) return;
       // Most likely "Transaction not found" while the tx is still in
       // mempool — just keep polling until the cap.
       if (attempt >= maxAttempts) {
@@ -13287,9 +13356,10 @@ function doRegisterValidator() {
   if (!keyHex || keyHex.length !== 64) { msgEl.innerHTML = '<div class="alert alert-err">Unlock your keystore above to sign transactions.</div>'; return; }
   try {
     var validatorIdentity = _veldRequireBoundIdentity(keyHex, null, addr);
-    _veldActivateBoundIdentity(validatorIdentity);
+    _veldActivateBoundIdentity(validatorIdentity, true);
     keyHex = validatorIdentity.key;
     addr = validatorIdentity.address;
+    var signerGeneration = _veldAssertActiveSignerSeed(keyHex);
   } catch (e) {
     msgEl.innerHTML = '<div class="alert alert-err">' + escHtml(e.message) + '</div>'; return;
   }
@@ -13340,6 +13410,7 @@ function doRegisterValidator() {
       });
     });
   }).then(function() {
+  _veldAssertActiveSignerSeed(keyHex, signerGeneration);
   if (!__opLock('validator-op', ['val-reg-btn','val-dereg-btn'], 'Submitting…')) return;
   updateKsIndicator();
   msgEl.innerHTML = '<div class="alert alert-info">Registering validator...</div>';
@@ -13360,7 +13431,7 @@ function doRegisterValidator() {
   }];
   signAndBroadcast('prepareregistervalidator', [addr, pubHex], keyHex,
                    regExpected, null,
-                   [_veldAddrToHash160Hex(addr), vaultHash160], null, regOpHex).then(function(r) {
+                   [_veldAddrToHash160Hex(addr), vaultHash160], null, regOpHex, null, signerGeneration).then(function(r) {
     var txid = r && r.txid ? r.txid : '';
     var link = txid
       ? '<br><span style="font-size:10px;color:var(--muted)">TXID: </span>'
@@ -13643,7 +13714,8 @@ function setStakingActivationUi(active, supply, threshold, known) {
   _veldStakingActivation.supply = isFinite(parsedSupply) && parsedSupply >= 0 ? parsedSupply : 0;
   _veldStakingActivation.threshold = isFinite(parsedThreshold) && parsedThreshold > 0
     ? parsedThreshold : 10000;
-  var locked = !_veldStakingActivation.active;
+  var busy = typeof __opLocks !== 'undefined' && !!__opLocks.stake;
+  var locked = !_veldStakingActivation.active || busy;
   var remaining = Math.max(0, _veldStakingActivation.threshold - _veldStakingActivation.supply);
   var title = _veldStakingActivation.known
     ? ('Staking unlocks at ' + _veldStakingActivation.threshold.toFixed(0) +
@@ -13654,7 +13726,7 @@ function setStakingActivationUi(active, supply, threshold, known) {
   if (button) {
     button.disabled = locked;
     button.setAttribute('aria-disabled', locked ? 'true' : 'false');
-    button.title = locked ? title : '';
+    button.title = busy ? 'Stake transaction in progress' : (locked ? title : '');
   }
 }
 
@@ -13838,20 +13910,41 @@ function loadStakingPage() {
   });
 }
 
+var _veldStakeBalanceRevision = 0;
+var _veldStakeOperation = null;
+
+function _veldStakeFormAddress() {
+  var row = document.getElementById('sk-addr-row');
+  var input = document.getElementById('sk-addr');
+  return (row && row.style.display === 'none') || (input && input.style.display === 'none')
+    ? currentAddr : (input ? input.value.trim() : '');
+}
+
+function _veldStakeAvailableUnits(balance) {
+  var value = balance && balance.spendable_veld;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+    throw new Error('Spendable balance is unavailable. Refresh the wallet and try again.');
+  var units = Math.round(value * 100000000);
+  if (!Number.isSafeInteger(units))
+    throw new Error('Spendable balance is outside the supported range.');
+  var fee = BigInt(VELD_MIN_TX_FEE_UNITS);
+  return BigInt(units) > fee ? BigInt(units) - fee : 0n;
+}
+
 function onStakeAddrChange() {
-  var addr = document.getElementById('sk-addr').value.trim();
+  var request = ++_veldStakeBalanceRevision;
+  var addr = _veldStakeFormAddress();
+  document.getElementById('sk-balance').textContent = '—';
+  document.getElementById('sk-current-stake').textContent = '—';
   if (!addr || addr.length < 10) return;
-  Promise.all([rpc('getbalance',[addr]).catch(function(){return 0;}), rpc('getstake',[addr]).catch(function(){return 0;})]).then(function(results) {
+  return Promise.all([rpc('getbalance',[addr]), rpc('getstake',[addr])]).then(function(results) {
+    if (request !== _veldStakeBalanceRevision || addr !== _veldStakeFormAddress()) return;
     var stakeObj = results[1];
     var staked = typeof stakeObj === 'object' ? (stakeObj.staked_veld||0) : (stakeObj||0);
     var unlockBlocks = typeof stakeObj === 'object' ? (stakeObj.blocks_until_unlock||0) : 0;
     var unlockHeight = typeof stakeObj === 'object' ? (stakeObj.unlock_height||0) : 0;
-    var balObj  = results[0];
-    var balTotal = typeof balObj === 'object' ? (balObj.balance_veld   || 0) : (balObj || 0);
-    // Staking records a marker rather than spending an output, so the RPC and
-    // interface both use total balance less the amount already staked.
-    var stakeable = Math.max(0, balTotal - staked);
-    document.getElementById('sk-balance').textContent = fmt(stakeable,2);
+    var stakeable = _veldStakeAvailableUnits(results[0]);
+    document.getElementById('sk-balance').textContent = _veldUnitsToAmountString(stakeable);
     document.getElementById('sk-current-stake').textContent = fmt(staked,2);
     // Stackable stakes: users can hold multiple concurrent stake records
     // per address (each at its own lockup tier). The protocol layer enforces
@@ -13877,28 +13970,14 @@ function onStakeAddrChange() {
       else unlockEl.innerHTML = '';
     }
     document.getElementById('sk-balance-hint').style.display = 'block';
+  }).catch(function(){
+    if (request !== _veldStakeBalanceRevision || addr !== _veldStakeFormAddress()) return;
+    document.getElementById('sk-balance').textContent = '—';
+    document.getElementById('sk-current-stake').textContent = '—';
   });
 }
 
 function doStake() {
-  // Disable button IMMEDIATELY to prevent double-click: the getstake RPC
-  // below is async (~100ms), and without this guard a rapid second click
-  // starts a second preparestake before the first has claimed its UTXOs,
-  // so the second call fails with "Insufficient funds for fee" even though
-  // the first stake actually succeeds. Leaves the user confused + with an
-  // on-chain stake they thought didn't go through.
-  // also gated by __opLock('stake') for resilience against
-  // button re-render between click events.
-  //
-  // Lock-release contract:
-  //   A .finally() blanket-release like doSend uses is NOT appropriate
-  //   here because the SUCCESS path deliberately keeps the button locked
-  //   for ~90 s of poll-confirm (see confirmPoll at line ~4758) — that
-  //   UX asymmetry is intentional and prevents the user stacking a
-  //   second stake before the first has 1 confirmation.
-  //   Every error/early-return path MUST call the local `reenable()`
-  //   helper below; the success path's `setInterval` handles its own
-  //   release via __opUnlock when confirmed or at the 90 s cap.
   var stakeBtn = document.querySelector('#page-staking .btn-em');
   if (!_veldStakingActivation.active) {
     var lockedMsg = document.getElementById('stake-msg');
@@ -13911,159 +13990,116 @@ function doStake() {
     return;
   }
   if (!__opLock('stake', stakeBtn ? [stakeBtn] : [], 'Staking…')) return;
-  if (stakeBtn) stakeBtn.disabled = true;
-  var skAddrRow = document.getElementById('sk-addr-row');
-  var addr = (skAddrRow && skAddrRow.style.display === 'none') ? currentAddr : document.getElementById('sk-addr').value.trim();
+  var operation = {};
+  _veldStakeOperation = operation;
+  var addr = _veldStakeFormAddress();
   var keyHex = __veldKey.get() || '';
-  var amountText = document.getElementById('sk-amount').value || '';
-  var amountUnits = null;
-  var amount = 0;
   var msgEl = document.getElementById('stake-msg');
+  var unstakeBtn = document.querySelector('button[data-act-click="haa7ba916"]');
+  var intent;
   var reenable = function(){
+    if (_veldStakeOperation !== operation) return false;
+    _veldStakeOperation = null;
     __opUnlock('stake', stakeBtn ? [stakeBtn] : []);
-    if (stakeBtn) setStakingActivationUi(
-      _veldStakingActivation.active,
-      _veldStakingActivation.supply,
-      _veldStakingActivation.threshold,
+    setStakingActivationUi(_veldStakingActivation.active,
+      _veldStakingActivation.supply, _veldStakingActivation.threshold,
       _veldStakingActivation.known);
+    if (window._pendingStakeAddr === addr) window._pendingStakeAddr = null;
+    if (unstakeBtn) { unstakeBtn.disabled = false; unstakeBtn.title = ''; }
+    return true;
   };
-  if (!addr) { msgEl.innerHTML = '<div class="alert alert-err">No address. Unlock your keystore above.</div>'; reenable(); return; }
-  if (!keyHex || keyHex.length !== 64) { msgEl.innerHTML = '<div class="alert alert-err">Unlock your keystore above to sign transactions.</div>'; reenable(); return; }
   try {
-    amountUnits = _veldParseVeldUnitsExact(amountText);
-    amount = Number(amountUnits) / 100000000;
-    var stakeIdentity = _veldRequireBoundIdentity(keyHex, null, addr);
-    _veldActivateBoundIdentity(stakeIdentity);
-    keyHex = stakeIdentity.key;
-    addr = stakeIdentity.address;
-  } catch (identityError) {
-    msgEl.innerHTML = '<div class="alert alert-err">' + escHtml(identityError.message) + '</div>';
-    reenable(); return;
-  }
-  if (!amount || amount < stakingMinVeld) { msgEl.innerHTML = '<div class="alert alert-err">Minimum stake is ' + fmt(stakingMinVeld,0) + ' VELD.</div>'; reenable(); return; }
-  if (stakingMaxVeld && amount > stakingMaxVeld) { msgEl.innerHTML = '<div class="alert alert-err">Maximum stake is ' + fmt(stakingMaxVeld,0) + ' VELD per address.</div>'; reenable(); return; }
-  // Aggregate cap precondition: existing + new amount must not exceed
-  // the per-address MAX_STAKE_UNITS. Check current total at submit time.
-  rpc('getstake',[addr]).then(function(stakeObj){
-    var existing = (stakeObj && typeof stakeObj === 'object') ? (stakeObj.staked_veld||0) : (stakeObj||0);
-    if (stakingMaxVeld && existing + amount > stakingMaxVeld) {
-      msgEl.innerHTML = '<div class="alert alert-err">Total staked (' + fmt(existing,2) + ' VELD) + this stake (' + fmt(amount,2) + ' VELD) would exceed the ' + fmt(stakingMaxVeld,0) + ' VELD per-address cap.</div>';
-      reenable();
-      return;
-    }
-    _doStakeContinue(addr, keyHex, amount, amountUnits.toString(), msgEl);
-  }).catch(function(){ _doStakeContinue(addr, keyHex, amount, amountUnits.toString(), msgEl); });
-}
-
-function _doStakeContinue(addr, keyHex, amount, amountUnitsStr, msgEl) {
-  // Balance guard: fetch a live balance check right now to prevent stacking
-  // up multiple stake TXs that exceed what the wallet actually holds. The
-  // displayed "Available" value can be stale if the user submits rapidly.
-  var availEl = document.getElementById('sk-balance');
-  var availVeld = availEl ? parseFloat(availEl.textContent) : NaN;
-  if (!isNaN(availVeld) && amount > availVeld) {
-    msgEl.innerHTML = '<div class="alert alert-err">Amount exceeds available balance (' + fmt(availVeld,2) + ' VELD).</div>';
+    if (!addr || !keyHex) throw new Error('Unlock your wallet before staking.');
+    var amountUnits = _veldParseVeldUnitsExact(document.getElementById('sk-amount').value || '');
+    var amount = Number(amountUnits) / 100000000;
+    var tierEl = document.getElementById('sk-tier');
+    var tier = tierEl ? Number(tierEl.value) : 1;
+    if (!Number.isInteger(tier) || tier < 1 || tier > 4)
+      throw new Error('Choose a valid stake lockup.');
+    var identity = _veldRequireBoundIdentity(keyHex, null, addr);
+    _veldActivateBoundIdentity(identity, true);
+    keyHex = identity.key;
+    addr = identity.address;
+    var generation = _veldAssertActiveSignerSeed(keyHex);
+    if (!amount || amount < stakingMinVeld)
+      throw new Error('Minimum stake is ' + fmt(stakingMinVeld,0) + ' VELD.');
+    if (stakingMaxVeld && amount > stakingMaxVeld)
+      throw new Error('Maximum stake is ' + fmt(stakingMaxVeld,0) + ' VELD per address.');
+    intent = Object.freeze({address:addr, amount:amount,
+      units:amountUnits.toString(), tier:tier, generation:generation});
+  } catch (e) {
+    reenable();
+    msgEl.innerHTML = '<div class="alert alert-err">' + escHtml(e.message) + '</div>';
     return;
   }
-  // Disable the button to prevent rapid double-submissions
-  var stakeBtn = document.querySelector('#page-staking .btn-em');
-  var unstakeBtn = document.querySelector('button[data-act-click="haa7ba916"]');
-  if (stakeBtn) stakeBtn.disabled = true;
-  // lock the unstake button for this address until the stake has
-  // at least 1 confirmation. Also set a window-level marker so doUnstake()
-  // can reject a same-session unstake attempt.
-  window._pendingStakeAddr = addr;
-  if (unstakeBtn) { unstakeBtn.disabled = true; unstakeBtn.title = 'Stake must confirm before unstaking is available'; }
-  updateKsIndicator();
-  // propagate the selected tier (1-4) to the preparestake RPC
-  var tierSel = document.getElementById('sk-tier');
-  var tier = tierSel ? parseInt(tierSel.value || '1', 10) : 1;
-  if (!(tier >= 1 && tier <= 4)) tier = 1;
-  var stakeOpHex = _veldBuildProtocolOpReturnHex(
-    'VELD_STAKE|LOCK|' + addr + '|' + amountUnitsStr + '|T' + String(tier));
-  msgEl.innerHTML = '<div class="alert alert-info">Staking ' + fmt(amount,2) + ' VELD (tier ' + tier + ')\u2026</div>';
-  // Capture the baseline stake BEFORE broadcast so the post-broadcast poller
-  // can detect when the new stake confirms (nowStaked >= baseline + amount).
-  rpc('getstake', [addr]).then(function(s){
-    var bs = (s && typeof s === 'object') ? (s.staked_veld || 0) : (s || 0);
-    window._lastConfirmedStake = bs;
-  }).catch(function(){ window._lastConfirmedStake = 0; });
-  // stake outputs are change-back-to-self (P2PKH to
-  // `addr`) + value=0 OP_RETURN. Pass user's hash160 so signAndBroadcast
-  // asserts no P2PKH leg has been redirected to an attacker by a bad node.
-  signAndBroadcast('preparestake', [addr, _veldUnitsToAmountString(amountUnitsStr), String(tier)], keyHex,
-                   null, _veldAddrToHash160Hex(addr), null, null, stakeOpHex).then(function(r) {
-    var unlock = r && r.unlock_height ? r.unlock_height : null;
-    var staked = r && r.staked_veld != null ? r.staked_veld : amount;
-    var txid   = r && r.txid ? r.txid : '';
-    var unlockMsg = unlock
-      ? ' Unlocks at block <strong>' + escHtml(unlock) + '</strong>.'
-      : '';
-    var link = txid
-      ? '<br><span style="font-size:10px;color:var(--muted)">TXID: </span>'
-        + '<a href="https://explorer.veld.network/tx/' + escHtml(txid) + '" target="_blank" rel="noopener noreferrer" class="hash-orange" '
-        + 'style="font-size:10px;word-break:break-all">' + escHtml(txid) + '</a>'
-      : '';
-    msgEl.innerHTML = '<div class="alert alert-ok">&#x2713; Staked ' + fmt(staked,2) + ' VELD! ' + unlockMsg + link + '<br><span style="font-size:10px;color:var(--muted)">Waiting for confirmation before next stake is allowed&hellip;</span></div>';
-    setTimeout(function() { msgEl.innerHTML = ''; }, 30000);
-    // Stake button stays DISABLED until the TX confirms. Re-enabling on
-    // broadcast success let the user spam multiple stakes that all landed
-    // in the same mempool — the server now blocks this with reservations,
-    // but the wallet should also gate it so users see "wait for confirm"
-    // rather than "Insufficient/already pending" errors.
-    if (stakeBtn) {
-      stakeBtn.disabled = true;
-      stakeBtn.title = 'Waiting for stake to confirm…';
+  return rpc('getstake',[addr]).then(function(stakeObj){
+    _veldAssertActiveSignerSeed(keyHex, intent.generation);
+    if (_veldStakeOperation !== operation || _veldStakeFormAddress() !== addr)
+      throw new Error('Wallet changed. Review the stake and try again.');
+    var existing = stakeObj && stakeObj.staked_veld;
+    if (typeof existing !== 'number' || !Number.isFinite(existing) || existing < 0)
+      throw new Error('Current stake is unavailable. Refresh the wallet and try again.');
+    if (stakingMaxVeld && existing + intent.amount > stakingMaxVeld)
+      throw new Error('This stake would exceed the ' + fmt(stakingMaxVeld,0) + ' VELD per-address cap.');
+    return _doStakeContinue(intent, keyHex, msgEl, operation, reenable);
+  }).catch(function(e){
+    var visible = _veldStakeOperation === operation && _veldStakeFormAddress() === addr &&
+      __veldKey.generation() === intent.generation;
+    if (reenable() && visible)
+      msgEl.innerHTML = '<div class="alert alert-err">' + escHtml(e.message || 'Staking failed') + '</div>';
+  });
+}
+
+function _doStakeContinue(intent, keyHex, msgEl, operation, reenable) {
+  var addr = intent.address;
+  function isCurrent() {
+    return _veldStakeOperation === operation && _veldStakeFormAddress() === addr &&
+      __veldKey.generation() === intent.generation;
+  }
+  return rpc('getbalance', [addr]).then(function(balance){
+    _veldAssertActiveSignerSeed(keyHex, intent.generation);
+    if (!isCurrent()) throw new Error('Wallet changed. Review the stake and try again.');
+    var available = _veldStakeAvailableUnits(balance);
+    if (BigInt(intent.units) > available)
+      throw new Error('Amount exceeds the ' + fmt(Number(available) / 100000000, 8) +
+        ' VELD available to stake after the network fee.');
+    window._pendingStakeAddr = addr;
+    var unstakeBtn = document.querySelector('button[data-act-click="haa7ba916"]');
+    if (unstakeBtn) {
+      unstakeBtn.disabled = true;
+      unstakeBtn.title = 'Stake transaction in progress';
     }
-    // Poll every 5s for confirmation (txid present in chain or mempool empty
-    // for this address). Cap at 36 attempts (~180s — one target block) so a
-    // failed broadcast doesn't lock the button forever.
-    var pollAttempts = 0;
-    var confirmPoll = setInterval(function(){
-      pollAttempts++;
-      rpc('getstake', [addr]).then(function(s){
-        var nowStaked = (s && typeof s === 'object') ? (s.staked_veld || 0) : (s || 0);
-        var confirmed = nowStaked >= (window._lastConfirmedStake || 0) + amount * 0.999; // tolerate rounding
-        if (confirmed || pollAttempts >= 36) {  // 36*5s = 180s hard cap
-          clearInterval(confirmPoll);
-          window._pendingStakeAddr = null;
-          window._lastConfirmedStake = nowStaked;
-          var sb = document.querySelector('#page-staking .btn-em');
-          __opUnlock('stake', sb ? [sb] : []);
-          if (sb) setStakingActivationUi(
-            _veldStakingActivation.active,
-            _veldStakingActivation.supply,
-            _veldStakingActivation.threshold,
-            _veldStakingActivation.known);
-          var ub = document.querySelector('button[data-act-click="haa7ba916"]');
-          if (ub) { ub.disabled = false; ub.title = ''; }
-          onStakeAddrChange();
-          loadStakingPage();
-        }
-      }).catch(function(){});
-    }, 5000);
-    loadStakingPage();
-    onStakeAddrChange();
-  }).catch(function(e) {
-    __opUnlock('stake', stakeBtn ? [stakeBtn] : []);
-    if (stakeBtn) setStakingActivationUi(
-      _veldStakingActivation.active,
-      _veldStakingActivation.supply,
-      _veldStakingActivation.threshold,
-      _veldStakingActivation.known);
-    // Re-enable unstake on staking failure
-    window._pendingStakeAddr = null;
-    if (unstakeBtn) { unstakeBtn.disabled = false; unstakeBtn.title = ''; }
-    // Pass server message through unchanged — as of v2.7.12 the RPC
-    // (`DiagnoseFeeSelectFailed` in rpc.h) returns an accurate, cause-specific
-    // message: distinguishes "all UTXOs are immature coinbase rewards" (true
-    // for solo miners on a fresh chain in the first 100 blocks) from
-    // "previous TX pending in mempool" (the only case the legacy generic
-    // "Insufficient funds for fee" rewrite was ever about). The old rewrite
-    // mis-blamed maturity on a non-existent pending TX, sending users into
-    // a retry loop where waiting one block did nothing.
-    var msg = e.message || 'Staking failed';
-    msgEl.innerHTML = '<div class="alert alert-err">&#x26A0; ' + escHtml(msg) + '</div>';
+    updateKsIndicator();
+    var stakeOpHex = _veldBuildProtocolOpReturnHex(
+      'VELD_STAKE|LOCK|' + addr + '|' + intent.units + '|T' + String(intent.tier));
+    msgEl.innerHTML = '<div class="alert alert-info">Submitting stake…</div>';
+    return signAndBroadcast('preparestake',
+      [addr, _veldUnitsToAmountString(intent.units), String(intent.tier)], keyHex,
+      null, _veldAddrToHash160Hex(addr), null, null, stakeOpHex, null, intent.generation);
+  }).then(function(result){
+    var txid = result && result.txid;
+    if (typeof txid !== 'string' || !/^[0-9a-f]{64}$/.test(txid))
+      throw new Error('Stake confirmation is unavailable. Check Wallet activity before trying again.');
+    var link = '<br><a href="https://explorer.veld.network/tx/' + txid +
+      '" target="_blank" rel="noopener noreferrer" class="hash-orange" ' +
+      'style="font-size:10px;word-break:break-all">' + txid + '</a>';
+    if (isCurrent()) {
+      msgEl.innerHTML = '<div class="alert alert-info">Stake submitted. Waiting for confirmation.' + link + '</div>';
+      loadStakingPage();
+      onStakeAddrChange();
+    }
+    __waitForTxConfirm(txid, 180, function(){
+      var visible = isCurrent();
+      if (!reenable() || !visible) return;
+      msgEl.innerHTML = '<div class="alert alert-ok">Stake confirmed.' + link + '</div>';
+      onStakeAddrChange();
+      loadStakingPage();
+    }, function(){
+      var visible = isCurrent();
+      if (!reenable() || !visible) return;
+      msgEl.innerHTML = '<div class="alert alert-info">Stake is still awaiting confirmation. Track it in Wallet.' + link + '</div>';
+      loadPendingSends();
+    });
   });
 }
 
@@ -14088,7 +14124,14 @@ function planIncrementalUnstake(matureRecords, totalAmount) {
   return batches;
 }
 
-async function doIncrementalUnstake(addr, totalAmount, keyHex, msgEl, unstakeBtn, autoDeregister) {
+async function doIncrementalUnstake(addr, totalAmount, keyHex, msgEl, unstakeBtn, expectedGeneration) {
+  var signerGeneration;
+  try { signerGeneration = _veldAssertActiveSignerSeed(keyHex, expectedGeneration); }
+  catch (e) {
+    msgEl.textContent = e.message;
+    if (unstakeBtn) unstakeBtn.disabled = false;
+    return;
+  }
   // Fetch mature stake records so we know how to split
   var history;
   try { history = await rpc('getstakehistory', [addr]); } catch (e) { history = []; }
@@ -14135,7 +14178,7 @@ async function doIncrementalUnstake(addr, totalAmount, keyHex, msgEl, unstakeBtn
       // (P2PKH to `addr`) + value=0 OP_RETURN. Pass user's hash160 so
       // signAndBroadcast asserts no P2PKH leg redirects to an attacker.
       var r = await signAndBroadcast('prepareunstake', [addr, batchAmountCanonical], keyHex,
-                                     null, _veldAddrToHash160Hex(addr), null, null, batchOpHex);
+                                     null, _veldAddrToHash160Hex(addr), null, null, batchOpHex, null, signerGeneration);
       completed++;
       var txid = r && r.txid ? r.txid : '';
       msgEl.innerHTML = '<div class="alert alert-ok">\u2713 Batch ' + (i+1) + '/' + totalBatches +
@@ -14158,28 +14201,15 @@ async function doIncrementalUnstake(addr, totalAmount, keyHex, msgEl, unstakeBtn
       await sleepMs(UNSTAKE_BATCH_COOLDOWN_MS);
     }
   }
-  msgEl.innerHTML = '<div class="alert alert-ok">\u2713 Unstaked ' + fmt(totalAmount,2) +
-                    ' VELD in ' + totalBatches + ' batch' + (totalBatches===1?'':'es') + '.</div>';
+  msgEl.innerHTML = '<div class="alert alert-ok">Submitted ' + fmt(totalAmount,2) +
+                    ' VELD to unstake in ' + totalBatches + ' batch' + (totalBatches===1?'':'es') + '. Waiting for confirmation.</div>';
   if (unstakeBtn) unstakeBtn.disabled = false;
   loadStakingPage();
   onStakeAddrChange();
-  if (autoDeregister) {
-    try {
-      var pubHex = veldCrypto.derivePublicKey(keyHex);
-      var deregOpHex = _veldBuildProtocolOpReturnHex('VELD_VALIDATOR|DEREGISTER|' + pubHex);
-      // pass self-hash160 P2PKH guard.
-      await signAndBroadcast('preparederegistervalidator', [addr, pubHex], keyHex,
-                             null, _veldAddrToHash160Hex(addr), null, null, deregOpHex);
-      msgEl.innerHTML += '<div class="alert alert-ok">Validator deregistered.</div>';
-    } catch (e2) {
-      msgEl.innerHTML += '<div class="alert alert-err">Deregister failed: ' + escHtml(e2.message||'') + '</div>';
-    }
-  }
 }
 
 function doUnstake() {
-  var skAddrRow = document.getElementById('sk-addr-row');
-  var addr = (skAddrRow && skAddrRow.style.display === 'none') ? currentAddr : document.getElementById('sk-addr').value.trim();
+  var addr = _veldStakeFormAddress();
   var keyHex = __veldKey.get() || '';
   var amountText = document.getElementById('sk-amount').value || '';
   var amountUnits = null;
@@ -14191,9 +14221,10 @@ function doUnstake() {
     amountUnits = _veldParseVeldUnitsExact(amountText);
     amount = Number(amountUnits) / 100000000;
     var unstakeIdentity = _veldRequireBoundIdentity(keyHex, null, addr);
-    _veldActivateBoundIdentity(unstakeIdentity);
+    _veldActivateBoundIdentity(unstakeIdentity, true);
     keyHex = unstakeIdentity.key;
     addr = unstakeIdentity.address;
+    var signerGeneration = _veldAssertActiveSignerSeed(keyHex);
   } catch (e) {
     msgEl.innerHTML = '<div class="alert alert-err">' + escHtml(e.message) + '</div>'; return;
   }
@@ -14230,16 +14261,17 @@ function doUnstake() {
     __unstakeRelease(); return;
   }
 
-  // Check if unstaking would drop the user below the validator minimum stake.
-  // If they are a registered validator, warn them and auto-deregister after unstake.
-  function executeUnstake(autoDeregister) {
+  function executeUnstake() {
+    try { _veldAssertActiveSignerSeed(keyHex, signerGeneration); }
+    catch (e) { msgEl.textContent = e.message; __unstakeRelease(); return; }
     var unstakeBtn = document.querySelector('button[data-act-click="haa7ba916"]');
     // large unstakes are routed through the incremental unstaker so
     // the user sees batch progress and can retry a failing batch without
     // losing the whole operation.
     if (amount >= UNSTAKE_BATCH_THRESHOLD_VELD) {
       if (unstakeBtn) unstakeBtn.disabled = true;
-      doIncrementalUnstake(addr, amount, keyHex, msgEl, unstakeBtn, autoDeregister);
+      doIncrementalUnstake(addr, amount, keyHex, msgEl, unstakeBtn, signerGeneration)
+        .finally(__unstakeRelease);
       return;
     }
     msgEl.innerHTML = '<div class="alert alert-info">Unstaking...</div>';
@@ -14249,7 +14281,7 @@ function doUnstake() {
     // (P2PKH to `addr`) + value=0 OP_RETURN. Pass user's hash160 so
     // signAndBroadcast asserts no P2PKH leg redirects to an attacker.
     signAndBroadcast('prepareunstake', [addr, _veldUnitsToAmountString(amountUnits)], keyHex,
-                     null, _veldAddrToHash160Hex(addr), null, null, unstakeOpHex).then(function(r) {
+                     null, _veldAddrToHash160Hex(addr), null, null, unstakeOpHex, null, signerGeneration).then(function(r) {
       var unstaked = r && r.unstaked_veld != null ? r.unstaked_veld : amount;
       var txid     = r && r.txid ? r.txid : '';
       var link = txid
@@ -14259,35 +14291,10 @@ function doUnstake() {
         : '';
       // Cooldown: disable unstake button for 60 seconds to prevent rapid unstaking
       if (unstakeBtn) { unstakeBtn.disabled = true; setTimeout(function(){ unstakeBtn.disabled = false; }, 60000); }
-      if (autoDeregister) {
-        // Auto-deregister the validator after unstake
-        var pubHex = veldCrypto.derivePublicKey(keyHex);
-        var deregOpHex = _veldBuildProtocolOpReturnHex('VELD_VALIDATOR|DEREGISTER|' + pubHex);
-        msgEl.innerHTML = '<div class="alert alert-info">Unstaked! Deregistering validator...</div>';
-        // pass self-hash160 P2PKH guard.
-        signAndBroadcast('preparederegistervalidator', [addr, pubHex], keyHex,
-                         null, _veldAddrToHash160Hex(addr), null, null, deregOpHex).then(function(r2) {
-          var dtxid = r2 && r2.txid ? r2.txid : '';
-          var dlink = dtxid
-            ? '<br><span style="font-size:10px;color:var(--muted)">Deregister TXID: </span>'
-              + '<a href="https://explorer.veld.network/tx/' + escHtml(dtxid) + '" target="_blank" rel="noopener noreferrer" class="hash-orange" '
-              + 'style="font-size:10px;word-break:break-all">' + escHtml(dtxid) + '</a>'
-            : '';
-          msgEl.innerHTML = '<div class="alert alert-ok">✓ Unstaked ' + fmt(unstaked,2) + ' VELD and deregistered as validator.' + link + dlink + '</div>';
-          setTimeout(function() { msgEl.innerHTML = ''; }, 30000);
-          loadStakingPage();
-          onStakeAddrChange();
-        }).catch(function() {
-          msgEl.innerHTML = '<div class="alert alert-ok">✓ Unstaked ' + fmt(unstaked,2) + ' VELD!' + link + '<br><span style="color:var(--gold);font-size:11px">Note: auto-deregister failed. Please deregister manually on the Validators tab.</span></div>';
-          loadStakingPage();
-          onStakeAddrChange();
-        });
-      } else {
-        msgEl.innerHTML = '<div class="alert alert-ok">✓ Unstaked ' + fmt(unstaked,2) + ' VELD!' + link + '</div>';
-        setTimeout(function() { msgEl.innerHTML = ''; }, 30000);
-        loadStakingPage();
-        onStakeAddrChange();
-      }
+      msgEl.innerHTML = '<div class="alert alert-ok">Unstake submitted: ' + fmt(unstaked,2) + ' VELD. Waiting for confirmation.' + link + '</div>';
+      setTimeout(function() { msgEl.innerHTML = ''; }, 30000);
+      loadStakingPage();
+      onStakeAddrChange();
       // Release the op lock 4s after broadcast — gives the chain a moment
       // to apply so the next click sees fresh confirmed balance.
       setTimeout(__unstakeRelease, 4000);
@@ -14297,35 +14304,7 @@ function doUnstake() {
     });
   }
 
-  // Fetch validator info to see if this address is a registered validator
-  rpc('getvalidators').then(function(v) {
-    var isValidator = false;
-    var minValStake = parseFloat(v.min_stake_veld || 0);
-    if (v.validators) {
-      for (var i = 0; i < v.validators.length; i++) {
-        if (v.validators[i].address === addr) { isValidator = true; break; }
-      }
-    }
-    var remainingStake = currentStake - amount;
-    if (isValidator && remainingStake < minValStake) {
-      // Warn: unstaking will drop below validator threshold
-      if (confirm(
-        'Unstaking ' + fmt(amount,2) + ' VELD will drop your stake below the validator minimum (' + fmt(minValStake,0) + ' VELD).\n\n' +
-        'You will be automatically deregistered as a validator and will no longer receive endorsement rewards.\n\n' +
-        'Continue?'
-      )) {
-        executeUnstake(true);
-      } else {
-        msgEl.innerHTML = '<div class="alert alert-info">Unstake cancelled.</div>';
-        __unstakeRelease();
-      }
-    } else {
-      executeUnstake(false);
-    }
-  }).catch(function() {
-    // Can't check validator status — proceed with unstake without auto-deregister
-    executeUnstake(false);
-  });
+  executeUnstake();
 }
 
 // ═══════════════════════════════════════
@@ -14474,6 +14453,9 @@ function govSubmitProposal() {
   var __govRel = function(){ __opUnlock('gov-submit', ['gov-submit-btn']); };
   var addr = currentAddr;
   var keyHex = __veldKey.get();
+  var signerGeneration;
+  try { signerGeneration = _veldAssertActiveSignerSeed(keyHex); }
+  catch (e) { govShowAlert(res, 'err', escHtml(e.message)); __govRel(); return; }
   var pubHex = veldCrypto.derivePublicKey(keyHex);
   var proposalIntent = null;
 
@@ -14502,7 +14484,7 @@ function govSubmitProposal() {
       if (info.gov_proposal_version !== undefined && info.gov_proposal_version !== 1 && !framedProposal)
         throw new Error('Unsupported governance proposal format; update the wallet.');
       var challenge = _veldGovernanceProposalChallenge(govPrefix, proposalType, addr, title, desc, signedH, framedProposal);
-      var sigHex = veldCrypto.signMessage ? veldCrypto.signMessage(keyHex, challenge) : veldCrypto.sign(keyHex, challenge);
+      var sigHex = veldCrypto.signMessage ? veldCrypto.signMessage(keyHex, challenge, signerGeneration) : veldCrypto.sign(keyHex, challenge, signerGeneration);
       proposalIntent = {
         type: proposalType,
         address: addr,
@@ -14539,8 +14521,8 @@ function govSubmitProposal() {
         '76a914' + _veldAddrToHash160Hex(addr).toLowerCase() + '88ac');
       // async injectSignatures (yields between signs), after exact fee proof.
       return _veldAuthenticatePreparedPrevouts(prep, VELD_MIN_TX_FEE_UNITS)
-        .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, keyHex); })
-        .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, keyHex); });
+        .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, keyHex, null, signerGeneration); })
+        .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, keyHex, signerGeneration); });
     }).then(function(txid) {
       govShowAlert(res, 'ok', 'Proposal broadcast. TX: ' + escHtml(String(txid).slice(0,12)) + '... Waits for next block.');
       document.getElementById('gov-title').value = '';
@@ -14763,6 +14745,9 @@ function govVote(id, choice) {
   var __voteRel = function(){ __opUnlock('gov-vote:'+id, btns); };
   var addr = currentAddr;
   var keyHex = __veldKey.get();
+  var signerGeneration;
+  try { signerGeneration = _veldAssertActiveSignerSeed(keyHex); }
+  catch (e) { alert(e.message); __voteRel(); return; }
   var pubHex = veldCrypto.derivePublicKey(keyHex);
   var res = document.getElementById('gov-vote-res-' + id);
   // bind the current chain
@@ -14780,7 +14765,7 @@ function govVote(id, choice) {
     var voteIntent = _veldGovernanceVoteIntent(info, selectedProposal, id, choice);
     var challenge = voteIntent.challenge;
     var extraParam = voteIntent.height;
-    var sigHex = veldCrypto.signMessage ? veldCrypto.signMessage(keyHex, challenge) : veldCrypto.sign(keyHex, challenge);
+    var sigHex = veldCrypto.signMessage ? veldCrypto.signMessage(keyHex, challenge, signerGeneration) : veldCrypto.sign(keyHex, challenge, signerGeneration);
     // ON-CHAIN: preparegovvote → sign inputs → sendrawtransaction.
     // signed_height is required (extraParam). If tipH was unavailable, we
     // can't vote on-chain (sig needs height binding); surface the error.
@@ -14806,8 +14791,8 @@ function govVote(id, choice) {
           '76a914' + _veldAddrToHash160Hex(addr).toLowerCase() + '88ac');
         // async injectSignatures (yields between signs), after exact fee proof.
         return _veldAuthenticatePreparedPrevouts(prep, VELD_MIN_TX_FEE_UNITS)
-          .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, keyHex); })
-          .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, keyHex); });
+          .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, keyHex, null, signerGeneration); })
+          .then(function(signedHex){ return _veldBroadcastExactSigned(signedHex, keyHex, signerGeneration); });
       });
   }).then(function(r) {
     // HIGH: was `setTimeout(govLoadProposals, 700)`.

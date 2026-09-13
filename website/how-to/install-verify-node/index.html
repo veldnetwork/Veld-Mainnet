@@ -19,19 +19,19 @@
     <section class="content-section" id="download">
       <p class="stage-label">01 / Download</p><h2>Use the official release</h2>
       <p>Download the Windows client only from the Veld website. Avoid copies sent through chat, file-sharing services, advertisements, or third-party download pages.</p>
-      <a class="url" href="https://veld.network/downloads/VeldClient-Windows-x64-3.2.0.zip">https://veld.network/downloads/VeldClient-Windows-x64-3.2.0.zip</a>
-      <ul class="checklist"><li>Supported system: Windows 10 or Windows 11, 64-bit.</li><li>Expected archive name: <code>VeldClient-Windows-x64-3.2.0.zip</code>.</li><li>Keep the download page open so you can compare its published SHA-256.</li></ul>
+      <a class="url" href="https://veld.network/#download">Official Veld download page</a>
+      <ul class="checklist"><li>Supported system: Windows 10 or Windows 11, 64-bit.</li><li>Use the Windows archive name and version shown on the official download page.</li><li>Keep the download page open so you can compare its published SHA-256.</li></ul>
     </section>
 
     <section class="content-section" id="verify">
       <p class="stage-label">02 / Verify</p><h2>Authenticate the first archive</h2>
       <p>The verifier inside a newly downloaded archive cannot be its own first-install trust anchor. Compare the ZIP digest with the value published on the official download page or an independently authenticated release announcement.</p>
       <ol class="step-list">
-        <li class="step"><div><h3>Open Windows PowerShell</h3><p>Run the following command using the real path to the downloaded ZIP:</p><code class="command">Get-FileHash -Algorithm SHA256 "C:\Users\&lt;your name&gt;\Downloads\VeldClient-Windows-x64-3.2.0.zip"</code></div></li>
+        <li class="step"><div><h3>Open Windows PowerShell</h3><p>Replace the placeholders with your user name and downloaded version, then run this command using the real path to the ZIP:</p><code class="command">Get-FileHash -Algorithm SHA256 "C:\Users\&lt;your name&gt;\Downloads\VeldClient-Windows-x64-&lt;version&gt;.zip"</code></div></li>
         <li class="step"><div><h3>Compare all 64 hexadecimal characters</h3><p>The computed SHA-256 must exactly match the ZIP SHA256 shown at <strong>veld.network</strong>. A partial match is not sufficient.</p></div></li>
         <li class="step"><div><h3>Stop on any mismatch</h3><p>Delete the untrusted archive and obtain the published value through an independent trusted channel before trying again.</p></div></li>
       </ol>
-      <div class="note"><strong>Do not bypass a hash or signature failure.</strong> The signed launcher and updater reject missing signatures, altered files, unlisted files, downgrades, and same-version replacements with a different node hash.</div>
+      <div class="note"><strong>Do not bypass a hash or signature failure.</strong> The signed launcher and updater reject missing signatures, altered files, unlisted files, downgrades, and same-version releases whose signed manifest differs.</div>
     </section>
 
     <section class="content-section" id="extract">
@@ -46,16 +46,16 @@
     <section class="content-section" id="start">
       <p class="stage-label">04 / Start</p><h2>Launch Veld Node</h2>
       <ol class="step-list">
-        <li class="step"><div><h3>Open Start Veld Node.bat</h3><p>Double-click <strong>Start Veld Node.bat</strong> in the extracted folder. It verifies the signed package, checks for signed updates, and opens Veld Node on <strong>Clearnet</strong>. Complete a required signed update before mining.</p></div></li>
+        <li class="step"><div><h3>Open Start Veld Node.bat</h3><p>Double-click <strong>Start Veld Node.bat</strong> in the extracted folder. It verifies the signed package, checks for signed updates, and opens Veld Node with its saved transport preference. A new installation defaults to <strong>Clearnet</strong>. Complete a required signed update before mining.</p></div></li>
         <li class="step"><div><h3>Handle the clearnet firewall request</h3><p>On first clearnet use, Windows may request approval for inbound P2P traffic on TCP 8333. The rule is limited to the signed node executable on Private or Domain networks. Declining leaves the node able to use outbound peers.</p></div></li>
         <li class="step"><div><h3>Confirm the Overview page opens</h3><p>The app shows local node status, chain height, peers, and mining configuration. Its Wallet button opens <strong>https://wallet.veld.network/</strong>; Open Explorer opens <strong>https://explorer.veld.network/</strong>.</p></div></li>
       </ol>
-      <div class="note"><strong>RPC and local app ports are not opened to the network.</strong> Node control and loopback services remain local-only. Public Wallet and Explorer buttons use HTTPS, not exposed RPC. TCP 8333 is the clearnet P2P port. The batch launcher explicitly selects Clearnet; open <strong>Veld Node.exe</strong> directly to retain a configured Tor-only preference.</div>
+      <div class="note"><strong>RPC and local app ports are not opened to the network.</strong> Node control and loopback services remain local-only. Public Wallet and Explorer buttons use HTTPS, not exposed RPC. TCP 8333 is the clearnet P2P port. The batch launcher and <strong>Veld Node.exe</strong> retain a saved Tor-only preference. Confirm the active transport on the Network page after starting.</div>
     </section>
 
-    <section class="content-section"><h2>Installation checklist</h2><ul class="checklist"><li>The ZIP came from <code>veld.network</code>.</li><li>The complete SHA-256 matched an authenticated published value.</li><li>The whole archive was extracted.</li><li><strong>Start Veld Node.bat</strong> opened the client on Clearnet without a release-verification failure.</li><li>The Overview page reports the local node state.</li></ul></section>
+    <section class="content-section"><h2>Installation checklist</h2><ul class="checklist"><li>The ZIP came from <code>veld.network</code>.</li><li>The complete SHA-256 matched an authenticated published value.</li><li>The whole archive was extracted.</li><li><strong>Start Veld Node.bat</strong> opened the client without a release-verification failure.</li><li>The Overview page reports the local node state.</li></ul></section>
     <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/send-receive-veld/"><span>Previous guide</span><strong>Send and receive VELD safely</strong></a><a class="next-guide" href="/how-to/first-sync/"><span>Next guide</span><strong>Understand first synchronization</strong></a></nav>
-    <p class="article-foot">Reviewed <time datetime="2026-09-12">12 September 2026</time> for Veld Mainnet and Windows 3.2.0. Checked against the current source for the Windows package, signed-manifest policy, and Veld Node launch flow.</p>
+    <p class="article-foot">Source-reviewed <time datetime="2026-09-13">13 September 2026</time> for Veld Mainnet and Windows 3.2.1 candidate. Checked against the current source for the Windows package, signed-manifest policy, and Veld Node launch flow.</p>
   </article></div>
 </main>
 <footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>

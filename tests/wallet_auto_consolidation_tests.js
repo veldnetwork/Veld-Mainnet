@@ -13,13 +13,15 @@ function extract(name) {
 }
 function setup() {
   const items=new Map(), elements=new Map(), listeners={}, calls=[], batches=[];
-  let key='1'.repeat(64), readFails=false, writeFails=false;
+  let key='1'.repeat(64), generation=1, readFails=false, writeFails=false;
   const el=id=>elements.get(id)||elements.set(id,{style:{},checked:false,textContent:'',innerHTML:'',dataset:{},disabled:false}).get(id);
-  const state={items,el,calls,batches,listeners,changeKey:v=>key=v,readError:v=>readFails=v,writeError:v=>writeFails=v};
+  const state={items,el,calls,batches,listeners,changeKey:v=>{key=v;generation++;},readError:v=>readFails=v,writeError:v=>writeFails=v};
   state.balance={pending_in_veld:0,pending_out_veld:0};
   state.counts={total_count:34,dust_count:30,dust_value_veld:50};
   const ctx=vm.createContext({Promise,Number,Date,Object,String,console:{warn(){}},
-    VELD_MIN_TX_FEE_UNITS:100000,currentAddr:'WalletA',__opLocks:{},__veldKey:{get:()=>key},
+    VELD_MIN_TX_FEE_UNITS:100000,currentAddr:'WalletA',__opLocks:{},__veldKey:{get:()=>key,generation:()=>generation},
+    VELD_SIGNER_IDLE_MS:300000,_veldSignerLastActivity:Date.now(),
+    _veldRequireSelfCustodySigner(){},
     document:{getElementById:el},window:{addEventListener:(event,fn)=>listeners[event]=fn},
     localStorage:{getItem:k=>{if(readFails)throw Error('storage');return items.get(k)??null;},setItem:(k,v)=>{if(writeFails)throw Error('storage');items.set(k,v);}},
     setInterval(){},setTimeout:fn=>{queueMicrotask(fn);},loadWalletAddr(){},fmt:(x,n)=>Number(x).toFixed(n),escHtml:s=>String(s),
@@ -29,7 +31,7 @@ function setup() {
     __opLock:(name)=>{if(ctx.__opLocks[name])return false;ctx.__opLocks[name]=true;return true;},
     __opUnlock:(name)=>{ctx.__opLocks[name]=false;}
   });
-  vm.runInContext(extract('formatHistoryFee')+'\n'+extract('_veldConsolidationBudget')+'\n'+source.slice(begin,end)+'\n'+extract('loadDustUtxoCount')+'\n'+extract('doConsolidateUtxos'),ctx);
+  vm.runInContext(extract('_veldAssertActiveSignerSeed')+'\n'+extract('formatHistoryFee')+'\n'+extract('_veldConsolidationBudget')+'\n'+source.slice(begin,end)+'\n'+extract('loadDustUtxoCount')+'\n'+extract('doConsolidateUtxos'),ctx);
   ctx.autoConsolidateNotify=()=>{};
   state.ctx=ctx;
   state.enable=()=>ctx.setAutoConsolidatePreference(true);

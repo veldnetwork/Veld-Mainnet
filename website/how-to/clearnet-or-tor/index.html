@@ -32,7 +32,7 @@
         <li class="step"><div><h3>Stop the node</h3><p>Transport controls are intentionally unavailable while the process runs. Stop it cleanly from Veld Node.</p></div></li>
         <li class="step"><div><h3>Open Settings</h3><p>Use <strong>Tor-only privacy</strong> to choose the peer transport. Clearnet remains the default when this option is off.</p></div></li>
         <li class="step"><div><h3>Choose inbound reachability for Clearnet</h3><p>If Tor-only is off, <strong>Attempt inbound reachability</strong> asks the router for a NAT-PMP, PCP, or UPnP mapping on the next start. If mapping is unavailable, the node continues safely with outbound peers.</p></div></li>
-        <li class="step"><div><h3>Start the node again</h3><p>The saved preferences apply to the next app-managed start. Tor preparation may take additional time on first use. Open <strong>Veld Node.exe</strong> directly to retain that preference: <strong>Start Veld Node.bat</strong> explicitly chooses Clearnet.</p></div></li>
+        <li class="step"><div><h3>Start the node again</h3><p>The saved preferences apply to the next app-managed start. Tor preparation may take additional time on first use. Both <strong>Start Veld Node.bat</strong> and <strong>Veld Node.exe</strong> retain the saved transport preference.</p></div></li>
       </ol>
       <div class="note"><strong>Never expose RPC or local wallet ports.</strong> Clearnet reachability concerns P2P TCP 8333. RPC 8334 and the local wallet and explorer remain local-only.</div>
     </section>
@@ -52,7 +52,7 @@
 
     <section class="content-section"><h2>Common questions</h2><div class="trouble"><details><summary>Do I need inbound peers to mine?</summary><p>No. A node with healthy outbound peers can validate and mine. Inbound reachability improves network connectivity but is not required for normal operation.</p></details><details><summary>Why can’t I change Tor while the node runs?</summary><p>The app binds transport configuration to an app-managed process start so peer sockets cannot silently change underneath a running node.</p></details><details><summary>Tor preparation failed</summary><p>Review the local app log. You can stop the node, select Clearnet, and start again while investigating Tor setup.</p></details></div></section>
     <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/start-cpu-mining/"><span>Previous guide</span><strong>Start CPU mining</strong></a><a class="next-guide" href="/how-to/no-peers-or-mining/"><span>Next guide</span><strong>Fix no peers or mining waiting</strong></a></nav>
-    <p class="article-foot">Reviewed <time datetime="2026-09-12">12 September 2026</time> for Veld Mainnet and Windows 3.2.0. Checked against the current source for the transport, inbound mapping, firewall, and Network-page states in Veld Node.</p>
+    <p class="article-foot">Source-reviewed <time datetime="2026-09-13">13 September 2026</time> for Veld Mainnet and Windows 3.2.1 candidate. Checked against the current source for the transport, inbound mapping, firewall, and Network-page states in Veld Node.</p>
   </article></div>
 </main>
 <footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>

@@ -6,7 +6,7 @@ const {extractFunction} = require('./javascript_function_source');
 const source = fs.readFileSync(path.join(__dirname, '../include/network/ui_desktop.h'), 'utf8');
 const functions = ['_veldHexToBytes', '_veldParseVarint', '_veldBytesToHex',
   '_veldParseUnsignedTx', '_veldAssertPreparedRelaySize', '_veldBroadcastExactSigned',
-  'signAndBroadcast'].map(name => extractFunction(source, name)).join('\n');
+  '_veldAssertActiveSignerSeed', 'signAndBroadcast'].map(name => extractFunction(source, name)).join('\n');
 
 async function runFixture(context) {
   let checks = 0;
@@ -49,7 +49,8 @@ async function runFixture(context) {
     _veldRequireSelfCustodySigner() {},
     _veldRequireBoundIdentity: () => ({address: 'disposable-fixture'}),
     _veldAddrToHash160Hex: () => '19'.repeat(20),
-    _veldAssertActiveSignerSeed: key => { if (key !== seed) throw new Error('signer changed'); },
+    VELD_SIGNER_IDLE_MS: 300000, _veldSignerLastActivity: Date.now(),
+    __veldKey: {get: () => seed, generation: () => 7},
     _veldAssertOpReturnExact() {},
     _veldVerifyInputSighashes() {},
     _veldAuthenticatePreparedPrevouts: async () => { ++authenticated; },
@@ -73,14 +74,14 @@ async function runFixture(context) {
 
   for (const bad of [null, {}, '', '0', 'zz', 'ab'.repeat(1048577)]) {
     const before = [hashed, broadcast].join(',');
-    await rejects(() => context._veldBroadcastExactSigned(bad, seed), /malformed|too large/);
+    await rejects(() => context._veldBroadcastExactSigned(bad, seed, 7), /malformed|too large/);
     check(before === [hashed, broadcast].join(','), 'invalid bytes reached hashing or broadcast');
   }
-  check(await context._veldBroadcastExactSigned('AB'.repeat(1048576), seed) === txid,
+  check(await context._veldBroadcastExactSigned('AB'.repeat(1048576), seed, 7) === txid,
     'valid maximum-size hex rejected');
-  await rejects(() => context._veldBroadcastExactSigned('ab', '45'.repeat(32)), /signer changed/);
+  await rejects(() => context._veldBroadcastExactSigned('ab', '45'.repeat(32), 7), /Wallet locked or changed/);
   context.rpc = async () => '56'.repeat(32);
-  await rejects(() => context._veldBroadcastExactSigned('ab', seed), /different from the signed bytes/);
+  await rejects(() => context._veldBroadcastExactSigned('ab', seed, 7), /different from the signed bytes/);
   return {result: 'PASS', checks, rows};
 }
 

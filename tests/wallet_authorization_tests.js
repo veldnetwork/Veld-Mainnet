@@ -43,6 +43,8 @@ const prep = {unsigned_tx_hex: "ordinary-parser-fixture", inputs: [{}, {}], inpu
   verified_consolidation_inputs: 99999, verified_consolidation_output_units: "99999"};
 const signing = vm.createContext({
   VELD_MIN_TX_FEE_UNITS: 100000,
+  VELD_SIGNER_IDLE_MS: 300000, _veldSignerLastActivity: Date.now(),
+  __veldKey: {get: () => "inert-seed-placeholder", generation: () => 7},
   _veldParseUnsignedTx: () => transaction,
   _veldRequireSelfCustodySigner: () => {},
   _veldRequireBoundIdentity: () => ({address: "fixture-owner"}),
@@ -64,7 +66,7 @@ const signing = vm.createContext({
   },
   rpc: async () => ({...prep})
 });
-vm.runInContext(["_veldConsolidationProgress", "_veldConsolidationBudget", "signAndBroadcast"].map(extract).join("\n"), signing);
+vm.runInContext(["_veldAssertActiveSignerSeed", "_veldConsolidationProgress", "_veldConsolidationBudget", "signAndBroadcast"].map(extract).join("\n"), signing);
 const call = budget => signing.signAndBroadcast("prepareconsolidatetx", ["fixture-owner"], "inert-seed-placeholder", null, null, null, null, "", budget);
 (async () => {
   const result = await call();
@@ -110,6 +112,7 @@ const call = budget => signing.signAndBroadcast("prepareconsolidatetx", ["fixtur
   // Scheduled refreshes cannot create fresh signing authority after exhaustion.
   let clock = 1000000, rpcCalls = 0;
   signing.Date = {now: () => clock};
+  signing._veldSignerLastActivity = clock;
   signing.currentAddr = "fixture-owner";
   signing.__autoConsolidateActive = false;
   signing.__autoConsolidateChecking = false;
@@ -125,7 +128,7 @@ const call = budget => signing.signAndBroadcast("prepareconsolidatetx", ["fixtur
   signing.AUTO_CONSOLIDATE_TRIGGER_TOTAL = 20;
   signing.AUTO_CONSOLIDATE_TRIGGER_DUST = 5;
   signing.AUTO_CONSOLIDATE_THRESHOLD_VELD = "5.0";
-  signing.__veldKey = {get: () => "inert fixture".padEnd(64, "X")};
+  signing.__veldKey = {get: () => "inert fixture".padEnd(64, "x"), generation: () => 7};
   signing.autoConsolidateEnabled = () => true;
   signing.autoConsolidateNotify = () => {};
   signing.loadWalletAddr = () => {};
@@ -151,6 +154,8 @@ const call = budget => signing.signAndBroadcast("prepareconsolidatetx", ["fixtur
   assert.equal(signed, beforeAuto + 8);
   assert.equal(rpcCalls, afterAutoRpc);
   // A distinct explicit manual operation still has its own finite authority.
+  signing.__veldKey = {get: () => "inert-seed-placeholder", generation: () => 8};
+  signing._veldSignerLastActivity = clock;
   await call(signing._veldConsolidationBudget(1));
   assert.equal(signed, beforeAuto + 9);
   console.log("PASS: countdown text nodes; owned UTXO reduction; local progress; concurrent fee reservation; failed-broadcast accounting; scheduler cannot renew authority");

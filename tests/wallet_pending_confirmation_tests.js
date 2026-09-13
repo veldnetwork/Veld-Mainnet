@@ -128,5 +128,19 @@ const settle = async () => {for (let i=0; i<20; i++) await Promise.resolve();};
   f.context.__waitForTxConfirm(txid, 30, () => {notified=true;});
   f.timers[0](); await settle();
   assert(notified); assert.deepEqual(f.saved(), []); cases++;
+
+  f = fixture([entry()], () => new Promise(() => {}));
+  let timedOut = 0;
+  f.context.__waitForTxConfirm(txid, 5, null, () => { ++timedOut; });
+  f.timers[0](); await settle();
+  f.timers[0](); await settle();
+  assert.equal(timedOut, 1); assert.equal(f.saved().length, 1); cases++;
+
+  let rejectLookup;
+  f = fixture([entry()], () => new Promise((_, reject) => { rejectLookup = reject; }));
+  const wait = f.context.__waitForTxConfirm(txid, 5, null, () => { ++timedOut; });
+  f.timers[0](); await settle();
+  wait.cancel(); rejectLookup(new Error('Ordinary cancelled lookup')); await settle();
+  assert.equal(timedOut, 1); assert.equal(f.saved().length, 1); cases++;
   console.log('PASS: '+cases+' pending-confirmation cases; no broadcasts or signing');
 })().catch(error => {console.error(error); process.exitCode=1;});

@@ -99,11 +99,9 @@ struct HttpRequest {
 
         std::string remainder;
         std::getline(ss, remainder, '\0');
-        if (!remainder.empty()) {
-            req.body = remainder;
-            while (!req.body.empty() && (req.body[0] == '\r' || req.body[0] == '\n'))
-                req.body.erase(req.body.begin());
-        }
+        const size_t body_start = remainder.find_first_not_of("\r\n");
+        if (body_start != std::string::npos)
+            req.body = remainder.substr(body_start);
 
         std::string p = req.path;
         if (!p.empty() && p[0] == '/') p = p.substr(1);
