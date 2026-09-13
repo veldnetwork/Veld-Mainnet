@@ -6,12 +6,12 @@
 // per window of BTCVELD_REDEEM_WINDOW_BLOCKS, at most
 // BTCVELD_REDEEM_WINDOW_PPM_OF_CAP of the custody cap may leave via REDEEM.
 // One deliberate difference from the vault: btcVELD must stay FULLY redeemable,
-// so an over-budget redeem is REJECTED WHOLE — the burn never happens, the
-// funds stay with the redeemer (resubmit next window). Nothing is ever trapped
-// or partially applied. The guard caps what a successful reorg-double-spend can
-// extract to ONE window's ceiling, composing with the custody cap (bounds the
-// total prize) and Bitcoin anchoring (bounds reorg depth): worst-case
-// single-attack extraction <= one window's redeem ceiling.
+// so an over-budget redeem is not applied and does not burn the token balance.
+// The holder can retry in a later window; ordinary carrier transaction fees
+// remain subject to admission rules. This guard bounds accepted redeem amounts
+// on one canonical Veld window. It does not establish Bitcoin payout uniqueness,
+// safe refund retirement, or a loss bound across reorganizations and windows.
+// Those properties require the separate custody authorization and reserve rules.
 //
 // This header is the PURE, deterministic core (no I/O, no class state) so it is
 // unit-testable in isolation; onchain_tokens.h enforces it in the REDEEM branch

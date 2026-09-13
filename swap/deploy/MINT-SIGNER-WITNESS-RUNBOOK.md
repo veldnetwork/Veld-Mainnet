@@ -78,7 +78,7 @@ decision; the source does not pretend a writable local directory is WORM.
 1. Install identical audited copies of `veld_peg_solvency.py` and
    `rpc_url_policy.py` on the signer and watchtower; install `swap_admission.py`
    on the watchtower for signed C1 policy verification; install `veld_signerd.py`
-   only on the signer and
+   and `veld_chain_identity.py` only on the signer and
    `veld_wt_reserve.py`, `veld_wt_allocate.py`, `veld_watchtowerd.py`, `veld_custody_binding.py`, and
    `veld_redeem_liability.py` only on the watchtower. Record and compare SHA-256
    hashes before enabling SSH keys.
@@ -140,6 +140,8 @@ decision; the source does not pretend a writable local directory is WORM.
    and the forced command. Keep
    `authority_state_activation_marker=/opt/veld-signer/signer-authority-state.json`
    exact. Set config/key/passphrase files to `0600`.
+   Review and set every `veld_rpc.expected_chain` pin as described in
+   [ISSUER-CHAIN-BINDING.md](ISSUER-CHAIN-BINDING.md).
 8. With both forced-command SSH keys still absent and every signer process
    stopped, run exactly once on the signer host:
 
@@ -151,11 +153,10 @@ decision; the source does not pretend a writable local directory is WORM.
    `c1-reservation-signer-state.json`, and `issuer-prevout-leases.json` as one
    empty authority set, fsyncs each owner-only file, and commits
    `signer-authority-state.json` last. Normal signing never auto-creates a
-   missing member. For an upgrade with all three pre-marker state files already
-   present, the same one-shot command validates both primary caches, reconciles
-   their complete signed-input union with the lease journal (including required
-   migrations/archive readback), leaves those state files intact, and commits
-   the marker last. It refuses any one- or two-file partial set. If a fresh
+   missing member. The version-two marker binds the set to the reviewed chain
+   pins. Existing pre-marker files and version-one markers require independent
+   offline chain reconciliation; this command never adopts or resets them.
+   It also refuses any one- or two-file partial set. If a fresh
    initialization stops before all three files exist, or any member is later
    missing, keep ingress disabled and treat it as a restore/reconciliation
    incident; never fill the missing file by hand. Re-running the command after

@@ -15,7 +15,8 @@ class CustodyBindingTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="custody-binding-")
         self.path = Path(self.temp.name) / "custody-spks.json"
-        self.descriptor = "tr(" + "11" * 32 + ",multi_a(3,xpub-fixture/0/*))#fixture"
+        self.descriptor = json.loads((Path(__file__).parent / "fixtures" /
+                                      "custody-policy-descriptor.json").read_text())["descriptor"]
         self.descriptor_hash = hashlib.sha256(self.descriptor.encode()).hexdigest()
         self.scripts = ["5120%064x" % n for n in range(1, 1001)]
         self.document = {

@@ -106,7 +106,8 @@ class ProductionCustodyTests(unittest.TestCase):
         self.rpc_token = root / "rpc-token"
         self.rpc_token.write_text("11" * 32)
         self.rpc_token.chmod(0o600)
-        self.descriptor = "tr(" + "11" * 32 + ",multi_a(3,xpub-fixture/0/*))#fixture"
+        self.descriptor = json.loads((Path(__file__).parent / "fixtures" /
+                                      "custody-policy-descriptor.json").read_text())["descriptor"]
         self.scripts = ["5120%064x" % i for i in range(1, 11001)]
         FakeBtc.addresses = [p2tr_address(script) for script in self.scripts]
         self.hash = hashlib.sha256(self.descriptor.encode()).hexdigest()

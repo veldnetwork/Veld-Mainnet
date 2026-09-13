@@ -1,16 +1,24 @@
 # btcVELD bridge deployment gates
 
-The live bridge now fails closed unless its two independent policy planes are
-configured. Do not point production services at the development escape hatches.
+This reference describes existing daemon boundaries and required configuration.
+It does not establish production readiness or completion of the integrated
+community signer worker. The rolling-reserve payout service remains stopped
+until native unique payout intent and safe signature retirement are implemented
+and qualified. Development modes are not production activation mechanisms.
 
 ## Mint signer
 
-Install `veld_signerd.py`, `veld_peg_solvency.py`, `rpc_url_policy.py`, the
+Install `veld_signerd.py`, `veld_chain_identity.py`, `veld_peg_solvency.py`,
+`rpc_url_policy.py`, `btcveld_c1.py`, the
 issuer key material, and `signer-config.json` on the isolated issuer signer. Start from
 `signer-config.example.json` and point `veld_rpc` at a Veld node operated by the
 signer—not the mint coordinator's node. The signer derives input outpoints from
 the transaction, resolves their exact value, script, and confirmations through
 that node, and accepts only the exact 100,000-unit mint fee.
+
+Set the reviewed chain pins and bind its durable authority state using
+[ISSUER-CHAIN-BINDING.md](ISSUER-CHAIN-BINDING.md). Missing pins or an unbound
+legacy marker keep signing disabled.
 
 `inputs[].value` and `inputs[].prev_script_hex` sent by a coordinator have no
 signing authority and are no longer transmitted by `veld_mintd.py`.
@@ -55,7 +63,7 @@ operator approvals.
 
 On first observation—before the 100-block maturity delay—the coordinator fsyncs
 the burn into SQLite and sends it to all five signers. A run continues only after
-an intersecting threshold quorum has independently found the burn in its own Veld
+a threshold quorum has independently found the burn in its own Veld
 node and fsynced it. At payout, three signers independently re-check Veld
 canonicality/finality, every Bitcoin prevout, the exact destination, amount,
 change, fee, and the burn marker before contributing a PSBT signature.
@@ -69,15 +77,25 @@ be identical and their carrier blocks canonical under one stable tip snapshot.
 Signers repeat this check immediately before key use, and the coordinator
 repeats it after the threshold quorum before broadcast. Payout change may return
 only to indices 0--999. These rules prevent a redemption from spending a funded
-public deposit before its corresponding btcVELD mint is irreversibly settled.
+public deposit before its corresponding btcVELD mint meets the configured
+canonicality and depth rules. They depend on the chain's finality assumptions.
 
 Each signer atomically commits to the first raw payout transaction it reviews.
-Because any two 3-of-5 quorums intersect, split-brain coordinators cannot obtain
-valid signatures for two different payouts. Every broadcast also carries a
-41-byte `VLDR\x01 || burn_txid || vout` OP_RETURN. The Bitcoin wallet/chain marker
-is the paid-state authority after local-state loss, stale restore, or a crash;
-Bitcoin reorg recovery rebroadcasts the exact same transaction rather than using
-new reserve inputs.
+This commitment must survive restart, backup restoration and software rollback.
+Two 3-of-5 quorums may share only one member, who need not be honest; local
+first-proposal records therefore do not establish global payout uniqueness.
+A02 remains open. An authoritative, independently verifiable finalized intent
+must bind the exact payout and reserve edge before any custody signature is
+released. Refunds also require proof that earlier payout signatures cannot
+still spend the reserve; a timeout or lost coordinator database is insufficient.
+
+The legacy `VLDR\x01 || burn_txid || vout` marker supports payout reconciliation,
+but an absent marker does not retire outstanding signatures. Retain exact
+transactions and commitments across recovery, and never infer permission to
+select replacement inputs from a missing local record. See
+[CUSTODY-DESCRIPTOR-POLICY.md](CUSTODY-DESCRIPTOR-POLICY.md) for the separate
+full-descriptor requirements. Neither descriptor validation nor normal quorum
+tests close the native authorization and retirement requirements.
 
 `single_wallet_dev` is rejected unless `allow_unsafe_single_wallet` is explicitly
 true. That mode is for isolated fixtures only and is not a production fallback.

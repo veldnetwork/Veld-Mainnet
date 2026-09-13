@@ -2,6 +2,15 @@
   "authority_state_activation_marker": "/opt/veld-signer/signer-authority-state.json",
   "veld_rpc": {
     "url": "http://127.0.0.1:8334",
+    "expected_chain": {
+      "profile_id": "REPLACE_WITH_REVIEWED_PROFILE_ID",
+      "consensus_build_profile": "REPLACE_WITH_REVIEWED_CONSENSUS_BUILD_PROFILE",
+      "disposable": false,
+      "external_value": true,
+      "fixed_difficulty_regtest": false,
+      "genesis_hash": "REPLACE_WITH_REVIEWED_COMPILED_AND_STORED_GENESIS_HASH",
+      "launch_block_hash": "REPLACE_WITH_REVIEWED_HEIGHT_ONE_HASH"
+    },
     "token_cmd": [
       "/usr/local/bin/veld-node",
       "--print-rpc-token"

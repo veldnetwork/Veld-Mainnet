@@ -1,0 +1,5 @@
+{
+  "purpose": "Public test descriptor only; five disposable Bitcoin Core wallets. No production membership or funds.",
+  "bitcoin_core_version": "29.0.0",
+  "descriptor": "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,multi_a(3,[982f5d18/86h/0h/0h]xpub6D1CJ4i8Rg39mxtNKhvte8pegGC5iFwrGeLHaagunvLL8AGRXDFjbcqMoSHkaujV6ikJBdW2cY6NRQkdKyQekeivXaoNPw8F3bWrZ7Ht7PG/0/*,[236321ed/86h/0h/0h]xpub6Bmm5ZQwaKa2Hf7MJRtEKXUSpxULy4MVEvKrFtBX56H1fKEdnaz1qEoMcz3uB5CAN2ZbuVac3CGqVQZZwsdctTDHmoGgtuXisK3VrELhU3K/0/*,[31fd5431/86h/0h/0h]xpub6BkN1FyZHqZYsCeyzoiL6umkj2v8rgdYrTbVs5YpDAiaKEPThirpFuTWeDi5HS443UkAuiGhoMy1TWRCkRGw5cZ9dR7ViXFdm8pRSAsVMrT/0/*,[85ee5ff0/86h/0h/0h]xpub6DRfbQbg63CiXnw6ZWjYkqn1QaLjrt5jQLuU9b1UZ936oCSFnpURWwmNtYeCFBHN6AE4FUDsvvRDm3zcPC2EMAEg4powtzyxdzcCD5nrnbj/0/*,[ed5a13f5/86h/0h/0h]xpub6C4sZub3L3nr58CKnreZ9WS62t433XCMYMn3XxsA83WGTfVARiCwZXqRsge2VRX1ZFbY6PAXygpSfWwR8cT9DtrZM6wSdArhDDr9A8A8pSM/0/*))#sat2slz5"
+}

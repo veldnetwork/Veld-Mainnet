@@ -7,9 +7,9 @@ Network coordinates belong in the access-controlled operations inventory.
 INDEPENDENT GATEKEEPER (design doc §6): given a mint request (the node's
 preparetokenmint output) on stdin, it RE-DERIVES the mint's parameters from the tx
 bytes themselves - NOT the caller's JSON claims - cross-checks them, enforces its OWN
-caps + kill-switch, and only then signs with the issuer key. So even a fully
-compromised custody box cannot get an illegitimate, mis-recipiented, or oversized
-mint signed here: the key never signs a tx this box hasn't independently vetted.
+caps + kill-switch, and only then signs with the issuer key. These checks depend
+on the integrity of the signer, its independently operated node, reviewed chain
+pins, witness, and durable authorization state.
 
   request (stdin JSON) : {"unsigned_tx_hex","recipient","sats","allocation"}
   response (stdout)    : signed tx hex        (exit != 0 + stderr on ANY refusal)
@@ -104,6 +104,7 @@ SIGNER_CONFIG = os.environ.get("VELD_SIGNER_CONFIG",
                                os.path.join(HERE, "signer-config.json"))
 
 from btcveld_c1 import allocation_commitment
+from veld_chain_identity import parse_expected_chain, verify_expected_chain
 
 
 class UnsignedCarrierAbandoned(Exception):
@@ -226,6 +227,7 @@ class TrustedVeldRpc:
             raise RuntimeError("trusted veld_rpc.url is required")
         if not isinstance(cfg["url"], str):
             raise RuntimeError("trusted veld_rpc.url must be a string")
+        self.expected_chain = parse_expected_chain(cfg.get("expected_chain"))
         self.url = validate_backend_rpc_url(cfg["url"], "veld_rpc.url")
         token = ""
         if cfg.get("token_cmd"):
@@ -245,6 +247,10 @@ class TrustedVeldRpc:
         if not token:
             raise RuntimeError("trusted Veld RPC bearer token is missing")
         self.token = token
+        self.verify_chain_identity()
+
+    def verify_chain_identity(self):
+        return verify_expected_chain(self.call, self.expected_chain)
 
     def call(self, method, params=None):
         body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method,
@@ -431,6 +437,7 @@ def issuer_addr():
 
 
 def validate_compiled_mint_policy(rpc, issuer, *, completion=False):
+    rpc.verify_chain_identity()
     peg = rpc.call("getpeginfo", [])
     if not isinstance(peg, dict) or peg.get("active") is not True:
         raise ValueError("getpeginfo does not report a registered btcVELD asset")
@@ -3426,6 +3433,10 @@ def load_signer_configuration():
         "signer configuration")
     if not isinstance(cfg, dict):
         raise ValueError("signer configuration root is not an object")
+    rpc_cfg = cfg.get("veld_rpc")
+    if not isinstance(rpc_cfg, dict):
+        raise ValueError("signer configuration requires veld_rpc")
+    parse_expected_chain(rpc_cfg.get("expected_chain"))
     marker = cfg.get("authority_state_activation_marker")
     if (not isinstance(marker, str) or not os.path.isabs(marker) or
             os.path.dirname(marker) != os.path.abspath(HERE) or
@@ -3436,9 +3447,11 @@ def load_signer_configuration():
     return cfg
 
 
-def _authority_state_marker_document():
+def _authority_state_marker_document(cfg):
     return {
-        "version": 1,
+        "version": 2,
+        "expected_chain": parse_expected_chain(
+            cfg.get("veld_rpc", {}).get("expected_chain")),
         "state_files": {
             "mint": os.path.abspath(STATEF),
             "c1_reservation": os.path.abspath(C1_STATEF),
@@ -3452,9 +3465,16 @@ def require_signer_authority_state_set(cfg):
     document = strict_json_loads(_secure_text(
         marker, private=True, max_bytes=4096),
         "signer authority activation marker")
-    expected = _authority_state_marker_document()
+    expected = _authority_state_marker_document(cfg)
+    if (not isinstance(document, dict) or
+            type(document.get("version")) is not int or
+            document.get("version") != 2):
+        raise ValueError("unbound signer authority marker requires offline reconciliation")
+    parse_expected_chain(document.get("expected_chain"))
     if document != expected:
-        raise ValueError("signer authority activation marker is not exact")
+        raise ValueError(
+            "signer authority activation marker does not bind the exact chain; "
+            "offline reconciliation is required")
     for path in expected["state_files"].values():
         if not os.path.lexists(path):
             raise ValueError(
@@ -3494,12 +3514,11 @@ def _validate_and_reconcile_signer_authority_members(cfg):
 
 
 def initialize_signer_authority_state():
-    """One-shot local ceremony creating or adopting one complete authority set.
+    """One-shot local ceremony creating one chain-bound authority set.
 
     The activation marker is committed last. A crash before it is an explicit
-    partial-initialization incident. An upgrade may adopt three already-present
-    valid members only after their complete signed-cache/lease union reconciles;
-    mixed presence is never filled and no state member is overwritten.
+    partial-initialization incident. Existing unbound state requires independent
+    chain reconciliation; it is never adopted or overwritten by initialization.
     """
     _secure_service_directory(HERE)
     cfg = load_signer_configuration()
@@ -3517,21 +3536,20 @@ def initialize_signer_authority_state():
         if os.path.lexists(marker):
             require_signer_authority_state_set(cfg)
             _validate_and_reconcile_signer_authority_members(cfg)
-            return _authority_state_marker_document()
+            return _authority_state_marker_document(cfg)
         if any(present) and not all(present):
             raise ValueError(
                 "signer authority state set is partial; restore/reconcile the "
                 "complete set and never fill a missing member")
         if all(present):
-            # Upgrade adoption: validate both primary authorities, then merge
-            # their complete signed-input union into the existing lease journal.
-            # Any migration or archive readback is completed before activation.
-            _validate_and_reconcile_signer_authority_members(cfg)
+            raise ValueError(
+                "unbound signer authority state requires offline chain "
+                "reconciliation; initialization cannot adopt it")
         else:
             save_signer_state_durable({"signed": []})
             save_c1_signer_state(_empty_c1_signer_state())
             save_prevout_journal(_empty_prevout_journal())
-        document = _authority_state_marker_document()
+        document = _authority_state_marker_document(cfg)
         _write_authority_activation_marker(marker, document)
         require_signer_authority_state_set(cfg)
         return document
@@ -3586,6 +3604,11 @@ def main(capability="mint"):
         refuse("another signer holds the lock")
 
     try:
+        require_signer_authority_state_set(authority_cfg)
+    except Exception as e:
+        refuse("locked signer authority state set: " + str(e)[:240])
+
+    try:
         raw_request = _read_bounded_stdin(MAX_REQUEST_BYTES)
         if len(raw_request) > MAX_REQUEST_BYTES:
             refuse("request exceeds %d-byte limit" % MAX_REQUEST_BYTES)
@@ -3598,11 +3621,7 @@ def main(capability="mint"):
         if capability != "c1-reservation":
             refuse("mint capability cannot acknowledge C1 reservation carriers")
         try:
-            cfg = strict_json_loads(_secure_text(
-                os.path.abspath(SIGNER_CONFIG), private=True),
-                "signer configuration")
-            if not isinstance(cfg, dict):
-                raise ValueError("signer configuration root is not an object")
+            cfg = authority_cfg
             answer = acknowledge_c1_signature_durable(req, cfg)
         except Exception as e:
             refuse("C1 durable acknowledgement: " + str(e)[:240])
@@ -3617,11 +3636,7 @@ def main(capability="mint"):
         try:
             issuer = issuer_addr()
             issuer_script = issuer_p2pkh_from_address(issuer)
-            cfg = strict_json_loads(_secure_text(
-                os.path.abspath(SIGNER_CONFIG), private=True),
-                "signer configuration")
-            if not isinstance(cfg, dict):
-                raise ValueError("signer configuration root is not an object")
+            cfg = authority_cfg
             answer = handle_c1_reservation_request(
                 req, issuer, issuer_script, cfg)
         except UnsignedCarrierAbandoned as e:
@@ -3712,11 +3727,7 @@ def main(capability="mint"):
     # now-impossible spent-prevout lookup; they still pass tx policy, caller claims,
     # rate policy, and fresh tip-bound watchtower checks before exact-byte replay.
     try:
-        cfg = strict_json_loads(_secure_text(
-            os.path.abspath(SIGNER_CONFIG), private=True),
-            "signer configuration")
-        if not isinstance(cfg, dict):
-            raise ValueError("signer configuration root is not an object")
+        cfg = authority_cfg
         rpc = TrustedVeldRpc(cfg.get("veld_rpc"))
         authority, witness = validate_mint_authority_config(cfg, issuer)
         if allocation_claim is None:

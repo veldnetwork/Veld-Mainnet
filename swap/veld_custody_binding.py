@@ -26,6 +26,46 @@ MANIFEST_KEYS = {
     "version", "descriptor", "descriptor_sha256", "range", "script_pubkeys",
 }
 BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+_BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+CUSTODY_NUMS_KEY = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+_CUSTODY_KEY_RE = re.compile(
+    r"\[[0-9a-fA-F]{8}/86h/0h/0h\]"
+    r"(xpub[1-9A-HJ-NP-Za-km-z]{100,120})/0/\*")
+
+
+def validate_descriptor_policy(descriptor):
+    """Enforce the full public descriptor emitted by the custody ceremony tool."""
+    prefix = "tr(" + CUSTODY_NUMS_KEY + ",multi_a(3,"
+    if not isinstance(descriptor, str) or not 0 < len(descriptor) <= 2048:
+        raise RuntimeError("custody descriptor must be a bounded public 3-of-5 descriptor")
+    parts = descriptor.split("#")
+    if (len(parts) != 2 or not parts[0].startswith(prefix) or
+            not parts[0].endswith("))") or len(parts[1]) != 8 or
+            any(char not in BECH32_CHARSET for char in parts[1])):
+        raise RuntimeError("custody descriptor must have the fixed NUMS key and one 3-of-5 leaf")
+    expressions = parts[0][len(prefix):-2].split(",")
+    if len(expressions) != 5:
+        raise RuntimeError("custody descriptor must contain exactly five public keys")
+    public_keys = []
+    for expression in expressions:
+        match = _CUSTODY_KEY_RE.fullmatch(expression)
+        if match is None:
+            raise RuntimeError("custody descriptor key must match the reviewed BIP86 public path")
+        encoded = match.group(1)
+        value = 0
+        for char in encoded:
+            value = value * 58 + _BASE58.index(char)
+        raw = value.to_bytes((value.bit_length() + 7) // 8, "big")
+        if (len(raw) != 82 or raw[:4] != bytes.fromhex("0488b21e") or
+                raw[4] != 3 or raw[9:13] != bytes.fromhex("80000000") or
+                raw[45] not in (2, 3) or
+                hashlib.sha256(hashlib.sha256(raw[:-4]).digest()).digest()[:4]
+                != raw[-4:]):
+            raise RuntimeError("custody extended public key is not a valid account xpub")
+        public_keys.append(raw[46:78])
+    if len(set(public_keys)) != 5:
+        raise RuntimeError("custody descriptor repeats an underlying public key")
+    return tuple(expressions)
 
 
 def _hex64(value, label):
@@ -76,6 +116,7 @@ def load_manifest(path, expected_descriptor_sha256,
         raise RuntimeError("custody SPK manifest schema is not exact")
     descriptor = document.get("descriptor")
     scripts = document.get("script_pubkeys")
+    validate_descriptor_policy(descriptor)
     if (document.get("version") != 1 or
             not isinstance(descriptor, str) or
             not descriptor.startswith("tr(") or
@@ -130,6 +171,7 @@ def load_manifest(path, expected_descriptor_sha256,
 
 def verify_peg_identity(peg, binding):
     """Require a getpeginfo response to match one locally pinned manifest."""
+    validate_descriptor_policy(binding.get("descriptor") if isinstance(binding, dict) else None)
     if not isinstance(peg, dict) or peg.get("active") is not True:
         raise RuntimeError("getpeginfo does not report an active btcVELD peg")
     if peg.get("spv_active") is not True:
@@ -189,6 +231,7 @@ def _bech32m_spk(address):
 
 def verify_core_derivation(call, binding):
     """Re-derive every ranged script with Bitcoin Core and compare the manifest."""
+    validate_descriptor_policy(binding.get("descriptor") if isinstance(binding, dict) else None)
     custody_range = binding.get("range") if isinstance(binding, dict) else None
     if (not isinstance(custody_range, list) or len(custody_range) != 2 or
             custody_range[0] != 0 or type(custody_range[1]) is not int or

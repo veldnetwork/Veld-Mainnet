@@ -14,6 +14,7 @@ from swap import veld_c1_reservationd as reservationd
 from swap import veld_mintd as mintd
 from swap import veld_signerd as signerd
 from swap.btcveld_c1 import allocation_commitment
+from swap.test_chain_identity import CHAIN
 
 
 ISSUER = "V" + "3" * 33
@@ -270,6 +271,9 @@ class CompletionExceptionServiceTests(unittest.TestCase):
     class PegRpc:
         def __init__(self, peg):
             self.peg = peg
+
+        def verify_chain_identity(self):
+            return None
 
         def call(self, method, params=None):
             if method == "getpeginfo":
@@ -1283,6 +1287,7 @@ class SignerAuthorityInitializationTests(unittest.TestCase):
             marker = root / "signer-authority-state.json"
             Path(paths["SIGNER_CONFIG"]).write_text(json.dumps({
                 "authority_state_activation_marker": str(marker),
+                "veld_rpc": {"expected_chain": CHAIN},
             }))
             Path(paths["SIGNER_CONFIG"]).chmod(0o600)
             with mock.patch.multiple(
@@ -1294,7 +1299,8 @@ class SignerAuthorityInitializationTests(unittest.TestCase):
                                       return_value="00" * 25):
                 document = signerd.initialize_signer_authority_state()
                 self.assertEqual(document,
-                                 signerd._authority_state_marker_document())
+                                 signerd._authority_state_marker_document(
+                                     signerd.load_signer_configuration()))
                 self.assertEqual(signerd.load_signer_state(), {"signed": []})
                 self.assertEqual(signerd.load_c1_signer_state(),
                                  signerd._empty_c1_signer_state())
@@ -1334,6 +1340,7 @@ class SignerAuthorityInitializationTests(unittest.TestCase):
                 }
                 Path(paths["SIGNER_CONFIG"]).write_text(json.dumps({
                     "authority_state_activation_marker": str(marker),
+                    "veld_rpc": {"expected_chain": CHAIN},
                 }))
                 Path(paths["SIGNER_CONFIG"]).chmod(0o600)
                 with mock.patch.multiple(
@@ -1363,6 +1370,7 @@ class SignerAuthorityInitializationTests(unittest.TestCase):
             }
             Path(paths["SIGNER_CONFIG"]).write_text(json.dumps({
                 "authority_state_activation_marker": str(marker),
+                "veld_rpc": {"expected_chain": CHAIN},
             }))
             Path(paths["SIGNER_CONFIG"]).chmod(0o600)
             with mock.patch.multiple(
@@ -1380,7 +1388,7 @@ class SignerAuthorityInitializationTests(unittest.TestCase):
                                                 "cross-state mismatch"):
                         signerd.initialize_signer_authority_state()
 
-    def test_complete_pre_marker_upgrade_is_adopted_without_overwrite(self):
+    def test_complete_pre_marker_upgrade_requires_chain_reconciliation(self):
         with tempfile.TemporaryDirectory(prefix="signer-authority-adopt-") as directory:
             root = Path(directory)
             marker = root / "signer-authority-state.json"
@@ -1392,6 +1400,7 @@ class SignerAuthorityInitializationTests(unittest.TestCase):
             }
             Path(paths["SIGNER_CONFIG"]).write_text(json.dumps({
                 "authority_state_activation_marker": str(marker),
+                "veld_rpc": {"expected_chain": CHAIN},
             }))
             Path(paths["SIGNER_CONFIG"]).chmod(0o600)
             with mock.patch.multiple(signerd, HERE=str(root), **paths), \
@@ -1406,12 +1415,13 @@ class SignerAuthorityInitializationTests(unittest.TestCase):
                     path: hashlib.sha256(Path(path).read_bytes()).hexdigest()
                     for path in (paths["STATEF"], paths["C1_STATEF"],
                                  paths["PREVOUT_STATEF"])}
-                signerd.initialize_signer_authority_state()
+                with self.assertRaisesRegex(ValueError, "offline chain reconciliation"):
+                    signerd.initialize_signer_authority_state()
                 after = {
                     path: hashlib.sha256(Path(path).read_bytes()).hexdigest()
                     for path in before}
                 self.assertEqual(after, before)
-                self.assertTrue(marker.exists())
+                self.assertFalse(marker.exists())
 
     def test_pre_marker_partial_upgrade_set_is_refused(self):
         with tempfile.TemporaryDirectory(prefix="signer-authority-partial-") as directory:
@@ -1420,6 +1430,7 @@ class SignerAuthorityInitializationTests(unittest.TestCase):
             config = root / "signer-config.json"
             config.write_text(json.dumps({
                 "authority_state_activation_marker": str(marker),
+                "veld_rpc": {"expected_chain": CHAIN},
             }))
             config.chmod(0o600)
             with mock.patch.multiple(

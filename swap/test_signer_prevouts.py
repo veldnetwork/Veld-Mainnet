@@ -55,6 +55,9 @@ class SignerPrevoutTests(unittest.TestCase):
         outpoint = TXID_A + ":0"
 
         class Rpc:
+            def verify_chain_identity(self):
+                return None
+
             def call(self, method, params=None):
                 if method == "getpeginfo":
                     return {"active": True, "peg_unlocked": True,

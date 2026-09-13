@@ -12,6 +12,10 @@ from swap import veld_payout_signerd as ps
 from swap import veld_redeemd as rd
 
 
+TEST_DESCRIPTOR = json.loads((Path(__file__).parent / "fixtures" /
+                              "custody-policy-descriptor.json").read_text())["descriptor"]
+
+
 BURN = {
     "burn_txid": "12" * 32,
     "opreturn_vout": 1,
@@ -150,6 +154,7 @@ def public_custody_cfg(scripts=None):
     scripts = list(scripts or full_custody_scripts())
     return {
         "signer_id": "s1",
+        "custody_descriptor": TEST_DESCRIPTOR,
         "custody_descriptor_sha256": "ab" * 32,
         "custody_manifest_sha256": "cd" * 32,
         "custody_consensus_manifest_sha256": "cd" * 32,
@@ -477,6 +482,7 @@ class PayoutSignerPolicyTests(unittest.TestCase):
             scripts = [btc.CUSTODY_SPK] + [
                 "5120%064x" % i for i in range(1, 1000)]
             cfg = {"signer_id": "s1",
+                   "custody_descriptor": TEST_DESCRIPTOR,
                    "custody_descriptor_sha256": "ab" * 32,
                    "custody_manifest_sha256": "cd" * 32,
                    "custody_script_range": [0, 999],
@@ -502,7 +508,7 @@ class PayoutSignerPolicyTests(unittest.TestCase):
             store.close()
 
     def test_operational_manifest_and_public_boundary_scripts_are_enforced(self):
-        descriptor = "tr(" + "11" * 32 + ",multi_a(3,xpub-fixture/0/*))#fixture"
+        descriptor = TEST_DESCRIPTOR
         descriptor_hash = hashlib.sha256(descriptor.encode()).hexdigest()
         scripts = [SigningBtc.CUSTODY_SPK] + [
             "5120%064x" % i for i in range(1, 11000)]
@@ -790,6 +796,7 @@ class PayoutSignerPolicyTests(unittest.TestCase):
                 "5120%064x" % i for i in range(1, 1000)]
             cfg = {
                 "signer_id": "s1",
+                "custody_descriptor": TEST_DESCRIPTOR,
                 "custody_descriptor_sha256": "ab" * 32,
                 "custody_manifest_sha256": "cd" * 32,
                 "custody_script_range": [0, 999],
@@ -839,6 +846,7 @@ class PayoutSignerPolicyTests(unittest.TestCase):
                 "5120%064x" % i for i in range(1, 1000)]
             cfg = {
                 "signer_id": "s1",
+                "custody_descriptor": TEST_DESCRIPTOR,
                 "custody_descriptor_sha256": "ab" * 32,
                 "custody_manifest_sha256": "cd" * 32,
                 "custody_script_range": [0, 999],
@@ -875,6 +883,7 @@ class PayoutSignerPolicyTests(unittest.TestCase):
                 "5120%064x" % i for i in range(1, 1000)]
             cfg = {
                 "signer_id": "s1",
+                "custody_descriptor": TEST_DESCRIPTOR,
                 "custody_descriptor_sha256": "ab" * 32,
                 "custody_manifest_sha256": "cd" * 32,
                 "custody_script_range": [0, 999],
