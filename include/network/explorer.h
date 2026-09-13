@@ -6761,7 +6761,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
                 }
             }
         } else if (validators_) {
-            sys_active = validators_->IsValidatorSystemActive();
+            sys_active = validators_->IsValidatorSystemActive(chain_.Height());
             existing_operations_active = validators_->ExistingValidatorOperationsActive();
             val_count = validators_->GetActiveValidatorCount();
             auto records = validators_->GetValidators();

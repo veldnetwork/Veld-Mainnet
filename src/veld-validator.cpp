@@ -439,7 +439,9 @@ static int cmd_genkey(const std::string& keyfile, const std::string& wallet_addr
               << "Anyone with BOTH can submit endorsements on your behalf.\n" << RST;
     std::cout << "\n";
     std::cout << "Next steps:\n";
-    std::cout << "  1. Ensure " << vk.address << " has >= 10,000 VELD staked (mainnet target)\n";
+    std::cout << "  1. Fund " << vk.address << " with "
+              << (MIN_VALIDATOR_STAKE / VELD_UNITS)
+              << " VELD for the validator bond, plus the transaction fee\n";
     std::cout << "  2. Run: veld-validator --keyfile " << keyfile << " --register\n";
     std::cout << "  3. Run: veld-validator --keyfile " << keyfile << " (daemon mode)\n";
     return 0;
@@ -1223,39 +1225,13 @@ static int cmd_register(const std::string& host, uint16_t port,
     log(GRAY, "  Pubkey:  " + vk.pubkey_hex);
     log(GRAY, "  Address: " + vk.address);
 
-    std::string vi = json_rpc(host, port, "getvalidators");
-    bool sys_active = jstr(vi, "system_active") == "true";
-    if (!sys_active) {
-        double threshold = 0;
-        try { threshold = std::stod(jstr(vi, "unlock_threshold_veld")); } catch (...) {}
-        double staked = 0;
-        try { staked = std::stod(jstr(vi, "total_staked_veld")); } catch (...) {}
-        log(YEL, "Validator system not yet active.");
-        log(GRAY, "  Required: " + std::to_string(threshold) + " VELD staked network-wide");
-        log(GRAY, "  Current:  " + std::to_string(staked) + " VELD staked");
-        log(GRAY, "  Registration transaction will be submitted anyway and will");
-        log(GRAY, "  activate automatically once the threshold is reached.");
-    }
-
-    std::string si = json_rpc(host, port, "getstakingaddr",
-        "[\"" + vk.address + "\"]");
-    double staked_veld = 0;
-    try { staked_veld = std::stod(jstr(si, "staked_veld")); } catch (...) {}
-    double min_stake = (double)MIN_VALIDATOR_STAKE / VELD_UNITS;
-    if (staked_veld < min_stake) {
-        log(RED, "Insufficient stake at " + vk.address);
-        log(GRAY, "  Required: " + std::to_string(min_stake) + " VELD staked");
-        log(GRAY, "  Current:  " + std::to_string(staked_veld) + " VELD staked");
-        return 1;
-    }
-
     std::string op = ValidatorRegistry::BuildRegisterOp(vk.pubkey_hex);
     if (!broadcast_op_return(host, port, vk.address, op, vk)) {
         log(RED, "Registration failed.");
         return 1;
     }
     log(GRN, "Registration transaction broadcast successfully.");
-    log(GRAY, "  The network will confirm your validator registration in the next block.");
+    log(GRAY, "  Check validator status after the transaction confirms.");
     return 0;
 }
 

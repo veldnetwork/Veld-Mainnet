@@ -10,7 +10,7 @@
 #endif
 
 using namespace veld;
-static_assert(std::string_view(CLIENT_VERSION) == "3.2.0");
+static_assert(std::string_view(CLIENT_VERSION) == "3.2.1");
 static_assert(CONSENSUS_SECURITY_UPGRADE_HEIGHT == 2880);
 static_assert(!ConsensusSecurityUpgradeActive(2879));
 static_assert(ConsensusSecurityUpgradeActive(2880));
@@ -27,6 +27,9 @@ static_assert(finality::qc::REGISTRATION_MATURITY == 480);
 static_assert(finality::qc::MIN_VALIDATOR_COUNT == 7);
 
 #ifdef VELD_PUBLIC_MAINNET
+static_assert(VALIDATOR_REGISTRATION_FORK_HEIGHT == 6200);
+static_assert(ValidatorRegistrationNetworkStakeFloor(6199) == 10000 * VELD_UNITS);
+static_assert(ValidatorRegistrationNetworkStakeFloor(6200) == 0);
 static_assert(PROTOCOL_UPGRADE_HEIGHT == 3840);
 static_assert(ASERT_ACTIVATION_HEIGHT == 3840);
 static_assert(SECURITY_STATE_MIGRATION_HEIGHT == 3840);

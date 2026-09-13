@@ -26,6 +26,7 @@
 #include <cmath>
 #include <optional>
 #include <tuple>
+#include <memory>
 
 namespace veld {
 
@@ -174,7 +175,8 @@ public:
     static bool RegistrationFloorPermits(bool below_floor,
                                         const std::string& action,
                                         uint64_t inclusion_height) {
-        return !below_floor || (ConsensusSecurityUpgradeActive(inclusion_height) &&
+        return ValidatorRegistrationForkActive(inclusion_height) ||
+               !below_floor || (ConsensusSecurityUpgradeActive(inclusion_height) &&
                                 action != "REGISTER");
     }
 
@@ -214,10 +216,10 @@ public:
         block_known_at_height_fn_ = std::move(fn);
     }
 
-    bool IsValidatorSystemActive() const noexcept {
+    bool IsValidatorSystemActive(uint64_t height = 0) const noexcept {
         // CONSENSUS-DETERMINISTIC: identical on every node regardless of local
         // flags (see VALIDATOR_SYSTEM_ALWAYS_ACTIVE in constants.h).
-        if (VALIDATOR_SYSTEM_ALWAYS_ACTIVE) return true;
+        if (VALIDATOR_SYSTEM_ALWAYS_ACTIVE || ValidatorRegistrationForkActive(height)) return true;
         return total_staked_units_.load(std::memory_order_relaxed) >= VALIDATOR_UNLOCK_STAKED;
     }
 
@@ -283,6 +285,72 @@ public:
                       std::function<uint64_t(const std::string&)> staking_get_stake,
                       std::function<void(const std::string&, uint64_t)>
                           staking_apply_slash_lockup = nullptr) {
+        if (!ValidatorRegistrationForkActive(block.height) ||
+            !HasFundedRegistration(block))
+            return ProcessBlockImpl(block, staking_get_stake,
+                                    staking_apply_slash_lockup, false);
+        std::unique_ptr<ValidatorRegistry> staged;
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            staged = std::make_unique<ValidatorRegistry>(*this);
+        }
+        std::vector<std::pair<std::string, uint64_t>> slash_lockups;
+        std::function<void(const std::string&, uint64_t)> defer_slash;
+        if (staking_apply_slash_lockup)
+            defer_slash = [&](const std::string& address, uint64_t height) {
+                slash_lockups.emplace_back(address, height);
+            };
+        if (!staged->ProcessBlockImpl(block, staking_get_stake, defer_slash, true))
+            return false;
+        for (const auto& [address, height] : slash_lockups)
+            staking_apply_slash_lockup(address, height);
+        CommitBlockStateFrom(*staged);
+        return true;
+    }
+
+private:
+    static bool HasFundedRegistration(const Block& block) {
+        const auto vault = AddressToScript(STAKE_VAULT_ADDRESS);
+        for (const auto& tx : block.transactions) {
+            bool registration = false, funded = false;
+            for (const auto& out : tx.outputs) {
+                registration |= ParseOpReturn(out.script_pubkey).rfind(
+                    std::string(VAL_PREFIX) + "REGISTER|", 0) == 0;
+                funded |= out.value > 0 && out.script_pubkey == vault;
+            }
+            if (registration && funded) return true;
+        }
+        return false;
+    }
+
+    void CommitBlockStateFrom(ValidatorRegistry& staged) {
+        std::lock_guard<std::mutex> lk(mutex_);
+        validators_.swap(staged.validators_);
+        address_to_pubkey_.swap(staged.address_to_pubkey_);
+        endorsements_.swap(staged.endorsements_);
+        endorsement_keys_.swap(staged.endorsement_keys_);
+        endorsement_pool_outpoints_.swap(staged.endorsement_pool_outpoints_);
+        last_op_height_.swap(staged.last_op_height_);
+        bond_yield_escrow_.swap(staged.bond_yield_escrow_);
+        slashed_evidence_.swap(staged.slashed_evidence_);
+        slashed_evidence_keys_.swap(staged.slashed_evidence_keys_);
+        evidence_per_pubkey_.swap(staged.evidence_per_pubkey_);
+        slashed_pubkeys_.swap(staged.slashed_pubkeys_);
+        finality_membership_.swap(staged.finality_membership_);
+        finality_equivocations_.swap(staged.finality_equivocations_);
+        last_canonical_endorsement_flush_height_ =
+            staged.last_canonical_endorsement_flush_height_;
+        security_upgrade_active_ = staged.security_upgrade_active_;
+        state_migration_active_ = staged.state_migration_active_;
+        last_flush_reward_per_endorsement_.store(
+            staged.last_flush_reward_per_endorsement_.load(std::memory_order_relaxed),
+            std::memory_order_relaxed);
+    }
+
+    bool ProcessBlockImpl(const Block& block,
+                      std::function<uint64_t(const std::string&)> staking_get_stake,
+                      std::function<void(const std::string&, uint64_t)> staking_apply_slash_lockup,
+                      bool require_bond_record) {
         // Must precede the lock and every mutation below.  Node preflight treats
         // false as a candidate-block rejection on linear, replay, and reorg paths.
         if (!HasValidRegisterMultiplicity(block)) return false;
@@ -400,8 +468,16 @@ public:
                 auto data = ParseOpReturn(out.script_pubkey);
                 if (data.empty()) continue;
                 if (data.substr(0, std::string(VAL_PREFIX).size()) != VAL_PREFIX) continue;
+                bool registered = false;
                 ProcessOp(data, block, tx, staking_get_stake,
-                          staking_apply_slash_lockup);
+                          staking_apply_slash_lockup, &registered);
+                if (require_bond_record &&
+                    data.rfind(std::string(VAL_PREFIX) + "REGISTER|", 0) == 0) {
+                    const auto vault = AddressToScript(STAKE_VAULT_ADDRESS);
+                    const bool funded = std::any_of(tx.outputs.begin(), tx.outputs.end(),
+                        [&](const TxOutput& out) { return out.script_pubkey == vault && out.value > 0; });
+                    if (funded && !registered) return false;
+                }
             }
         }
         // Do not make retirement depend on a funded endorsement-pool flush.
@@ -411,6 +487,8 @@ public:
         PruneInactiveValidatorsLocked(block.height);
         return true;
     }
+
+public:
 
     std::vector<ValidatorRecord> GetValidators() const {
         std::lock_guard<std::mutex> lk(mutex_);
@@ -2303,7 +2381,9 @@ private:
     void ProcessOp(const std::string& data, const Block& block, const Transaction& tx,
                    std::function<uint64_t(const std::string&)> staking_get_stake,
                    std::function<void(const std::string&, uint64_t)>
-                       staking_apply_slash_lockup = nullptr) {
+                       staking_apply_slash_lockup = nullptr,
+                   bool* registered = nullptr) {
+        if (registered) *registered = false;
         // Validator activation is a pure function of the build profile and
         // chain-derived total stake.
         const bool below_registration_floor = !VALIDATOR_SYSTEM_ALWAYS_ACTIVE &&
@@ -2420,6 +2500,7 @@ private:
             rec.bond_custodial    = reg_custodial;
             rec.bond_units        = reg_bond_units;
             validators_[pubkey_hex] = rec;
+            if (registered) *registered = true;
             last_op_height_[address] = block.height;
             address_to_pubkey_[address] = pubkey_hex;
             {

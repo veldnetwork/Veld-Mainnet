@@ -5593,13 +5593,13 @@ private:
 
             std::ostringstream j;
             j << std::fixed << std::setprecision(8);
-            bool sys_active = validators_ && validators_->IsValidatorSystemActive();
+            bool sys_active = validators_ && validators_->IsValidatorSystemActive(chain_.Height());
             uint64_t total_staked = staking_ ? staking_->GetTotalStake() : 0;
             j << "{";
             j << "\"system_active\":" << (sys_active ? "true" : "false") << ",";
             j << "\"existing_operations_active\":"
               << (validators_ && validators_->ExistingValidatorOperationsActive() ? "true" : "false") << ",";
-            j << "\"unlock_threshold_veld\":" << (double)VALIDATOR_UNLOCK_STAKED / VELD_UNITS << ",";
+            j << "\"unlock_threshold_veld\":" << (double)ValidatorRegistrationNetworkStakeFloor(chain_.Height()) / VELD_UNITS << ",";
             j << "\"total_staked_veld\":" << (double)total_staked / VELD_UNITS << ",";
             j << "\"min_stake_veld\":" << (double)(validators_ ? validators_->GetEffectiveMinStake() : MIN_VALIDATOR_STAKE) / VELD_UNITS << ",";
             j << "\"validator_count\":" << (validators_ ? validators_->GetActiveValidatorCount() : 0) << ",";
@@ -6071,7 +6071,7 @@ private:
             j << "\"query\":\"" << arg << "\",";
             j << "\"resolved_as\":\"" << (is_address ? "address" : "pubkey") << "\",";
             j << "\"registered\":" << (registered ? "true" : "false") << ",";
-            j << "\"system_active\":" << (validators_ && validators_->IsValidatorSystemActive() ? "true" : "false") << ",";
+            j << "\"system_active\":" << (validators_ && validators_->IsValidatorSystemActive(chain_.Height()) ? "true" : "false") << ",";
             j << "\"existing_operations_active\":"
               << (validators_ && validators_->ExistingValidatorOperationsActive() ? "true" : "false");
             j << "}";

@@ -1268,17 +1268,10 @@ def _has_exact_custody_witness(transaction):
 
 
 def sign_payout(btc, raw, proposal, signing_cfg):
-    """Threshold PSBT approval; single-wallet path is explicit dev-only."""
+    """Collect and validate the fixed 3-of-5 custody approval."""
     mode = signing_cfg.get("mode", "threshold_psbt")
-    if mode == "single_wallet_dev":
-        if signing_cfg.get("allow_unsafe_single_wallet") is not True:
-            raise RuntimeError("single-wallet payout signing is disabled")
-        signed = btc.call("signrawtransactionwithwallet", raw)
-        if not isinstance(signed, dict) or not signed.get("complete"):
-            raise RuntimeError("single-wallet development signature incomplete")
-        return signed["hex"], ["unsafe-single-wallet-dev"]
     if mode != "threshold_psbt":
-        raise RuntimeError("unknown payout signing mode")
+        raise RuntimeError("payout signing requires the fixed 3-of-5 threshold mode")
     threshold = signing_cfg.get("threshold", 0)
     if type(threshold) is not int:
         raise RuntimeError("threshold must be an exact JSON integer")
@@ -1472,6 +1465,15 @@ def replicate_observations(signing_cfg, records):
     return sorted(acked_any)
 
 
+def require_compatible_payout_authority(peg):
+    if not isinstance(peg, dict):
+        raise RuntimeError("payout authority returned no object")
+    if "reserve_semantics" in peg:
+        raise RuntimeError(
+            "reserve payout signing is unavailable: native finalized reserve "
+            "authorization and safe refund retirement must be qualified first")
+
+
 class RedeemCoordinator:
     def __init__(self, cfg, store, btc, veld=None):
         self.cfg = cfg; self.store = store; self.btc = btc; self.veld = veld
@@ -1503,6 +1505,8 @@ class RedeemCoordinator:
                     raise RuntimeError("paid Veld burn lost canonical finality: " + why)
 
     def process(self, tip, final_height):
+        if self.veld is not None:
+            require_compatible_payout_authority(self.veld.call("getpeginfo", []))
         custody_policy = load_payout_custody_policy(self.cfg)
         self.reconcile_bitcoin_authority()
         for r in self.store.open_records():
@@ -1529,10 +1533,8 @@ class RedeemCoordinator:
                 self.store.transition(rid, "orphaned", note=why)
                 print("  %s: %s - NO PAY" % (rid[:16], why)); continue
 
-            # Build first, then recheck the independent marker immediately before
-            # signing.  Split-brain peers that raced on the same chain build the same
-            # sorted-input transaction; once either broadcasts, every other peer sees
-            # the marker and refuses to construct an alternate-input payment.
+            # This legacy marker recheck does not establish globally unique intent.
+            # Native rolling-reserve authority is refused before this path.
             raw, selected, fee, change, change_spk = build_payout(
                 self.btc, r, self.change_addr, self.cfg, veld=self.veld,
                 custody_policy=custody_policy)

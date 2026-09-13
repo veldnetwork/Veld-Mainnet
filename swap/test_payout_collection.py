@@ -61,6 +61,20 @@ class CoreModel:
 
 
 class PayoutCollectionTests(unittest.TestCase):
+    def test_single_wallet_mode_cannot_bypass_fixed_threshold(self):
+        core = CoreModel()
+        with self.assertRaisesRegex(RuntimeError, "fixed 3-of-5"):
+            rd.sign_payout(core, "00", {}, {
+                "mode": "single_wallet_dev", "allow_unsafe_single_wallet": True})
+        self.assertEqual(core.deadlines, [])
+
+    def test_native_reserve_cannot_fall_through_to_legacy_payout(self):
+        for peg in (None, [], {"reserve_semantics": None},
+                    {"reserve_semantics": "rolling-outpoint-v1"},
+                    {"reserve_semantics": "unknown-future-policy"}):
+            with self.subTest(peg=peg), self.assertRaises(RuntimeError):
+                rd.require_compatible_payout_authority(peg)
+
     def collect(self, core, responses=None, cfg=None):
         self.requests = []
         responses = responses or {}

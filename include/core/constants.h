@@ -422,6 +422,24 @@ constexpr bool VALIDATOR_SYSTEM_ALWAYS_ACTIVE = false;
 constexpr bool VALIDATOR_SYSTEM_ALWAYS_ACTIVE = true;
 #endif
 
+#if defined(VELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT)
+#if !defined(VELD_TEST_CHAIN_BUILD) || !defined(VELD_TEST_HOOKS) || \
+    defined(VELD_PUBLIC_RELEASE) || defined(VELD_PUBLIC_MAINNET) || defined(VELD_PUBLIC_TESTNET)
+#error "validator registration test height requires an isolated non-public test build"
+#endif
+constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = VELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT;
+#elif defined(VELD_PUBLIC_MAINNET)
+constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = 6'200;
+#else
+constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = 0;
+#endif
+inline constexpr bool ValidatorRegistrationForkActive(uint64_t height) noexcept {
+    return VALIDATOR_REGISTRATION_FORK_HEIGHT != 0 && height >= VALIDATOR_REGISTRATION_FORK_HEIGHT;
+}
+inline constexpr uint64_t ValidatorRegistrationNetworkStakeFloor(uint64_t height) noexcept {
+    return ValidatorRegistrationForkActive(height) ? 0 : VALIDATOR_UNLOCK_STAKED;
+}
+
 constexpr uint64_t SLASH_EVIDENCE_WINDOW = 7ULL * BLOCKS_PER_DAY;
 static_assert(TARGET_BLOCK_TIME != 60 || SLASH_EVIDENCE_WINDOW == 10080,
               "wall-clock re-expression must not change the legacy 60-second profile");

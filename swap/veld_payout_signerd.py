@@ -291,6 +291,7 @@ def _validate_fresh_burn_authority(veld, cfg, observed):
             refuse("Veld tip hash is malformed")
         rd.require_consensus_reorg_depth(veld)
         peg = veld.call("getpeginfo", [])
+        rd.require_compatible_payout_authority(peg)
         _verify_compiled_custody_identity(cfg, peg)
         final_height = _wire_uint(
             peg.get("final_height") if isinstance(peg, dict) else None,
