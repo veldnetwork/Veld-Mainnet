@@ -8,6 +8,15 @@
   "veld_rpc": {
     "_comment": "A veld-node this box can reach (ideally its OWN node) for getbtcveldsupply.",
     "url": "http://127.0.0.1:8645/",
+    "expected_chain": {
+      "profile_id": "REPLACE_WITH_REVIEWED_PROFILE_ID",
+      "consensus_build_profile": "REPLACE_WITH_REVIEWED_BUILD_PROFILE",
+      "disposable": false,
+      "external_value": true,
+      "fixed_difficulty_regtest": false,
+      "genesis_hash": "REPLACE_WITH_REVIEWED_GENESIS_HASH",
+      "launch_block_hash": "REPLACE_WITH_REVIEWED_LAUNCH_BLOCK_HASH"
+    },
     "token_file": "/opt/veld-wt/veld-rpc.token"
   },
 

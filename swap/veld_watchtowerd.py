@@ -53,6 +53,7 @@ import veld_peg_solvency as sol  # noqa: E402
 import veld_custody_binding as custody_binding  # noqa: E402
 import veld_redeem_liability as redeem_liability  # noqa: E402
 import veld_wt_reserve as witness_reserve  # noqa: E402
+from veld_chain_identity import parse_expected_chain, verify_expected_chain  # noqa: E402
 from rpc_url_policy import (load_bounded_json_file, load_bounded_json_response,
                             open_direct_https_request, open_rpc_request,
                             read_bounded_regular_file,
@@ -259,6 +260,12 @@ class Watchtower:
         if not isinstance(cfg, dict):
             raise RuntimeError("watchtower configuration root must be an object")
         self.cfg = cfg
+        self.expected_chain = None
+        if cfg.get("production") is True:
+            rpc_cfg = cfg.get("veld_rpc")
+            if not isinstance(rpc_cfg, dict):
+                raise RuntimeError("production watchtower requires veld_rpc configuration")
+            self.expected_chain = parse_expected_chain(rpc_cfg.get("expected_chain"))
         self.veld = Veld(cfg["veld_rpc"]["url"], cfg["veld_rpc"].get("token_file"))
         bc = cfg["btc"]
         # Independent BTC custody view: either a local bitcoin-cli (cli_base) OR a public
@@ -478,6 +485,7 @@ class Watchtower:
 
     def _verify_production_veld_identity(self):
         if getattr(self, "production", False):
+            verify_expected_chain(self.veld.rpc, self.expected_chain)
             peg = self.veld.rpc("getpeginfo")
             custody_binding.verify_peg_identity(peg, self.production_binding)
             try:
@@ -829,6 +837,7 @@ class Watchtower:
             self._alert("could NOT push HALT (%s): %s" % (e, reason))
 
     def push_beat(self, custody, supply, backing_liability, tip, tip_hash):
+        self._verify_production_veld_identity()
         self.seq += 1
         self._save_seq()
         payload = sol.build_beat_payload(custody, supply, self.margin, tip, tip_hash,

@@ -75,13 +75,20 @@ decision; the source does not pretend a writable local directory is WORM.
 
 ## First deployment
 
-1. Install identical audited copies of `veld_peg_solvency.py` and
+1. Install identical audited copies of `veld_peg_solvency.py`, `veld_chain_identity.py` and
    `rpc_url_policy.py` on the signer and watchtower; install `swap_admission.py`
    on the watchtower for signed C1 policy verification; install `veld_signerd.py`
-   and `veld_chain_identity.py` only on the signer and
+   only on the signer and
    `veld_wt_reserve.py`, `veld_wt_allocate.py`, `veld_watchtowerd.py`, `veld_custody_binding.py`, and
    `veld_redeem_liability.py` only on the watchtower. Record and compare SHA-256
    hashes before enabling SSH keys.
+   Set the same independently reviewed `veld_rpc.expected_chain` pins on both
+   services. The witness verifies them before loading mutable ledgers, again
+   while holding its state lock, and before returning any reservation, commit,
+   allocation or initialization response. Missing pins stop the service; never
+   populate them automatically from whichever RPC server answers. Existing
+   ledgers and receipts still require the reviewed migration/reconciliation
+   procedure; adding pins does not establish historical authority.
 2. Build the custody descriptor with `custody-build-descriptor.sh`. Archive its
    descriptor, `custody-spks-operational.json`, and
    `custody-spks-consensus.json`; confirm both manifest hashes and the descriptor

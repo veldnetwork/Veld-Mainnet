@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 import veld_watchtowerd as wd
+import test_chain_identity as chain_fixture
 
 
 def p2tr_address(script):
@@ -77,6 +78,8 @@ class FakeVeld:
         self.k_btc = k_btc
 
     def rpc(self, method, params=None):
+        if method in ("getnetworkinfo", "getcompiledgenesis", "getblockhash"):
+            return chain_fixture.ChainIdentityTests().node()[2](method, params or [])
         if method == "getpeginfo":
             return {
                 "active": True, "spv_active": True, "token_id": "btcVELD",
@@ -136,6 +139,7 @@ class ProductionCustodyTests(unittest.TestCase):
         self.cfg = {
             "production": True,
             "veld_rpc": {"url": "http://127.0.0.1",
+                         "expected_chain": dict(chain_fixture.CHAIN),
                          "token_file": str(self.rpc_token)},
             "btc": {"cli_base": ["bitcoin-cli"], "wallet": "custody-watch",
                     "confirmations": 6, "tip_age_alert_secs": 3600,
@@ -170,6 +174,37 @@ class ProductionCustodyTests(unittest.TestCase):
                              "confirmations": 20, "amount": "99.0"})
         with self.assertRaisesRegex(RuntimeError, "unrelated custody script"):
             watchtower.read_custody()
+
+    def test_missing_chain_pins_stop_before_token_access(self):
+        cfg = copy.deepcopy(self.cfg)
+        del cfg["veld_rpc"]["expected_chain"]
+        with mock.patch.object(wd, "Veld") as client:
+            with self.assertRaisesRegex(ValueError, "expected_chain"):
+                self.make(cfg)
+            client.assert_not_called()
+
+    def test_chain_identity_rechecked_before_supply(self):
+        watchtower = self.make()
+        rpc = FakeVeld(watchtower.production_binding)
+        watchtower.veld = rpc
+        watchtower._verify_production_veld_identity()
+        with mock.patch.object(rpc, "rpc", return_value=None) as call:
+            with self.assertRaisesRegex(ValueError, "identity is unavailable"):
+                watchtower.read_supply()
+            call.assert_called_once_with("getnetworkinfo", [])
+
+    def test_unavailable_chain_cannot_sign_or_publish_a_beat(self):
+        watchtower = self.make()
+        sequence = watchtower.seq
+        with mock.patch.object(watchtower, "_verify_production_veld_identity",
+                               side_effect=ValueError("intended chain unavailable")), \
+                mock.patch.object(watchtower, "_sign_payload") as sign, \
+                mock.patch.object(watchtower, "_push") as publish:
+            with self.assertRaisesRegex(ValueError, "intended chain unavailable"):
+                watchtower.push_beat(20000, 10000, 10000, 123, "66" * 32)
+            self.assertEqual(watchtower.seq, sequence)
+            sign.assert_not_called()
+            publish.assert_not_called()
 
     def test_operational_range_must_match_signed_c1_policy(self):
         cfg = copy.deepcopy(self.cfg)

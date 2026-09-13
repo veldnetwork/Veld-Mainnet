@@ -24,6 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import veld_peg_solvency as sol  # noqa: E402
 import veld_custody_binding as custody_binding  # noqa: E402
+from veld_chain_identity import parse_expected_chain, verify_expected_chain  # noqa: E402
 from btcveld_c1 import allocation_commitment  # noqa: E402
 from rpc_url_policy import (load_bounded_json_response, open_rpc_request,
                             read_bounded_regular_file,
@@ -280,13 +281,18 @@ class VeldRpc:
     def __init__(self, cfg):
         if not isinstance(cfg, dict) or not cfg.get("url"):
             raise ValueError("veld_rpc.url is required")
+        self.expected_chain = parse_expected_chain(cfg.get("expected_chain"))
         self.url = validate_backend_rpc_url(str(cfg["url"]), "veld_rpc.url")
         token = ""
         if cfg.get("token_cmd"):
             command = cfg["token_cmd"]
-            if not isinstance(command, list) or not command:
+            if (not isinstance(command, list) or not 1 <= len(command) <= 32 or
+                    any(not isinstance(arg, str) or not arg or len(arg) > 4096
+                        for arg in command)):
                 raise ValueError("veld_rpc.token_cmd must be argv")
-            run = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            run = run_bounded_subprocess(command, timeout=30,
+                                         stdout_max=4096, stderr_max=4096,
+                                         description="Veld RPC token command")
             if run.returncode != 0:
                 raise RuntimeError("veld_rpc token command failed")
             token = run.stdout.strip()
@@ -294,9 +300,13 @@ class VeldRpc:
             token = read_bounded_secret_file(
                 cfg["token_file"], 4096,
                 "Veld RPC token").decode("ascii").strip()
-        if not token:
-            raise ValueError("veld_rpc bearer token is missing")
+        if not isinstance(token, str) or not re.fullmatch(r"[!-~]{1,4096}", token):
+            raise ValueError("veld_rpc bearer token is missing or malformed")
         self.token = token
+        self.verify_chain_identity()
+
+    def verify_chain_identity(self):
+        return verify_expected_chain(self.call, self.expected_chain)
 
     def call(self, method, params=None):
         body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method,
@@ -315,7 +325,7 @@ class VeldRpc:
         result = envelope.get("result")
         if isinstance(result, str):
             try:
-                result = json.loads(result)
+                result = strict_json_loads(result, "nested Veld RPC result")
             except ValueError:
                 pass
         return result
@@ -2858,10 +2868,12 @@ def main():
     if not isinstance(req, dict) or not isinstance(cfg, dict):
         refuse("request/config root is invalid")
     _require_production_reservation_service(cfg)
+    rpc = VeldRpc(cfg.get("veld_rpc"))
     paths = _paths(cfg)
     _require_restore_clear(paths)
     with exclusive_witness_state_lock(paths):
         _require_restore_clear(paths)
+        rpc.verify_chain_identity()
         ledger = _load_ledger(paths["ledger"], cfg)
         policy = _reservation_ledger_policy(cfg, production=True)
         if ledger.get("_needs_checkpoint"):
@@ -2870,7 +2882,6 @@ def main():
             answer = handle_commit(req, cfg, paths, ledger)
         elif req.get("action") == "reserve":
             beat = _load_beat(paths["beat"], time.time())
-            rpc = VeldRpc(cfg.get("veld_rpc"))
             if not _tip_matches(beat, rpc):
                 refuse("fresh beat tip is not canonical on the witness node")
             # main() is production-only.  Keep these calls unconditional so a
@@ -2904,6 +2915,7 @@ def main():
         else:
             refuse("unknown action")
         _require_restore_clear(paths)
+        rpc.verify_chain_identity()
     sys.stdout.write(json.dumps(answer, sort_keys=True, separators=(",", ":")) + "\n")
 
 
@@ -2922,6 +2934,7 @@ def allocation_main(initialize=False):
         refuse("allocation witness config decode failed: %s" % e)
     if not isinstance(cfg, dict) or cfg.get("production") is not True:
         refuse("allocation witness requires production=true")
+    rpc = VeldRpc(cfg.get("veld_rpc"))
     paths = _paths(cfg)
     _require_restore_clear(paths)
     c1_policy, policy_sha256 = _load_signed_c1_policy(cfg)
@@ -2939,6 +2952,7 @@ def allocation_main(initialize=False):
     _require_allocation_service_mode(policy, initialize)
     with exclusive_witness_state_lock(paths):
         _require_restore_clear(paths)
+        rpc.verify_chain_identity()
         if initialize:
             if os.path.lexists(paths["allocations"]):
                 refuse("allocation authority ledger already exists")
@@ -2970,7 +2984,6 @@ def allocation_main(initialize=False):
                     "preflight_allocation", "register_allocation"):
                 observed = int(time.time())
                 beat = _load_beat(paths["beat"], observed)
-                rpc = VeldRpc(cfg.get("veld_rpc"))
                 if not _tip_matches(beat, rpc):
                     refuse("fresh beat tip is not canonical before allocation reconciliation")
                 backend = _verify_public_allocation_backend(
@@ -3004,6 +3017,7 @@ def allocation_main(initialize=False):
                      not _tip_matches(beat, rpc))):
                 refuse("canonical tip changed/beat expired during allocation admission")
         _require_restore_clear(paths)
+        rpc.verify_chain_identity()
     sys.stdout.write(json.dumps(
         answer, sort_keys=True, separators=(",", ":")) + "\n")
 

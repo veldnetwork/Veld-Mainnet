@@ -157,6 +157,16 @@ def read_bounded_regular_file(path, maximum, description="operator file",
     if (type(maximum) is not int or maximum <= 0 or
             maximum > _MAX_LOCAL_FILE_BYTES):
         raise RuntimeError("%s byte limit is invalid" % description)
+    if os.name == "nt":
+        if __package__:
+            from .windows_protected_file import read_protected_file
+        else:
+            from windows_protected_file import read_protected_file
+        try:
+            return read_protected_file(path, maximum, description, private=private)
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("%s could not be read securely: %s" %
+                               (description, exc)) from exc
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is None:
         raise RuntimeError("platform lacks O_NOFOLLOW required for %s" % description)

@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from swap import veld_custody_binding as binding
+from swap.fixtures.windows_file_acl import protect_fixture
 
 
 class CustodyBindingTests(unittest.TestCase):
@@ -34,6 +35,7 @@ class CustodyBindingTests(unittest.TestCase):
     def _write(self, document):
         self.path.write_text(json.dumps(document, sort_keys=True,
                                         separators=(",", ":")) + "\n")
+        protect_fixture(self.path)
         self.manifest_hash = hashlib.sha256(self.path.read_bytes()).hexdigest()
 
     def _load(self, **kwargs):
