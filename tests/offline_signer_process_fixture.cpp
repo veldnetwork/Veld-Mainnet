@@ -257,6 +257,92 @@ int VerifySigned(const std::string& address, const fs::path& prepared_path,
 
 int main(int argc, char** argv) {
     try {
+        if (argc == 2 && std::string(argv[1]) == "--rtp1-open-auth") {
+            const auto script = reserve::detail::OpenAuthScript(
+                reserve::EmptyTransitionCommitment(), TOKEN_RECIPIENT, MINT_SATS);
+            std::cout << "{\"custody_script_hex\":\"" << BytesToHex(BtcVeldCustodySpk())
+                      << "\",\"payload\":\"" << BytesToHex(btcspv::ExtractOpReturn(script))
+                      << "\",\"recipient\":\"" << TOKEN_RECIPIENT
+                      << "\",\"sats\":" << MINT_SATS << "}\n";
+            return 0;
+        }
+        if (argc == 4 && std::string(argv[1]) == "--rtp1-core-template") {
+            const std::string issuer = argv[2];
+            const auto owned = AddressToScript(issuer);
+            if (owned.size() != 25) throw std::runtime_error("invalid fixture issuer");
+            std::ifstream input(argv[3], std::ios::binary);
+            std::string raw(270 * 1024 + 1, '\0');
+            input.read(raw.data(), static_cast<std::streamsize>(raw.size()));
+            const auto count = input.gcount();
+            if (count <= 0 || static_cast<size_t>(count) >= raw.size() || input.bad())
+                throw std::runtime_error("bounded public fixture proof required");
+            raw.resize(static_cast<size_t>(count));
+            btc_buy::JsonValue request;
+            std::string error;
+            btc_buy::StrictJsonParser parser(raw, 270 * 1024, true);
+            if (!parser.Parse(request, error) || request.kind != btc_buy::JsonValue::Kind::Object ||
+                request.object.size() != 6)
+                throw std::runtime_error("fixture proof schema");
+            auto field = [&](const char* name) -> const btc_buy::JsonValue& {
+                const auto* value = request.Get(name);
+                if (!value) throw std::runtime_error("missing fixture proof field");
+                return *value;
+            };
+            auto bytes = [&](const btc_buy::JsonValue& value) {
+                std::vector<uint8_t> result;
+                if (value.kind != btc_buy::JsonValue::Kind::String ||
+                    !offline_signing::DecodeLowerHex(value.text, 128 * 1024, result))
+                    throw std::runtime_error("fixture proof hex");
+                return result;
+            };
+            auto hash = [&](const btc_buy::JsonValue& value) {
+                const auto result = bytes(value);
+                if (result.size() != 32) throw std::runtime_error("fixture proof hash");
+                Hash256 digest{};
+                std::copy(result.begin(), result.end(), digest.begin());
+                return digest;
+            };
+            reserve::Claim claim;
+            claim.operation = reserve::Operation::OPEN;
+            claim.network_binding = reserve::NetworkBinding();
+            claim.prior_commitment = reserve::EmptyTransitionCommitment();
+            claim.prior_reserve_vout = reserve::NO_VOUT;
+            claim.new_reserve_vout = 0;
+            claim.new_reserve_value = MINT_SATS;
+            claim.mint_amount = MINT_SATS;
+            claim.bitcoin_tx = bytes(field("rawtx"));
+            claim.bitcoin_txid = hash(field("txid"));
+            claim.new_reserve_txid = claim.bitcoin_txid;
+            claim.bitcoin_block = hash(field("block"));
+            if (!btc_buy::ParseUint(field("directions"), claim.merkle_directions) ||
+                field("branch").kind != btc_buy::JsonValue::Kind::Array ||
+                field("parents").kind != btc_buy::JsonValue::Kind::Array)
+                throw std::runtime_error("fixture proof collections");
+            for (const auto& sibling : field("branch").array)
+                claim.merkle_branch.push_back(hash(sibling));
+            for (const auto& parent : field("parents").array)
+                claim.direct_parents.push_back(bytes(parent));
+            claim.exact_commitment = reserve::detail::OpenDepositCommitment(0, MINT_SATS, TOKEN_RECIPIENT);
+            claim.has_nullifier_proof = true;
+            claim.nullifier_proof = btcnull::EmptyProof();
+            const auto proof = reserve::EncodeProof(claim);
+            if (proof.empty()) throw std::runtime_error("fixture proof encoding");
+            const Transaction parent = Parent(200000, owned, "core-backed-issuer-input");
+            const std::string memo = std::string(reserve::ISSUER_MEMO_PREFIX) + BytesToHex(proof);
+            const Transaction tx = Spend(parent, 0, {
+                TxOutput(100000, owned), TxOutput(0, BuildOpReturnScript(
+                    "VELD_TOKEN|MINT|" + std::string(BTCVELD_TOKEN_ID) + "|" + issuer + "|" +
+                    TOKEN_RECIPIENT + "|" + std::to_string(MINT_SATS) + "|" + memo))});
+            const reserve::State empty{};
+            std::string from, to, parsed_memo;
+            uint64_t amount = 0;
+            const BtcVeldReserveMintPolicyContext context{empty, 0};
+            const auto refusal = BtcVeldMintTemplatePolicy(tx, owned, from, to, amount, parsed_memo, &context);
+            if (!refusal.empty()) throw std::runtime_error("Core fixture mint policy: " + refusal);
+            std::cout << Proposal(tx, {parent}, owned, 200000, 100000, 100000, 100000,
+                false, UINT64_MAX, nullptr, BytesToHex(reserve::EncodeState(empty)), "0") << "\n";
+            return 0;
+        }
         if (argc == 3 && std::string(argv[1]) == "--prepare-dir") {
             std::string error;
             if (!channel::secure_file::EnsurePrivateDirectory(argv[2], &error)) {

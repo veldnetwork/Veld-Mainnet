@@ -13,6 +13,21 @@ and custody hashes. `swap/rtp1_mint_policy.py` validates this result against the
 operator's independent pins and rechecks the branch. Its bounded stdin decoder
 uses the native mint policy with that exact prior state.
 
+`inspect-rtp1-backing-stdin` now derives the deposit, reserve successor, direct
+parent transaction identities, recipient and operation from the same native
+classifier. `swap/rtp1_backing_evidence.py` compares these facts with the native
+inspection and an independently pinned Bitcoin Core view. Core must confirm the
+exact transaction and block, input parents, output value and script, and an
+unspent successor including mempool spends. The composed inspection repeats the
+entire native inspection after the Bitcoin work. Its evidence hash is an
+integrity binding, not a witness signature or an authority grant.
+
+The backing boundary passed an actual private Core deposit with144 confirmations,
+block invalidation and reconsideration. Linux and Windows keygen builds decoded
+that proof and produced independently verified issuer input signatures offline.
+This fixture does not perform native mint admission or service migration; the
+DEPOSIT successor path also requires a complete service qualification run.
+
 These functions are not yet the issuer/witness service workflow. The current
 `veld_signerd.py` and `veld_wt_reserve.py` main paths still use the MNP/C1 protocol.
 Their existing custody, allocation, authority, heartbeat and recovery gates must

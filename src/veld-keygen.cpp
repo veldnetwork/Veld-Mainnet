@@ -1104,7 +1104,8 @@ static int CmdSignTx(const std::string& keyfile, const std::string& prepared,
 static int CmdDecodeMint(const std::string& issuer_p2pkh_hex,
                          const std::string& tx_hex,
                          const std::string& reserve_state_hex = {},
-                         const std::string& reserve_supply_sats = {}) {
+                         const std::string& reserve_supply_sats = {},
+                         bool inspect_backing = false) {
     using namespace veld;
     auto hex2b = [](const std::string& h, bool& ok) {
         std::vector<uint8_t> o; o.reserve(h.size() / 2); ok = (h.size() % 2 == 0);
@@ -1137,6 +1138,57 @@ static int CmdDecodeMint(const std::string& issuer_p2pkh_hex,
     std::string refusal = BtcVeldMintTemplatePolicy(
         tx, issuer_p2pkh, from, to, sats, memo, reserve_context_ptr);
     if (!refusal.empty()) { std::cerr << "REFUSED (mint policy): " << refusal << "\n"; return 2; }
+    if (inspect_backing) {
+        const std::string prefix = btcveld::reserve::ISSUER_MEMO_PREFIX;
+        if (!reserve_context_ptr || memo.rfind(prefix, 0) != 0) {
+            std::cerr << "error: reserve inspection requires an RTP1 mint context\n";
+            return 2;
+        }
+        const auto proof = HexToBytes(memo.substr(prefix.size()));
+        btcveld::reserve::Claim claim;
+        if (!btcveld::reserve::DecodeProof(proof.data(), proof.size(), claim)) {
+            std::cerr << "error: reserve inspection proof is invalid\n";
+            return 2;
+        }
+        const auto classified = btcveld::reserve::ClassifyBitcoinReserveSpend(
+            reserve_context.prior_state, reserve_context.circulating_supply,
+            claim.bitcoin_tx, claim.direct_parents, BtcVeldCustodySpk(),
+            [&to](const std::string& recipient) { return recipient == to; });
+        if (classified.disposition != btcveld::reserve::SpendDisposition::AUTHORIZED_TRANSITION ||
+            (classified.operation != btcveld::reserve::Operation::OPEN &&
+             classified.operation != btcveld::reserve::Operation::DEPOSIT)) {
+            std::cerr << "error: reserve inspection did not classify a deposit\n";
+            return 2;
+        }
+        std::string parents = "[";
+        for (size_t i = 0; i < claim.direct_parents.size(); ++i) {
+            btcspv::WitnessAwareBtcTx parent;
+            if (!btcspv::ParseWitnessAwareBtcTx(claim.direct_parents[i], parent)) {
+                std::cerr << "error: reserve inspection parent is invalid\n";
+                return 2;
+            }
+            if (i) parents += ",";
+            parents += "\"" + btcspv::BtcDisplayTxid(parent.txid) + "\"";
+        }
+        parents += "]";
+        std::cout << "{\"version\":1,\"operation\":\""
+            << btcveld::reserve::OperationName(classified.operation)
+            << "\",\"network_binding\":\"" << HashToHex(claim.network_binding)
+            << "\",\"prior_commitment\":\"" << HashToHex(claim.prior_commitment)
+            << "\",\"prior_transition_count\":" << claim.prior_transition_count
+            << ",\"bitcoin_txid\":\"" << btcspv::BtcDisplayTxid(claim.bitcoin_txid)
+            << "\",\"bitcoin_block\":\"" << btcspv::BtcDisplayTxid(claim.bitcoin_block)
+            << "\",\"reserve_vout\":" << claim.new_reserve_vout
+            << ",\"reserve_value_sats\":" << claim.new_reserve_value
+            << ",\"deposit_outpoint\":\"" << classified.pending_outpoint
+            << "\",\"exact_commitment\":\"" << HashToHex(claim.exact_commitment)
+            << "\",\"sats\":" << sats
+            << ",\"recipient\":\"" << to
+            << "\",\"issuer\":\"" << from
+            << "\",\"custody_script_hex\":\"" << BytesToHex(BtcVeldCustodySpk())
+            << "\",\"direct_parent_txids\":" << parents << "}\n";
+        return 0;
+    }
     uint64_t total_out = 0; for (const auto& o : tx.outputs) total_out += o.value;
     auto esc = [](const std::string& s){ std::string o; for(char c: s){ if(c=='"'||c=='\\') o+='\\'; if((unsigned char)c>=32) o+=c; } return o; };
     std::cout << "{\"from\":\"" << esc(from) << "\",\"to\":\"" << esc(to) << "\",\"sats\":" << sats
@@ -1234,7 +1286,7 @@ static int CmdPrepareSigningStdin() {
     return 0;
 }
 
-static int CmdDecodeMintStdin() {
+static int CmdDecodeMintStdin(bool inspect_backing = false) {
     using namespace veld;
     constexpr size_t maximum = 270 * 1024;
     std::string encoded(maximum + 1, '\0');
@@ -1272,7 +1324,7 @@ static int CmdDecodeMintStdin() {
         std::cerr << "error: mint decoder request fields are invalid\n";
         return 2;
     }
-    return CmdDecodeMint(issuer, unsigned_tx, state, std::to_string(supply));
+    return CmdDecodeMint(issuer, unsigned_tx, state, std::to_string(supply), inspect_backing);
 }
 
 // Keyless strict decoder for the issuer-signed C1 capacity carrier.  It shares
@@ -1508,6 +1560,9 @@ static void PrintUsage() {
         "  veld-keygen sign-op <keyfile> <prepared-json> --intent FILE [--out FILE]\n"
         "  veld-keygen decode-mint <issuer_p2pkh_hex> <unsigned_tx_hex> "
         "[<reserve_prior_state_hex> <reserve_prior_supply_sats>]\n"
+        "  veld-keygen decode-mint-stdin < request.json\n"
+        "  veld-keygen inspect-rtp1-backing-stdin < request.json\n"
+        "  veld-keygen prepare-signing-stdin < request.json\n"
         "  veld-keygen decode-c1-reservation <issuer_p2pkh_hex> <unsigned_tx_hex>\n"
         "\n"
         "Generic commands take VELD_VAULT_PASSPHRASE when set. Key outputs\n"
@@ -1684,12 +1739,12 @@ int main(int argc, char** argv) {
         return CmdPrepareSigningStdin();
     }
 
-    if (cmd == "decode-mint-stdin") {
+    if (cmd == "decode-mint-stdin" || cmd == "inspect-rtp1-backing-stdin") {
         if (argc != 2) {
-            std::cerr << "Usage: veld-keygen decode-mint-stdin < request.json\n";
+            std::cerr << "Usage: veld-keygen " << cmd << " < request.json\n";
             return 2;
         }
-        return CmdDecodeMintStdin();
+        return CmdDecodeMintStdin(cmd == "inspect-rtp1-backing-stdin");
     }
 
     if (cmd == "decode-c1-reservation") {
