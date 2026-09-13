@@ -3586,12 +3586,16 @@ int main(int argc, char* argv[]) {
     }
 
     bool bind_existing_regtest_generation_identity = false;
+    bool bind_node_validation_identity = false;
 #ifndef VELD_FLEET_NO_MINE
     bind_existing_regtest_generation_identity =
         opt_regtest && std::filesystem::exists(kp_file);
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    bind_node_validation_identity = !opt_regtest;
+#endif
 #endif
     if (opt_mine || opt_endorse ||
-        bind_existing_regtest_generation_identity) {
+        bind_existing_regtest_generation_identity || bind_node_validation_identity) {
         if (std::filesystem::exists(kp_file)) {
             if (_wiz_is_encrypted(kp_file)) {
                 if (!miner_key_ready) {
@@ -3608,7 +3612,11 @@ int main(int argc, char* argv[]) {
                         return 1;
                     }
                 }
-                std::cout << GREEN << "  Mining wallet unlocked.\n" << RESET;
+                std::cout << GREEN
+                          << (opt_mine || opt_endorse
+                                  ? "  Mining wallet unlocked.\n"
+                                  : "  Node identity unlocked.\n")
+                          << RESET;
                 if (veld::DiagVerbose().load())
                     std::cout << "  Address: " << GOLD << miner_kp.address << RESET << "\n";
             } else {
@@ -3678,7 +3686,11 @@ int main(int argc, char* argv[]) {
                           << RESET;
                 return 1;
             }
-            std::cout << GREEN << "  New mining wallet created. Back up veld-data\\miner.key.\n" << RESET;
+            std::cout << GREEN
+                      << (opt_mine || opt_endorse
+                              ? "  New mining wallet created. Back up veld-data\\miner.key.\n"
+                              : "  Node identity created and encrypted.\n")
+                      << RESET;
             if (veld::DiagVerbose().load()) {
                 std::cout << "  Address: " << GOLD << miner_kp.address << RESET << "\n";
                 std::cout << GRAY << "  Saved:   " << kp_file << RESET << "\n";
@@ -3689,7 +3701,8 @@ int main(int argc, char* argv[]) {
         // A successful sign-in must leave one wallet/node-compatible portable
         // keyfile for this identity.  This is an exact encrypted-byte copy,
         // never a second key generation, and is idempotent on every restart.
-        if (miner_key_ready && !g_passphrase.empty()) {
+        if (miner_key_ready && !g_passphrase.empty() &&
+            (opt_mine || opt_endorse || bind_existing_regtest_generation_identity)) {
             std::string portable_path;
             std::string portable_error;
             bool portable_created = false;
@@ -3709,7 +3722,8 @@ int main(int argc, char* argv[]) {
         }
 #endif
 
-        if (!opt_miner_addr.empty()) {
+        if (!opt_miner_addr.empty() &&
+            (opt_mine || opt_endorse || bind_existing_regtest_generation_identity)) {
             auto override_script = AddressToScript(opt_miner_addr);
             if (override_script.empty()) {
                 std::cout << RED << "  [ERR] Invalid --miner address: " << opt_miner_addr << RESET << "\n";
@@ -3771,9 +3785,13 @@ int main(int argc, char* argv[]) {
             // below) but never produces blocks and never builds the 1 GB
             // VeldHash dataset, so it stays light.
             std::cout << CYAN << "  [Endorse-only: endorsing blocks as a validator; mining disabled]\n" << RESET;
-        } else {
+        } else if (opt_regtest) {
             std::cout << CYAN
                       << "  [Regtest generation identity ready; background mining disabled]\n"
+                      << RESET;
+        } else {
+            std::cout << CYAN
+                      << "  [Node validation identity ready; mining disabled]\n"
                       << RESET;
         }
     }
