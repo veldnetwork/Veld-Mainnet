@@ -135,8 +135,8 @@ int main(int argc, char** argv) {
         const auto root = fs::absolute(argv[1]).lexically_normal();
         Check(!fs::exists(root), "existing fixture must be preserved");
         fs::create_directories(root);
-        const auto owner = GenerateKeyPair(true);
-        const auto other_miner = GenerateKeyPair(true);
+        const auto owner = GenerateKeyPair(false);
+        const auto other_miner = GenerateKeyPair(false);
         auto accepted = Fresh(root / "accepted");
         std::vector<Block> history;
         for (uint64_t h = 1; h <= parent_height; ++h) {

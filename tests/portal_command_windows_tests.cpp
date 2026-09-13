@@ -159,6 +159,44 @@ struct GuiStateQualification {
         }
     }
 
+    static void CheckSyncModeActions(const std::filesystem::path& root) {
+        for (const std::string mode : {"full", "snapshot"}) {
+            MonitoringReply reply;
+            assert(ParseMonitoringReply(ReadTextBounded(
+                root / ("sync.mode-" + mode + ".json"), 16384), reply));
+            assert(reply.command.action == "sync.mode" && reply.command.mode == mode);
+            assert(CanonicalPortalCommandPayload(reply.command) ==
+                "{\"mode\":\"" + mode + "\"}");
+            const auto dir = root / ("sync.mode-" + mode + "-state");
+            std::filesystem::create_directory(dir);
+            NodeGuiApp app(dir);
+            app.remote_monitoring_enabled_.store(true);
+            std::string rejection;
+            assert(app.EnrollPortalControl(reply, rejection));
+            const auto saved = ReadTextBounded(dir / "remote-trust.dat");
+            PortalTrustState next;
+            assert(EvaluatePortalCommandTrust(reply.command, app.remote_trust_,
+                static_cast<uint64_t>(std::time(nullptr)), next, rejection) ==
+                PortalCommandTrustVerdict::ExistingPairing);
+            assert(next.last_sequence == reply.command.sequence);
+            assert(!NodeGuiApp::UnattendedPortalAction(reply.command.action));
+            const auto description = app.RemoteCommandDescription(reply.command);
+            assert(!description.empty());
+            assert(description.find(L"on the next start") != std::wstring::npos);
+            if (mode == "full") {
+                assert(description.find(L"full initial block download") != std::wstring::npos);
+                assert(description.find(L"snapshot") == std::wstring::npos);
+            } else {
+                assert(description.find(L"signed snapshot") != std::wstring::npos);
+                assert(description.find(L"independent historical validation") != std::wstring::npos);
+            }
+            // Verify the pre-confirmation boundary without opening an approval
+            // dialog or dispatching a synchronization change.
+            assert(ReadTextBounded(dir / "remote-trust.dat") == saved);
+            assert(app.remote_trust_.last_sequence < reply.command.sequence);
+        }
+    }
+
     static void CheckResetPersistence(const std::filesystem::path& root, const MonitoringReply& reply) {
         const auto dir = root / "pending-reset";
         std::filesystem::create_directory(dir);
@@ -231,6 +269,7 @@ int main(int argc, char** argv) {
     GuiStateQualification::CheckStorageFailure(root, reply);
     GuiStateQualification::CheckRevocation(root, reply);
     GuiStateQualification::CheckControlActions(root);
+    GuiStateQualification::CheckSyncModeActions(root);
     GuiStateQualification::CheckResetPersistence(root, reply);
     assert(EvaluatePortalCommandTrust(reply.command, reloaded, now, next, rejection) == PortalCommandTrustVerdict::Reject);
     assert(rejection.find("Replay") != std::string::npos);
@@ -244,5 +283,5 @@ int main(int argc, char** argv) {
     assert(EvaluatePortalCommandTrust(changed, current, now, next, rejection) == PortalCommandTrustVerdict::Reject);
     const auto before = ReadTextBounded(path);
     assert(before.find("VELD_PORTAL_TRUST") == std::string::npos);
-    std::cout << "PASS: pairing grants remote control without prompts; six signed actions, restart, legacy migration, corrupt trust, storage failure, revocation, replay, expiry, tamper, and device binding\n";
+    std::cout << "PASS: pairing grants remote control without prompts; six signed actions, full and snapshot signatures and confirmation boundaries, restart, legacy migration, corrupt trust, storage failure, revocation, replay, expiry, tamper, and device binding\n";
 }

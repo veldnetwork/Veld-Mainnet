@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # btcVELD 3-of-5 custody — PER-HOST signer keygen.
 #
-# Run this ONCE on each of the 5 INDEPENDENT signer hosts (your 4 nodes + the new
-# 5th box). It generates THIS signer's key LOCALLY in a Bitcoin Core descriptor
+# Run once for each of five independent community operators, with no fleet
+# custody keys or recovery authority. It generates the key in a local descriptor
 # wallet and prints ONLY the PUBLIC key expression. The private key is born on this
 # host and MUST NEVER leave it — do not copy, transmit, screenshot, or paste it.
 # Only the single public line at the end is shared with the coordinator.

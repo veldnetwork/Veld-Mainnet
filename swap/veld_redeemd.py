@@ -13,9 +13,8 @@ Security authorities are deliberately separated:
   that marker and verifies the exact destination/amount. This reconciles visible
   payments; unpublished signatures and stale restores need independent intent
   authority before a replacement payout can be authorized.
-* Production payout signing is threshold PSBT approval.  The coordinator is
-  watch-only and cannot spend by itself.  Single-wallet signing exists only behind
-  an explicit development-only flag (H-06).
+* Payout signing requires exactly three usable custody signatures from five
+  distinct keys. The coordinator is watch-only and cannot spend by itself.
 
 The daemon fails closed on dependency ambiguity, a canonical-chain mismatch,
 state corruption, marker/payment mismatch, incomplete threshold approval, or fee

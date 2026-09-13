@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Offline deployment-contract tests for the 3-of-5 custody signer mesh."""
+import ast
 import hashlib
 import json
 import os
 import re
+import shlex
+import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -188,6 +192,155 @@ class DeploymentConfigTests(unittest.TestCase):
             self.assertIn("/root/.veld-signer/wallet.pass", phase_one)
             self.assertIn("bitcoin-cli -stdin", phase_one)
 
+    def test_installed_payout_payload_imports_without_source_tree(self):
+        setup = (DEPLOY / "signer-daemon-setup.sh").read_text()
+        install_commands = [
+            shlex.split(line)
+            for line in setup.replace("\\\n", " ").splitlines()
+            if line.startswith("install -m640 ")
+        ]
+        self.assertEqual(len(install_commands), 1)
+        command = install_commands[0]
+        self.assertEqual(command[-1], "/opt/veld-signer/")
+        sources = [Path(value) for value in command[2:-1]]
+        self.assertTrue(sources)
+        for source in sources:
+            self.assertEqual(source.parent, Path("/tmp"))
+            self.assertEqual(source.suffix, ".py")
+
+        # Copy exactly the declared deployment payload, without invoking install
+        # or adding the checkout to the child's import path.
+        with tempfile.TemporaryDirectory(prefix="signer-import-test-") as td:
+            installed = Path(td) / "installed"
+            empty_cwd = Path(td) / "empty"
+            installed.mkdir()
+            empty_cwd.mkdir()
+            for source in sources:
+                shutil.copyfile(HERE / source.name, installed / source.name)
+            probe = textwrap.dedent("""
+                import json
+                import sys
+                from pathlib import Path
+
+                installed = Path(sys.argv[1]).resolve()
+                sys.path.insert(0, str(installed))
+                import veld_payout_signerd
+
+                names = (
+                    "veld_payout_signerd", "veld_redeemd", "rpc_url_policy",
+                    "veld_redeem_commitment", "veld_custody_binding",
+                )
+                loaded = {}
+                for name in names:
+                    module = sys.modules[name]
+                    origin = Path(module.__file__).resolve()
+                    assert origin.parent == installed, (name, str(origin))
+                    loaded[name] = origin.name
+                print(json.dumps(loaded, sort_keys=True))
+            """)
+            out = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", probe, str(installed)],
+                cwd=empty_cwd,
+                env={"PATH": "/usr/bin:/bin", "HOME": str(empty_cwd)},
+                capture_output=True, text=True, timeout=10)
+            self.assertEqual(out.returncode, 0, out.stderr)
+            self.assertEqual(json.loads(out.stdout), {
+                name: name + ".py" for name in (
+                    "veld_payout_signerd", "veld_redeemd", "rpc_url_policy",
+                    "veld_redeem_commitment", "veld_custody_binding",
+                )
+            })
+            self.assertEqual(list(empty_cwd.iterdir()), [])
+
+    @unittest.skipUnless(os.name == "posix", "Bash wrapper generation requires POSIX")
+    def test_wrapper_generator_preserves_configured_environment_path(self):
+        setup = (DEPLOY / "signer-daemon-setup.sh").read_text()
+        initialization = [line for line in setup.splitlines()
+                          if line.startswith("ENV_FILE=")]
+        self.assertEqual(initialization, [
+            'ENV_FILE=$(realpath -e -- "${VELD_ROOT_ENV:-/etc/veld/env}")',
+        ])
+        self.assertLess(setup.index(initialization[0]),
+                        setup.index('[ -f "$ENV_FILE" ]'))
+        generator = re.search(
+            r"^\{\n(?P<header>.*?)^cat <<'WRAP'\n"
+            r"(?P<body>.*?)^WRAP\n^\} >/opt/veld-signer/sign-wrapper\.sh$",
+            setup, re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(generator)
+        header = generator.group("header")
+        # Only path resolution and these two printing builtins may execute. The
+        # provisioning script and generated wallet wrapper are never run.
+        self.assertEqual(header.splitlines(), [
+            "printf '%s\\n' '#!/bin/bash'",
+            "printf 'ENV_FILE=%q\\n' \"$ENV_FILE\"",
+        ])
+        fragment = "set -euo pipefail\n" + initialization[0] + "\n" + header
+        with tempfile.TemporaryDirectory(prefix="signer-wrapper-test-") as td:
+            root = Path(td)
+            env_dir = root / "signer test"
+            env_dir.mkdir()
+            env_file = env_dir / "owner's $literal;[env]\\name.env"
+            env_file.write_text("# harmless temporary environment fixture\n")
+            forced_cwd = root / "forced-command"
+            forced_cwd.mkdir()
+            for configured in (
+                    str(env_file),
+                    str(env_file.relative_to(root)),
+                    str(Path("signer test") / ".." / env_file.relative_to(root))):
+                with self.subTest(configured=configured):
+                    out = subprocess.run(
+                        ["/bin/bash", "--noprofile", "--norc", "-c", fragment],
+                        cwd=root,
+                        env={"VELD_ROOT_ENV": configured, "PATH": "/usr/bin:/bin"},
+                        capture_output=True, text=True, timeout=10)
+                    self.assertEqual(out.returncode, 0, out.stderr)
+                    lines = out.stdout.splitlines()
+                    self.assertEqual(len(lines), 2)
+                    self.assertEqual(lines[0], "#!/bin/bash")
+                    self.assertEqual(shlex.split(lines[1]),
+                                     ["ENV_FILE=" + str(env_file.resolve())])
+                    wrapper = out.stdout + generator.group("body")
+                    self.assertIn('require_root_file "$ENV_FILE"', wrapper)
+                    self.assertIn('. "$ENV_FILE"', wrapper)
+                    checked = subprocess.run(
+                        ["/bin/bash", "--noprofile", "--norc", "-n"],
+                        cwd=forced_cwd, input=wrapper,
+                        env={"PATH": "/usr/bin:/bin"},
+                        capture_output=True, text=True, timeout=10)
+                    self.assertEqual(checked.returncode, 0, checked.stderr)
+            missing = subprocess.run(
+                ["/bin/bash", "--noprofile", "--norc", "-c", fragment],
+                cwd=root,
+                env={"VELD_ROOT_ENV": "missing.env", "PATH": "/usr/bin:/bin"},
+                capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertEqual(missing.stdout, "")
+
+    def test_public_payout_token_command_uses_signer_node_datadir(self):
+        expected = ["/usr/local/bin/veld-node", "--print-rpc-token",
+                    "--datadir", "/var/lib/veld-node"]
+        payout = json.loads((DEPLOY / "payout-signer-config.example.json").read_text())
+        self.assertEqual(payout["veld_rpc"]["token_cmd"], expected)
+
+        setup = (DEPLOY / "signer-daemon-setup.sh").read_text()
+        config_source = re.search(r"<<'PY'\n(.*?)\nPY\n", setup, re.DOTALL)
+        self.assertIsNotNone(config_source)
+        assignments = [
+            node.value for node in ast.parse(config_source.group(1)).body
+            if isinstance(node, ast.Assign) and
+            any(isinstance(target, ast.Name) and target.id == "cfg"
+                for target in node.targets)
+        ]
+        self.assertEqual(len(assignments), 1)
+        config = assignments[0]
+        self.assertIsInstance(config, ast.Dict)
+        rpc_values = [
+            value for key, value in zip(config.keys, config.values)
+            if isinstance(key, ast.Constant) and key.value == "veld_rpc"
+        ]
+        self.assertEqual(len(rpc_values), 1)
+        self.assertEqual(ast.literal_eval(rpc_values[0])["token_cmd"], expected)
+
     def test_canonical_descriptor_and_collected_keys_match(self):
         descriptor = (DEPLOY / "custody-descriptor.txt").read_text()
         collected = (DEPLOY / "custody-pubkeys-collected.txt").read_text()
@@ -353,4 +506,3 @@ else:
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-

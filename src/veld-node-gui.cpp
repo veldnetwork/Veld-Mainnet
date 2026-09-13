@@ -6925,10 +6925,12 @@ private:
             return command.enabled
                 ? L"Attempt inbound P2P reachability on the next start"
                 : L"Disable inbound P2P reachability on the next start";
-        if (command.action == "sync.mode")
-            return command.mode == "full"
-                ? L"Use full initial block download on the next start"
-                : std::wstring{};
+        if (command.action == "sync.mode") {
+            if (command.mode == "full")
+                return L"Use full initial block download on the next start";
+            if (command.mode == "snapshot")
+                return L"Use a signed snapshot with independent historical validation on the next start";
+        }
         return {};
     }
 

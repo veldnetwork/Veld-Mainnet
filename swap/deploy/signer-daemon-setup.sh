@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Configure a btcVELD signer: encrypt the custody wallet and deploy the payout signer.
 # Expects at /tmp: veld_payout_signerd.py, veld_redeemd.py,
-# rpc_url_policy.py, custody-spks-operational.json. Run as root.
+# rpc_url_policy.py, veld_redeem_commitment.py, veld_custody_binding.py,
+# custody-spks-operational.json. Run as root.
 #   SIGNER_ID=custody-signer-1 WALLET=btcveld-custody-signer-1 bash signer-daemon-setup.sh
 set -euo pipefail
 SIGNER_ID="${SIGNER_ID:?set SIGNER_ID=custody-signer-1 .. custody-signer-5}"
@@ -14,7 +15,8 @@ BTC_DATADIR="${BTC_DATADIR:-/var/lib/bitcoin}"
 [[ "$EXPECTED_DESCRIPTOR_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "FATAL: CUSTODY_DESCRIPTOR_SHA256 must be lowercase 64-hex" >&2; exit 2; }
 [[ "$EXPECTED_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "FATAL: CUSTODY_MANIFEST_SHA256 must be lowercase 64-hex" >&2; exit 2; }
 [[ "$EXPECTED_CONSENSUS_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "FATAL: CUSTODY_CONSENSUS_MANIFEST_SHA256 must be lowercase 64-hex" >&2; exit 2; }
-ENV_FILE="${VELD_ROOT_ENV:-/etc/veld/env}"
+# Forced commands may start elsewhere; pin the existing environment file now.
+ENV_FILE=$(realpath -e -- "${VELD_ROOT_ENV:-/etc/veld/env}")
 case "$SIGNER_ID" in custody-signer-[1-5]) ;; *) echo "FATAL: SIGNER_ID must be custody-signer-1 .. custody-signer-5" >&2; exit 2;; esac
 [ "$(id -u)" -eq 0 ] || { echo "FATAL: signer-daemon-setup.sh must run as root" >&2; exit 2; }
 umask 077
@@ -27,7 +29,8 @@ B(){ bitcoin-cli -datadir="$BTC_DATADIR" "$@"; }
 echo "== deploy daemon files =="
 install -d -m750 /opt/veld-signer /var/lib/veld-signer
 install -m640 /tmp/veld_payout_signerd.py /tmp/veld_redeemd.py \
-  /tmp/rpc_url_policy.py /opt/veld-signer/
+  /tmp/rpc_url_policy.py /tmp/veld_redeem_commitment.py \
+  /tmp/veld_custody_binding.py /opt/veld-signer/
 
 echo "== encrypt custody wallet at rest (unique passphrase, root-600) =="
 install -d -m700 /root/.veld-signer
@@ -120,14 +123,15 @@ bitcoin-cli -datadir="$BTC_DATADIR" -rpcwallet="$WALLET" listdescriptors false |
 echo "  signer keypool and threshold descriptor cover [0,$RANGE_END]"
 
 echo "== signing wrapper (coordinator forced-command target) =="
-cat >/opt/veld-signer/sign-wrapper.sh <<'WRAP'
-#!/bin/bash
+{
+printf '%s\n' '#!/bin/bash'
+printf 'ENV_FILE=%q\n' "$ENV_FILE"
+cat <<'WRAP'
 # Forced-command target for the coordinator's SSH key. Unlocks the custody wallet,
 # runs the policy signer (independently re-verifies the burn before touching the key),
 # re-locks. The request JSON arrives on stdin from the coordinator.
 set -euo pipefail
 umask 077
-ENV_FILE=/etc/veld/env
 PASS_FILE=/root/.veld-signer/wallet.pass
 CONFIG=/opt/veld-signer/payout-signer-config.json
 
@@ -179,8 +183,9 @@ unset PASS
 export VELD_PAYOUT_SIGNER_CONFIG="$CONFIG"
 python3 /opt/veld-signer/veld_payout_signerd.py
 WRAP
+} >/opt/veld-signer/sign-wrapper.sh
 chown root:root /opt/veld-signer/sign-wrapper.sh
 chmod 750 /opt/veld-signer/sign-wrapper.sh
 
-echo "== SIGNER $SIGNER_ID PHASE-2 READY =="
+echo "== SIGNER $SIGNER_ID INSTALLED; CUSTODY QUALIFICATION STILL REQUIRED =="
 echo "encrypted=$(B -rpcwallet="$WALLET" getwalletinfo | python3 -c "import sys,json;print('unlocked_until' in json.load(sys.stdin))") wrapper=/opt/veld-signer/sign-wrapper.sh"

@@ -24,6 +24,14 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
+The local **3.2.1 candidate** adds validator-bond admission checks and custody
+service safeguards. It proposes removing the network-wide validator registration
+stake prerequisite at block **6,200**; the individual **10,000 VELD bond** and
+seven-validator btcVELD gate remain unchanged. This candidate is not a published
+release or custody activation. Native reserve payout authorization and safe refund
+retirement still require qualification; incompatible legacy payout services refuse
+to sign.
+
 **3.2.0** adds optional automatic signed updates and resumes a previously
 running miner with its saved workers, settings, pairing, and chain data.
 Enable Automatic updates in Node Settings or the paired portal and keep the
@@ -35,7 +43,8 @@ See the [release notes](docs/release-notes.md),
 
 The stake minimum is **500 VELD**. Co-mining eligibility requires **1,000 VELD**
 staked under the mining address; validator registration uses a separate bond.
-The existing mainnet consensus rules and checkpoint authority are unchanged.
+The published 3.2.0 release retains the existing consensus rules and checkpoint
+authority. The candidate registration change above is separate.
 
 The [`v3.2.0` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.2.0)
 identifies the published release source. Signed package manifests identify

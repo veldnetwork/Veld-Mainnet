@@ -496,6 +496,10 @@ int main() {
                 "prepareregistervalidator", {fund_address, validator_pubkey_hex})));
             CHECK(RequireString(RequireObject(unavailable, "error"), "message") ==
                   "Validator registration state is unavailable");
+            const auto deregister_unavailable = ParseResponse(rpc.Handle(MakeRpcRequest(
+                "preparederegistervalidator", {fund_address, validator_pubkey_hex})));
+            CHECK(RequireString(RequireObject(deregister_unavailable, "error"), "message") ==
+                  "Validator deregistration state is unavailable");
             rpc.SetValidators(&validators);
             rpc.SetStaking(&staking);
             rpc.SetModuleCursorFn([&] {
@@ -524,6 +528,31 @@ int main() {
             CheckValidatorPreparerTotal(
                 deregister_positive, fund_address, validator_pubkey_hex,
                 canonical_parent, false);
+            const auto uppercase_deregister = ParseResponse(rpc.Handle(MakeRpcRequest(
+                "preparederegistervalidator", {fund_address, std::string(3904U, 'A')})));
+            CheckValidatorPreparerTotal(
+                uppercase_deregister, fund_address, validator_pubkey_hex,
+                canonical_parent, false);
+            for (const auto* method : {"prepareregistervalidator", "preparederegistervalidator"}) {
+                const auto wrong_owner = ParseResponse(rpc.Handle(MakeRpcRequest(
+                    method, {issuer_address, validator_pubkey_hex})));
+                CHECK(RequireString(RequireObject(wrong_owner, "error"), "message") ==
+                      "Address does not correspond to the supplied validator public key");
+                CHECK(wrong_owner.Get("result") != nullptr);
+                CHECK(wrong_owner.Get("result")->kind == btc_buy::JsonValue::Kind::Null);
+            }
+            rpc.SetModuleCursorFn([&] {
+                return std::make_pair(chain.Height() + 1, chain.TotalSupplyUnits());
+            });
+            const auto unsynchronized = ParseResponse(rpc.Handle(MakeRpcRequest(
+                "preparederegistervalidator", {fund_address, validator_pubkey_hex})));
+            CHECK(RequireString(RequireObject(unsynchronized, "error"), "message") ==
+                  "Validator deregistration state is not synchronized with the chain");
+            CHECK(unsynchronized.Get("result") != nullptr);
+            CHECK(unsynchronized.Get("result")->kind == btc_buy::JsonValue::Kind::Null);
+            rpc.SetModuleCursorFn([&] {
+                return std::make_pair(chain.Height(), chain.TotalSupplyUnits());
+            });
 
             // Exercise the independent issuer/C1 preparer through the same
             // direct dispatcher. Its operation metadata differs, but its fee

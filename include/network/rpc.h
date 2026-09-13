@@ -1257,6 +1257,38 @@ public:
     }
 
 private:
+    static std::string ValidatorPreparationKey_(const std::string& address,
+                                                std::string pubkey_hex) {
+        if (pubkey_hex.size() != 3904)
+            throw std::invalid_argument("Public key must be 3904 hex characters (1952 bytes, ML-DSA-65)");
+        for (char& c : pubkey_hex) {
+            if (!((c >= '0' && c <= '9') ||
+                  (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                throw std::invalid_argument("Public key contains non-hex characters");
+            if (c >= 'A' && c <= 'F') c += 'a' - 'A';
+        }
+        const auto bytes = HexToBytes(pubkey_hex);
+        if (bytes.size() != 1952)
+            throw std::invalid_argument("Public key failed hex decode to 1952 bytes");
+        const auto owner = ValidatorRegistry::PubkeyToAddress(bytes);
+        if (owner.empty() || owner != address)
+            throw std::invalid_argument(
+                "Address does not correspond to the supplied validator public key");
+        return pubkey_hex;
+    }
+
+    uint64_t ValidatorPreparationHeight_(const char* operation) const {
+        const std::string state = std::string("Validator ") + operation + " state";
+        if (!validators_ || !module_cursor_fn_)
+            throw std::runtime_error(state + " is unavailable");
+        const uint64_t height = chain_.Height();
+        const auto cursor = module_cursor_fn_();
+        if (cursor.first != height || cursor.second != chain_.TotalSupplyUnits() ||
+            height == UINT64_MAX)
+            throw std::runtime_error(state + " is not synchronized with the chain");
+        return height + 1;
+    }
+
     static CoinSelection SelectWalletStateCoins_(const WalletState& state,
                                                   uint64_t target_units,
                                                   uint64_t fee_units) {
@@ -6991,38 +7023,12 @@ private:
                 "Usage: prepareregistervalidator <address> <pubkey_hex>");
 
             const std::string& address    = params[0];
-            std::string pubkey_hex = params[1];
-            if (pubkey_hex.size() != 3904)
-                throw std::invalid_argument("Public key must be 3904 hex characters (1952 bytes, ML-DSA-65)");
-            for (char c : pubkey_hex) {
-                if (!((c >= '0' && c <= '9') ||
-                      (c >= 'a' && c <= 'f') ||
-                      (c >= 'A' && c <= 'F')))
-                    throw std::invalid_argument(
-                        "Public key contains non-hex characters");
-            }
-            for (char& c : pubkey_hex)
-                if (c >= 'A' && c <= 'F') c += 'a' - 'A';
-            const auto validator_pk_bytes = HexToBytes(pubkey_hex);
-            if (validator_pk_bytes.size() != 1952)
-                throw std::invalid_argument(
-                    "Public key failed hex decode to 1952 bytes");
-            const std::string validator_address =
-                ValidatorRegistry::PubkeyToAddress(validator_pk_bytes);
-            if (validator_address.empty() || validator_address != address)
-                throw std::invalid_argument(
-                    "Address does not correspond to the supplied validator public key");
+            const auto pubkey_hex = ValidatorPreparationKey_(address, params[1]);
 
             auto transition_guard = chain_.AcquireConsensusTransitionGuard();
-            if (!validators_ || !staking_ || !module_cursor_fn_)
+            if (!staking_)
                 throw std::runtime_error("Validator registration state is unavailable");
-            const uint64_t preparation_height = chain_.Height();
-            const auto module_cursor = module_cursor_fn_();
-            if (module_cursor.first != preparation_height ||
-                module_cursor.second != chain_.TotalSupplyUnits() ||
-                preparation_height == UINT64_MAX)
-                throw std::runtime_error("Validator registration state is not synchronized with the chain");
-            const uint64_t prospective_height = preparation_height + 1;
+            const uint64_t prospective_height = ValidatorPreparationHeight_("registration");
 
             // Reject a second pending registration for this exact public key.
             // Match the complete canonical OP_RETURN marker so malformed or
@@ -7133,27 +7139,22 @@ private:
             if (params.size() < 2) throw std::invalid_argument(
                 "Usage: preparederegistervalidator <address> <pubkey_hex>");
 
-            const std::string& address    = params[0];
-            const std::string& pubkey_hex = params[1];
-            if (pubkey_hex.size() != 3904)
-                throw std::invalid_argument("Public key must be 3904 hex characters (1952 bytes, ML-DSA-65)");
+            const std::string& address = params[0];
+            const auto pubkey_hex = ValidatorPreparationKey_(address, params[1]);
+            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            const uint64_t prospective_height = ValidatorPreparationHeight_("deregistration");
 
             if (mempool_.HasPendingOpReturn("VELD_VALIDATOR|DEREGISTER|" + pubkey_hex))
                 throw std::runtime_error("Your validator deregistration is already pending. Wait for it to be mined.");
 
-            if (validators_ && !validators_->IsRegistered(pubkey_hex))
+            if (!validators_->IsRegistered(pubkey_hex))
                 return JB::Object({{"status",JB::String("not_registered")}});
 
-            // Cooldown pre-check — match the consensus DEREGISTER gate exactly
-            // so we never hand back a tx that can never be mined. ProcessBlock
-            // rejects a DEREGISTER while block.height < last_op_height[address]
-            // + VALIDATOR_OP_COOLDOWN_BLOCKS (100). The earliest block this tx
-            // could land in is chain_.Height()+1; if even that is below the
-            // unlock height, the tx is unminable and we refuse to build it.
+            // Consensus checks the cooldown again at the actual inclusion height.
             if (validators_) {
                 auto cd = validators_->GetDeregisterCooldown(pubkey_hex);
                 if (cd.found && cd.unlock_height > 0
-                    && chain_.Height() + 1 < cd.unlock_height) {
+                    && prospective_height < cd.unlock_height) {
                     throw std::runtime_error(
                         "Cannot deregister yet — validator operations have a "
                         + std::to_string(VALIDATOR_OP_COOLDOWN_BLOCKS)

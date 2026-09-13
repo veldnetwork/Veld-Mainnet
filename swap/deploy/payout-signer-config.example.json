@@ -10,7 +10,9 @@
     "url": "http://127.0.0.1:8334",
     "token_cmd": [
       "/usr/local/bin/veld-node",
-      "--print-rpc-token"
+      "--print-rpc-token",
+      "--datadir",
+      "/var/lib/veld-node"
     ]
   },
   "custody_descriptor": "REPLACE_WITH_EXACT_RANGED_TR_DESCRIPTOR",

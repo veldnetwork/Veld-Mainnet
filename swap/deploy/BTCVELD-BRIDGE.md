@@ -39,7 +39,8 @@ operator approvals.
 3. Start from `redeemd-threshold.example.json`. Put `authority_db` outside the
    disposable runtime/state directory on durable storage.
 4. On each signer host, install one private descriptor share, its own Veld node,
-   `veld_payout_signerd.py`, `veld_redeemd.py`, `rpc_url_policy.py`, and a private copy of
+   `veld_payout_signerd.py`, `veld_redeemd.py`, `rpc_url_policy.py`,
+   `veld_redeem_commitment.py`, `veld_custody_binding.py`, and a private copy of
    `payout-signer-config.example.json`. Pin the exact Taproot custody scriptPubKey.
 5. Restrict the coordinator SSH key to the payout signer forced command shown in
    `signer-authorized_keys.example`.

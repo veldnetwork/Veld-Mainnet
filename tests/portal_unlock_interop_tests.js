@@ -39,6 +39,13 @@ vm.runInContext(['encryptNodePassphrase','canonicalPayload','commandEnvelope','n
     control.signature = b64url(context.normalizeEcdsaSignature(signature));
     fs.writeFileSync(path.join(root,action+'.json'),JSON.stringify({portal_protocol:4,device_id:17,paired:true,pair_code:null,pair_expires:0,report_interval:5,command_key:commandKey,command:{...control,id:1}}));
   }
+  for (const mode of ['full','snapshot']) {
+    const sync = {...command,action:'sync.mode',payload:{mode},nonce:b64url(webcrypto.getRandomValues(new Uint8Array(16)))};
+    assert.equal(context.canonicalPayload(sync.action,sync.payload),JSON.stringify({mode}));
+    const signature = await webcrypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,new TextEncoder().encode(context.commandEnvelope(sync)));
+    sync.signature = b64url(context.normalizeEcdsaSignature(signature));
+    fs.writeFileSync(path.join(root,'sync.mode-'+mode+'.json'),JSON.stringify({portal_protocol:4,device_id:17,paired:true,pair_code:null,pair_expires:0,report_interval:5,command_key:commandKey,command:{...sync,id:1}}));
+  }
   const otherPair = await webcrypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
   const otherJwk = await webcrypto.subtle.exportKey('jwk',otherPair.publicKey);
   const otherKey = {x:otherJwk.x,y:otherJwk.y,id:Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(`VELD_PORTAL_KEY_V1\n${otherJwk.x}\n${otherJwk.y}`))).toString('hex')};
@@ -49,6 +56,6 @@ vm.runInContext(['encryptNodePassphrase','canonicalPayload','commandEnvelope','n
     await assert.rejects(context.encryptNodePassphrase(value, publicKey, 17, nonce), /valid node passphrase/);
   }
   console.log(output.trim());
-  console.log('PASS: shipping browser encryptor and native decryptor agree; invalid input rejected');
+  console.log('PASS: shipping browser encryptor and native decryptor agree; invalid input rejected; full and snapshot browser commands signed');
   if (process.argv[4]) console.log(execFileSync(path.resolve(process.argv[4]),[root],{encoding:'utf8',timeout:30000}).trim());
 })().catch(error=>{console.error(error);process.exitCode=1;});
