@@ -93,6 +93,9 @@ const context = vm.createContext({
   _veldAssertOpReturnExact: (_, value) => assert.equal(value, ''),
   _veldVerifyInputSighashes() {},
   _veldAuthenticatePreparedPrevouts: async () => { events.push('parents'); },
+  // Storage itself is exercised in wallet_outbox_browser_controls.cjs.
+  _veldJournalSign: async (_bytes, _inputs, _seed, _generation, sign) => sign(),
+  _veldJournalBroadcast: async () => { events.push('broadcast'); return fixtureId; },
   buildScriptSig(_token, _hash, expectedGeneration) {
     assert.equal(expectedGeneration, generation);
     signatureGenerations.push(expectedGeneration);

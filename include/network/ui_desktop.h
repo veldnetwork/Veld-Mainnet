@@ -4495,7 +4495,9 @@ var veldCrypto = (function() {
         }, 0);
       });
     }
-    return Promise.resolve().then(signNext);
+    return _veldJournalSign(unsignedTxHex, inputs, seedHex, signerGeneration, function() {
+      return Promise.resolve().then(signNext);
+    });
   }
 
   // Sign a UTF-8 message string: SHA256d of the bytes, then Dilithium sign.
@@ -4839,7 +4841,7 @@ function publicAddressHistory(address, limit) {
     }));
   });
 }
-function rpc(method, params) {
+function _veldRpcTransport(method, params) {
   // fetch has no built-in timeout; without an AbortController
   // the wallet UI hangs indefinitely on a stalled RPC (network glitch,
   // server backpressure, etc.) and the user sees "Signing and
@@ -4875,6 +4877,435 @@ function rpc(method, params) {
       throw e;
     });
 }
+
+// Signed input guards survive delivery uncertainty and reversible confirmations.
+// This database contains public transaction bytes only, never wallet secrets.
+function _veldJournal() {
+  if (_veldJournal.instance) return _veldJournal.instance;
+  var genesis = String(VELD_GENESIS_HASH || '').toLowerCase();
+  var profile = String(VELD_DEPLOYMENT_PROFILE_ID || '');
+  if (!/^[0-9a-f]{64}$/.test(genesis) || !/^[a-zA-Z0-9._-]{1,80}$/.test(profile))
+    throw new Error('Wallet recovery requires a valid network identity.');
+  if (typeof indexedDB === 'undefined' || typeof navigator === 'undefined' || !navigator.locks)
+    throw new Error('This browser cannot safely store transaction recovery. Use an updated browser.');
+  var name = 'veld-transactions-v1-' + profile + '-' + genesis;
+  var stores = ['records', 'payloads', 'claims', 'meta'];
+  var limit = {records:10000, claims:100000, bytes:128 * 1024 * 1024};
+  var opening = null, closed = false;
+  function request(req) {
+    return new Promise(function(resolve, reject) {
+      req.onsuccess = function() { resolve(req.result); };
+      req.onerror = function() { reject(req.error || new Error('Transaction recovery read failed.')); };
+    });
+  }
+  function open() {
+    if (closed) return Promise.reject(new Error('Wallet recovery changed. Reload before signing.'));
+    if (!opening) opening = new Promise(function(resolve, reject) {
+      var req = indexedDB.open(name, 1);
+      req.onupgradeneeded = function(event) {
+        if (event.oldVersion !== 0) { req.transaction.abort(); return; }
+        var db = req.result;
+        var records = db.createObjectStore('records', {keyPath:'id'});
+        records.createIndex('owner', 'owner');
+        records.createIndex('txid', 'txid', {unique:true});
+        db.createObjectStore('payloads', {keyPath:'id'});
+        var claims = db.createObjectStore('claims', {keyPath:'key'});
+        claims.createIndex('owner', 'owner');
+        db.createObjectStore('meta').put({version:1, records:0, claims:0, bytes:0}, 'budget');
+      };
+      req.onblocked = function() { reject(new Error('Close older wallet tabs and reload transaction recovery.')); };
+      req.onerror = function() { reject(req.error || new Error('Transaction recovery storage is unavailable.')); };
+      req.onsuccess = function() {
+        var db = req.result;
+        db.onversionchange = function() { closed = true; db.close(); };
+        resolve(db);
+      };
+    }).catch(function(error) { opening = null; throw error; });
+    return opening;
+  }
+  async function transaction(mode, work) {
+    var db = await open();
+    var tx = db.transaction(stores, mode, mode === 'readwrite' ? {durability:'strict'} : undefined);
+    if (mode === 'readwrite' && tx.durability !== 'strict') {
+      tx.abort();
+      throw new Error('This browser does not support durable transaction recovery.');
+    }
+    var done = new Promise(function(resolve, reject) {
+      tx.oncomplete = resolve;
+      tx.onabort = function() { reject(tx.error || new Error('Transaction recovery was not saved.')); };
+      tx.onerror = function() {};
+    });
+    // Attach rejection handling before the first request, including abort paths.
+    done.catch(function() {});
+    try {
+      var result = await work(tx);
+      await done;
+      return result;
+    } catch (error) {
+      try { tx.abort(); } catch (_) {}
+      await done.catch(function() {});
+      throw error;
+    }
+  }
+  function shape(hex) {
+    var tx = _veldParseUnsignedTx(hex);
+    return JSON.stringify({version:tx.version, locktime:tx.locktime, outputs:tx.outputs,
+      inputs:tx.inputs.map(function(input) {
+        return [_veldBytesToHex(input.prevTxHash), input.prevOutIndex, input.sequence];
+      })});
+  }
+  function keys(hex) {
+    var values = _veldParseUnsignedTx(hex).inputs.map(function(input) {
+      return _veldBytesToHex(input.prevTxHash) + ':' + input.prevOutIndex;
+    });
+    if (new Set(values).size !== values.length) throw new Error('Transaction recovery input list is invalid.');
+    return values;
+  }
+  function check(record) {
+    if (!record || record.version !== 1 || !/^(?:legacy-)?[0-9a-f]{64}$/.test(record.id) ||
+        typeof record.owner !== 'string' || !record.owner || record.owner.length > 64 ||
+        !Array.isArray(record.inputs) || record.inputs.length < 1 || record.inputs.length > 10000 ||
+        new Set(record.inputs).size !== record.inputs.length ||
+        !record.inputs.every(function(key) { return /^[0-9a-f]{64}:[0-9]{1,10}$/.test(key); }) ||
+        !Number.isSafeInteger(record.ts) || record.ts < 0 || !Number.isSafeInteger(record.budget) || record.budget < 1 ||
+        (record.label !== undefined && (typeof record.label !== 'string' || record.label.length > 64)) ||
+        !['reserved', 'ready', 'submitted', 'confirmed'].includes(record.state) ||
+        (record.state !== 'reserved' && !/^[0-9a-f]{64}$/.test(record.txid)))
+      throw new Error('Transaction recovery data needs attention. Existing records have been preserved.');
+    return record;
+  }
+  async function budget(tx) {
+    var meta = await request(tx.objectStore('meta').get('budget'));
+    if (!meta || meta.version !== 1 || !['records','claims','bytes'].every(function(key) {
+      return Number.isSafeInteger(meta[key]) && meta[key] >= 0 && meta[key] <= limit[key];
+    })) throw new Error('Transaction recovery budget is invalid.');
+    var counts = await Promise.all(['records','claims','payloads'].map(function(store) {
+      return request(tx.objectStore(store).count());
+    }));
+    if (counts[0] !== meta.records || counts[1] !== meta.claims || counts[2] !== meta.records)
+      throw new Error('Transaction recovery records are incomplete.');
+    return meta;
+  }
+  async function read(tx, record) {
+    check(record);
+    var payload = await request(tx.objectStore('payloads').get(record.id));
+    if (!payload || typeof payload.unsigned !== 'string' || typeof payload.signed !== 'string' ||
+        payload.unsigned.length > 2097152 || payload.signed.length > 2097152)
+      throw new Error('Transaction recovery bytes are unavailable.');
+    var claims = await Promise.all(record.inputs.map(function(key) {
+      return request(tx.objectStore('claims').get(key));
+    }));
+    for (var claim of claims) {
+      if (!claim || claim.id !== record.id || claim.owner !== record.owner)
+        throw new Error('Transaction recovery input ownership is incomplete.');
+    }
+    if (record.state !== 'reserved') {
+      if (!/^(?:[0-9a-f]{2})+$/.test(payload.signed) || veldCrypto.sha256d(payload.signed) !== record.txid ||
+          JSON.stringify(keys(payload.signed)) !== JSON.stringify(record.inputs) ||
+          (payload.unsigned && shape(payload.unsigned) !== shape(payload.signed)))
+        throw new Error('Stored transaction bytes do not match their recovery record.');
+    } else if (!payload.unsigned || veldCrypto.sha256d(payload.unsigned) !== record.id || payload.signed !== '' ||
+               !Array.isArray(payload.metadata) || payload.metadata.length !== record.inputs.length ||
+               JSON.stringify(keys(payload.unsigned)) !== JSON.stringify(record.inputs)) {
+      throw new Error('Interrupted transaction recovery bytes are invalid.');
+    }
+    return {record:record, payload:payload};
+  }
+  async function insert(tx, record, payload) {
+    var meta = await budget(tx);
+    if (meta.records + 1 > limit.records || meta.claims + record.inputs.length > limit.claims ||
+        meta.bytes + record.budget > limit.bytes)
+      throw new Error('Transaction recovery storage is full. Existing transactions have been preserved.');
+    var previous = await Promise.all(record.inputs.map(function(key) {
+      return request(tx.objectStore('claims').get(key));
+    }));
+    if (previous.some(function(claim) { return !!claim; }))
+      throw new Error('These funds belong to an earlier transaction. Check In-flight transactions before trying again.');
+    for (var key of record.inputs) {
+      tx.objectStore('claims').add({key:key, id:record.id, owner:record.owner});
+    }
+    tx.objectStore('records').add(record);
+    tx.objectStore('payloads').add(payload);
+    meta.records++;
+    meta.claims += record.inputs.length;
+    meta.bytes += record.budget;
+    tx.objectStore('meta').put(meta, 'budget');
+  }
+  function notify(owner) {
+    try { if (__veldTxChannel) __veldTxChannel.postMessage({kind:'tx_sent', from_addr:owner}); } catch (_) {}
+    try { refreshWalletAfterBroadcast(owner); } catch (_) {}
+  }
+  var api = {
+    sign: function(unsigned, inputs, owner, sign) {
+      unsigned = unsigned.toLowerCase();
+      var id = veldCrypto.sha256d(unsigned);
+      var size = _veldAssertPreparedRelaySize(unsigned, inputs);
+      var metadata = inputs.map(function(input, index) {
+        return {index:index, sigless:input.sigless === true || input.sigless === 1 || input.sigless === '1',
+          sighash_hex:String(input.sighash_hex || input.sighash || '').toLowerCase(),
+          prev_script_hex:String(input.prev_script_hex || input.prev_script || '').toLowerCase()};
+      });
+      return navigator.locks.request(name + '-sign', {mode:'exclusive'}, async function() {
+        var entry = await transaction('readwrite', async function(tx) {
+          await budget(tx);
+          var old = await request(tx.objectStore('records').get(id));
+          if (old) {
+            var existing = await read(tx, old);
+            if (old.owner !== owner || existing.payload.unsigned !== unsigned ||
+                JSON.stringify(existing.payload.metadata) !== JSON.stringify(metadata))
+              throw new Error('Transaction recovery identity changed.');
+            return existing;
+          }
+          var record = {version:1, id:id, owner:owner, inputs:keys(unsigned),
+            state:'reserved', ts:Math.floor(Date.now()/1000),
+            budget:2 * (unsigned.length + size * 2) + keys(unsigned).length * 256 + 2048};
+          var payload = {id:id, unsigned:unsigned, signed:'', metadata:metadata};
+          record.label = _veldJournalOperation(unsigned, owner).label;
+          await insert(tx, record, payload);
+          return {record:record, payload:payload};
+        });
+        notify(owner);
+        if (entry.record.state !== 'reserved') return entry.payload.signed;
+        // The origin-wide lock is retained until signed bytes are committed.
+        // An interrupted signing attempt can resume only this exact intent.
+        var signed = (await sign()).toLowerCase();
+        if (signed.length > size * 2 || !/^(?:[0-9a-f]{2})+$/.test(signed) || shape(unsigned) !== shape(signed))
+          throw new Error('Signed transaction changed its reviewed intent.');
+        var txid = veldCrypto.sha256d(signed);
+        await transaction('readwrite', async function(tx) {
+          var current = await read(tx, await request(tx.objectStore('records').get(id)));
+          if (current.record.state !== 'reserved') throw new Error('Transaction recovery state changed.');
+          current.record.txid = txid;
+          current.record.state = 'ready';
+          current.payload.signed = signed;
+          tx.objectStore('payloads').put(current.payload);
+          tx.objectStore('records').put(current.record);
+        });
+        notify(owner);
+        return signed;
+      });
+    },
+    get: function(txid) {
+      return transaction('readonly', async function(tx) {
+        await budget(tx);
+        var record = await request(tx.objectStore('records').index('txid').get(txid));
+        if (!record) record = await request(tx.objectStore('records').get(txid));
+        return record ? read(tx, record) : null;
+      });
+    },
+    submitted: function(txid) {
+      return transaction('readwrite', async function(tx) {
+        var entry = await read(tx, await request(tx.objectStore('records').index('txid').get(txid)));
+        entry.record.state = 'submitted';
+        tx.objectStore('records').put(entry.record);
+      });
+    },
+    confirmed: function(txids) {
+      return transaction('readwrite', async function(tx) {
+        for (var txid of txids) {
+          var record = await request(tx.objectStore('records').index('txid').get(txid));
+          if (!record) continue;
+          check(record);
+          record.state = 'confirmed';
+          tx.objectStore('records').put(record);
+        }
+      });
+    },
+    restored: function(outpoints) {
+      if (!outpoints.length) return Promise.resolve();
+      return transaction('readwrite', async function(tx) {
+        var updated = new Set();
+        for (var key of outpoints) {
+          var claim = await request(tx.objectStore('claims').get(key));
+          if (!claim || updated.has(claim.id)) continue;
+          updated.add(claim.id);
+          var record = check(await request(tx.objectStore('records').get(claim.id)));
+          if (record.state === 'confirmed') {
+            record.state = 'ready';
+            tx.objectStore('records').put(record);
+          }
+        }
+      });
+    },
+    guards: function(owner) {
+      return transaction('readonly', async function(tx) {
+        await budget(tx);
+        var claims = await request(tx.objectStore('claims').index('owner').getAll(owner, limit.claims + 1));
+        if (claims.length > limit.claims) throw new Error('Transaction recovery input limit exceeded.');
+        return new Set(claims.map(function(row) {
+          if (!row || row.owner !== owner || !/^[0-9a-f]{64}:[0-9]{1,10}$/.test(row.key))
+            throw new Error('Transaction recovery input record is invalid.');
+          return row.key;
+        }));
+      });
+    },
+    pending: function(owner) {
+      return transaction('readonly', async function(tx) {
+        await budget(tx);
+        var records = await request(tx.objectStore('records').index('owner').getAll(owner, limit.records + 1));
+        if (records.length > limit.records) throw new Error('Transaction recovery record limit exceeded.');
+        return records.map(check).filter(function(row) { return row.state !== 'confirmed'; })
+          .sort(function(a, b) { return b.ts - a.ts; }).slice(0, 200)
+          .map(function(row) { return {txid:row.txid || row.id, from_addr:row.owner, ts:row.ts,
+            prepare_method:'transaction', label:row.label || 'Transaction', interrupted:row.state === 'reserved'}; });
+      });
+    },
+    importSigned: function(owner, signed, ts) {
+      var txid = veldCrypto.sha256d(signed);
+      return navigator.locks.request(name + '-sign', {mode:'exclusive'}, function() {
+        return transaction('readwrite', async function(tx) {
+          var old = await request(tx.objectStore('records').index('txid').get(txid));
+          if (old) {
+            if (old.owner !== owner) throw new Error('Older transaction recovery belongs to another wallet.');
+            await read(tx, old); return;
+          }
+          var record = {version:1, id:'legacy-' + txid, owner:owner, txid:txid,
+            inputs:keys(signed), state:'ready', ts:ts,
+            budget:signed.length * 2 + keys(signed).length * 256 + 2048};
+          record.label = _veldJournalOperation(signed, owner).label;
+          await insert(tx, record, {id:record.id, unsigned:'', signed:signed});
+        });
+      });
+    }
+  };
+  _veldJournal.instance = api;
+  return api;
+}
+
+function _veldJournalOperation(bytes, owner) {
+  var payload = '';
+  try { payload = _veldGetSingleCanonicalOpReturnPayload({unsigned_tx_hex:bytes}); } catch (_) {}
+  var kinds = [
+    ['VELD_STAKE|LOCK|', 'Stake Lock', ''], ['VELD_STAKE|UNLOCK|', 'Stake Unlock', ''],
+    ['VELD_VALIDATOR|REGISTER|', 'Validator Register', ''],
+    ['VELD_VALIDATOR|DEREGISTER|', 'Validator Deregister', ''],
+    ['VELD_AMM|SWAP_', 'Swap', 'swap'], ['VELD_AMM|ADD|', 'Add Liquidity', 'swap'],
+    ['VELD_AMM|REMOVE|', 'Remove Liquidity', 'swap'],
+    ['VELD_TOKEN|REDEEM|', 'Redemption', 'redeem']
+  ];
+  for (var kind of kinds) if (payload.indexOf(kind[0]) === 0) return {label:kind[1], feature:kind[2]};
+  if (payload.indexOf('GOV_PROPOSAL') >= 0) return {label:'Gov Proposal', feature:''};
+  if (payload.indexOf('GOV_VOTE') >= 0) return {label:'Gov Vote', feature:''};
+  var tx = _veldParseUnsignedTx(bytes), hash = _veldAddrToHash160Hex(owner);
+  var self = hash && '76a914' + hash + '88ac';
+  var consolidation = tx.inputs.length > tx.outputs.length && tx.outputs.every(function(output) {
+    return self && output.script_pubkey_hex === self;
+  });
+  return {label:consolidation ? 'Consolidation' : 'Send', feature:''};
+}
+
+async function _veldRecoverLegacyTransactions(owner) {
+  var entries;
+  try { entries = JSON.parse(localStorage.getItem('veld_pending_txs') || '[]'); }
+  catch (_) { throw new Error('Older pending transactions need recovery before signing.'); }
+  if (!Array.isArray(entries) || entries.length > 201)
+    throw new Error('Older pending transaction records are invalid.');
+  var mine = entries.filter(function(entry) { return entry && entry.from_addr === owner; });
+  for (var entry of mine) {
+    if (!/^[0-9a-f]{64}$/.test(entry.txid)) throw new Error('An older pending transaction record is invalid.');
+    var existing = await _veldJournal().get(entry.txid);
+    if (existing) {
+      if (existing.record.owner !== owner) throw new Error('An older transaction belongs to another wallet.');
+      continue;
+    }
+    var tx = await rpc('gettransactionrecent', [entry.txid]).catch(function() { return null; });
+    if (!tx || !tx.raw_hex) {
+      var hints = await _veldPendingHistoryHints(owner, [entry], function() { return true; });
+      if (hints.has(entry.txid)) tx = await rpc('gettransaction', [entry.txid, String(hints.get(entry.txid))]);
+    }
+    var raw = String(tx && tx.raw_hex || '').toLowerCase();
+    if (raw.length > 2097152 || !/^(?:[0-9a-f]{2})+$/.test(raw) || veldCrypto.sha256d(raw) !== entry.txid)
+      throw new Error('An earlier transaction is unavailable. Reconnect to its node to recover it before signing again.');
+    await _veldJournal().importSigned(owner, raw, Number.isSafeInteger(entry.ts) ? entry.ts : 0);
+  }
+}
+
+async function _veldJournalSign(unsigned, inputs, seed, generation, sign) {
+  _veldAssertActiveSignerSeed(seed, generation);
+  var owner = _veldRequireBoundIdentity(seed).address;
+  await _veldRecoverLegacyTransactions(owner);
+  return _veldJournal().sign(unsigned, inputs, owner, function() {
+    _veldAssertActiveSignerSeed(seed, generation);
+    return sign();
+  });
+}
+
+async function _veldJournalBroadcast(signed, seed, generation) {
+  var txid = veldCrypto.sha256d(signed);
+  var saved = await _veldJournal().get(txid);
+  if (!saved || saved.payload.signed !== signed || saved.record.owner !== _veldRequireBoundIdentity(seed).address)
+    throw new Error('Save the exact transaction for recovery before broadcasting.');
+  _veldAssertActiveSignerSeed(seed, generation);
+  var reply = await _veldRpcTransport('sendrawtransaction', [saved.payload.signed]);
+  var returned = typeof reply === 'string' ? reply : reply && reply.txid;
+  if (String(returned || '').toLowerCase() !== txid)
+    throw new Error('The response could not be verified. The transaction is saved in In-flight transactions.');
+  await _veldJournal().submitted(txid);
+  return reply;
+}
+
+async function _veldRetryJournalTransaction(txid) {
+  var saved = await _veldJournal().get(txid);
+  if (!saved) return rpc('rebroadcasttx', [txid]);
+  var seed = __veldKey.get(), generation = _veldAssertActiveSignerSeed(seed);
+  if (_veldRequireBoundIdentity(seed).address !== saved.record.owner)
+    throw new Error('Unlock the original wallet to retry this transaction.');
+  if (saved.record.state === 'reserved') {
+    if (!window.confirm('Resume signing the saved transaction with its original recipient, amount and fee?'))
+      throw new Error('Signing remains paused. The saved transaction has been kept.');
+    var prep = {unsigned_tx_hex:saved.payload.unsigned, inputs:saved.payload.metadata};
+    var operation = _veldJournalOperation(prep.unsigned_tx_hex, saved.record.owner);
+    if (operation.feature) {
+      veldRequireExternalValue('resume the saved transaction');
+      await bvRequireFreshFeature(operation.feature);
+    }
+    var sigless = [];
+    prep.inputs.forEach(function(input, index) { if (input.sigless) sigless.push(index); });
+    _veldVerifyInputSighashes(prep, sigless, '76a914' + _veldAddrToHash160Hex(saved.record.owner) + '88ac');
+    await _veldAuthenticatePreparedPrevouts(prep, VELD_MIN_TX_FEE_UNITS);
+    var signed = await veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, seed, null, generation);
+    await _veldBroadcastExactSigned(signed, seed, generation);
+    return {rebroadcast:true};
+  }
+  await _veldBroadcastExactSigned(saved.payload.signed, seed, generation);
+  return {rebroadcast:true};
+}
+
+// Node-selectable outputs already exclude immature, staked and mempool inputs.
+// Apply local guards to those outpoints; never subtract a saved transfer amount.
+async function rpc(method, params) {
+  params = params || [];
+  if (method === 'sendrawtransaction') throw new Error('Use the saved transaction broadcast path.');
+  if ((method !== 'getbalance' && method !== 'listunspent') || !params[0])
+    return _veldRpcTransport(method, params);
+  var owner = String(params[0]);
+  var result = await _veldRpcTransport(method, params);
+  var guards = await _veldJournal().guards(owner);
+  if (!guards.size) return result;
+  var outputs = method === 'listunspent' ? result : await _veldRpcTransport('listunspent', [owner]);
+  if (!Array.isArray(outputs) || outputs.length > 100000) throw new Error('Spendable output list is unavailable.');
+  var seen = new Set(), total = 0, kept = [];
+  outputs.forEach(function(row) {
+    if (!row || !/^[0-9a-f]{64}$/.test(row.txid) || !Number.isSafeInteger(row.vout) || row.vout < 0 ||
+        row.vout > 4294967295 || !Number.isSafeInteger(row.value_units) || row.value_units < 0 ||
+        row.value_units > 2100000000000000) throw new Error('Spendable output data is invalid.');
+    var key = row.txid + ':' + row.vout;
+    if (seen.has(key)) throw new Error('Spendable output list contains duplicates.');
+    seen.add(key);
+  });
+  await _veldJournal().restored(Array.from(seen).filter(function(key) { return guards.has(key); }));
+  guards = await _veldJournal().guards(owner);
+  outputs.forEach(function(row) {
+    if (!guards.has(row.txid + ':' + row.vout)) { total += row.value_units; kept.push(row); }
+    if (!Number.isSafeInteger(total) || total > 2100000000000000) throw new Error('Spendable balance is invalid.');
+  });
+  if (method === 'listunspent') return kept;
+  var balance = result;
+  if (!balance || typeof balance !== 'object' || !Number.isFinite(balance.spendable_veld) || balance.spendable_veld < 0)
+    throw new Error('Wallet balance is unavailable.');
+  return Object.assign({}, balance, {spendable_veld:Math.min(Number(balance.spendable_veld), total / 100000000)});
+}
+
 
 // HIGH: cross-tab spend notifier. Two wallet tabs
 // unlocked on the same keystore can each sign against the same UTXO
@@ -5664,7 +6095,7 @@ function _veldBroadcastExactSigned(signedHex, expectedSeedHex, expectedGeneratio
   var localTxid = String(veldCrypto.sha256d(signedHex)).toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(localTxid))
     return Promise.reject(new Error('Refusing to broadcast: local signed transaction id is invalid.'));
-  return rpc('sendrawtransaction', [signedHex]).then(function(reply) {
+  return _veldJournalBroadcast(signedHex, expectedSeedHex, expectedGeneration).then(function(reply) {
     var returnedTxid = (typeof reply === 'string') ? reply
       : (reply && reply.txid) ? reply.txid : '';
     if (String(returnedTxid).toLowerCase() !== localTxid)
@@ -10706,17 +11137,25 @@ function loadPendingSends() {
     return e && typeof e.txid === 'string' && e.txid.length === 64 &&
       !/[^0-9a-f]/.test(e.txid) && e.from_addr === address;
   });
-  if (!mine.length) { pendingSendsLoad = null; card.style.display = 'none'; return Promise.resolve(); }
+
   var load = {address:address, promise:null};
   pendingSendsLoad = load;
   var isCurrent = function() { return pendingSendsLoad === load && currentAddr === address; };
   var state = {pending:[], unknown:[], confirmed:[], offline:false};
-  load.promise = rpc('getrawmempool', []).then(async function(mp) {
+  load.promise = _veldRecoverLegacyTransactions(address).then(function() {
+    return _veldJournal().pending(address);
+  }).then(function(saved) {
+    saved.forEach(function(entry) {
+      if (!mine.some(function(old) { return old.txid === entry.txid; })) mine.push(entry);
+    });
+    return rpc('getrawmempool', []);
+  }).then(async function(mp) {
     if (!Array.isArray(mp)) throw new Error('Invalid mempool response');
     if (!isCurrent()) return;
     var mempool = new Set(mp);
     state.pending = mine.filter(function(e) { return mempool.has(e.txid); });
-    var checking = mine.filter(function(e) { return !mempool.has(e.txid); });
+    state.unknown = mine.filter(function(e) { return e.interrupted; });
+    var checking = mine.filter(function(e) { return !e.interrupted && !mempool.has(e.txid); });
     var hints = await _veldPendingHistoryHints(address, checking, isCurrent);
     var next = 0;
     async function checkNext() {
@@ -10743,11 +11182,19 @@ function loadPendingSends() {
   }).catch(function() {
     state.offline = true;
     state.unknown = mine;
-  }).then(function() {
+  }).then(async function() {
+    if (!isCurrent()) return;
+    await _veldJournal().confirmed(state.confirmed);
     if (!isCurrent()) return;
     // Re-read storage so a send in another tab is never overwritten by this poll.
     _veldPruneConfirmedPending(address, state.confirmed);
     renderPendingSends(state);
+  }).catch(function(error) {
+    if (!isCurrent()) return;
+    card.style.display = 'block';
+    document.getElementById('w-pending-count').textContent = '';
+    document.getElementById('w-pending-list').textContent = error && error.message
+      ? error.message : 'Transaction recovery is unavailable. Saved transactions have been preserved.';
   }).finally(function() {
     if (pendingSendsLoad === load) pendingSendsLoad = null;
   });
@@ -10773,12 +11220,16 @@ function renderPendingSends(state) {
     var ageSec = Math.max(0, nowSec - (e.ts || 0));
     var age = ageSec < 60 ? ageSec + 's' : ageSec < 3600 ? Math.floor(ageSec / 60) + 'm' : Math.floor(ageSec / 3600) + 'h';
     var inMp = state.pending.indexOf(e) !== -1;
-    var status = inMp ? 'In mempool' : state.offline ? 'Status unavailable' : 'Checking confirmation';
-    var button = ageSec >= 300
+    var status = e.interrupted ? 'Signing interrupted' : inMp ? 'In mempool' : state.offline ? 'Status unavailable' : 'Checking confirmation';
+    var button = e.interrupted
+      ? '<button class="btn btn-ghost btn-sm" data-act-click="hreb27cast" data-txid="' + escHtml(e.txid) + '">Resume</button>'
+      : ageSec >= 300
       ? '<button class="btn btn-ghost btn-sm" data-act-click="hreb27cast" data-txid="' + escHtml(e.txid) + '" style="font-size:10px;padding:4px 10px">Rebroadcast</button>'
       : '<span style="color:var(--muted2);font-size:10px">Rebroadcast in ' + (300 - ageSec) + 's</span>';
-    html += '<tr><td style="font-size:11px;color:var(--muted)">' + escHtml(typeLabel[e.prepare_method] || 'Tx') + '</td>' +
-      '<td><a href="https://explorer.veld.network/tx/' + escHtml(e.txid) + '" target="_blank" rel="noopener noreferrer" class="hash-orange" style="font-size:10px">' + escHtml(shortHash(e.txid)) + '</a></td>' +
+    var reference = e.interrupted ? '<span style="color:var(--muted)">Not signed</span>'
+      : '<a href="https://explorer.veld.network/tx/' + escHtml(e.txid) + '" target="_blank" rel="noopener noreferrer" class="hash-orange" style="font-size:10px">' + escHtml(shortHash(e.txid)) + '</a>';
+    html += '<tr><td style="font-size:11px;color:var(--muted)">' + escHtml(typeLabel[e.prepare_method] || e.label || 'Tx') + '</td>' +
+      '<td>' + reference + '</td>' +
       '<td style="font-size:11px;color:var(--muted)">' + age + '</td>' +
       '<td style="font-size:11px"><span style="color:' + (inMp ? 'var(--gold)' : 'var(--muted)') + '">' + status + '</span></td>' +
       '<td style="text-align:right">' + button + '</td></tr>';
@@ -10800,7 +11251,7 @@ function doRebroadcastTx(ev) {
   var orig = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Rebroadcasting…';
-  rpc('rebroadcasttx', [txid]).then(function(r) {
+  _veldRetryJournalTransaction(txid).then(function(r) {
     if (r && r.rebroadcast) {
       btn.textContent = '✓ Sent to peers';
       btn.style.color = 'var(--em)';

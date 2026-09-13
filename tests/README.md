@@ -25,6 +25,15 @@ web group uses JavaScript fixtures and DOM substitutes, not a complete browser
 or installed PWA. Mobile layout changes also need rendered narrow-viewport and
 safe-area checks.
 
+`wallet_outbox_browser_controls.cjs` additionally uses Playwright and a fresh
+browser profile. It serves only a disposable loopback page, blocks external
+page requests, and substitutes inert input scripts and transaction transport.
+Run it with `node tests/wallet_outbox_browser_controls.cjs`; set
+`VELD_TEST_BROWSER=webkit` to exercise WebKit, or set
+`VELD_TEST_BROWSER_EXECUTABLE` to a supported Chromium executable. It never
+opens an operator's browser profile or wallet. Browser profiles and result
+receipts are retained outside the source tree for review.
+
 The [Source checks workflow](../.github/workflows/source-checks.yml) runs these
 checks on Linux and Windows for pushes and pull requests. It also compiles
 and runs the work-admission unit test on Linux. This is separate from the

@@ -17,6 +17,9 @@ function fixture(entries, handler) {
   const context = vm.createContext({
     currentAddr:'owner', pendingSendsLoad:null, document:{getElementById:element},
     localStorage:{getItem:key => storage.get(key), setItem:(key, value) => storage.set(key, value)},
+    // This suite isolates confirmation display; real storage has browser controls.
+    _veldRecoverLegacyTransactions:async () => {},
+    _veldJournal:() => ({pending:async () => [], confirmed:async () => {}}),
     escHtml:value => String(value), shortHash:value => value.slice(0,10),
     setInterval:callback => {timers.push(callback); return timers.length;}, clearInterval() {},
     rpc(method, params) { calls.push({method, params}); return Promise.resolve().then(() => handler(method, params)); }

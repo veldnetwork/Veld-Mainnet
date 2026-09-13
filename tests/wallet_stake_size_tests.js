@@ -54,6 +54,8 @@ async function runFixture(context) {
     _veldAssertOpReturnExact() {},
     _veldVerifyInputSighashes() {},
     _veldAuthenticatePreparedPrevouts: async () => { ++authenticated; },
+    // The IndexedDB boundary is covered by the disposable browser suite.
+    _veldJournalBroadcast: async () => context.rpc('sendrawtransaction'),
     veldCrypto: {
       injectSignatures: async () => { ++signed; return 'ab'; },
       sha256d: () => { ++hashed; return txid; }

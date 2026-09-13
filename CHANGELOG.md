@@ -3,6 +3,12 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## Unreleased
+
+- Save browser-wallet input reservations before signing and exact signed transactions before broadcasting.
+- Recover uncertain sends across browser restarts and resume interrupted signing of the original transaction.
+- Keep spendable balances consistent with saved input reservations across wallet tabs and reversible confirmations.
+
 ## 3.2.0 - 2026-09-12
 
 - Classify staking and co-mining payouts from their funding pools and restore them to the Rewards tab, including existing history.
