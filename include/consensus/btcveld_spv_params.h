@@ -82,10 +82,11 @@ inline const std::vector<uint8_t>& BtcVeldCustodySpk() {
 #if defined(VELD_BTCVELD_REGTEST)
         std::vector<uint8_t> configured =
             BtcVeldHex_(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX);
-        // The disposable build controller supplies a wallet-owned native
-        // SegWit v0 keyhash script.  Fail closed if the quoted definition is
-        // malformed even though its exact encoded length is compile-gated.
-        if (configured.size() != 22 || configured[0] != 0x00 || configured[1] != 0x14)
+        const bool keyhash = configured.size() == 22 &&
+            configured[0] == 0x00 && configured[1] == 0x14;
+        const bool taproot = configured.size() == 34 &&
+            configured[0] == 0x51 && configured[1] == 0x20;
+        if (!keyhash && !taproot)
             configured.clear();
         return configured;
 #else

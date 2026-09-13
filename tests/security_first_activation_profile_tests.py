@@ -23,7 +23,9 @@ int main() {
     auto cp=veld::BtcVeldCheckpoint();
     return cp.height!=2016 || cp.time!=VELD_FIRST_ACTIVATION_BTC_CHECKPOINT_TIME ||
         cp.bits!=VELD_FIRST_ACTIVATION_BTC_CHECKPOINT_BITS ||
-        veld::HashToHex(cp.hash)!=VELD_FIRST_ACTIVATION_BTC_CHECKPOINT_HASH;
+        veld::HashToHex(cp.hash)!=VELD_FIRST_ACTIVATION_BTC_CHECKPOINT_HASH ||
+        veld::BtcVeldCustodySpk().empty() ||
+        veld::BtcVeldCustodySpk()!=veld::BtcVeldHex_(VELD_FIRST_ACTIVATION_CUSTODY_SPK_HEX);
 #else
     return 0;
 #endif
@@ -49,6 +51,6 @@ for name,flags,bond,height,allowed in cases:
 cmd=[a.compiler,"-std=c++20","-I"+str(root/"include"),"-DEXPECT_BOND=50","-DEXPECT_MIGRATION_HEIGHT=3360",*isolated,str(source),"-o",str(out/"checkpoint-contract.exe")]
 subprocess.run(cmd,check=True,capture_output=True)
 subprocess.run([str(out/"checkpoint-contract.exe")],check=True)
-results.append({"case":"compiled_checkpoint_matches_core_fixture","pass":True})
+results.append({"case":"compiled_checkpoint_and_custody_match_core_fixture","pass":True})
 (out/"profile-results.json").write_text(json.dumps(results,indent=2)+"\n")
 print("PASS first activation profile contracts="+str(len(results)))

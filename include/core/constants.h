@@ -135,13 +135,18 @@
 #error "VELD_BTCVELD_REGTEST requires a compile-time disposable btcVELD custody script"
 #endif
 #if defined(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX)
-static_assert(sizeof(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX) == 45,
-              "the disposable btcVELD custody script must be a quoted 22-byte P2WPKH scriptPubKey");
-static_assert(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[0] == '0' &&
-                  VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[1] == '0' &&
-                  VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[2] == '1' &&
-                  VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[3] == '4',
-              "the disposable btcVELD custody script must use the P2WPKH 0014 prefix");
+static_assert(
+    (sizeof(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX) == 45 &&
+     VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[0] == '0' &&
+     VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[1] == '0' &&
+     VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[2] == '1' &&
+     VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[3] == '4') ||
+    (sizeof(VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX) == 69 &&
+     VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[0] == '5' &&
+     VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[1] == '1' &&
+     VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[2] == '2' &&
+     VELD_L3_DISPOSABLE_BTCVELD_CUSTODY_SPK_HEX[3] == '0'),
+    "the disposable btcVELD custody script must be a quoted P2WPKH or P2TR scriptPubKey");
 #endif
 
 namespace veld {
