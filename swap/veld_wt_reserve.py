@@ -2524,6 +2524,43 @@ def _validate_request(req, cfg, beat):
     return issuer_id, witness_id, sats, recipient
 
 
+def _decode_mint_template(unsigned_hex, cfg):
+    issuer_script = cfg.get("issuer_p2pkh_hex")
+    if not isinstance(issuer_script, str) or not re.fullmatch(r"[0-9a-f]{50}", issuer_script):
+        refuse("witness issuer_p2pkh_hex policy is missing/malformed")
+    keygen = cfg.get("keygen") or os.path.join(HERE, "veld-keygen")
+    run = run_bounded_subprocess(
+        [keygen, "decode-mint", issuer_script, unsigned_hex],
+        timeout=30, stdout_max=256 * 1024, stderr_max=64 * 1024,
+        description="witness mint decoder")
+    if run.returncode != 0:
+        refuse("transaction is not a canonical mint")
+    try:
+        decoded = strict_json_loads(run.stdout, "witness mint decoder response")
+    except (ValueError, RuntimeError, UnicodeError):
+        refuse("decode-mint returned invalid JSON")
+    if not isinstance(decoded, dict):
+        refuse("decode-mint response must be an object")
+    for field in ("from", "to"):
+        value = decoded.get(field)
+        if (not isinstance(value, str) or not (1 <= len(value) <= 128) or
+                any(ord(char) < 33 or ord(char) > 126 for char in value)):
+            refuse("decode-mint returned an invalid account")
+    sats = decoded.get("sats")
+    if type(sats) is not int or not (0 < sats <= (1 << 63) - 1):
+        refuse("decode-mint returned a non-canonical amount")
+    memo = decoded.get("memo", "")
+    if not isinstance(memo, str) or len(memo.encode("utf-8")) > 64000:
+        refuse("decode-mint returned an invalid memo")
+    for field, minimum, maximum in (("total_out_sats", 0, (1 << 63) - 1),
+                                    ("num_inputs", 1, 65535)):
+        if field in decoded:
+            value = decoded[field]
+            if type(value) is not int or not (minimum <= value <= maximum):
+                refuse("decode-mint returned an invalid %s" % field)
+    return decoded
+
+
 def _derive_unsigned_mint(req, cfg):
     try:
         raw = sol.validate_unsigned_template_hex(req.get("unsigned_tx_hex"))
@@ -2532,19 +2569,7 @@ def _derive_unsigned_mint(req, cfg):
     digest = hashlib.sha256(raw).hexdigest()
     if digest != req.get("unsigned_tx_sha256") or digest != req.get("request_id"):
         refuse("request identifiers do not match unsigned transaction bytes")
-    issuer_script = cfg.get("issuer_p2pkh_hex")
-    if not isinstance(issuer_script, str) or not re.fullmatch(r"[0-9a-f]{50}", issuer_script):
-        refuse("witness issuer_p2pkh_hex policy is missing/malformed")
-    keygen = cfg.get("keygen") or os.path.join(HERE, "veld-keygen")
-    run = subprocess.run([keygen, "decode-mint", issuer_script,
-                          req["unsigned_tx_hex"]], capture_output=True,
-                         text=True, timeout=30)
-    if run.returncode != 0:
-        refuse("unsigned transaction is not a canonical mint")
-    try:
-        decoded = json.loads(run.stdout)
-    except Exception:
-        refuse("decode-mint returned invalid JSON")
+    decoded = _decode_mint_template(req["unsigned_tx_hex"], cfg)
     if decoded.get("from") != cfg.get("issuer_id"):
         refuse("unsigned mint issuer differs from witness policy")
     try:
@@ -2812,18 +2837,7 @@ def handle_commit(req, cfg, paths, ledger):
     claimed_txid = req.get("txid")
     if claimed_txid != txid:
         refuse("commit txid does not match signed transaction bytes")
-    issuer_script = cfg.get("issuer_p2pkh_hex")
-    if not isinstance(issuer_script, str) or not re.fullmatch(r"[0-9a-f]{50}", issuer_script):
-        refuse("witness issuer_p2pkh_hex policy is missing/malformed")
-    keygen = cfg.get("keygen") or os.path.join(HERE, "veld-keygen")
-    run = subprocess.run([keygen, "decode-mint", issuer_script, unsigned_hex],
-                         capture_output=True, text=True, timeout=30)
-    if run.returncode != 0:
-        refuse("committed transaction is not a canonical reserved mint")
-    try:
-        decoded = json.loads(run.stdout)
-    except Exception:
-        refuse("decode-mint returned invalid JSON")
+    decoded = _decode_mint_template(unsigned_hex, cfg)
     if (decoded.get("from") != receipt["issuer_id"] or
             decoded.get("to") != receipt["recipient"] or
             decoded.get("sats") != receipt["sats"]):
