@@ -2481,20 +2481,26 @@ def _sign_receipt(core, cfg):
     if passfile:
         passfile = os.path.abspath(passfile)
         _secure_file(passfile, private=True)
-        environment["VELD_VAULT_PASSPHRASE"] = _read_text_nofollow(passfile).strip()
+        passphrase = read_bounded_secret_file(
+            passfile, 4096, "witness receipt passphrase").decode("utf-8").strip()
+        if not passphrase or "\x00" in passphrase:
+            refuse("witness receipt passphrase is empty or malformed")
+        environment["VELD_VAULT_PASSPHRASE"] = passphrase
     with tempfile.TemporaryDirectory(prefix="veld-reservation-sign-") as td:
         message = os.path.join(td, "receipt.json")
         signature = os.path.join(td, "receipt.sig")
         with open(message, "wb") as out:
             out.write(sol.canonical_reservation_bytes(core))
-        run = subprocess.run([keygen, "sign-release", keyfile, message, signature],
-                             capture_output=True, text=True, timeout=30,
-                             env=environment)
+        run = run_bounded_subprocess(
+            [keygen, "sign-release", keyfile, message, signature],
+            timeout=30, stdout_max=64 * 1024, stderr_max=64 * 1024,
+            env=environment, description="witness receipt signer")
         if run.returncode != 0:
             refuse("reservation receipt signing failed")
-        sig = open(signature, "rb").read()
-    if not sig:
-        refuse("reservation receipt signature is empty")
+        sig = read_bounded_regular_file(
+            signature, 3309, "witness receipt signature")
+    if len(sig) != 3309:
+        refuse("reservation receipt signature must be a complete ML-DSA-65 signature")
     result = dict(core)
     result["sig_alg"] = "mldsa65"
     result["sig"] = sig.hex()

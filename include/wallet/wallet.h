@@ -53,7 +53,7 @@ inline std::string Base58Encode(const std::vector<uint8_t>& data) {
 }
 
 inline std::vector<uint8_t> Base58Decode(const std::string& input) {
-    static const int8_t TABLE[256] = {
+    static const int8_t TABLE[128] = {
         -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
         -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
         -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
@@ -72,7 +72,9 @@ inline std::vector<uint8_t> Base58Decode(const std::string& input) {
 
     std::vector<uint8_t> digits = {0};
     for (char c : input) {
-        int carry = TABLE[(uint8_t)c];
+        const auto byte = static_cast<uint8_t>(c);
+        if (byte >= sizeof(TABLE)) return {};
+        int carry = TABLE[byte];
         if (carry < 0) return {};
         for (auto& d : digits) {
             int val = (int)d * 58 + carry;

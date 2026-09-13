@@ -1115,6 +1115,9 @@ public:
         std::function<BtcVeldMintProofStatus(const std::string&)> fn) {
         btcveld_mint_proof_fn_ = std::move(fn);
     }
+    void SetRtp1MintInspectionFn(std::function<std::string(const std::string&)> fn) {
+        rtp1_mint_inspection_fn_ = std::move(fn);
+    }
     // btcVELD relay: the node's in-consensus BTC-header view (best height/tip), snapshotted
     // race-free by the block thread. Returns a JSON string; unwired => dormant semantics.
     void SetBtcHeaderInfoFn(std::function<std::string()> fn) { btc_header_info_fn_ = std::move(fn); }
@@ -1424,6 +1427,7 @@ private:
     std::function<std::string(const std::vector<std::string>&)> btcveld_redeem_page_fn_;
     std::function<std::string()> btcveld_supply_snapshot_fn_;
     std::function<BtcVeldMintProofStatus(const std::string&)> btcveld_mint_proof_fn_;
+    std::function<std::string(const std::string&)> rtp1_mint_inspection_fn_;
     std::function<std::string()> btc_header_info_fn_;   // node's in-consensus BTC-header tip (btcVELD relay)
     std::function<Hash256()> btc_header_digest_fn_;     // complete in-consensus SPV header state
     GenerateFn generate_fn_;                            // regtest-only on-demand block generator
@@ -3195,7 +3199,7 @@ private:
             const std::string& addr = params[0];
             uint8_t version = 0;
             std::vector<uint8_t> payload;
-            bool valid = Base58CheckDecode(addr, version, payload)
+            bool valid = addr.size() <= 50 && Base58CheckDecode(addr, version, payload)
                          && payload.size() == 20
                          && (version == 0x46 || version == 0x6F);
             std::string network = (version == 0x6F) ? "testnet" :
@@ -4076,6 +4080,14 @@ private:
         // signed by the issuer key (onchain_tokens.h::ApplyTokenOp). The >80-B-op
         // sibling of preparerawtransaction (whose memo caps at 80 B). No native VELD
         // goes to the recipient; the issuer funds only the fee + signs the sighashes.
+        methods_["inspectrtp1mint"] = RpcMethod([this](const P& params) -> std::string {
+            if (params.size() != 1 || params[0].empty() || params[0].size() > 256 * 1024)
+                throw std::invalid_argument("Usage: inspectrtp1mint <unsigned_tx_hex>");
+            if (!rtp1_mint_inspection_fn_)
+                throw std::runtime_error("independent RTP1 mint inspection is unavailable");
+            return rtp1_mint_inspection_fn_(params[0]);
+        });
+
         methods_["preparetokenmint"] = RpcMethod([this](const P& params) -> std::string {
             size_t argument_count = params.size();
             std::vector<std::string> excluded_issuer_prevouts;

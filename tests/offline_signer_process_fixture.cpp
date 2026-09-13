@@ -268,7 +268,8 @@ int main(int argc, char** argv) {
         }
         if (argc == 5 && std::string(argv[1]) == "--verify-signed")
             return VerifySigned(argv[2], argv[3], argv[4]);
-        if (argc != 3) {
+        const bool ordinary_only = argc == 4 && std::string(argv[3]) == "--ordinary-only";
+        if (argc != 3 && !ordinary_only) {
             std::cerr << "usage: fixture <signer-address> <output-dir>\n"
                       << "       fixture --prepare-dir <directory>\n";
             return 2;
@@ -385,6 +386,11 @@ int main(int argc, char** argv) {
                            << offline_signing::OperationIdentityDigest(
                                   operation.identity)
                            << '\t' << prepared_name << '\n';
+        }
+        valid_manifest.close();
+        if (ordinary_only) {
+            std::cout << "PASS ordinary signing fixtures\n";
+            return 0;
         }
 
         struct Case { std::string name; std::string proposal; bool pass; };

@@ -2965,6 +2965,9 @@ public:
             [this](const std::string& outpoint) {
                 return BuildMintNullifierStatus_(outpoint);
             });
+        rpc_.SetRtp1MintInspectionFn([this](const std::string& raw) {
+            return InspectRtp1MintJson_(raw);
+        });
         rpc_.SetBtcVeldSupplySnapshotFn(
             [this]() -> std::string { return BtcVeldSupplySnapshotJson_(); });
         // Layer-3: the redeem daemon reads the retained certificate high-water
@@ -9666,6 +9669,116 @@ private:
             out.emplace_back("u:" + entry.key, std::move(value));
         }
         return out;
+    }
+
+    // A fresh signing inspection is keyless and has no state effects. Every
+    // fact comes from one validated native/Bitcoin frame under the transition
+    // sequencer. Cached signed retries require their durable reconciliation
+    // path; an already consumed template cannot obtain a fresh authorization.
+    std::string InspectRtp1MintJson_(const std::string& encoded) {
+#ifdef VELD_PUBLIC_TESTNET
+        throw std::runtime_error("btcVELD issuance is unavailable on public testnet");
+#else
+        if (!btcveld::reserve::TRANSITION_V1_REQUIRED || encoded.empty() ||
+            encoded.size() > 256 * 1024)
+            throw std::invalid_argument("RTP1 inspection requires a bounded mint template");
+        const auto raw = HexToBytes(encoded);
+        Transaction tx;
+        if (raw.empty() || BytesToHex(raw) != encoded ||
+            Transaction::Deserialize(raw, 0, tx) != raw.size() || tx.Serialize() != raw ||
+            tx.IsCoinbase() || tx.inputs.empty())
+            throw std::invalid_argument("mint template is not a complete canonical transaction");
+        for (const auto& input : tx.inputs)
+            if (!input.script_sig.empty())
+                throw std::invalid_argument("fresh mint inspection requires an unsigned template");
+
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        if (!ChainFullyValidated())
+            throw std::runtime_error("mint inspection requires full local validation");
+        const auto tip = chain_.TipCopy();
+        if (tip.height == UINT64_MAX || tip.header.timestamp > UINT64_MAX - TARGET_BLOCK_TIME)
+            throw std::runtime_error("candidate mint frame is out of range");
+        const auto candidate = tip.height + 1;
+        const auto gate = PegGateForState_(fin_state_, candidate, &btc_headers_,
+                                           tip.header.timestamp + TARGET_BLOCK_TIME);
+        if (!gate.MintAllowed())
+            throw std::runtime_error("RTP1 mint inspection is closed by the consensus gate");
+        const auto prior = onchain_tokens_.GetBtcVeldReserveState();
+        const auto accumulator = onchain_tokens_.GetBtcVeldMintAccumulator();
+        const auto supply = onchain_tokens_.GetSupply(BTCVELD_TOKEN_ID);
+        if (supply < 0 || prior.processed_veld_height != tip.height ||
+            prior.processed_veld_block_hash != tip.GetHash() ||
+            accumulator.processed_height != tip.height ||
+            accumulator.processed_block_hash != tip.GetHash())
+            throw std::runtime_error("mint inspection module state is not at the canonical tip");
+        const BtcVeldReserveMintPolicyContext context{prior, static_cast<uint64_t>(supply)};
+        const auto issuer_script = AddressToScript(BTCVELD_ISSUER_ADDRESS);
+        std::string from, to, memo;
+        uint64_t amount = 0;
+        const auto refusal = BtcVeldMintTemplatePolicy(
+            tx, issuer_script, from, to, amount, memo, &context);
+        if (!refusal.empty() || from != BTCVELD_ISSUER_ADDRESS ||
+            memo.rfind(btcveld::reserve::ISSUER_MEMO_PREFIX, 0) != 0)
+            throw std::invalid_argument("mint inspection: exact RTP1 issuer template required");
+        uint64_t input_total = 0, output_total = 0;
+        std::set<std::pair<Hash256, uint32_t>> unique_inputs;
+        for (const auto& input : tx.inputs) {
+            const auto prevout = chain_.GetUTXO(input.prev_tx_hash, input.prev_out_index);
+            if (!unique_inputs.emplace(input.prev_tx_hash, input.prev_out_index).second ||
+                !prevout || prevout->script_pubkey != issuer_script ||
+                prevout->value > UINT64_MAX - input_total)
+                throw std::runtime_error("mint inspection requires distinct unspent issuer inputs");
+            input_total += prevout->value;
+        }
+        for (const auto& output : tx.outputs) {
+            if (output.value > UINT64_MAX - output_total)
+                throw std::runtime_error("mint output total exceeds its bound");
+            output_total += output.value;
+        }
+        if (input_total < output_total || input_total - output_total != MIN_TX_FEE)
+            throw std::runtime_error("mint inspection requires the exact issuer transaction fee");
+
+        // Authorization is intentionally skipped only on this disposable token
+        // snapshot: the caller is asking whether an unsigned issuer template is
+        // signable. Canonical admission still verifies every actual signature.
+        const auto accepted = onchain_tokens_.FilterMempoolCandidates(
+            {tx}, candidate, chain_.ComputeNextBitsAt(tip.height), gate, {true});
+        if (accepted.size() != 1 || !accepted[0])
+            throw std::runtime_error("RTP1 template does not pass current token and Bitcoin validation");
+        const auto proof = HexToBytes(memo.substr(std::strlen(btcveld::reserve::ISSUER_MEMO_PREFIX)));
+        btcveld::reserve::Claim claim;
+        if (!btcveld::reserve::DecodeProof(proof.data(), proof.size(), claim))
+            throw std::runtime_error("validated RTP1 proof could not be decoded");
+        const auto classified = btcveld::reserve::ClassifyBitcoinReserveSpend(
+            prior, static_cast<uint64_t>(supply), claim.bitcoin_tx, claim.direct_parents,
+            BtcVeldCustodySpk(), [&to](const std::string& recipient) { return recipient == to; });
+        if (classified.disposition != btcveld::reserve::SpendDisposition::AUTHORIZED_TRANSITION ||
+            classified.pending_outpoint.empty())
+            throw std::runtime_error("validated RTP1 deposit identity is unavailable");
+        Hash256 template_hash{}, proof_hash{};
+        vendored_crypto::sha256(raw.data(), raw.size(), template_hash.data());
+        vendored_crypto::sha256(proof.data(), proof.size(), proof_hash.data());
+        using JB = JsonBuilder;
+        return JB::Object({
+            {"version", JB::Number(uint64_t(1))}, {"proof_version", JB::String("RTP1")},
+            {"tip", JB::Number(tip.height)}, {"tip_hash", JB::String(HashToHex(tip.GetHash()))},
+            {"candidate_height", JB::Number(candidate)},
+            {"final_height", JB::Number(fin_state_.FinalizedHeight())},
+            {"genesis_hash", JB::String(GENESIS_HASH)},
+            {"unsigned_tx_sha256", JB::String(HashToHex(template_hash))},
+            {"proof_sha256", JB::String(HashToHex(proof_hash))},
+            {"issuer", JB::String(from)}, {"recipient", JB::String(to)},
+            {"sats", JB::Number(amount)}, {"fee_units", JB::Number(input_total - output_total)},
+            {"deposit_outpoint", JB::String(classified.pending_outpoint)},
+            {"bitcoin_txid", JB::String(HashToHex(claim.bitcoin_txid))},
+            {"bitcoin_block", JB::String(HashToHex(claim.bitcoin_block))},
+            {"reserve_prior_state_hex", JB::String(BytesToHex(btcveld::reserve::EncodeState(prior)))},
+            {"reserve_prior_supply_sats", JB::Number(static_cast<uint64_t>(supply))},
+            {"nullifier_root", JB::String(HashToHex(accumulator.root))},
+            {"custody_descriptor_sha256", JB::String(BTCVELD_CUSTODY_DESCRIPTOR_SHA256)},
+            {"custody_manifest_sha256", JB::String(BTCVELD_CUSTODY_MANIFEST_SHA256)}
+        });
+#endif
     }
 
     BtcVeldMintProofStatus BuildMintNullifierStatus_(

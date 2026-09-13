@@ -10,7 +10,7 @@
 // deterministically advances the root.  The representation has:
 //
 //   * exact membership (no probabilistic false positives),
-//   * 256-bit collision/preimage security,
+//   * domain-separated SHA-256 commitments,
 //   * constant consensus memory and snapshot size,
 //   * a hard 8,224-byte proof bound, and
 //   * compressed normal proofs (32-byte bitmap plus non-default siblings).

@@ -517,6 +517,15 @@ static std::vector<uint8_t> ReadAllBytes(const std::string& path, bool& ok) {
     return d;
 }
 
+static std::vector<uint8_t> ReadSigningInput(const std::string& path,
+                                           size_t maximum, bool& ok) {
+    std::vector<uint8_t> bytes;
+    ok = veld::channel::secure_file::ReadExplicitImport(
+        path, bytes, nullptr, maximum) ==
+        veld::channel::secure_file::ReadResult::Ok;
+    return bytes;
+}
+
 // veld-keygen sign-release <keyfile> <input> <outsig>
 //   Offline release signing. Decrypts the release key (VELD_VAULT_PASSPHRASE),
 //   signs Hash256d(input-bytes) with ML-DSA-65 (the chain's own scheme), and
@@ -713,7 +722,8 @@ static int CmdSignTx(const std::string& keyfile, const std::string& prepared,
     std::copy(pub_bytes.begin(), pub_bytes.end(), pub.begin());
 
     bool pok = false;
-    std::vector<uint8_t> pbytes = ReadAllBytes(prepared, pok);
+    std::vector<uint8_t> pbytes = ReadSigningInput(
+        prepared, offline_signing::kMaxPreparedJsonBytes, pok);
     if (!pok) { veld::compat::SecureZero(priv.data(), priv.size()); std::cerr << "error: cannot read prepared file\n"; return 1; }
     if (pbytes.size() > offline_signing::kMaxPreparedJsonBytes) {
         veld::compat::SecureZero(priv.data(), priv.size());
@@ -953,7 +963,7 @@ static int CmdSignTx(const std::string& keyfile, const std::string& prepared,
         }
     } else {
         bool iok = false;
-        const std::vector<uint8_t> ibytes = ReadAllBytes(intent_path, iok);
+        const std::vector<uint8_t> ibytes = ReadSigningInput(intent_path, 64U * 1024U, iok);
         if (!iok || ibytes.empty() || ibytes.size() > 64U * 1024U) {
             veld::compat::SecureZero(priv.data(), priv.size());
             std::cerr << "error: intent file is unreadable or exceeds 64 KiB\n";
@@ -1109,7 +1119,10 @@ static int CmdDecodeMint(const std::string& issuer_p2pkh_hex,
     if (!ok2 || raw.empty()) { std::cerr << "error: unsigned_tx_hex invalid\n"; return 2; }
     Transaction tx;
     size_t consumed = Transaction::Deserialize(raw, 0, tx);
-    if (!consumed || tx.inputs.empty()) { std::cerr << "error: cannot deserialize tx\n"; return 2; }
+    if (!consumed || consumed != raw.size() || tx.Serialize() != raw || tx.inputs.empty()) {
+        std::cerr << "error: transaction must use one complete canonical encoding\n";
+        return 2;
+    }
     std::string from, to, memo; uint64_t sats = 0;
     BtcVeldReserveMintPolicyContext reserve_context;
     const BtcVeldReserveMintPolicyContext* reserve_context_ptr = nullptr;
@@ -1130,6 +1143,47 @@ static int CmdDecodeMint(const std::string& issuer_p2pkh_hex,
               << ",\"memo\":\"" << esc(memo) << "\",\"total_out_sats\":" << total_out
               << ",\"num_inputs\":" << tx.inputs.size() << "}\n";
     return 0;
+}
+
+static int CmdDecodeMintStdin() {
+    using namespace veld;
+    constexpr size_t maximum = 270 * 1024;
+    std::string encoded(maximum + 1, '\0');
+    std::cin.read(encoded.data(), static_cast<std::streamsize>(encoded.size()));
+    const auto count = std::cin.gcount();
+    if (count <= 0 || static_cast<size_t>(count) > maximum || std::cin.bad()) {
+        std::cerr << "error: bounded mint decoder request required\n";
+        return 2;
+    }
+    encoded.resize(static_cast<size_t>(count));
+    btc_buy::JsonValue request;
+    std::string error;
+    btc_buy::StrictJsonParser parser(encoded, maximum, true);
+    if (!parser.Parse(request, error) || request.kind != btc_buy::JsonValue::Kind::Object ||
+        request.object.size() != 4) {
+        std::cerr << "error: mint decoder request schema is invalid\n";
+        return 2;
+    }
+    auto text = [&](const char* name, size_t limit) -> std::string {
+        const auto* value = request.Get(name);
+        if (!value || value->kind != btc_buy::JsonValue::Kind::String ||
+            value->string_had_escape || value->text.empty() || value->text.size() > limit)
+            return {};
+        std::vector<uint8_t> bytes;
+        if (!offline_signing::DecodeLowerHex(value->text, limit / 2, bytes)) return {};
+        return value->text;
+    };
+    const auto issuer = text("issuer_script_hex", 50);
+    const auto unsigned_tx = text("unsigned_tx_hex", 256 * 1024);
+    const auto state = text("reserve_prior_state_hex", 4096);
+    const auto* supply_value = request.Get("reserve_prior_supply_sats");
+    uint64_t supply = 0;
+    if (issuer.size() != 50 || unsigned_tx.empty() || state.empty() || !supply_value ||
+        !btc_buy::ParseUint(*supply_value, supply)) {
+        std::cerr << "error: mint decoder request fields are invalid\n";
+        return 2;
+    }
+    return CmdDecodeMint(issuer, unsigned_tx, state, std::to_string(supply));
 }
 
 // Keyless strict decoder for the issuer-signed C1 capacity carrier.  It shares
@@ -1531,6 +1585,14 @@ int main(int argc, char** argv) {
         return CmdDecodeMint(
             argv[2], argv[3], argc == 6 ? argv[4] : "",
             argc == 6 ? argv[5] : "");
+    }
+
+    if (cmd == "decode-mint-stdin") {
+        if (argc != 2) {
+            std::cerr << "Usage: veld-keygen decode-mint-stdin < request.json\n";
+            return 2;
+        }
+        return CmdDecodeMintStdin();
     }
 
     if (cmd == "decode-c1-reservation") {
