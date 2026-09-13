@@ -37,6 +37,7 @@
 #include <csignal>
 #include <atomic>
 #include <iomanip>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <functional>
@@ -1249,47 +1250,75 @@ static int cmd_deregister(const std::string& host, uint16_t port,
 
 static int cmd_status(const std::string& host, uint16_t port,
                        const ValidatorKey& vk) {
-    std::string ci = json_rpc(host, port, "getblockchaininfo");
-    uint64_t height = juint(ci, "blocks");
-    double supply = 0;
-    try { supply = std::stod(jstr(ci, "supply_veld")); } catch (...) {}
+    try {
+        const auto read = [&](const std::string& method,
+                              const std::string& params = "[]") {
+            veld::btc_buy::JsonValue root;
+            std::string error;
+            const auto* result = strict_rpc_result(
+                json_rpc(host, port, method, params), root, error);
+            if (!result || result->kind != veld::btc_buy::JsonValue::Kind::Object)
+                throw std::runtime_error(method + " did not return status data");
+            return *result;
+        };
+        const auto amount = [](const veld::btc_buy::JsonValue& object,
+                                const char* name) {
+            const auto* value = object.Get(name);
+            if (!value || value->kind != veld::btc_buy::JsonValue::Kind::Number)
+                throw std::runtime_error(std::string(name) + " is unavailable");
+            size_t consumed = 0;
+            const double result = std::stod(value->text, &consumed);
+            if (consumed != value->text.size() || !std::isfinite(result) || result < 0)
+                throw std::runtime_error(std::string(name) + " is invalid");
+            return result;
+        };
+        const auto ci = read("getblockchaininfo");
+        const auto vi = read("getvalidators");
+        const auto myvi = read("getvalidatorinfo", "[\"" + vk.pubkey_hex + "\"]");
+        const auto si = read("getstake", "[\"" + vk.address + "\"]");
+        uint64_t height = 0, supply_units = 0, val_count = 0;
+        bool sys_active = false, registered = false;
+        if (!json_u64(ci, "blocks", height) ||
+            !json_u64(ci, "supply_units", supply_units) ||
+            !json_u64(vi, "validator_count", val_count) ||
+            !json_bool(vi, "system_active", sys_active) ||
+            !json_bool(myvi, "registered", registered))
+            throw std::runtime_error("required node status fields are unavailable");
+        bool operations_active = sys_active;
+        if (vi.Get("existing_operations_active")) {
+            bool existing_active = false;
+            if (!json_bool(vi, "existing_operations_active", existing_active))
+                throw std::runtime_error("validator operations status is unavailable");
+            operations_active = operations_active || existing_active;
+        }
+        const double supply = (double)supply_units / VELD_UNITS;
+        const double threshold = amount(vi, "unlock_threshold_veld");
+        const double net_staked = amount(vi, "total_staked_veld");
+        const double our_stake = amount(si, "staked_veld");
 
-    std::string vi = json_rpc(host, port, "getvalidators");
-    bool sys_active = jstr(vi, "system_active") == "true";
-    double threshold = 0, net_staked = 0;
-    try { threshold = std::stod(jstr(vi, "unlock_threshold_veld")); } catch (...) {}
-    try { net_staked = std::stod(jstr(vi, "total_staked_veld")); } catch (...) {}
-    uint64_t val_count = juint(vi, "validator_count");
-
-    std::string myvi = json_rpc(host, port, "getvalidatorinfo",
-        "[\"" + vk.pubkey_hex + "\"]");
-    bool registered = jstr(myvi, "registered") == "true";
-
-    std::string si = json_rpc(host, port, "getstakingaddr",
-        "[\"" + vk.address + "\"]");
-    double our_stake = 0;
-    try { our_stake = std::stod(jstr(si, "staked_veld")); } catch (...) {}
-
-    std::cout << "\n";
-    std::cout << CYN << "── Veld Validator Status ─────────────────\n" << RST;
-    std::cout << "  Node height:       " << height << "\n";
-    std::cout << "  Supply:            " << std::fixed << std::setprecision(2) << supply << " VELD\n";
-    std::cout << "\n";
-    std::cout << "  Validator system:  " << (sys_active ? (std::string(GRN) + "ACTIVE") : (std::string(YEL) + "LOCKED")) << RST << "\n";
-    if (!sys_active && validator_operations_available(vi))
-        std::cout << "  Existing validators remain active; new registration is paused.\n";
-    std::cout << "  Network staked:    " << net_staked << " / " << threshold << " VELD required\n";
-    std::cout << "  Active validators: " << val_count << "\n";
-    std::cout << "\n";
-    std::cout << "  Our pubkey:        " << vk.pubkey_hex.substr(0, 20) << "...\n";
-    std::cout << "  Our address:       " << vk.address << "\n";
-    std::cout << "  Our stake:         " << our_stake << " VELD";
-    if (our_stake < (double)MIN_VALIDATOR_STAKE / VELD_UNITS)
-        std::cout << RED << "  (below 10,000 VELD mainnet minimum)" << RST;
-    std::cout << "\n";
-    std::cout << "  Registration:      " << (registered ? (std::string(GRN) + "REGISTERED") : (std::string(RED) + "NOT REGISTERED")) << RST << "\n";
-    std::cout << "\n";
-    return 0;
+        std::cout << "\n";
+        std::cout << CYN << "── Veld Validator Status ─────────────────\n" << RST;
+        std::cout << "  Node height:       " << height << "\n";
+        std::cout << "  Supply:            " << std::fixed << std::setprecision(2) << supply << " VELD\n";
+        std::cout << "\n";
+        std::cout << "  Validator operations: " << (operations_active ? (std::string(GRN) + "ACTIVE") : (std::string(YEL) + "PAUSED")) << RST << "\n";
+        std::cout << "  Registration at tip: " << (sys_active ? "OPEN" : "PAUSED") << "\n";
+        std::cout << "  Network staked:    " << net_staked << " VELD\n";
+        if (threshold > 0)
+            std::cout << "  Network floor at tip: " << threshold << " VELD\n";
+        std::cout << "  Active validators: " << val_count << "\n";
+        std::cout << "\n";
+        std::cout << "  Our pubkey:        " << vk.pubkey_hex.substr(0, 20) << "...\n";
+        std::cout << "  Our address:       " << vk.address << "\n";
+        std::cout << "  Wallet stake:      " << our_stake << " VELD\n";
+        std::cout << "  Bond minimum:      " << (MIN_VALIDATOR_STAKE / VELD_UNITS) << " VELD\n";
+        std::cout << "  Registration:      " << (registered ? (std::string(GRN) + "REGISTERED") : (std::string(RED) + "NOT REGISTERED")) << RST << "\n";
+        std::cout << "\n";
+        return 0;
+    } catch (const std::exception& error) {
+        log(RED, std::string("Validator status unavailable: ") + error.what());
+        return 1;
+    }
 }
 
 static std::string sign_block(const Secp256k1PrivKey& privkey,
