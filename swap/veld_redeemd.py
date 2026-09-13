@@ -10,8 +10,9 @@ Security authorities are deliberately separated:
 * Bitcoin itself supplies paid/not-paid idempotency.  Every payout contains one
   canonical OP_RETURN marker binding the Veld burn outpoint.  Before every signing
   and broadcast boundary, the coordinator searches its Bitcoin wallet history for
-  that marker and verifies the exact destination/amount.  Complete local-directory
-  loss or stale restore therefore cannot pay the burn again (C-05).
+  that marker and verifies the exact destination/amount. This reconciles visible
+  payments; unpublished signatures and stale restores need independent intent
+  authority before a replacement payout can be authorized.
 * Production payout signing is threshold PSBT approval.  The coordinator is
   watch-only and cannot spend by itself.  Single-wallet signing exists only behind
   an explicit development-only flag (H-06).
@@ -20,7 +21,10 @@ The daemon fails closed on dependency ambiguity, a canonical-chain mismatch,
 state corruption, marker/payment mismatch, incomplete threshold approval, or fee
 and transaction-template disagreement.
 """
+import base64
+import binascii
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -442,9 +446,12 @@ class Btc:
             raise RuntimeError("wallet must be a string")
         self.base = list(cli_base) + (["-rpcwallet=%s" % wallet] if wallet else [])
 
-    def call(self, method, *args):
+    def call(self, method, *args, deadline=None):
+        timeout = 120 if deadline is None else min(120, deadline - time.monotonic())
+        if timeout <= 0:
+            raise RuntimeError("Bitcoin command deadline reached")
         out = run_bounded_subprocess(
-            self.base + [method] + [str(a) for a in args], timeout=120,
+            self.base + [method] + [str(a) for a in args], timeout=timeout,
             stdout_max=MAX_CLI_OUTPUT_BYTES, stderr_max=1024 * 1024,
             description="bitcoin-cli %s" % method)
         if out.returncode != 0:
@@ -814,10 +821,9 @@ class ObligationStore:
     def commit_signing_proposal(self, rid, raw_tx_hex, inputs):
         """Atomically commit a proposal and every custody input it consumes.
 
-        Any two 3-of-5 quorums intersect.  Because an intersecting signer refuses
-        either a different raw transaction for the same burn or any custody input
-        already committed to another burn, split-brain coordinators cannot obtain
-        conflicting threshold-valid payouts.
+        This serializes one signer's local decisions. A fixed 3-of-5 overlap
+        may contain only an equivocating member, so local commitments do not
+        by themselves establish unique intent across independent signers.
 
         Commitments are intentionally never released automatically.  A partial
         signature can outlive a coordinator crash or chain reorganization, so
@@ -1217,6 +1223,50 @@ def guard_fresh_authority(store, btc, tip):
                                "legacy/manual reconciliation required before payout")
 
 
+def _checked_partial_psbt(value):
+    if not isinstance(value, str) or not 0 < len(value) <= MAX_SIGNER_OUTPUT_BYTES:
+        raise ValueError("PSBT must be a bounded string")
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("PSBT encoding is invalid") from exc
+    if not decoded.startswith(b"psbt\xff"):
+        raise ValueError("PSBT magic is invalid")
+    return value
+
+
+def _has_exact_custody_witness(transaction):
+    inputs = transaction.get("vin")
+    if not isinstance(inputs, list) or not inputs:
+        return False
+    for item in inputs:
+        witness = item.get("txinwitness") if isinstance(item, dict) else None
+        if (not isinstance(witness, list) or len(witness) != 7 or
+                any(not isinstance(value, str) for value in witness)):
+            return False
+        try:
+            script = bytes.fromhex(witness[-2])
+        except ValueError:
+            return False
+        if len(script) != 172 or script[-2:] != b"\x53\x9c":
+            return False
+        keys = []
+        for slot in range(5):
+            offset = slot * 34
+            if (script[offset] != 32 or
+                    script[offset + 33] != (0xac if slot == 0 else 0xba)):
+                return False
+            keys.append(script[offset + 1:offset + 33])
+        if len(set(keys)) != 5 or sum(bool(value) for value in witness[:5]) != 3:
+            return False
+        for value in witness[:5]:
+            if value and (not HEX_RE.fullmatch(value) or
+                          not (len(value) == 128 or
+                               (len(value) == 130 and value.endswith("01")))):
+                return False
+    return True
+
+
 def sign_payout(btc, raw, proposal, signing_cfg):
     """Threshold PSBT approval; single-wallet path is explicit dev-only."""
     mode = signing_cfg.get("mode", "threshold_psbt")
@@ -1233,57 +1283,118 @@ def sign_payout(btc, raw, proposal, signing_cfg):
     if type(threshold) is not int:
         raise RuntimeError("threshold must be an exact JSON integer")
     signers = signing_cfg.get("signers") or []
-    if threshold < 2 or threshold > len(signers) or 2 * threshold <= len(signers):
-        raise RuntimeError("threshold_psbt requires an intersecting majority quorum "
-                           "(2 <= threshold <= count and 2*threshold > count)")
-    ids = [str(x.get("id", "")) for x in signers if isinstance(x, dict)]
-    if len(ids) != len(signers) or any(not x for x in ids) or len(set(ids)) != len(ids):
+    if threshold != 3 or not isinstance(signers, list) or len(signers) != 5:
+        raise RuntimeError("threshold_psbt requires exactly 3-of-5 custody members")
+    ids = [x.get("id", "") for x in signers if isinstance(x, dict)]
+    if (len(ids) != len(signers) or
+            any(not isinstance(x, str) or not 0 < len(x) <= 128 for x in ids) or
+            len(set(ids)) != len(ids)):
         raise RuntimeError("threshold signer ids must be non-empty and unique")
     commands = [x.get("command") for x in signers]
-    if any(not isinstance(x, list) or not x for x in commands):
+    if any(not isinstance(x, list) or not x or
+           any(not isinstance(arg, str) or not arg or "\x00" in arg for arg in x)
+           for x in commands):
         raise RuntimeError("each threshold signer command must be a non-empty argv list")
     if len({json.dumps(x) for x in commands}) != len(commands):
         raise RuntimeError("threshold signer commands must be independently configured")
 
-    psbt = btc.call("converttopsbt", raw, "true")
+    timeout = _signer_timeout(signing_cfg)
+    total_timeout = _bounded_config_int(
+        signing_cfg.get("collection_timeout_secs", 5 * timeout + 120),
+        "payout_signing.collection_timeout_secs", 1, 1800)
+    deadline = time.monotonic() + total_timeout
+
+    def call(method, *args):
+        return btc.call(method, *args, deadline=deadline)
+
+    expected = call("decoderawtransaction", raw)
+    if (not isinstance(expected, dict) or
+            not isinstance(expected.get("txid"), str) or
+            not TXID_RE.fullmatch(expected["txid"])):
+        raise RuntimeError("Cannot bind payout to its exact unsigned transaction")
+    psbt = _checked_partial_psbt(call("converttopsbt", raw, "true"))
     # Coordinator wallet is watch-only; this enriches UTXO data but cannot sign.
-    enriched = btc.call("walletprocesspsbt", psbt, "false", "ALL", "true")
-    if isinstance(enriched, dict) and enriched.get("psbt"):
-        psbt = enriched["psbt"]
-    partials, approvals = [], []
+    enriched = call("walletprocesspsbt", psbt, "false", "ALL", "true")
+    if not isinstance(enriched, dict):
+        raise RuntimeError("PSBT enrichment returned no object")
+    psbt = _checked_partial_psbt(enriched.get("psbt"))
+    unsigned = call("decodepsbt", psbt)
+    if (not isinstance(unsigned, dict) or not isinstance(unsigned.get("tx"), dict) or
+            unsigned["tx"].get("txid") != expected["txid"] or
+            not isinstance(unsigned.get("inputs"), list) or not unsigned["inputs"]):
+        raise RuntimeError("Enriched PSBT differs from the authorized transaction")
+    partials, seen = [], set()
+    attempted = set()
     payload = dict(proposal); payload["action"] = "sign"
     payload["psbt"] = psbt; payload["raw_tx_hex"] = raw
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    timeout = _signer_timeout(signing_cfg)
     for signer_cfg in signers:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         try:
             out = run_bounded_subprocess(
-                signer_cfg["command"], input_text=encoded, timeout=timeout,
+                signer_cfg["command"], input_text=encoded, timeout=min(timeout, remaining),
                 stdout_max=MAX_SIGNER_OUTPUT_BYTES, stderr_max=1024 * 1024,
                 description="threshold payout signer")
-        except (RuntimeError, subprocess.SubprocessError):
+        except (RuntimeError, OSError, subprocess.SubprocessError):
             continue
         if out.returncode != 0:
             continue
         try:
             answer = strict_json_loads(out.stdout, "threshold signer response")
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
-        if answer.get("signer_id") != signer_cfg["id"] or not answer.get("psbt"):
+        if (not isinstance(answer, dict) or set(answer) != {"signer_id", "psbt"} or
+                answer.get("signer_id") != signer_cfg["id"]):
             continue
-        if answer["signer_id"] in approvals:
+        try:
+            partial = _checked_partial_psbt(answer["psbt"])
+            if partial in seen:
+                continue
+            decoded = call("decodepsbt", partial)
+            if (not isinstance(decoded, dict) or
+                    not isinstance(decoded.get("tx"), dict) or
+                    decoded["tx"].get("txid") != expected["txid"] or
+                    not isinstance(decoded.get("inputs"), list) or
+                    len(decoded["inputs"]) != len(unsigned["inputs"]) or
+                    any(not isinstance(item, dict) for item in decoded["inputs"])):
+                continue
+        except (ValueError, RuntimeError, OSError, subprocess.SubprocessError):
             continue
-        approvals.append(answer["signer_id"]); partials.append(answer["psbt"])
-        if len(partials) >= threshold:
-            break
-    if len(partials) < threshold:
-        raise RuntimeError("independent threshold approvals incomplete (%d/%d)" %
-                           (len(partials), threshold))
-    combined = btc.call("combinepsbt", json.dumps(partials, separators=(",", ":")))
-    final = btc.call("finalizepsbt", combined)
-    if not isinstance(final, dict) or not final.get("complete") or not final.get("hex"):
-        raise RuntimeError("threshold PSBT did not finalize")
-    return final["hex"], approvals
+        seen.add(partial)
+        partials.append((answer["signer_id"], partial))
+        # Test bounded subsets so an unusable earlier response cannot poison
+        # every subsequent combination. Response labels never establish quorum.
+        for size in range(threshold, len(partials) + 1):
+            for indices in itertools.combinations(range(len(partials)), size):
+                if indices in attempted or time.monotonic() >= deadline:
+                    continue
+                attempted.add(indices)
+                try:
+                    combined = _checked_partial_psbt(call("combinepsbt", json.dumps(
+                        [partials[i][1] for i in indices], separators=(",", ":"))))
+                    final = call("finalizepsbt", combined)
+                    if (not isinstance(final, dict) or final.get("complete") is not True or
+                            not isinstance(final.get("hex"), str) or
+                            len(final["hex"]) > 2 * MAX_SIGNER_OUTPUT_BYTES or
+                            not HEX_RE.fullmatch(final["hex"])):
+                        continue
+                    transaction = call("decoderawtransaction", final["hex"])
+                    if (not isinstance(transaction, dict) or
+                            transaction.get("txid") != expected["txid"] or
+                            not _has_exact_custody_witness(transaction)):
+                        continue
+                    acceptance = call("testmempoolaccept", json.dumps([final["hex"]]))
+                    if (not isinstance(acceptance, list) or len(acceptance) != 1 or
+                            not isinstance(acceptance[0], dict) or
+                            acceptance[0].get("txid") != expected["txid"] or
+                            acceptance[0].get("allowed") is not True):
+                        continue
+                    return final["hex"], [partials[i][0] for i in indices]
+                except (ValueError, RuntimeError, OSError, subprocess.SubprocessError):
+                    continue
+    raise RuntimeError("No usable 3-of-5 payout quorum before collection completed")
 
 
 def replicate_observations(signing_cfg, records):
@@ -1333,16 +1444,21 @@ def replicate_observations(signing_cfg, records):
                     stdout_max=MAX_SIGNER_OUTPUT_BYTES,
                     stderr_max=1024 * 1024,
                     description="threshold observation signer")
-            except (RuntimeError, subprocess.SubprocessError):
+            except (RuntimeError, OSError, subprocess.SubprocessError):
                 continue
             if out.returncode != 0:
                 continue
             try:
                 answer = strict_json_loads(
                     out.stdout, "threshold observation response")
-            except ValueError:
+            except (ValueError, RecursionError):
                 continue
-            if answer.get("signer_id") != s.get("id"):
+            if (not isinstance(answer, dict) or
+                    set(answer) != {"signer_id", "observed"} or
+                    answer.get("signer_id") != s.get("id") or
+                    not isinstance(answer.get("observed"), list) or
+                    len(answer["observed"]) != len(want) or
+                    any(not isinstance(item, str) for item in answer["observed"])):
                 continue
             if sorted(answer.get("observed", [])) != want:
                 continue

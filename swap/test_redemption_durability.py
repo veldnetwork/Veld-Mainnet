@@ -284,11 +284,11 @@ class RedemptionDurabilityTests(unittest.TestCase):
             rd.sign_payout(MarkerBtc(), "00", {}, {"mode": "single_wallet_dev"})
 
     def test_threshold_requires_independent_quorum(self):
-        with self.assertRaisesRegex(RuntimeError, "2 <= threshold"):
+        with self.assertRaisesRegex(RuntimeError, "exactly 3-of-5"):
             rd.sign_payout(MarkerBtc(), "00", {},
                            {"mode": "threshold_psbt", "threshold": 1,
                             "signers": [{"id": "a", "command": ["false"]}]})
-        with self.assertRaisesRegex(RuntimeError, "intersecting majority"):
+        with self.assertRaisesRegex(RuntimeError, "exactly 3-of-5"):
             rd.sign_payout(MarkerBtc(), "00", {},
                            {"mode": "threshold_psbt", "threshold": 2,
                             "signers": [{"id": x, "command": ["false", x]}

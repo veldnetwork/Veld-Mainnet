@@ -6991,7 +6991,7 @@ private:
                 "Usage: prepareregistervalidator <address> <pubkey_hex>");
 
             const std::string& address    = params[0];
-            const std::string& pubkey_hex = params[1];
+            std::string pubkey_hex = params[1];
             if (pubkey_hex.size() != 3904)
                 throw std::invalid_argument("Public key must be 3904 hex characters (1952 bytes, ML-DSA-65)");
             for (char c : pubkey_hex) {
@@ -7001,6 +7001,8 @@ private:
                     throw std::invalid_argument(
                         "Public key contains non-hex characters");
             }
+            for (char& c : pubkey_hex)
+                if (c >= 'A' && c <= 'F') c += 'a' - 'A';
             const auto validator_pk_bytes = HexToBytes(pubkey_hex);
             if (validator_pk_bytes.size() != 1952)
                 throw std::invalid_argument(
@@ -7011,6 +7013,17 @@ private:
                 throw std::invalid_argument(
                     "Address does not correspond to the supplied validator public key");
 
+            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            if (!validators_ || !staking_ || !module_cursor_fn_)
+                throw std::runtime_error("Validator registration state is unavailable");
+            const uint64_t preparation_height = chain_.Height();
+            const auto module_cursor = module_cursor_fn_();
+            if (module_cursor.first != preparation_height ||
+                module_cursor.second != chain_.TotalSupplyUnits() ||
+                preparation_height == UINT64_MAX)
+                throw std::runtime_error("Validator registration state is not synchronized with the chain");
+            const uint64_t prospective_height = preparation_height + 1;
+
             // Reject a second pending registration for this exact public key.
             // Match the complete canonical OP_RETURN marker so malformed or
             // unrelated prefix matches cannot block legitimate registration.
@@ -7018,41 +7031,17 @@ private:
             if (mempool_.HasPendingOpReturn("VELD_VALIDATOR|REGISTER|" + pubkey_hex))
                 throw std::runtime_error("Your validator registration is already pending. Wait for it to be mined.");
 
-            if (validators_ && validators_->IsRegistered(pubkey_hex))
+            if (validators_->IsRegistered(pubkey_hex))
                 return JB::Object({{"status",JB::String("already_registered")},{"pubkey",JB::String(pubkey_hex)}});
 
-            if (validators_) {
-                auto lifecycle = validators_->GetBondLifecycleStatus(pubkey_hex);
-                const uint64_t prospective_height = chain_.Height() + 1;
-                if (lifecycle.found && lifecycle.slashed) {
-                    throw std::runtime_error(
-                        "Cannot re-register a permanently slashed validator key; "
-                        "use a fresh ML-DSA validator key and a fresh bond.");
-                }
-                if (lifecycle.found && lifecycle.bond_custodial &&
-                    !lifecycle.slashed && lifecycle.bond_units > 0 &&
-                    lifecycle.deregistered_at_height > 0 &&
-                    lifecycle.return_boundary >= prospective_height) {
-                    throw std::runtime_error(
-                        "Cannot re-register this validator key while its prior "
-                        "custodial bond remains slashable/pending return. The "
-                        "mandatory return settles at block " +
-                        std::to_string(lifecycle.return_boundary) +
-                        "; re-register in a later block with a new bond.");
-                }
-                if (validators_->HasPendingBondYield(pubkey_hex)) {
-                    throw std::runtime_error(
-                        "Cannot re-register this validator key while its prior "
-                        "term still has unsettled bond-yield tranches. Wait for "
-                        "the final tranche to release or be confiscated, or use "
-                        "a fresh ML-DSA validator key and fresh bond.");
-                }
-            }
+            const auto preparation_error = validators_->RegistrationPreparationError(
+                pubkey_hex, address, prospective_height, staking_->GetTotalStake());
+            if (!preparation_error.empty())
+                throw std::runtime_error(preparation_error);
 
-            uint64_t effective_min = validators_ ? validators_->GetEffectiveMinStake()
-                                                 : MIN_VALIDATOR_STAKE;
+            uint64_t effective_min = validators_->GetEffectiveMinStake();
             bool custodial_bond =
-                (chain_.Height() + 1) >= STAKE_VAULT_ACTIVATION_HEIGHT;
+                prospective_height >= STAKE_VAULT_ACTIVATION_HEIGHT;
             if (!custodial_bond) {
                 if (validators_ && staking_) {
                     uint64_t user_stake = staking_->GetStake(address);

@@ -217,19 +217,24 @@ class Veld:
         self.url = validate_backend_rpc_url(url, "veld_rpc.url")
         if not isinstance(token_file, str) or not os.path.isabs(token_file):
             raise RuntimeError("veld_rpc.token_file must be an absolute path")
+        self.token_file = token_file
+        self._read_token()
+
+    def _read_token(self):
         try:
-            self.token = read_bounded_secret_file(
-                token_file, 4096, "Veld RPC token").decode("ascii").strip()
+            token = read_bounded_secret_file(
+                self.token_file, 4096, "Veld RPC token").decode("ascii").strip()
         except (OSError, UnicodeError, ValueError) as exc:
             raise RuntimeError("Veld RPC token is unavailable") from exc
-        if not re.fullmatch(r"[0-9A-Fa-f]{64}", self.token):
+        if not re.fullmatch(r"[0-9A-Fa-f]{64}", token):
             raise RuntimeError("Veld RPC token is malformed")
+        return token
 
     def rpc(self, method, params=None):
         body = json.dumps({"jsonrpc": "2.0", "id": 1,
                            "method": method, "params": params or []}).encode()
         req = urllib.request.Request(self.url, data=body, headers={
-            "Authorization": "Bearer " + self.token,
+            "Authorization": "Bearer " + self._read_token(),
             "Content-Type": "application/json"})
         with open_rpc_request(req, timeout=20) as response:
             r = load_bounded_json_response(

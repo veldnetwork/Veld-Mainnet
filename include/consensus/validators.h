@@ -927,6 +927,44 @@ public:
         return it != validators_.end() && it->second.active;
     }
 
+    std::string RegistrationPreparationError(
+            const std::string& pubkey_hex, const std::string& address,
+            uint64_t inclusion_height, uint64_t total_staked_units) const {
+        std::lock_guard<std::mutex> lk(mutex_);
+        if (!IsCanonicalLowerHex(pubkey_hex, 3904) ||
+            PubkeyToAddress(HexToBytes(pubkey_hex)) != address)
+            return "Validator identity is not canonical";
+        if (!RegistrationFloorPermits(
+                !VALIDATOR_SYSTEM_ALWAYS_ACTIVE &&
+                    total_staked_units < VALIDATOR_UNLOCK_STAKED,
+                "REGISTER", inclusion_height))
+            return "Validator registration requires at least " +
+                std::to_string(VALIDATOR_UNLOCK_STAKED / VELD_UNITS) +
+                " VELD staked across the network, separate from the validator bond";
+        if (slashed_pubkeys_.count(pubkey_hex))
+            return "Cannot re-register a permanently slashed validator key";
+        const auto cooldown = last_op_height_.find(address);
+        if (cooldown != last_op_height_.end() &&
+            inclusion_height < cooldown->second + VALIDATOR_OP_COOLDOWN_BLOCKS)
+            return "Validator registration is in its address cooldown; wait until block " +
+                std::to_string(cooldown->second + VALIDATOR_OP_COOLDOWN_BLOCKS);
+        const auto prior = validators_.find(pubkey_hex);
+        if (prior != validators_.end()) {
+            if (prior->second.active)
+                return "Validator is already registered";
+            if (DeregisteredBondPendingAtLocked(prior->second, inclusion_height))
+                return "The prior validator bond must settle before re-registration";
+        }
+        const auto yield = bond_yield_escrow_.find(pubkey_hex);
+        if (yield != bond_yield_escrow_.end() && !yield->second.empty())
+            return "The prior validator term still has unsettled bond-yield tranches";
+        for (const auto& [other_key, rec] : validators_) {
+            if (rec.active && rec.address == address)
+                return "This address already has an active validator";
+        }
+        return {};
+    }
+
     // Validator-op cooldown introspection for the RPC pre-check layer.
     //
     // ProcessBlock's DEREGISTER gate (and REGISTER gate) rejects an op when

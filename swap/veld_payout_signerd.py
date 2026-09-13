@@ -384,9 +384,9 @@ def sign(req, cfg, store, veld, btc):
     # key-share operation. This signer never trusts the coordinator's result.
     _validate_public_c1_inputs(veld, resolved, _custody_policy(cfg))
 
-    # Crash-safe first-proposal-wins BEFORE touching the key share.  Two valid
-    # threshold quorums intersect, so this per-signer invariant blocks split-brain
-    # coordinators from collecting signatures for two distinct payout txs.
+    # Commit before releasing a signature. This protects this signer's local
+    # history; fixed 3-of-5 quorum overlap alone does not establish globally
+    # unique payout intent when an overlapping member can equivocate.
     try:
         store.commit_signing_proposal(
             rid, raw, [(x["txid"], x["vout"]) for x in resolved])

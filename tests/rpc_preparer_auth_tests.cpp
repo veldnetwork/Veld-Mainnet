@@ -451,7 +451,7 @@ int main() {
             ("veld-test-rpc-preparer-auth-" + suffix);
 
         {
-            const std::string validator_pubkey_hex(3904U, '1');
+            const std::string validator_pubkey_hex(3904U, 'a');
             const auto validator_pubkey = HexToBytes(validator_pubkey_hex);
             CHECK(validator_pubkey.size() == 1952U);
             const std::string fund_address =
@@ -478,6 +478,8 @@ int main() {
             StorageEngine storage(storage_path.string(), MAINNET_MAGIC);
             OnChainTokenLedger token_ledger;
             RpcServer rpc(chain, mempool, storage);
+            ValidatorRegistry validators;
+            StakingLedger staking;
             const std::string operation_identity = ValidBhdrIdentity();
 
             const auto positive = ParseResponse(rpc.Handle(MakeRpcRequest(
@@ -490,12 +492,32 @@ int main() {
             // The standalone validator authenticates the complete transaction
             // output sum before signing. Exercise both real preparers with
             // nonzero self-change so a protocol-output-only claim fails.
+            const auto unavailable = ParseResponse(rpc.Handle(MakeRpcRequest(
+                "prepareregistervalidator", {fund_address, validator_pubkey_hex})));
+            CHECK(RequireString(RequireObject(unavailable, "error"), "message") ==
+                  "Validator registration state is unavailable");
+            rpc.SetValidators(&validators);
+            rpc.SetStaking(&staking);
+            rpc.SetModuleCursorFn([&] {
+                return std::make_pair(chain.Height(), chain.TotalSupplyUnits());
+            });
             const auto register_positive = ParseResponse(rpc.Handle(
                 MakeRpcRequest("prepareregistervalidator",
                                {fund_address, validator_pubkey_hex})));
             CheckValidatorPreparerTotal(
                 register_positive, fund_address, validator_pubkey_hex,
                 canonical_parent, true);
+            const auto uppercase_register = ParseResponse(rpc.Handle(MakeRpcRequest(
+                "prepareregistervalidator", {fund_address, std::string(3904U, 'A')})));
+            CheckValidatorPreparerTotal(
+                uppercase_register, fund_address, validator_pubkey_hex,
+                canonical_parent, true);
+            validators.TestInjectValidatorBond(
+                validator_pubkey_hex, fund_address, MIN_VALIDATOR_STAKE);
+            const auto registered = ParseResponse(rpc.Handle(MakeRpcRequest(
+                "prepareregistervalidator", {fund_address, validator_pubkey_hex})));
+            CHECK(RequireString(RequireObject(registered, "result"), "status") ==
+                  "already_registered");
             const auto deregister_positive = ParseResponse(rpc.Handle(
                 MakeRpcRequest("preparederegistervalidator",
                                {fund_address, validator_pubkey_hex})));
