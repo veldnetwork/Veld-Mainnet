@@ -15,12 +15,23 @@ from swap.rpc_url_policy import (
     load_bounded_json_response,
     open_rpc_request,
     read_bounded_secret_file,
+    run_bounded_subprocess,
     validate_backend_rpc_url,
     validate_loopback_http_rpc_url,
 )
 
 
 class RpcUrlPolicyTests(unittest.TestCase):
+    def test_unsupported_runtime_and_nonfinite_timeout_refuse_before_launch(self):
+        with mock.patch("swap.rpc_url_policy.subprocess.Popen") as launch:
+            for timeout in (float("inf"), float("nan"), -1, True):
+                with self.assertRaisesRegex(RuntimeError, "timeout is invalid"):
+                    run_bounded_subprocess(["unused"], timeout=timeout, stdout_max=1024, stderr_max=1024)
+            with mock.patch("swap.rpc_url_policy.os.name", "nt"):
+                with self.assertRaisesRegex(RuntimeError, "POSIX bounded operator runtime"):
+                    run_bounded_subprocess(["unused"], timeout=1, stdout_max=1024, stderr_max=1024)
+            launch.assert_not_called()
+
     def test_secret_reader_rejects_permissions_links_and_oversize(self):
         with tempfile.TemporaryDirectory() as directory:
             secret = Path(directory) / "rpc.token"

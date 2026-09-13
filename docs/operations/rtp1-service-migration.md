@@ -18,6 +18,21 @@ These functions are not yet the issuer/witness service workflow. The current
 Their existing custody, allocation, authority, heartbeat and recovery gates must
 remain closed rather than being bypassed for RTP1.
 
+The issuer's native evidence/signing boundary has been updated. Its existing C1
+and MNP service paths now retrieve complete parent transactions from their own
+node, use the keyless `prepare-signing-stdin` command to authenticate the exact
+inputs and fee, and authorize a detached intent before recording `SIGNING`.
+Prepared evidence, intent and exact signed output survive a retry. An uncertain
+transaction-signing attempt is never repeated. Legacy signing stages require
+reconciliation. Fresh policy and emergency-stop checks run again at the key
+boundary. This repair also supports an inspected RTP1 prepared context, but does
+not migrate the issuer or witness main workflow to RTP1.
+
+Actual native evidence, intent and input-signature checks have passed on Windows
+and Linux with disposable credentials. The POSIX issuer staging/recovery path was
+also exercised with the real keygen. The Python operator runner refuses Windows
+before launching a child; a managed Windows custody worker remains unimplemented.
+
 ## Required issuer transition
 
 1. Require an independently reviewed chain and custody configuration, the existing
@@ -25,8 +40,8 @@ remain closed rather than being bypassed for RTP1.
    replace these pins.
 2. Authenticate the full unsigned transaction, every raw parent, each referenced
    value/script, the fee and exact recipient. Retain the complete native prepared
-   transaction and reserve context. The old two-field prepared file is
-   incompatible with the current keygen and must not reach the signing boundary.
+   transaction and reserve context. The evidence builder and existing issuer
+   staging now enforce this boundary. RTP1 service orchestration must retain it.
 3. Obtain a fresh native RTP1 inspection and an independently verified witness
    reservation for the exact template hash, Bitcoin deposit and custody epoch.
    Persist the receipt and immutable input lease before signing can begin.

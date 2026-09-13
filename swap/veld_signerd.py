@@ -105,6 +105,7 @@ SIGNER_CONFIG = os.environ.get("VELD_SIGNER_CONFIG",
 
 from btcveld_c1 import allocation_commitment
 from veld_chain_identity import parse_expected_chain, verify_expected_chain
+from issuer_signing_evidence import prepare_evidence, MAX_EVIDENCE_BYTES
 
 
 class UnsignedCarrierAbandoned(Exception):
@@ -1791,7 +1792,8 @@ def cleanup_signing_stage(staging_id):
         return
     prepared_path, signed_path = _signing_stage_paths(staging_id)
     changed = False
-    for path in (prepared_path, signed_path):
+    for path in (prepared_path, signed_path, prepared_path + ".intent.json",
+                 prepared_path + ".transaction.json"):
         try:
             os.unlink(path)
             changed = True
@@ -1820,7 +1822,8 @@ def drain_signing_cleanup_queue(state):
 def sign_or_recover_staged_carrier(prevout_state, owner_id,
                                    unsigned_tx_hex, prev_script_hex,
                                    description,
-                                   maximum_signed_hex_bytes=MAX_CHILD_OUTPUT_BYTES):
+                                   maximum_signed_hex_bytes=MAX_CHILD_OUTPUT_BYTES,
+                                   *, build_evidence=None, revalidate=None):
     """Perform at most one randomized signing attempt for an exact owner/hash.
 
     ``SIGNING`` is fsynced before the key subprocess. A restart in that state
@@ -1838,14 +1841,52 @@ def sign_or_recover_staged_carrier(prevout_state, owner_id,
                 _unsigned_input_outpoints(unsigned_tx_hex)):
         raise ValueError("issuer signing attempt differs from exact lease")
     prepared_path, signed_path = _signing_stage_paths(active["staging_id"])
+    transaction_path = prepared_path + ".transaction.json"
+    intent_path = prepared_path + ".intent.json"
     started_here = False
     if active["signing_state"] == "LEASED":
         if os.path.lexists(signed_path):
             raise ValueError("unexpected issuer signed stage before SIGNING")
+        if not callable(build_evidence) or not callable(revalidate):
+            raise ValueError("complete independently verified signing evidence is required")
+        evidence = build_evidence()
+        if (type(evidence) is not dict or set(evidence) != {"version", "prepared", "authorization"} or
+                type(evidence["version"]) is not int or evidence["version"] != 2 or
+                type(evidence["prepared"]) is not dict or
+                evidence["prepared"].get("unsigned_tx_hex") != unsigned_tx_hex or
+                type(evidence["authorization"]) is not dict):
+            raise ValueError("independent signing evidence is malformed")
         save_signer_state_durable(
-            {"unsigned_tx_hex": unsigned_tx_hex,
-             "prev_script_hex": prev_script_hex},
-            prepared_path, max_bytes=MAX_REQUEST_BYTES)
+            evidence, prepared_path, max_bytes=MAX_EVIDENCE_BYTES)
+        save_signer_state_durable(evidence["prepared"], transaction_path,
+                                 max_bytes=MAX_EVIDENCE_BYTES)
+        authorization = evidence["authorization"]
+        required = {"operation_type", "recipient", "amount", "change_destination",
+                    "operation_identity_digest", "maximum_absolute_fee", "maximum_fee_rate"}
+        if (set(authorization) != required or authorization["maximum_absolute_fee"] != EXPECTED_MINT_FEE_UNITS or
+                authorization["maximum_fee_rate"] != 19):
+            raise ValueError("independent signing authorization is malformed")
+        if os.path.lexists(intent_path):
+            _secure_regular(intent_path, private=True)
+            os.unlink(intent_path)
+        revalidate()
+        passphrase = _secure_text(PASSFILE, private=True, max_bytes=4096).strip()
+        run = run_bounded_subprocess(
+            [KEYGEN, "authorize-intent", KEYFILE, transaction_path,
+             "--operation-type", authorization["operation_type"],
+             "--recipient", authorization["recipient"], "--amount", str(authorization["amount"]),
+             "--change-destination", authorization["change_destination"],
+             "--operation-identity-digest", authorization["operation_identity_digest"],
+             "--maximum-absolute-fee", str(authorization["maximum_absolute_fee"]),
+             "--maximum-fee-rate", str(authorization["maximum_fee_rate"]), "--out", intent_path],
+            input_text="", timeout=60, stdout_max=64 * 1024, stderr_max=1024 * 1024,
+            description="issuer detached-intent authorization",
+            env={**os.environ, "VELD_VAULT_PASSPHRASE": passphrase})
+        passphrase = None
+        if run.returncode:
+            raise ValueError("issuer detached-intent authorization refused")
+        _fsync_regular_file(intent_path)
+        revalidate()
         active["signing_state"] = "SIGNING"
         try:
             save_prevout_journal(prevout_state)
@@ -1856,11 +1897,12 @@ def sign_or_recover_staged_carrier(prevout_state, owner_id,
     elif active["signing_state"] == "SIGNED":
         raise ValueError("issuer carrier is already signed in durable cache")
     prepared = strict_json_loads(
-        _secure_text(prepared_path, private=True, max_bytes=MAX_REQUEST_BYTES),
+        _secure_text(prepared_path, private=True, max_bytes=MAX_EVIDENCE_BYTES),
         "issuer signing prepared stage")
-    if (prepared != {"unsigned_tx_hex": unsigned_tx_hex,
-                     "prev_script_hex": prev_script_hex}):
-        raise ValueError("issuer signing prepared stage differs from lease")
+    if (type(prepared) is not dict or prepared.get("version") != 2 or
+            type(prepared.get("prepared")) is not dict or
+            prepared["prepared"].get("unsigned_tx_hex") != unsigned_tx_hex):
+        raise ValueError("legacy or mismatched signing stage requires reconciliation")
     if not os.path.lexists(signed_path):
         if not started_here:
             raise ValueError(
@@ -1869,9 +1911,12 @@ def sign_or_recover_staged_carrier(prevout_state, owner_id,
         # O_EXCL/0600 inside the private deterministic directory so an sshd
         # umask of 022 can never expose randomized signature bytes as 0644.
         _precreate_private_signing_output(signed_path)
-        passphrase = _secure_text(PASSFILE, private=True).strip()
+        if not callable(revalidate):
+            raise ValueError("fresh issuer signing gate is required")
+        revalidate()
+        passphrase = _secure_text(PASSFILE, private=True, max_bytes=4096).strip()
         run = run_bounded_subprocess(
-            [KEYGEN, "sign-tx", KEYFILE, prepared_path, "--out", signed_path],
+            [KEYGEN, "sign-tx", KEYFILE, transaction_path, "--intent", intent_path, "--out", signed_path],
             input_text="", timeout=60, stdout_max=64 * 1024,
             stderr_max=1024 * 1024, description=description,
             env={**os.environ, "VELD_VAULT_PASSPHRASE": passphrase})
@@ -3068,7 +3113,7 @@ def _reject_orphan_signing_stages(state):
                   if owner["active"] is not None}
     referenced.update(state["cleanup_staging_ids"])
     for name in os.listdir(SIGNING_STAGE_DIR):
-        match = re.fullmatch(r"([0-9a-f]{64})\.(?:prepared\.json|signed)",
+        match = re.fullmatch(r"([0-9a-f]{64})\.(?:prepared\.json(?:\.(?:intent|transaction)\.json)?|signed)",
                              name)
         if match is None or match.group(1) not in referenced:
             raise ValueError("orphan/unknown issuer signing stage requires review")
@@ -3097,7 +3142,7 @@ def _cleanup_reconciled_signed_stages(state, confirmed_staging_ids):
         owner["active"]["staging_id"] in confirmed_staging_ids}
     present_ids = set()
     for name in os.listdir(SIGNING_STAGE_DIR):
-        match = re.fullmatch(r"([0-9a-f]{64})\.(?:prepared\.json|signed)",
+        match = re.fullmatch(r"([0-9a-f]{64})\.(?:prepared\.json(?:\.(?:intent|transaction)\.json)?|signed)",
                              name)
         if match:
             present_ids.add(match.group(1))
@@ -3338,7 +3383,13 @@ def handle_c1_reservation_request(req, issuer, issuer_script_hex, cfg):
         signed_hex = sign_or_recover_staged_carrier(
             prevout_state, prevout_owner_id, req["unsigned_tx_hex"],
             issuer_script_hex, "C1 issuer sign-tx",
-            maximum_signed_hex_bytes=2 * C1_MAX_SIGNED_TX_BYTES)
+            maximum_signed_hex_bytes=2 * C1_MAX_SIGNED_TX_BYTES,
+            build_evidence=lambda: prepare_evidence(
+                KEYGEN, rpc.call, rpc.expected_chain, req["unsigned_tx_hex"], issuer_script_hex,
+                _resolved, issuer=issuer, operation_type="BTCVELD_C1_" + phase,
+                recipient=allocation["veld_address"], amount=allocation["amount_sats"]),
+            revalidate=lambda: revalidate_c1_key_boundary(
+                rpc, issuer, allocation, phase, funding, req["unsigned_tx_hex"], issuer_script_hex, min_confs))
         signed_txid = hashlib.sha256(hashlib.sha256(
             bytes.fromhex(signed_hex)).digest()).hexdigest()
         state["records"][key] = {
@@ -3364,6 +3415,14 @@ def handle_c1_reservation_request(req, issuer, issuer_script_hex, cfg):
             "allocation_id": allocation["consensus_allocation_id"],
             "signed_tx_hex": cached["signed_tx_hex"],
             "txid": cached["txid"]}
+
+
+def revalidate_c1_key_boundary(rpc, issuer, allocation, phase, funding, unsigned_hex, script, min_confs):
+    if _trusted_marker_exists(HALTF, "HALT"):
+        raise ValueError("HALT present at C1 key boundary")
+    rpc.verify_chain_identity()
+    validate_c1_signing_boundary(rpc, issuer, allocation, phase, funding=funding)
+    resolve_mint_prevouts(unsigned_hex, rpc, script, min_confs)
 
 
 def watchtower_gate(sats_tx, state, rpc=None, is_retry=False):
@@ -3829,12 +3888,17 @@ def main(capability="mint"):
     except Exception as e:
         refuse("fresh mint boundary changed before signing: " + str(e)[:200])
 
-    # 4) sign with the issuer key. veld-keygen sign-tx re-derives the inputs from
-    #    the tx bytes and fail-closes on any input THIS key does not own (it checks
-    #    prev_script == its own P2PKH). It reads a top-level "unsigned_tx_hex" +
-    #    "prev_script_hex" by literal substring (no space after the colon), so the
-    #    prep file MUST be COMPACT json. Every mint fee-input is the issuer's own
-    #    P2PKH, so they share one prev_script_hex (derived up front above).
+    def revalidate_mint_key_boundary():
+        if _trusted_marker_exists(HALTF, "HALT"):
+            raise ValueError("HALT present at mint key boundary")
+        rpc.verify_chain_identity()
+        validate_fresh_mint_boundary(
+            rpc, issuer, sats_tx, deposit_outpoint, nullifier_proof_hex, None,
+            consensus_reservation_id, to_tx, allocation_claim["script_pubkey"],
+            allocation_claim["commitment_blind"])
+        resolve_mint_prevouts(utx, rpc, prev_script_hex, min_confs)
+        watchtower_gate(sats_tx, state, rpc=rpc, is_retry=True)
+
     if retry_record is not None:
         # ML-DSA signing is randomized. Re-signing the same unsigned transaction
         # would create a second txid, so retries replay the byte-identical durable
@@ -3844,7 +3908,12 @@ def main(capability="mint"):
         try:
             signed = sign_or_recover_staged_carrier(
                 prevout_state, prevout_owner_id, utx, prev_script_hex,
-                "veld-keygen sign-tx")
+                "veld-keygen sign-tx",
+                build_evidence=lambda: prepare_evidence(
+                    KEYGEN, rpc.call, rpc.expected_chain, utx, prev_script_hex,
+                    resolved_inputs, issuer=issuer, operation_type="BTCVELD_MINT",
+                    recipient=to_tx, amount=sats_tx),
+                revalidate=revalidate_mint_key_boundary)
             if len(signed) < 100:
                 refuse("signer produced no valid signed tx")
         except Exception as e:

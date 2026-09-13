@@ -1145,6 +1145,95 @@ static int CmdDecodeMint(const std::string& issuer_p2pkh_hex,
     return 0;
 }
 
+static int CmdPrepareSigningStdin() {
+    using namespace veld;
+    constexpr size_t maximum = 32 * 1024 * 1024;
+    const auto fail = [](const char* message) {
+        std::cerr << "error: signing evidence " << message << "\n";
+        return 2;
+    };
+    std::string encoded(maximum + 1, '\0');
+    std::cin.read(encoded.data(), static_cast<std::streamsize>(encoded.size()));
+    const auto count = std::cin.gcount();
+    if (count <= 0 || static_cast<size_t>(count) > maximum || std::cin.bad())
+        return fail("request exceeds bounds");
+    encoded.resize(static_cast<size_t>(count));
+    btc_buy::JsonValue request;
+    std::string error;
+    btc_buy::StrictJsonParser parser(encoded, maximum, true);
+    if (!parser.Parse(request, error) || request.kind != btc_buy::JsonValue::Kind::Object ||
+        request.object.size() != 3) return fail("schema is invalid");
+    std::string unsigned_hex, script_hex;
+    std::vector<uint8_t> raw, script;
+    const auto* parents = request.Get("parent_transactions");
+    if (!offline_signing::ParseStringField(request, "unsigned_tx_hex", unsigned_hex) ||
+        !offline_signing::DecodeLowerHex(unsigned_hex, 128 * 1024, raw) ||
+        !offline_signing::ParseStringField(request, "issuer_script_hex", script_hex) ||
+        !offline_signing::DecodeLowerHex(script_hex, 25, script) || script.size() != 25 ||
+        script[0] != 0x76 || script[1] != 0xa9 || script[2] != 0x14 ||
+        script[23] != 0x88 || script[24] != 0xac || !parents ||
+        parents->kind != btc_buy::JsonValue::Kind::Array)
+        return fail("fields are invalid");
+    Transaction tx;
+    if (Transaction::Deserialize(raw, 0, tx) != raw.size() || tx.Serialize() != raw ||
+        tx.inputs.empty() || tx.inputs.size() > 180 || tx.outputs.empty() ||
+        parents->array.size() != tx.inputs.size()) return fail("transaction is invalid");
+    uint64_t total_input = 0, total_output = 0, change = 0;
+    std::string inputs = "[";
+    for (size_t i = 0; i < tx.inputs.size(); ++i) {
+        const auto& item = parents->array[i];
+        std::vector<uint8_t> parent_raw;
+        Transaction parent;
+        if (item.kind != btc_buy::JsonValue::Kind::String || item.string_had_escape ||
+            !offline_signing::DecodeLowerHex(item.text,
+                offline_signing::kMaxParentTransactionBytes, parent_raw) ||
+            Transaction::Deserialize(parent_raw, 0, parent) != parent_raw.size() ||
+            parent.Serialize() != parent_raw || parent.GetTxID() != tx.inputs[i].prev_tx_hash ||
+            tx.inputs[i].prev_out_index >= parent.outputs.size()) return fail("parent is invalid");
+        const auto& prevout = parent.outputs[tx.inputs[i].prev_out_index];
+        if (prevout.script_pubkey != script || total_input > MAX_SUPPLY_UNITS ||
+            prevout.value > MAX_SUPPLY_UNITS - total_input) return fail("parent ownership or value differs");
+        total_input += prevout.value;
+        if (i) inputs += ',';
+        inputs += "{\"index\":" + std::to_string(i) +
+            ",\"sighash_hex\":\"" + BytesToHex(ComputeSighash(tx, static_cast<uint32_t>(i), script)) +
+            "\",\"prev_script_hex\":\"" + script_hex + "\",\"value\":" + std::to_string(prevout.value) +
+            ",\"parent_tx_hex\":\"" + item.text + "\"}";
+    }
+    inputs += ']';
+    for (const auto& output : tx.outputs) {
+        if (total_output > MAX_SUPPLY_UNITS || output.value > MAX_SUPPLY_UNITS - total_output)
+            return fail("output sum exceeds supply");
+        total_output += output.value;
+        if (output.script_pubkey == script) change += output.value;
+    }
+    if (total_input < total_output) return fail("fee is negative");
+    const auto prepared = "{\"unsigned_tx_hex\":\"" + unsigned_hex + "\",\"inputs\":" + inputs +
+        ",\"total_input\":" + std::to_string(total_input) +
+        ",\"total_output\":" + std::to_string(total_output) +
+        ",\"fee\":" + std::to_string(total_input - total_output) +
+        ",\"change\":" + std::to_string(change) + "}";
+    btc_buy::JsonValue prepared_value;
+    btc_buy::StrictJsonParser prepared_parser(prepared, offline_signing::kMaxPreparedJsonBytes, true);
+    offline_signing::VerifiedPrepared verified;
+    std::string identity;
+    if (!prepared_parser.Parse(prepared_value, error) ||
+        !offline_signing::AuthenticatePrepared(prepared_value, script, verified, error) ||
+        !offline_signing::VerifyExactFeesOnlyEnvelope(verified, script, error) ||
+        !offline_signing::ExtractCanonicalOperationIdentity(tx.outputs.back(), identity, error))
+        return fail("does not authenticate as a canonical fees-only operation");
+    std::cout << "{\"version\":1,\"genesis_hash\":\"" << GENESIS_HASH
+#ifdef VELD_MAINNET_POW
+              << "\",\"signature_network\":\"mainnet\""
+#else
+              << "\",\"signature_network\":\"testnet\""
+#endif
+              << ",\"operation_identity_digest\":\""
+              << offline_signing::OperationIdentityDigest(identity)
+              << "\",\"prepared\":" << prepared << "}\n";
+    return 0;
+}
+
 static int CmdDecodeMintStdin() {
     using namespace veld;
     constexpr size_t maximum = 270 * 1024;
@@ -1585,6 +1674,14 @@ int main(int argc, char** argv) {
         return CmdDecodeMint(
             argv[2], argv[3], argc == 6 ? argv[4] : "",
             argc == 6 ? argv[5] : "");
+    }
+
+    if (cmd == "prepare-signing-stdin") {
+        if (argc != 2) {
+            std::cerr << "Usage: veld-keygen prepare-signing-stdin < request.json\n";
+            return 2;
+        }
+        return CmdPrepareSigningStdin();
     }
 
     if (cmd == "decode-mint-stdin") {

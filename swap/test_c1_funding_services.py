@@ -5,6 +5,7 @@ import hashlib
 import json
 import struct
 import subprocess
+import shutil
 import tempfile
 from pathlib import Path
 import unittest
@@ -25,6 +26,21 @@ SCRIPT = "5120" + "11" * 32
 BLIND = "22" * 32
 OUTPOINT = "aa" * 32 + ":0"
 REAL_TRUE = str(Path("/bin/true").resolve())
+_EXECUTABLE_FIXTURE = None
+
+
+def setUpModule():
+    global _EXECUTABLE_FIXTURE, REAL_TRUE
+    _EXECUTABLE_FIXTURE = tempfile.TemporaryDirectory(prefix="issuer-executable-")
+    target = Path(_EXECUTABLE_FIXTURE.name) / "true"
+    shutil.copyfile(Path("/bin/true").resolve(), target)
+    target.chmod(0o700)
+    REAL_TRUE = str(target)
+
+
+def tearDownModule():
+    if _EXECUTABLE_FIXTURE is not None:
+        _EXECUTABLE_FIXTURE.cleanup()
 
 
 def unsigned_proposal(txid, vout=0):
@@ -34,6 +50,14 @@ def unsigned_proposal(txid, vout=0):
     raw += b"\x01" + (0).to_bytes(8, "little") + b"\x01\x6a"
     raw += b"\x00" * 4
     return raw.hex()
+
+
+def staged_evidence(unsigned):
+    return {"version": 2, "prepared": {"unsigned_tx_hex": unsigned}, "authorization": {
+        "operation_type": "BTCVELD_C1_RESERVE", "recipient": RECIPIENT,
+        "amount": 10000, "change_destination": ISSUER,
+        "operation_identity_digest": "12" * 32,
+        "maximum_absolute_fee": 100000, "maximum_fee_rate": 19}}
 
 
 def allocation(sequence=1):
@@ -1035,7 +1059,13 @@ class CrossCapabilityPrevoutLeaseTests(unittest.TestCase):
             def key_operation(argv, **_kwargs):
                 durable = json.loads(journal_path.read_text())
                 active = durable["owners"][owner]["active"]
+                if argv[1] == "authorize-intent":
+                    self.assertEqual(active["signing_state"], "LEASED")
+                    output = Path(argv[argv.index("--out") + 1])
+                    output.write_text("{}"); output.chmod(0o600)
+                    return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
                 self.assertEqual(active["signing_state"], "SIGNING")
+                self.assertIn("--intent", argv)
                 output = Path(argv[argv.index("--out") + 1])
                 # Simulate keygen's ordinary ofstream under sshd umask 022.
                 # The signer must have precreated the inode as 0600.
@@ -1060,7 +1090,8 @@ class CrossCapabilityPrevoutLeaseTests(unittest.TestCase):
                     state, owner, "c1-reservation", ALLOCATION_ID, None,
                     unsigned)
                 self.assertEqual(signerd.sign_or_recover_staged_carrier(
-                    state, owner, unsigned, "00" * 25, "test"), signed)
+                    state, owner, unsigned, "00" * 25, "test",
+                    build_evidence=lambda: staged_evidence(unsigned), revalidate=lambda: None), signed)
                 self.assertEqual(state["owners"][owner]["active"][
                     "signing_state"], "SIGNING")
                 # Crash before the C1/mint cache fsync: restart recovers the
@@ -1090,6 +1121,9 @@ class CrossCapabilityPrevoutLeaseTests(unittest.TestCase):
 
             def key_operation(argv, **_kwargs):
                 output = Path(argv[argv.index("--out") + 1])
+                if argv[1] == "authorize-intent":
+                    output.write_text("{}"); output.chmod(0o600)
+                    return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
                 output.write_text(signed + "\n")
                 return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
@@ -1110,7 +1144,8 @@ class CrossCapabilityPrevoutLeaseTests(unittest.TestCase):
                     unsigned)
                 self.assertEqual(signerd.sign_or_recover_staged_carrier(
                     state, owner, unsigned, "00" * 25, "test",
-                    maximum_signed_hex_bytes=len(signed)), signed)
+                    maximum_signed_hex_bytes=len(signed),
+                    build_evidence=lambda: staged_evidence(unsigned), revalidate=lambda: None), signed)
 
     def test_initialized_empty_journal_reconciles_mint_and_archived_c1_union(self):
         mint_unsigned = unsigned_proposal("95" * 32)

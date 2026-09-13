@@ -230,7 +230,8 @@ def run_bounded_subprocess(argv, *, input_text=None, timeout,
             any(not isinstance(item, str) or not item or "\x00" in item
                 for item in argv)):
         raise RuntimeError("%s argv is malformed" % description)
-    if type(timeout) not in (int, float) or isinstance(timeout, bool) or timeout <= 0:
+    if (type(timeout) not in (int, float) or isinstance(timeout, bool) or
+            not math.isfinite(timeout) or timeout <= 0):
         raise RuntimeError("%s timeout is invalid" % description)
     for value in (stdout_max, stderr_max):
         if (type(value) is not int or value <= 0 or
@@ -256,6 +257,8 @@ def run_bounded_subprocess(argv, *, input_text=None, timeout,
         stderr_raw = (stderr_value.encode("utf-8") if isinstance(stderr_value, str)
                       else bytes(stderr_value or b""))
     else:
+        if os.name != "posix" or not all(hasattr(os, name) for name in ("set_blocking", "killpg")):
+            raise RuntimeError("%s requires the POSIX bounded operator runtime" % description)
         proc = subprocess.Popen(
             list(argv), stdin=(subprocess.PIPE if input_text is not None
                                else subprocess.DEVNULL),
