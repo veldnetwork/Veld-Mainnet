@@ -71,22 +71,9 @@ def main():
                     raise AssertionError(method)
 
                 context = {k: v for k, v in prepared.items() if k.startswith('reserve_prior_')} or None
-                if os.name == 'posix':
-                    evidence = prepare_evidence(str(args.keygen), rpc, chain, prepared['unsigned_tx_hex'], script,
-                        resolved, issuer=address, operation_type=operation, recipient=recipient,
-                        amount=int(amount), reserve_context=context)
-                else:
-                    try:
-                        prepare_evidence(str(args.keygen), rpc, chain, prepared['unsigned_tx_hex'], script,
-                            resolved, issuer=address, operation_type=operation, recipient=recipient,
-                            amount=int(amount), reserve_context=context)
-                    except RuntimeError as error:
-                        assert 'POSIX bounded operator runtime' in str(error)
-                    else:
-                        raise AssertionError('unsupported service runtime did not refuse')
-                    evidence = {'prepared': dict(built['prepared'])}
-                    if context:
-                        evidence['prepared'].update(context)
+                evidence = prepare_evidence(str(args.keygen), rpc, chain, prepared['unsigned_tx_hex'], script,
+                    resolved, issuer=address, operation_type=operation, recipient=recipient,
+                    amount=int(amount), reserve_context=context)
                 assert evidence['prepared'] == prepared
                 evidence_path = root / (name + '.prepared.json')
                 evidence_path.write_text(json.dumps(evidence['prepared'], separators=(',', ':')))
@@ -98,6 +85,16 @@ def main():
                     '--maximum-absolute-fee', '100000', '--maximum-fee-rate', '19', '--out', intent])
                 run([args.keygen, command, key, evidence_path, '--intent', intent, '--out', signed])
                 assert 'PASS signed-inputs=' in run([args.fixture, '--verify-signed', address, evidence_path, signed]).stdout
+                carrier = {'issuer_script_hex': script, 'unsigned_tx_hex': prepared['unsigned_tx_hex'],
+                    'signed_tx_hex': signed.read_text().strip()}
+                assert len(bytes.fromhex(carrier['signed_tx_hex'])) == len(bytes.fromhex(carrier['unsigned_tx_hex'])) + 5271 * len(prepared['inputs'])
+                checked = json.loads(run([args.keygen, 'verify-signed-carrier-stdin'], data=json.dumps(carrier)).stdout)
+                assert checked['genesis_hash'] == built['genesis_hash']
+                assert checked['input_count'] == len(prepared['inputs'])
+                damaged = bytearray.fromhex(carrier['signed_tx_hex'])
+                damaged[60] ^= 1
+                run([args.keygen, 'verify-signed-carrier-stdin'], data=json.dumps(dict(carrier, signed_tx_hex=damaged.hex())), expected=2)
+                run([args.keygen, 'verify-signed-carrier-stdin'], data=json.dumps(dict(carrier, unsigned_tx_hex=carrier['unsigned_tx_hex'] + '00')), expected=2)
                 bad = dict(payload, parent_transactions=list(reversed(parents)) if len(parents) > 1 else ['00'])
                 run([args.keygen, 'prepare-signing-stdin'], data=json.dumps(bad), expected=2)
                 run([args.keygen, 'prepare-signing-stdin'], data=json.dumps(payload)[:-1] + ',"extra":0}', expected=2)
@@ -126,8 +123,9 @@ def main():
                         assert not list(stage.iterdir())
                 report['checks'].append({'operation': name, 'native_evidence_parity': True,
                     'actual_signature_verified': True, 'wrong_parent_refused': True,
+                    'native_committed_carrier_verified': True, 'forged_signature_refused': True,
                     'issuer_crash_recovery': os.name == 'posix',
-                    'python_service_runtime_supported': os.name == 'posix'})
+                    'bounded_evidence_runtime_supported': os.name in ('posix', 'nt')})
             assert len(report['checks']) == 2
         report['status'] = 'passed'
     except BaseException as error:

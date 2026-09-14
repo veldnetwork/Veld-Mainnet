@@ -28,10 +28,19 @@ that proof and produced independently verified issuer input signatures offline.
 This fixture does not perform native mint admission or service migration; the
 DEPOSIT successor path also requires a complete service qualification run.
 
-These functions are not yet the issuer/witness service workflow. The current
-`veld_signerd.py` and `veld_wt_reserve.py` main paths still use the MNP/C1 protocol.
-Their existing custody, allocation, authority, heartbeat and recovery gates must
-remain closed rather than being bypassed for RTP1.
+The issuer and witness entry points now dispatch versioned RTP1 requests through
+`swap/rtp1_service_runtime.py`. Activation is restricted to explicitly pinned
+disposable Veld profiles and Bitcoin regtest. The versioned journal binds exact
+requests, independent backing, signed witness receipts and exact carrier bytes.
+Existing authority, protected-file, process-lock, heartbeat and restoration gates
+remain enforced. Production RTP1 service activation stays closed.
+
+Descriptor validation remains network-specific: mainnet requires the reviewed
+account xpubs at `86h/0h/0h`; an explicitly selected Bitcoin test network requires
+account tpubs at `86h/1h/0h`. Both require the same fixed NUMS internal key, one
+three-of-five leaf and five distinct public keys. Core independently derives
+every script. Actual Core tests verified all 1,000 entries and refused an altered
+final script; default mainnet validation refused the test descriptor.
 
 The issuer's native evidence/signing boundary has been updated. Its existing C1
 and MNP service paths now retrieve complete parent transactions from their own
@@ -40,13 +49,44 @@ inputs and fee, and authorize a detached intent before recording `SIGNING`.
 Prepared evidence, intent and exact signed output survive a retry. An uncertain
 transaction-signing attempt is never repeated. Legacy signing stages require
 reconciliation. Fresh policy and emergency-stop checks run again at the key
-boundary. This repair also supports an inspected RTP1 prepared context, but does
-not migrate the issuer or witness main workflow to RTP1.
+boundary. The RTP1 adapter uses this same durable signing boundary.
 
 Actual native evidence, intent and input-signature checks have passed on Windows
 and Linux with disposable credentials. The POSIX issuer staging/recovery path was
-also exercised with the real keygen. The Python operator runner refuses Windows
-before launching a child; a managed Windows custody worker remains unimplemented.
+also exercised with the real keygen. Windows bounded execution uses a Job Object
+and an explicit inherited-handle list. It is not a custody-key isolation boundary;
+the complete managed Windows custody worker remains unimplemented.
+
+## Implemented disposable lifecycle
+
+The issuer requests `rtp1_reserve`, verifies the independent ML-DSA receipt and
+persists it before attempting an issuer signature. Both operators retain the
+exact template, reserve predecessor and deposit identity. The issuer rechecks
+current backing, emergency stop, authority, solvency and witness state at its key
+boundary. It releases signed bytes only after an exact durable witness commit.
+The witness uses retained native context and the keyless
+`verify-signed-carrier-stdin` command to verify every input signature at commit.
+
+Lost acknowledgements retry the same bytes. An issuer restored to a retained
+reservation can recover the exact committed payload from its witness without
+another randomized signature. Missing or contradictory history refuses; neither
+operator resets it automatically. Canonical native mint effects and independently
+confirmed Bitcoin inclusion settle pending accounting. Reorganization reinstates
+the pending liability without deleting signatures or receipts.
+
+`--initialize-rtp1-state` inventories and hashes only recognized empty legacy
+journals, leaves their originals unchanged, and writes the activation marker
+last. Both exact empty issuer formats are supported, including the format written
+by `--initialize-authority-state`. Existing funded or signed C1 state, partial
+initialization and signing-stage history refuse migration. Enabling the RTP1
+configuration closes legacy issuance and allocation routes under the same lock.
+
+Actual private Bitcoin backing and actual witness/issuer cryptography passed a
+two-journal lifecycle with lost acknowledgement, restart and exact-byte retry.
+That fixture simulates the native view. It does not qualify full forced-command
+entry points, native OPEN/DEPOSIT service admission, historical-liability migration
+or independent operators. The bounded journal retains all records; archival and
+simultaneous operator backup rollback remain qualification requirements.
 
 ## Required issuer transition
 

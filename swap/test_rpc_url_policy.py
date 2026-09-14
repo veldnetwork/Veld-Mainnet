@@ -27,7 +27,7 @@ class RpcUrlPolicyTests(unittest.TestCase):
             for timeout in (float("inf"), float("nan"), -1, True):
                 with self.assertRaisesRegex(RuntimeError, "timeout is invalid"):
                     run_bounded_subprocess(["unused"], timeout=timeout, stdout_max=1024, stderr_max=1024)
-            with mock.patch("swap.rpc_url_policy.os.name", "nt"):
+            with mock.patch("swap.rpc_url_policy.os.name", "unsupported"):
                 with self.assertRaisesRegex(RuntimeError, "POSIX bounded operator runtime"):
                     run_bounded_subprocess(["unused"], timeout=1, stdout_max=1024, stderr_max=1024)
             launch.assert_not_called()

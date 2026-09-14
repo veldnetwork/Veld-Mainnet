@@ -97,6 +97,14 @@ class Rtp1MintPolicyTests(unittest.TestCase):
             policy.decode_inspected_mint("fixture-keygen", "76a914" + "11" * 20 + "88ac",
                 self.raw, self.response, **self.expected)
 
+    def test_predicted_signed_size_refuses_before_issuance(self):
+        import json
+        decoded = {"from": self.account, "to": self.account, "sats": 20000,
+            "memo": "RTP1:" + "ab" * 32, "total_out_sats": 100000, "num_inputs": 25}
+        with mock.patch.object(policy, "run_bounded_subprocess", return_value=SimpleNamespace(returncode=0, stdout=json.dumps(decoded))), \
+                self.assertRaisesRegex(ValueError, "commit bound"):
+            policy.decode_inspected_mint("fixture-keygen", "76a914" + "11" * 20 + "88ac", self.raw, self.response, **self.expected)
+
 
 if __name__ == "__main__":
     unittest.main()

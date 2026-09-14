@@ -37,6 +37,7 @@
 
 #include "../include/compat/platform.h"
 #include "../include/core/hash.h"
+#include "../include/core/op_authorization.h"
 #include "../include/core/version.h"
 #include "../include/crypto/veld_signing.h"
 #include "../include/crypto/ripemd160.h"
@@ -1197,6 +1198,55 @@ static int CmdDecodeMint(const std::string& issuer_p2pkh_hex,
     return 0;
 }
 
+static int CmdVerifySignedCarrierStdin() {
+    using namespace veld;
+    constexpr size_t maximum = 530 * 1024;
+    const auto fail = [](const char* why) {
+        std::cerr << "error: signed carrier " << why << "\n";
+        return 2;
+    };
+    std::string encoded(maximum + 1, '\0');
+    std::cin.read(encoded.data(), static_cast<std::streamsize>(encoded.size()));
+    const auto count = std::cin.gcount();
+    if (count <= 0 || static_cast<size_t>(count) > maximum || std::cin.bad())
+        return fail("request exceeds bounds");
+    encoded.resize(static_cast<size_t>(count));
+    btc_buy::JsonValue request;
+    std::string error, unsigned_hex, signed_hex, script_hex;
+    btc_buy::StrictJsonParser parser(encoded, maximum, true);
+    std::vector<uint8_t> original, raw, script;
+    if (!parser.Parse(request, error) || request.kind != btc_buy::JsonValue::Kind::Object ||
+        request.object.size() != 3 ||
+        !offline_signing::ParseStringField(request, "unsigned_tx_hex", unsigned_hex) ||
+        !offline_signing::ParseStringField(request, "signed_tx_hex", signed_hex) ||
+        !offline_signing::ParseStringField(request, "issuer_script_hex", script_hex) ||
+        !offline_signing::DecodeLowerHex(unsigned_hex, 128 * 1024, original) ||
+        !offline_signing::DecodeLowerHex(signed_hex, 128 * 1024, raw) ||
+        !offline_signing::DecodeLowerHex(script_hex, 25, script) || script.size() != 25)
+        return fail("schema is invalid");
+    Transaction tx;
+    if (Transaction::Deserialize(raw, 0, tx) != raw.size() || tx.Serialize() != raw ||
+        tx.inputs.empty() || tx.inputs.size() > 180 || tx.outputs.empty())
+        return fail("serialization is invalid");
+    Transaction stripped = tx;
+    for (auto& input : stripped.inputs) input.script_sig.clear();
+    if (stripped.Serialize() != original) return fail("differs from the reserved template");
+    for (size_t index = 0; index < tx.inputs.size(); ++index) {
+        if (!VerifyP2PKHInputSig(tx, static_cast<uint32_t>(index), script))
+            return fail("does not carry valid issuer signatures on every input");
+    }
+    Hash256 unsigned_hash{}, signed_hash{};
+    vendored_crypto::sha256(original.data(), original.size(), unsigned_hash.data());
+    vendored_crypto::sha256(raw.data(), raw.size(), signed_hash.data());
+    std::cout << "{\"version\":1,\"genesis_hash\":\"" << GENESIS_HASH
+        << "\",\"unsigned_tx_sha256\":\"" << HashToHex(unsigned_hash)
+        << "\",\"txid\":\"" << HashToHex(tx.GetTxID())
+        << "\",\"signed_tx_sha256\":\"" << HashToHex(signed_hash)
+        << "\",\"input_count\":" << tx.inputs.size()
+        << ",\"issuer_script_hex\":\"" << script_hex << "\"}\n";
+    return 0;
+}
+
 static int CmdPrepareSigningStdin() {
     using namespace veld;
     constexpr size_t maximum = 32 * 1024 * 1024;
@@ -1563,6 +1613,7 @@ static void PrintUsage() {
         "  veld-keygen decode-mint-stdin < request.json\n"
         "  veld-keygen inspect-rtp1-backing-stdin < request.json\n"
         "  veld-keygen prepare-signing-stdin < request.json\n"
+        "  veld-keygen verify-signed-carrier-stdin < request.json\n"
         "  veld-keygen decode-c1-reservation <issuer_p2pkh_hex> <unsigned_tx_hex>\n"
         "\n"
         "Generic commands take VELD_VAULT_PASSPHRASE when set. Key outputs\n"
@@ -1737,6 +1788,11 @@ int main(int argc, char** argv) {
             return 2;
         }
         return CmdPrepareSigningStdin();
+    }
+
+    if (cmd == "verify-signed-carrier-stdin") {
+        if (argc != 2) return 2;
+        return CmdVerifySignedCarrierStdin();
     }
 
     if (cmd == "decode-mint-stdin" || cmd == "inspect-rtp1-backing-stdin") {

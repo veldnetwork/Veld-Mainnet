@@ -19,6 +19,15 @@ class CustodyDescriptorPolicyTests(unittest.TestCase):
         self.assertEqual(len(keys), 5)
         self.assertEqual(len(set(keys)), 5)
 
+    def test_network_policy_is_explicit_and_never_accepts_mainnet_keys_as_testnet(self):
+        for network in ("test", "regtest", "signet", "unknown"):
+            with self.subTest(network=network), self.assertRaises(RuntimeError):
+                binding.validate_descriptor_policy(DESCRIPTOR, network=network)
+        call = mock.Mock()
+        with self.assertRaises(RuntimeError):
+            binding.verify_core_derivation(call, {"descriptor": DESCRIPTOR}, expected_hrp="unknown")
+        call.assert_not_called()
+
     def test_policy_requires_bounded_string_and_checksum_field(self):
         for value in (None, {}, [], 3, "", "x" * 2049,
                       DESCRIPTOR.split("#")[0], DESCRIPTOR + "#extra"):

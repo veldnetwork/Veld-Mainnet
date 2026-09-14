@@ -27,6 +27,7 @@ def main():
     parser.add_argument("--core", type=Path)
     parser.add_argument("--core-sha256")
     parser.add_argument("--proof", type=Path)
+    parser.add_argument("--service-lifecycle", action="store_true")
     args = parser.parse_args()
     assert not args.output.exists()
     assert bool(args.core) != bool(args.proof)
@@ -35,6 +36,13 @@ def main():
         "fixture_sha256": hashlib.sha256(args.fixture.read_bytes()).hexdigest(),
         "checks": {}, "native_issuance_tested": False, "production_access": False,
         "independent_bitcoin_process": bool(args.core), "services_migrated": False}
+    source = Path(__file__).resolve().parents[1]
+    report["source_sha256"] = {str(path.relative_to(source)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in [source / "swap" / name for name in (
+            "rtp1_service.py", "rtp1_service_runtime.py", "rtp1_backing_evidence.py", "rtp1_mint_policy.py",
+            "veld_signerd.py", "veld_wt_reserve.py", "rpc_url_policy.py")]
+        + [Path(__file__).resolve(), source / "tests/rtp1_service_process_checks.py",
+            source / "tests/rtp1_descriptor_process_checks.py", source / "swap/veld_custody_binding.py"]}
     core = None
     try:
         with tempfile.TemporaryDirectory(prefix="rtp1-backing-check-") as temporary, ExitStack() as services:
@@ -129,6 +137,12 @@ def main():
                 verified = evidence.verify_bitcoin_backing(core.rpc, facts, **policy)
                 assert verified["confirmations"] >= 144
                 report["backing"] = verified
+                if args.service_lifecycle:
+                    from rtp1_service_process_checks import exercise
+                    report["service_lifecycle"] = exercise(root, run, args.keygen, args.fixture,
+                        key, issuer, prepared, facts, verified, signing_evidence, env["VELD_VAULT_PASSPHRASE"])
+                    from rtp1_descriptor_process_checks import exercise as descriptor_check
+                    report["descriptor_adapter"] = descriptor_check(root, core)
                 report["checks"]["real_core_144_confirmations_unspent_successor"] = True
                 core.rpc("invalidateblock", [facts["bitcoin_block"]])
                 try:

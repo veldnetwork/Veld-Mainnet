@@ -131,6 +131,11 @@ def decode_inspected_mint(keygen, issuer_script, unsigned_tx_hex, inspection, **
     if (decoded["from"] != inspection["issuer"] or decoded["to"] != inspection["recipient"] or
             decoded["sats"] != inspection["sats"] or not 1 <= decoded["num_inputs"] <= 4096):
         raise ValueError("RTP1 mint decoder differs from the exact inspected intent")
+    # offline_signing::kCanonicalInputScriptBytes is 5269. Replacing an empty
+    # script adds two CompactSize bytes as well. Refuse before a key operation
+    # if the eventual carrier cannot fit the witness's 128 KiB commit contract.
+    if len(unsigned_tx_hex) // 2 + decoded["num_inputs"] * 5271 > 128 * 1024:
+        raise ValueError("RTP1 signed carrier would exceed the witness commit bound")
     memo = decoded["memo"]
     if (type(memo) is not str or not memo.startswith("RTP1:") or
             not 2 <= len(memo) - 5 <= 256 * 1024 or (len(memo) - 5) % 2 or

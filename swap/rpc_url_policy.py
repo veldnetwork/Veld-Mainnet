@@ -256,6 +256,14 @@ def run_bounded_subprocess(argv, *, input_text=None, timeout,
                       else bytes(stdout_value or b""))
         stderr_raw = (stderr_value.encode("utf-8") if isinstance(stderr_value, str)
                       else bytes(stderr_value or b""))
+    elif os.name == "nt":
+        if __package__:
+            from .windows_managed_process import run_managed
+        else:
+            from windows_managed_process import run_managed
+        completed = run_managed(list(argv), input_raw, timeout=timeout,
+            stdout_max=stdout_max, stderr_max=stderr_max, env=env)
+        stdout_raw, stderr_raw = completed.stdout, completed.stderr
     else:
         if os.name != "posix" or not all(hasattr(os, name) for name in ("set_blocking", "killpg")):
             raise RuntimeError("%s requires the POSIX bounded operator runtime" % description)

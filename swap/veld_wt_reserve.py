@@ -360,7 +360,10 @@ class BitcoinCli:
                 not re.fullmatch(r"[a-z][a-z0-9]{0,63}", method)):
             raise ValueError("Bitcoin RPC method is malformed")
         run = run_bounded_subprocess(
-            self.base + [method] + [str(value) for value in args],
+            self.base + [method] + [
+                json.dumps(value, separators=(",", ":"), allow_nan=False)
+                if value is None or type(value) in (bool, list, dict, float) else str(value)
+                for value in args],
             timeout=60, stdout_max=32 * 1024 * 1024,
             stderr_max=1024 * 1024,
             description="bitcoin-cli %s" % method)
@@ -2894,6 +2897,18 @@ def main():
     with exclusive_witness_state_lock(paths):
         _require_restore_clear(paths)
         rpc.verify_chain_identity()
+        if req.get("action") in {"rtp1_reserve", "rtp1_commit", "rtp1_status"}:
+            try:
+                from rtp1_service_runtime import witness_request
+                answer = witness_request(sys.modules[__name__], req, cfg, paths, rpc)
+                _require_restore_clear(paths)
+                rpc.verify_chain_identity()
+            except Exception as exc:
+                refuse("RTP1 witness refused: " + str(exc)[:240])
+            sys.stdout.write(json.dumps(answer, sort_keys=True, separators=(",", ":")) + "\n")
+            return
+        if "rtp1_service" in cfg:
+            refuse("legacy reservations are closed after RTP1 migration")
         ledger = _load_ledger(paths["ledger"], cfg)
         policy = _reservation_ledger_policy(cfg, production=True)
         if ledger.get("_needs_checkpoint"):
@@ -2954,6 +2969,8 @@ def allocation_main(initialize=False):
         refuse("allocation witness config decode failed: %s" % e)
     if not isinstance(cfg, dict) or cfg.get("production") is not True:
         refuse("allocation witness requires production=true")
+    if "rtp1_service" in cfg:
+        refuse("legacy allocations are closed after RTP1 migration")
     rpc = VeldRpc(cfg.get("veld_rpc"))
     paths = _paths(cfg)
     _require_restore_clear(paths)
@@ -3043,4 +3060,12 @@ def allocation_main(initialize=False):
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--initialize-rtp1-state"]:
+        try:
+            from rtp1_service_runtime import initialize_witness
+            initialized = initialize_witness(sys.modules[__name__])
+        except Exception as exc:
+            refuse("RTP1 initialization: " + str(exc)[:240])
+        sys.stdout.write(json.dumps(initialized, sort_keys=True, separators=(",", ":")) + "\n")
+    else:
+        main()

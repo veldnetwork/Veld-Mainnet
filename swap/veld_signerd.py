@@ -3676,6 +3676,21 @@ def main(capability="mint"):
         refuse(f"bad request json: {e}")
     if not isinstance(req, dict):
         refuse("bad request json: root must be an object")
+    if req.get("action") == "rtp1_mint":
+        if capability != "mint":
+            refuse("C1 reservation capability cannot sign RTP1 mints")
+        try:
+            from rtp1_service_runtime import issuer_request
+            issuer = issuer_addr()
+            signed = issuer_request(sys.modules[__name__], req, authority_cfg,
+                issuer, issuer_p2pkh_from_address(issuer))
+        except Exception as exc:
+            refuse("RTP1 issuance refused: " + str(exc)[:240])
+        sys.stdout.write(signed + "\n")
+        lock.close()
+        return
+    if "rtp1_service" in authority_cfg:
+        refuse("legacy issuance is closed after RTP1 migration")
     if req.get("action") == "ack_c1_signature_durable":
         if capability != "c1-reservation":
             refuse("mint capability cannot acknowledge C1 reservation carriers")
@@ -3966,7 +3981,14 @@ def main(capability="mint"):
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["--initialize-authority-state"]:
+    if sys.argv[1:] == ["--initialize-rtp1-state"]:
+        try:
+            from rtp1_service_runtime import initialize_issuer
+            initialized = initialize_issuer(sys.modules[__name__])
+        except Exception as exc:
+            refuse("RTP1 initialization: " + str(exc)[:240])
+        sys.stdout.write(json.dumps(initialized, sort_keys=True, separators=(",", ":")) + "\n")
+    elif sys.argv[1:] == ["--initialize-authority-state"]:
         try:
             initialized = initialize_signer_authority_state()
         except Exception as exc:
@@ -3978,5 +4000,5 @@ if __name__ == "__main__":
           sys.argv[2] in ("mint", "c1-reservation")):
         main(sys.argv[2])
     else:
-        refuse("usage: veld_signerd.py --initialize-authority-state | "
+        refuse("usage: veld_signerd.py --initialize-authority-state | --initialize-rtp1-state | "
                "--capability mint|c1-reservation")

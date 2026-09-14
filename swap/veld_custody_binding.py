@@ -31,10 +31,17 @@ CUSTODY_NUMS_KEY = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace80
 _CUSTODY_KEY_RE = re.compile(
     r"\[[0-9a-fA-F]{8}/86h/0h/0h\]"
     r"(xpub[1-9A-HJ-NP-Za-km-z]{100,120})/0/\*")
+_TEST_CUSTODY_KEY_RE = re.compile(
+    r"\[[0-9a-fA-F]{8}/86h/1h/0h\]"
+    r"(tpub[1-9A-HJ-NP-Za-km-z]{100,120})/0/\*")
 
 
-def validate_descriptor_policy(descriptor):
+def validate_descriptor_policy(descriptor, *, network="main"):
     """Enforce the full public descriptor emitted by the custody ceremony tool."""
+    if network not in {"main", "test", "regtest", "signet"}:
+        raise RuntimeError("custody descriptor network is not supported")
+    key_pattern = _CUSTODY_KEY_RE if network == "main" else _TEST_CUSTODY_KEY_RE
+    key_version = bytes.fromhex("0488b21e" if network == "main" else "043587cf")
     prefix = "tr(" + CUSTODY_NUMS_KEY + ",multi_a(3,"
     if not isinstance(descriptor, str) or not 0 < len(descriptor) <= 2048:
         raise RuntimeError("custody descriptor must be a bounded public 3-of-5 descriptor")
@@ -48,7 +55,7 @@ def validate_descriptor_policy(descriptor):
         raise RuntimeError("custody descriptor must contain exactly five public keys")
     public_keys = []
     for expression in expressions:
-        match = _CUSTODY_KEY_RE.fullmatch(expression)
+        match = key_pattern.fullmatch(expression)
         if match is None:
             raise RuntimeError("custody descriptor key must match the reviewed BIP86 public path")
         encoded = match.group(1)
@@ -56,7 +63,7 @@ def validate_descriptor_policy(descriptor):
         for char in encoded:
             value = value * 58 + _BASE58.index(char)
         raw = value.to_bytes((value.bit_length() + 7) // 8, "big")
-        if (len(raw) != 82 or raw[:4] != bytes.fromhex("0488b21e") or
+        if (len(raw) != 82 or raw[:4] != key_version or
                 raw[4] != 3 or raw[9:13] != bytes.fromhex("80000000") or
                 raw[45] not in (2, 3) or
                 hashlib.sha256(hashlib.sha256(raw[:-4]).digest()).digest()[:4]
@@ -77,7 +84,7 @@ def _hex64(value, label):
 def load_manifest(path, expected_descriptor_sha256,
                   expected_manifest_sha256, expected_spv_spk_hex=None,
                   require_absolute=True, expected_range_end=999,
-                  expected_consensus_manifest_sha256=None):
+                  expected_consensus_manifest_sha256=None, *, network="main"):
     """Load one exact custody manifest and return its normalized binding.
 
     The SHA-256 is over the manifest's exact bytes.  This makes an operator's
@@ -116,7 +123,7 @@ def load_manifest(path, expected_descriptor_sha256,
         raise RuntimeError("custody SPK manifest schema is not exact")
     descriptor = document.get("descriptor")
     scripts = document.get("script_pubkeys")
-    validate_descriptor_policy(descriptor)
+    validate_descriptor_policy(descriptor, network=network)
     if (document.get("version") != 1 or
             not isinstance(descriptor, str) or
             not descriptor.startswith("tr(") or
@@ -169,9 +176,9 @@ def load_manifest(path, expected_descriptor_sha256,
     }
 
 
-def verify_peg_identity(peg, binding):
+def verify_peg_identity(peg, binding, *, network="main"):
     """Require a getpeginfo response to match one locally pinned manifest."""
-    validate_descriptor_policy(binding.get("descriptor") if isinstance(binding, dict) else None)
+    validate_descriptor_policy(binding.get("descriptor") if isinstance(binding, dict) else None, network=network)
     if not isinstance(peg, dict) or peg.get("active") is not True:
         raise RuntimeError("getpeginfo does not report an active btcVELD peg")
     if peg.get("spv_active") is not True:
@@ -189,10 +196,12 @@ def verify_peg_identity(peg, binding):
         raise RuntimeError("compiled SPV custody script differs from manifest index 0")
 
 
-def _bech32m_spk(address):
+def _bech32m_spk(address, expected_hrp="bc"):
+    if expected_hrp not in {"bc", "tb", "bcrt"}:
+        raise RuntimeError("custody address network is not supported")
     if not isinstance(address, str) or address.lower() != address or \
-            not address.startswith("bc1"):
-        raise RuntimeError("derived custody address is not canonical mainnet bech32m")
+            not address.startswith(expected_hrp + "1"):
+        raise RuntimeError("derived custody address is not canonical for the pinned network")
     split = address.rfind("1")
     values = [BECH32_CHARSET.find(char) for char in address[split + 1:]]
     if len(values) < 7 or any(value < 0 for value in values):
@@ -229,9 +238,12 @@ def _bech32m_spk(address):
     return "5120" + bytes(program).hex()
 
 
-def verify_core_derivation(call, binding):
+def verify_core_derivation(call, binding, *, expected_hrp="bc"):
     """Re-derive every ranged script with Bitcoin Core and compare the manifest."""
-    validate_descriptor_policy(binding.get("descriptor") if isinstance(binding, dict) else None)
+    if expected_hrp not in {"bc", "tb", "bcrt"}:
+        raise RuntimeError("custody derivation network is not supported")
+    validate_descriptor_policy(binding.get("descriptor") if isinstance(binding, dict) else None,
+        network="main" if expected_hrp == "bc" else "test")
     custody_range = binding.get("range") if isinstance(binding, dict) else None
     if (not isinstance(custody_range, list) or len(custody_range) != 2 or
             custody_range[0] != 0 or type(custody_range[1]) is not int or
@@ -245,6 +257,6 @@ def verify_core_derivation(call, binding):
             len(set(addresses)) != count:
         raise RuntimeError(
             "Bitcoin Core did not derive %d unique custody addresses" % count)
-    scripts = tuple(_bech32m_spk(address) for address in addresses)
+    scripts = tuple(_bech32m_spk(address, expected_hrp) for address in addresses)
     if scripts != binding["script_pubkeys"]:
         raise RuntimeError("Bitcoin Core descriptor derivation differs from custody manifest")
