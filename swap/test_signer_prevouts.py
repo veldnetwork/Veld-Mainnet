@@ -115,6 +115,7 @@ class SignerPrevoutTests(unittest.TestCase):
                        (TXID_B, 7): utxo(TXID_B, 7, 700_000)})
         total, got = signer.resolve_mint_prevouts(raw, rpc, ISSUER_SCRIPT, 6)
         self.assertEqual(total, 1_100_000)
+        self.assertEqual([row["block_height"] for row in got], [100, 100])
         self.assertEqual([(x["txid"], x["vout"]) for x in got],
                          [(TXID_A, 3), (TXID_B, 7)])
         self.assertEqual(rpc.calls,

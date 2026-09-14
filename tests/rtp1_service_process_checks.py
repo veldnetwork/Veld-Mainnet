@@ -78,7 +78,9 @@ def exercise(root, run, keygen, fixture, issuer_key, issuer, prepared, facts, bi
         return lifecycle.issuer_mint(journals["issuer"], request, inspect=lambda req: evidence,
             reserve=reserve, verify_fresh=fresh, sign_or_recover=sign, commit=commit_callback,
             halt=lambda: None, receipt_verify=verify,
-            witness_snapshot=lambda req: lifecycle.witness_status(journals["witness"], req))
+            witness_snapshot=lambda req: lifecycle.witness_status(journals["witness"], req),
+            verify_carrier=lambda req, retained, signed: verify_committed_carrier(
+                str(keygen), decode_payload["issuer_script_hex"], config, req, retained, signed))
     with mock.patch.multiple(issuer_service, PREVOUT_STATEF=str(root / "issuer-lease.json"),
             SIGNING_STAGE_DIR=str(root / "issuer-staging"), KEYGEN=str(keygen), KEYFILE=str(issuer_key), PASSFILE=str(password)):
         def lost(req, signed):

@@ -48,7 +48,8 @@ def configuration(value):
     if type(value) is not dict or set(value) != fields or type(value["version"]) is not int or value["version"] != 1:
         raise ValueError("RTP1 service configuration is not version 1")
     pins = parse_expected_chain(value["expected_chain"])
-    if pins["disposable"] is not True or value["bitcoin_network"] != "regtest":
+    if (pins["disposable"] is not True or pins["external_value"] is not False or
+            value["bitcoin_network"] != "regtest"):
         raise ValueError("RTP1 service activation is closed outside a disposable test network")
     for field in ("custody_descriptor_sha256", "custody_manifest_sha256", "bitcoin_genesis"):
         if hash_value(value[field], field) == ZERO:
@@ -314,7 +315,7 @@ def check_witness_status(snapshot, row):
 
 
 def issuer_mint(journal, request, *, inspect, reserve, verify_fresh, sign_or_recover,
-                commit, halt, receipt_verify, witness_snapshot):
+                commit, halt, receipt_verify, witness_snapshot, verify_carrier):
     """Bytes are returned only after both operators persist the exact commitment.
 
     The signing callback owns the existing durable LEASED/SIGNING/exact-output
@@ -330,6 +331,8 @@ def issuer_mint(journal, request, *, inspect, reserve, verify_fresh, sign_or_rec
     recovered = check_witness_status(witness_snapshot(request), row)
     signed = row["signed_tx_hex"]
     if signed is None and recovered is not None:
+        if verify_carrier(request, row["evidence"], recovered) is not True:
+            raise ValueError("recovered RTP1 carrier failed independent issuer verification")
         journal.commit(request, recovered, True)
         signed = recovered
     if signed is None:
@@ -339,7 +342,11 @@ def issuer_mint(journal, request, *, inspect, reserve, verify_fresh, sign_or_rec
             if check_witness_status(witness_snapshot(request), row) is not None:
                 raise ValueError("witness already holds signed bytes; recover without signing")
         signed = sign_or_recover(request, row["evidence"], gate)
+        if verify_carrier(request, row["evidence"], signed) is not True:
+            raise ValueError("new RTP1 carrier failed independent issuer verification")
         journal.commit(request, signed, False)
+    elif verify_carrier(request, row["evidence"], signed) is not True:
+        raise ValueError("retained RTP1 carrier failed independent issuer verification")
     halt()
     expected = journal.commit(request, signed, row["committed"])
     observed = commit(request, signed)

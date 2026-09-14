@@ -74,17 +74,34 @@ class ManagedProcessTests(unittest.TestCase):
                 kernel.CloseHandle(handle)
 
     def test_only_explicit_handles_are_inherited(self):
-        import _winapi
-        read, write = _winapi.CreatePipe(None, 0)
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CreateEventW.argtypes = [ctypes.c_void_p, w.BOOL, w.BOOL, w.LPCWSTR]
+        kernel.CreateEventW.restype = w.HANDLE
+        kernel.WaitForSingleObject.argtypes = [w.HANDLE, w.DWORD]
+        kernel.ResetEvent.argtypes = [w.HANDLE]
+        kernel.CloseHandle.argtypes = [w.HANDLE]
+        event = kernel.CreateEventW(None, True, False, None)
+        self.assertTrue(event)
         try:
-            os.set_handle_inheritable(write, True)
-            result = self.run_child("import ctypes; from ctypes import wintypes as w; k=ctypes.WinDLL('kernel32'); "
-                "k.GetHandleInformation.argtypes=[w.HANDLE,ctypes.POINTER(w.DWORD)]; flags=w.DWORD(); "
-                f"print(bool(k.GetHandleInformation({write},ctypes.byref(flags))))")
-            self.assertEqual(result.stdout.strip(), "False")
+            os.set_handle_inheritable(event, True)
+            code = ("import ctypes; from ctypes import wintypes as w; k=ctypes.WinDLL('kernel32'); "
+                "k.SetEvent.argtypes=[w.HANDLE]; " + f"print(bool(k.SetEvent({event})))")
+            # Prove the same kernel object is signaled when inheritance is explicit.
+            # A handle number alone may legitimately name a different child object.
+            startup = subprocess.STARTUPINFO()
+            startup.lpAttributeList = {"handle_list": [event]}
+            control = subprocess.run([sys.executable, "-I", "-c", code], startupinfo=startup,
+                close_fds=True, capture_output=True, text=True, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW)
+            self.assertEqual(control.returncode, 0)
+            self.assertEqual(control.stdout.strip(), "True")
+            self.assertEqual(kernel.WaitForSingleObject(event, 0), 0)
+            self.assertTrue(kernel.ResetEvent(event))
+            result = self.run_child(code)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(kernel.WaitForSingleObject(event, 0), 258)
         finally:
-            _winapi.CloseHandle(read)
-            _winapi.CloseHandle(write)
+            kernel.CloseHandle(event)
 
 
 if __name__ == "__main__":

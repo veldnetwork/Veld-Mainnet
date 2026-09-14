@@ -19,7 +19,10 @@ def main():
     parser.add_argument('--keygen', type=Path, required=True)
     parser.add_argument('--fixture', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--expected-genesis')
     args = parser.parse_args()
+    if args.expected_genesis is not None:
+        assert re.fullmatch(r'[0-9a-f]{64}', args.expected_genesis)
     report = {'status': 'running', 'platform': os.name, 'network': False,
         'started_utc': datetime.now(timezone.utc).isoformat(),
         'keygen_sha256': hashlib.sha256(args.keygen.read_bytes()).hexdigest(),
@@ -53,6 +56,8 @@ def main():
                 payload = {'issuer_script_hex': script, 'unsigned_tx_hex': prepared['unsigned_tx_hex'],
                            'parent_transactions': parents}
                 built = json.loads(run([args.keygen, 'prepare-signing-stdin'], data=json.dumps(payload)).stdout)
+                if args.expected_genesis is not None:
+                    assert built['genesis_hash'] == args.expected_genesis, 'native evidence differs from the independent RPC genesis pin'
                 assert built['operation_identity_digest'] == digest
                 assert built['prepared'] == {k: v for k, v in prepared.items() if not k.startswith('reserve_prior_')}
                 chain = {'profile_id': 'offline-fixture', 'consensus_build_profile': 'offline-fixture',
@@ -60,14 +65,17 @@ def main():
                     'genesis_hash': built['genesis_hash'], 'launch_block_hash': '12' * 32}
                 raw_by_id = {hashlib.sha256(hashlib.sha256(bytes.fromhex(p)).digest()).hexdigest(): p for p in parents}
                 resolved = [{'txid': hashlib.sha256(hashlib.sha256(bytes.fromhex(meta['parent_tx_hex'])).digest()).hexdigest(),
-                    'value_units': meta['value'], 'script_pubkey_hex': meta['prev_script_hex']}
+                    'value_units': meta['value'], 'script_pubkey_hex': meta['prev_script_hex'], 'block_height': 1}
                     for meta in prepared['inputs']]
 
                 def rpc(method, params):
                     if method == 'getnetworkinfo': return dict(chain)
                     if method == 'getcompiledgenesis': return chain['genesis_hash']
                     if method == 'getblockhash': return chain['genesis_hash'] if params[0] == 0 else chain['launch_block_hash']
-                    if method == 'getrawtransaction': return {'txid': params[0], 'raw_hex': raw_by_id[params[0]]}
+                    if method == 'gettransaction':
+                        assert params[1] == 1
+                        return {'txid': params[0], 'raw_hex': raw_by_id[params[0]],
+                            'block_height': 1, 'block_hash': chain['launch_block_hash']}
                     raise AssertionError(method)
 
                 context = {k: v for k, v in prepared.items() if k.startswith('reserve_prior_')} or None
@@ -122,6 +130,7 @@ def main():
                             hashlib.sha256(hashlib.sha256(bytes.fromhex(actual)).digest()).hexdigest())
                         assert not list(stage.iterdir())
                 report['checks'].append({'operation': name, 'native_evidence_parity': True,
+                    'independent_genesis_pin_checked': args.expected_genesis is not None,
                     'actual_signature_verified': True, 'wrong_parent_refused': True,
                     'native_committed_carrier_verified': True, 'forged_signature_refused': True,
                     'issuer_crash_recovery': os.name == 'posix',

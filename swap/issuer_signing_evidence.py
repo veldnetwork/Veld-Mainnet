@@ -24,6 +24,27 @@ def _canonical_hex(value, maximum, name):
     return bytes.fromhex(value)
 
 
+def canonical_parent(call, row):
+    txid, height = row.get("txid"), row.get("block_height")
+    if (type(txid) is not str or not _HASH.fullmatch(txid) or
+            type(height) is not int or not 0 <= height <= (1 << 63) - 1):
+        raise ValueError("resolved parent location is invalid")
+    block = call("getblockhash", [height])
+    if type(block) is not str or not _HASH.fullmatch(block):
+        raise ValueError("resolved parent block is invalid")
+    response = call("gettransaction", [txid, height])
+    if (type(response) is not dict or response.get("txid") != txid or
+            type(response.get("block_height")) is not int or response["block_height"] != height or
+            response.get("block_hash") != block):
+        raise ValueError("independent node returned the wrong parent location")
+    raw = _canonical_hex(response.get("raw_hex"), 4 * 1024 * 1024, "parent transaction")
+    if hashlib.sha256(hashlib.sha256(raw).digest()).hexdigest() != txid:
+        raise ValueError("raw parent hash differs from the referenced transaction")
+    if call("getblockhash", [height]) != block:
+        raise ValueError("parent block changed while preparing signing evidence")
+    return raw.hex()
+
+
 def prepare_evidence(keygen, call, expected_chain, unsigned_tx_hex, issuer_script,
                      resolved_inputs, *, issuer, operation_type, recipient, amount,
                      reserve_context=None):
@@ -45,13 +66,7 @@ def prepare_evidence(keygen, call, expected_chain, unsigned_tx_hex, issuer_scrip
             raise ValueError("resolved parent identity is invalid")
         txid = row["txid"]
         if txid not in fetched:
-            response = call("getrawtransaction", [txid])
-            if type(response) is not dict or response.get("txid") != txid:
-                raise ValueError("independent node returned the wrong parent")
-            raw = _canonical_hex(response.get("raw_hex"), 4 * 1024 * 1024, "parent transaction")
-            if hashlib.sha256(hashlib.sha256(raw).digest()).hexdigest() != txid:
-                raise ValueError("raw parent hash differs from the referenced transaction")
-            fetched[txid] = raw.hex()
+            fetched[txid] = canonical_parent(call, row)
         size += len(fetched[txid])
         if size > MAX_EVIDENCE_BYTES - 65536:
             raise ValueError("complete signing evidence exceeds its bound")

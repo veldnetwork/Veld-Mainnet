@@ -12,7 +12,7 @@ class Rtp1MintPolicyTests(unittest.TestCase):
         self.raw = "00"
         self.chain = {"profile_id": "isolated-fixture", "consensus_build_profile": "fixture",
             "disposable": True, "external_value": False, "fixed_difficulty_regtest": True,
-            "genesis_hash": "11" * 32, "launch_block_hash": "22" * 32}
+            "genesis_hash": bytes(range(1, 33)).hex(), "launch_block_hash": "22" * 32}
         self.account = "V" + "1" * 30
         self.expected = {"expected_chain": self.chain, "issuer": self.account,
             "recipient": self.account, "sats": 20000, "custody_descriptor_sha256": "33" * 32,
@@ -35,6 +35,12 @@ class Rtp1MintPolicyTests(unittest.TestCase):
         actual = self.validate()
         self.assertEqual(actual, self.response)
         self.assertIsNot(actual, self.response)
+
+    def test_reversed_genesis_is_not_an_alternative_chain_pin(self):
+        reversed_hash = bytes.fromhex(self.chain["genesis_hash"])[::-1].hex()
+        self.assertNotEqual(reversed_hash, self.chain["genesis_hash"])
+        with self.assertRaises(ValueError):
+            self.validate(dict(self.response, genesis_hash=reversed_hash))
 
     def test_missing_custody_policy_is_not_inferred(self):
         with self.assertRaises(ValueError):

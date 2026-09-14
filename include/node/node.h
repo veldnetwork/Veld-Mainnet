@@ -9764,7 +9764,7 @@ private:
             {"tip", JB::Number(tip.height)}, {"tip_hash", JB::String(HashToHex(tip.GetHash()))},
             {"candidate_height", JB::Number(candidate)},
             {"final_height", JB::Number(fin_state_.FinalizedHeight())},
-            {"genesis_hash", JB::String(GENESIS_HASH)},
+            {"genesis_hash", JB::String(HashToHex(CreateGenesisBlock().GetHash()))},
             {"unsigned_tx_sha256", JB::String(HashToHex(template_hash))},
             {"proof_sha256", JB::String(HashToHex(proof_hash))},
             {"issuer", JB::String(from)}, {"recipient", JB::String(to)},

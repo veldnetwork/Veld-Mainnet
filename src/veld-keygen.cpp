@@ -37,6 +37,7 @@
 
 #include "../include/compat/platform.h"
 #include "../include/core/hash.h"
+#include "../include/core/block.h"
 #include "../include/core/op_authorization.h"
 #include "../include/core/version.h"
 #include "../include/crypto/veld_signing.h"
@@ -1238,7 +1239,7 @@ static int CmdVerifySignedCarrierStdin() {
     Hash256 unsigned_hash{}, signed_hash{};
     vendored_crypto::sha256(original.data(), original.size(), unsigned_hash.data());
     vendored_crypto::sha256(raw.data(), raw.size(), signed_hash.data());
-    std::cout << "{\"version\":1,\"genesis_hash\":\"" << GENESIS_HASH
+    std::cout << "{\"version\":1,\"genesis_hash\":\"" << HashToHex(CreateGenesisBlock().GetHash())
         << "\",\"unsigned_tx_sha256\":\"" << HashToHex(unsigned_hash)
         << "\",\"txid\":\"" << HashToHex(tx.GetTxID())
         << "\",\"signed_tx_sha256\":\"" << HashToHex(signed_hash)
@@ -1324,7 +1325,7 @@ static int CmdPrepareSigningStdin() {
         !offline_signing::VerifyExactFeesOnlyEnvelope(verified, script, error) ||
         !offline_signing::ExtractCanonicalOperationIdentity(tx.outputs.back(), identity, error))
         return fail("does not authenticate as a canonical fees-only operation");
-    std::cout << "{\"version\":1,\"genesis_hash\":\"" << GENESIS_HASH
+    std::cout << "{\"version\":1,\"genesis_hash\":\"" << HashToHex(CreateGenesisBlock().GetHash())
 #ifdef VELD_MAINNET_POW
               << "\",\"signature_network\":\"mainnet\""
 #else

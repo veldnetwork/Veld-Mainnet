@@ -25,8 +25,12 @@ integrity binding, not a witness signature or an authority grant.
 The backing boundary passed an actual private Core deposit with144 confirmations,
 block invalidation and reconsideration. Linux and Windows keygen builds decoded
 that proof and produced independently verified issuer input signatures offline.
-This fixture does not perform native mint admission or service migration; the
-DEPOSIT successor path also requires a complete service qualification run.
+Those earlier fixtures did not perform native mint admission. A subsequent
+private-network run exercised the actual issuer, witness, watchtower, heartbeat
+receiver and native RPC entry points for OPEN and DEPOSIT, with Bitcoin Core
+requiring three custody signatures and native seven-validator finality. The
+private node profile differs from the public production profile; this does not
+qualify production activation or five independent operators.
 
 The issuer and witness entry points now dispatch versioned RTP1 requests through
 `swap/rtp1_service_runtime.py`. Activation is restricted to explicitly pinned
@@ -46,6 +50,11 @@ The issuer's native evidence/signing boundary has been updated. Its existing C1
 and MNP service paths now retrieve complete parent transactions from their own
 node, use the keyless `prepare-signing-stdin` command to authenticate the exact
 inputs and fee, and authorize a detached intent before recording `SIGNING`.
+The input's independently resolved block height is retained. Parent retrieval
+uses that exact height and verifies its canonical block and raw transaction hash,
+so old inputs do not depend on a recent-history scan. New evidence and inspection
+metadata use the same genesis hash representation as native RPC; existing signing
+domain constants and genesis bytes are unchanged.
 Prepared evidence, intent and exact signed output survive a retry. An uncertain
 transaction-signing attempt is never repeated. Legacy signing stages require
 reconciliation. Fresh policy and emergency-stop checks run again at the key
@@ -66,6 +75,17 @@ current backing, emergency stop, authority, solvency and witness state at its ke
 boundary. It releases signed bytes only after an exact durable witness commit.
 The witness uses retained native context and the keyless
 `verify-signed-carrier-stdin` command to verify every input signature at commit.
+The issuer performs the same cryptographic verification for newly signed,
+retained and witness-recovered bytes. Revalidation counts the current reservation
+once alongside every other unresolved liability; it never releases capacity by
+substituting a zero mint amount.
+
+The guarded watchtower adapter compares coherent native supply, unsettled
+redemption principal and reserve accounting with a bounded Core inventory. It
+checks each confirmed output against the full pinned descriptor and an unspent
+view that includes mempool spends. Both journals reconcile canonical confirmations
+before cached status or commitment responses. A failed one-shot watchtower cycle
+returns failure to its caller rather than a successful process status.
 
 Lost acknowledgements retry the same bytes. An issuer restored to a retained
 reservation can recover the exact committed payload from its witness without
@@ -81,12 +101,17 @@ by `--initialize-authority-state`. Existing funded or signed C1 state, partial
 initialization and signing-stage history refuse migration. Enabling the RTP1
 configuration closes legacy issuance and allocation routes under the same lock.
 
-Actual private Bitcoin backing and actual witness/issuer cryptography passed a
-two-journal lifecycle with lost acknowledgement, restart and exact-byte retry.
-That fixture simulates the native view. It does not qualify full forced-command
-entry points, native OPEN/DEPOSIT service admission, historical-liability migration
-or independent operators. The bounded journal retains all records; archival and
-simultaneous operator backup rollback remain qualification requirements.
+The earlier two-journal cryptographic fixture simulated the native view. The
+subsequent private native run admitted OPEN and DEPOSIT through the actual service
+entry points and recognized their canonical effects. It also refused a forged
+carrier and emergency-stop retries, recovered witness bytes with issuer decryption
+unavailable, and restored pending liability during an actual Bitcoin invalidation.
+Restoring the Bitcoin branch reconciled both journals without another mint.
+The resulting issued tokens passed native AMM seed, add, both swap directions
+and liquidity removal with unchanged circulating supply.
+Historical-liability migration and independent operators remain unqualified. The
+bounded journal retains all records; archival, simultaneous operator backup
+rollback and every physical write-interruption boundary require further testing.
 
 ## Required issuer transition
 

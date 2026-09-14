@@ -159,8 +159,10 @@ def confirmation(config, rpc, btc, row):
         height, block = status.get("accepted_block_height"), status.get("accepted_block_hash")
         if type(height) is not int or not 0 < height <= peg["final_height"] or rpc.call("getblockhash", [height]) != block:
             return None
-        raw = rpc.call("getrawtransaction", [txid])
-        if type(raw) is not dict or raw.get("raw_hex") != row["signed_tx_hex"] or raw.get("block_hash") != block:
+        raw = rpc.call("gettransaction", [txid, height])
+        if (type(raw) is not dict or raw.get("txid") != txid or
+                type(raw.get("block_height")) is not int or raw["block_height"] != height or
+                raw.get("raw_hex") != row["signed_tx_hex"] or raw.get("block_hash") != block):
             return None
         facts = row["evidence"]["transition"]
         if btc.call("getblockhash", 0) != config["bitcoin_genesis"]:
@@ -198,6 +200,13 @@ def beat_gate(config, rpc, beat, outstanding, amount, verify):
             view.get("tip") != beat["tip"] or view.get("tip_hash") != beat["tip_hash"] or
             rpc.call("getblockhash", [beat["tip"]]) != beat["tip_hash"]):
         raise ValueError("RTP1 solvency heartbeat is not the independent canonical supply")
+
+
+def reserved_mint_gate(config, rpc, beat, journal, request, verify):
+    lifecycle.request_identity(request)
+    outstanding = sum(row["request"]["sats"] for row in journal.state["records"]
+        if row["confirmation"] is None and row["request"] != request)
+    beat_gate(config, rpc, beat, outstanding, request["sats"], verify)
 
 
 def check_descriptor(config, cfg, rpc, btc):
@@ -268,8 +277,7 @@ def issuer_request(service, request, cfg, issuer, script):
             raise ValueError("RTP1 requires the independent solvency watchtower")
         beat = strict_json_loads(read_bounded_regular_file(service.HEARTBEATF, 65536,
             "issuer solvency heartbeat", private=True), "issuer solvency heartbeat")
-        used = sum(row["request"]["sats"] for row in journal.state["records"] if row["confirmation"] is None)
-        beat_gate(config, rpc, beat, used, 0 if journal.find(req) else req["sats"], verify)
+        reserved_mint_gate(config, rpc, beat, journal, req, verify)
         return fresh
     def call(action, req, **extra):
         return service._call_witness(witness["command"], {"action": action, "request": req, **extra})
@@ -288,7 +296,9 @@ def issuer_request(service, request, cfg, issuer, script):
     signed = lifecycle.issuer_mint(journal, request, inspect=gate,
         reserve=lambda req: call("rtp1_reserve", req), verify_fresh=gate, sign_or_recover=sign,
         commit=lambda req, signed: call("rtp1_commit", req, signed_tx_hex=signed), halt=halt,
-        receipt_verify=verify, witness_snapshot=lambda req: call("rtp1_status", req))
+        receipt_verify=verify, witness_snapshot=lambda req: call("rtp1_status", req),
+        verify_carrier=lambda req, retained, signed: verify_committed_carrier(
+            service.KEYGEN, script, config, req, retained, signed))
     row = journal.find(request)
     owner = service.direct_mint_prevout_owner_id(row["evidence"]["native"]["deposit_outpoint"])
     service.reserve_issuer_prevouts(lease, owner, "mint-direct", None,
@@ -315,6 +325,7 @@ def witness_request(service, envelope, cfg, paths, rpc):
     journal = load_activated_state(cfg["state_dir"], "witness", cfg,
         {"mint": paths["ledger"], "allocations": paths["allocations"], "terminal": paths["terminal"]},
         lambda value, path: service.atomic_write(path, lifecycle.canonical(value).decode("utf-8") + "\n"), verify)
+    journal.reconcile(lambda row: confirmation(config, rpc, btc, row))
     if action == "rtp1_status":
         return lifecycle.witness_status(journal, request)
     from veld_signerd import issuer_p2pkh_from_address
@@ -322,11 +333,9 @@ def witness_request(service, envelope, cfg, paths, rpc):
     if action == "rtp1_commit":
         return lifecycle.witness_commit(journal, request, envelope["signed_tx_hex"],
             lambda req, retained, signed: verify_committed_carrier(keygen, script, config, req, retained, signed))
-    journal.reconcile(lambda row: confirmation(config, rpc, btc, row))
     def inspect(req):
         fresh = observation(config, rpc, btc, keygen, script, req)
         beat = service._load_beat(paths["beat"], time.time())
-        used = sum(row["request"]["sats"] for row in journal.state["records"] if row["confirmation"] is None)
-        beat_gate(config, rpc, beat, used, req["sats"], verify)
+        reserved_mint_gate(config, rpc, beat, journal, req, verify)
         return fresh
     return lifecycle.witness_reserve(journal, request, inspect, lambda core: service._sign_receipt(core, cfg))

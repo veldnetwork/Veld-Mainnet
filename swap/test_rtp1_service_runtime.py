@@ -18,6 +18,33 @@ class RuntimeBoundaryTests(unittest.TestCase):
     def setUp(self):
         self.config, self.request, self.evidence, self.signed = fixture()
 
+    def test_reserved_request_is_counted_exactly_once_before_and_after_reservation(self):
+        amount = self.request["sats"]
+        other = dict(self.request, recipient="V" + "2" * 30)
+        rows = [{"request": other, "confirmation": None},
+            {"request": dict(other, sats=amount + 1), "confirmation": {"height": 1}}]
+        journal = mock.Mock(state={"records": rows})
+        with mock.patch.object(runtime, "beat_gate") as gate:
+            for reserved in (False, True):
+                if reserved: rows.append({"request": self.request, "confirmation": None})
+                runtime.reserved_mint_gate(self.config, "rpc", "beat", journal, self.request, "verify")
+                gate.assert_called_with(self.config, "rpc", "beat", amount, amount, "verify")
+
+    def test_reserved_request_cannot_reuse_backing_committed_elsewhere(self):
+        amount = self.request["sats"]
+        payload = solvency.build_beat_payload(amount, 0, 0, 100, "ab" * 32, 1, 600)
+        payload.update(sig_alg="mldsa65", sig="12" * 3309)
+        beat = solvency.stamp_heartbeat(payload, time.time())
+        rpc = mock.Mock()
+        rpc.call.side_effect = lambda method, params: {"supply_sats": 0, "tip": 100,
+            "tip_hash": "ab" * 32} if method == "getbtcveldsupply" else "ab" * 32
+        rows = [{"request": self.request, "confirmation": None}]
+        journal = mock.Mock(state={"records": rows})
+        runtime.reserved_mint_gate(self.config, rpc, beat, journal, self.request, lambda *args: True)
+        rows.append({"request": dict(self.request, recipient="V" + "2" * 30), "confirmation": None})
+        with self.assertRaisesRegex(ValueError, "exceed watchtower headroom"):
+            runtime.reserved_mint_gate(self.config, rpc, beat, journal, self.request, lambda *args: True)
+
     def test_heartbeat_signature_excludes_only_receiver_timestamps(self):
         payload = solvency.build_beat_payload(100000, 0, 0, 100, "ab" * 32, 1, 600)
         payload.update(sig_alg="mldsa65", sig="12" * 3309)
@@ -120,7 +147,10 @@ class RuntimeBoundaryTests(unittest.TestCase):
             if method == "getpeginfo": return {"final_height": 2980}
             if method == "getbtcveldmintstatus": return dict(status)
             if method == "getblockhash": return "ab" * 32 if params == [3000] else "cd" * 32
-            if method == "getrawtransaction": return {"raw_hex": self.signed, "block_hash": "cd" * 32}
+            if method == "gettransaction":
+                self.assertEqual(params, [status["accepted_txid"], 2980])
+                return {"txid": params[0], "block_height": 2980,
+                    "raw_hex": self.signed, "block_hash": "cd" * 32}
             raise AssertionError(method)
         info = {"chain": "regtest", "initialblockdownload": False, "blocks": 500, "headers": 500}
         def bitcoin(method, *args):
@@ -137,6 +167,27 @@ class RuntimeBoundaryTests(unittest.TestCase):
             status["accepted_txid"] = lifecycle.signed_identity(self.signed, self.request["unsigned_tx_hex"])
             info["initialblockdownload"] = True
             self.assertIsNone(runtime.confirmation(self.config, rpc, btc, row))
+
+    @unittest.skipUnless(os.name == "posix", "existing witness entry point is POSIX")
+    def test_status_and_commit_reconcile_before_releasing_cached_state(self):
+        service, rpc, journal = mock.Mock(), mock.Mock(), mock.Mock()
+        service.HERE = "/fixture"
+        cfg = {"rtp1_service": self.config, "state_dir": "/fixture", "rtp1_witness_public_key_file": "/fixture/public"}
+        paths = {key: "/fixture/" + key for key in ("ledger", "allocations", "terminal")}
+        for action in ("rtp1_status", "rtp1_commit"):
+            events = []
+            envelope = {"action": action, "request": self.request}
+            if action == "rtp1_commit": envelope["signed_tx_hex"] = self.signed
+            journal.reconcile.side_effect = lambda callback: events.append(("reconcile", callback({})))
+            with mock.patch.object(runtime, "verifier"), mock.patch.object(runtime, "verify_expected_chain"), \
+                    mock.patch.object(runtime, "check_descriptor"), \
+                    mock.patch.object(runtime, "load_activated_state", return_value=journal), \
+                    mock.patch.object(runtime, "confirmation", return_value=None), \
+                    mock.patch("veld_signerd.issuer_p2pkh_from_address", return_value="76a914" + "11" * 20 + "88ac"), \
+                    mock.patch.object(lifecycle, "witness_status", side_effect=lambda *args: events.append(("status", None))), \
+                    mock.patch.object(lifecycle, "witness_commit", side_effect=lambda *args: events.append(("commit", None))):
+                runtime.witness_request(service, envelope, cfg, paths, rpc)
+            self.assertEqual(events, [("reconcile", None), (action.removeprefix("rtp1_"), None)])
 
 
 if __name__ == "__main__":

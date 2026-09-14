@@ -64,7 +64,8 @@ class Rtp1ServiceTests(unittest.TestCase):
         kwargs = dict(inspect=lambda req: self.evidence, reserve=self.reserve,
             verify_fresh=lambda req, retained: None, sign_or_recover=self.sign, commit=self.commit,
             halt=lambda: None, receipt_verify=self.verify,
-            witness_snapshot=lambda req: service.witness_status(self.witness, req))
+            witness_snapshot=lambda req: service.witness_status(self.witness, req),
+            verify_carrier=lambda req, retained, signed: signed == self.signed)
         kwargs.update(overrides)
         return service.issuer_mint(self.issuer, self.request, **kwargs)
 
@@ -75,6 +76,12 @@ class Rtp1ServiceTests(unittest.TestCase):
             row = self.saved[role]["records"][0]
             self.assertTrue(row["committed"])
             self.assertEqual(row["signed_tx_hex"], self.signed)
+
+    def test_disposable_label_cannot_enable_an_external_value_profile(self):
+        config = copy.deepcopy(self.config)
+        config["expected_chain"]["external_value"] = True
+        with self.assertRaisesRegex(ValueError, "activation is closed"):
+            service.configuration(config)
 
     def test_restart_replays_exact_bytes_without_fresh_issuance(self):
         self.mint()
@@ -117,6 +124,28 @@ class Rtp1ServiceTests(unittest.TestCase):
         def stale(*args): raise ValueError("stale reserve")
         with self.assertRaises(ValueError): self.mint(verify_fresh=stale)
         self.assertEqual(self.sign_calls, 0)
+
+    def test_issuer_checks_crypto_before_adopting_witness_recovery(self):
+        self.mint()
+        restored = copy.deepcopy(self.saved["issuer"])
+        restored["records"][0].update(signed_tx_hex=None, committed=False)
+        self.issuer = self.journal("issuer", restored)
+        before = copy.deepcopy(self.issuer.state)
+        with self.assertRaisesRegex(ValueError, "recovered RTP1 carrier"):
+            self.mint(verify_carrier=lambda *args: False)
+        self.assertEqual(self.issuer.state, before)
+        self.assertEqual(self.sign_calls, 1)
+
+    def test_issuer_refuses_invalid_new_and_retained_crypto(self):
+        with self.assertRaisesRegex(ValueError, "new RTP1 carrier"):
+            self.mint(verify_carrier=lambda *args: False)
+        self.assertIsNone(self.issuer.find(self.request)["signed_tx_hex"])
+        self.assertIsNone(self.witness.find(self.request)["signed_tx_hex"])
+        self.mint()
+        before = copy.deepcopy(self.issuer.state)
+        with self.assertRaisesRegex(ValueError, "retained RTP1 carrier"):
+            self.mint(verify_carrier=lambda *args: False)
+        self.assertEqual(self.issuer.state, before)
 
     def test_halt_before_cached_release(self):
         self.mint()

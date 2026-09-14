@@ -378,7 +378,7 @@ def resolve_mint_prevouts(unsigned_tx_hex, rpc, issuer_script_hex,
             raise ValueError("prevout %s:%d is not owned by the issuer script" % (txid, vout))
         value = _strict_uint(u.get("value_units"), "value_units")
         confs = _strict_uint(u.get("confirmations"), "confirmations")
-        _strict_uint(u.get("block_height"), "block_height")
+        height = _strict_uint(u.get("block_height"), "block_height")
         if confs < int(min_confirmations):
             raise ValueError("prevout %s:%d has %d confirmations; need %d" %
                              (txid, vout, confs, int(min_confirmations)))
@@ -386,7 +386,8 @@ def resolve_mint_prevouts(unsigned_tx_hex, rpc, issuer_script_hex,
             raise ValueError("prevout value sum overflow")
         total += value
         resolved.append({"txid": txid, "vout": vout, "value_units": value,
-                         "script_pubkey_hex": script, "confirmations": confs})
+                         "script_pubkey_hex": script, "confirmations": confs,
+                         "block_height": height})
     return total, resolved
 
 

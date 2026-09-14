@@ -916,7 +916,11 @@ def main():
         "watchtower configuration")
     if not isinstance(cfg, dict):
         die("configuration root must be an object")
-    wt = Watchtower(cfg)
+    if "rtp1_service" in cfg:
+        from rtp1_watchtower import Rtp1Watchtower
+        wt = Rtp1Watchtower(cfg)
+    else:
+        wt = Watchtower(cfg)
 
     lock_path = os.path.join(wt.state_dir, "watchtowerd.lock")
     lock_flags = (os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) |
@@ -949,11 +953,15 @@ def main():
     log("watchtower start: margin=%d ttl=%d interval=%d halt_after=%d signer=%s"
         % (wt.margin, wt.ttl, loop_secs, wt.reads_before_halt, wt.ssh_target))
     while True:
+        result = "ERROR"
         try:
-            wt.tick()
+            result = wt.tick()
         except Exception as e:
             wt._alert("tick error (fail-closed, no beat): %s: %s" % (type(e).__name__, e))
         if once:
+            lock_file.close()
+            if result not in {"SOLVENT", "EMPTY"}:
+                die("watchtower cycle failed: " + str(result), 69)
             break
         time.sleep(loop_secs)
 
