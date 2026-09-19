@@ -434,7 +434,9 @@ constexpr bool VALIDATOR_SYSTEM_ALWAYS_ACTIVE = true;
 #endif
 constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = VELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT;
 #elif defined(VELD_PUBLIC_MAINNET)
-constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = 6'200;
+// Coordinated future activation authorized on 2026-09-19. Earlier public
+// blocks retain the aggregate registration gate; individual bonds are unchanged.
+constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = 12'000;
 #else
 constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = 0;
 #endif

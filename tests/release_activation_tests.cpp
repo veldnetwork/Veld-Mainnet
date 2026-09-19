@@ -27,9 +27,16 @@ static_assert(finality::qc::REGISTRATION_MATURITY == 480);
 static_assert(finality::qc::MIN_VALIDATOR_COUNT == 7);
 
 #ifdef VELD_PUBLIC_MAINNET
-static_assert(VALIDATOR_REGISTRATION_FORK_HEIGHT == 6200);
+static_assert(VALIDATOR_REGISTRATION_FORK_HEIGHT == 12000);
 static_assert(ValidatorRegistrationNetworkStakeFloor(6199) == 10000 * VELD_UNITS);
-static_assert(ValidatorRegistrationNetworkStakeFloor(6200) == 0);
+static_assert(ValidatorRegistrationNetworkStakeFloor(6200) == 10000 * VELD_UNITS);
+static_assert(ValidatorRegistrationNetworkStakeFloor(11999) == 10000 * VELD_UNITS);
+static_assert(ValidatorRegistrationNetworkStakeFloor(12000) == 0);
+static_assert(ValidatorRegistrationNetworkStakeFloor(12001) == 0);
+static_assert(ValidatorRegistrationNetworkStakeFloor(UINT64_MAX) == 0);
+static_assert(!ValidatorRegistrationForkActive(11999));
+static_assert(ValidatorRegistrationForkActive(12000));
+static_assert(ValidatorRegistrationForkActive(12001));
 static_assert(PROTOCOL_UPGRADE_HEIGHT == 3840);
 static_assert(ASERT_ACTIVATION_HEIGHT == 3840);
 static_assert(SECURITY_STATE_MIGRATION_HEIGHT == 3840);
