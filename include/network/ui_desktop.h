@@ -3332,7 +3332,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     <div id="bv-panel-swap" style="display:none">
     <div id="bv-swap-nopool" class="card bv-action-card" style="padding:24px 22px;max-width:460px;margin:0 auto">
       <div class="bv-panel-title">Open VELD / btcVELD</div>
-      <div class="bv-panel-copy">Add the first liquidity pair. The accepted opening ratio becomes the pool's permanent fee anchor. The minimum is 50 VELD and 0.00050000 btcVELD; a minimum seed is entirely locked and receives no withdrawable LP.</div>
+      <div class="bv-panel-copy">Add the first liquidity pair to set the opening price. The minimum is 50 VELD and 0.00050000 btcVELD; a minimum seed is entirely locked and receives no withdrawable LP.</div>
       <div class="bv-io-head"><span>VELD to add</span></div>
       <input class="form-input" id="bv-seed-veld" type="number" step="0.00000001" placeholder="0.00" data-act-input="hbv_seed_compute" autocomplete="off" style="margin:4px 0 12px">
       <div class="bv-io-head"><span>btcVELD to add</span><span class="bv-bal">Balance: <b id="bv-seed-bvbal">—</b></span></div>
@@ -3387,15 +3387,15 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
           <div class="bv-stat"><span>btcVELD in pool</span><span id="bv-pool-btc">—</span></div>
           <div class="bv-stat"><span>LP fee per swap</span><span id="bv-pool-fee">0.30–1.00%</span></div>
           <div class="bv-curve">
-            <div class="bv-curve-t"><span>Deviation-fee bands</span><b id="bv-curve-now">0.30% healing · up to 1.00%</b></div>
-            <svg viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true">
+            <div class="bv-curve-t"><span id="bv-fee-title">Swap fee</span><b id="bv-curve-now">Loading fee policy…</b></div>
+            <svg id="bv-legacy-fee-curve" viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true">
               <defs><linearGradient id="bvcg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--text)" stop-opacity=".14"/><stop offset="1" stop-color="var(--text)" stop-opacity="0"/></linearGradient></defs>
               <path d="M0 46 L75 46 L75 38 L150 38 L150 28 L225 28 L225 12 L300 12" fill="none" stroke="var(--text)" stroke-opacity=".62" stroke-width="2"/>
               <path d="M0 46 L75 46 L75 38 L150 38 L150 28 L225 28 L225 12 L300 12 L300 56 L0 56 Z" fill="url(#bvcg)"/>
               <circle cx="10" cy="45" r="3.5" fill="var(--em)"/>
             </svg>
-            <div class="bv-curve-x"><span>≤5% · 0.30%</span><span>≤10% · 0.50%</span><span>≤20% · 0.75%</span><span>&gt;20% · 1.00%</span></div>
-            <div style="font-size:10.5px;color:var(--muted);line-height:1.55;margin-top:8px">The fee is set by how far the trade pushes the pool from its opening ratio — four bands from 0.30% to 1.00%. A trade that heals the ratio always pays the 0.30% base. Every fee stays in the output reserve and belongs to liquidity providers; there is no protocol cut.</div>
+            <div id="bv-legacy-fee-bands" class="bv-curve-x"><span>≤5% · 0.30%</span><span>≤10% · 0.50%</span><span>≤20% · 0.75%</span><span>&gt;20% · 1.00%</span></div>
+            <div id="bv-fee-explanation" style="font-size:10.5px;color:var(--muted);line-height:1.55;margin-top:8px">Loading the active fee policy…</div>
           </div>
         </div>
         <div class="card bv-lp-card" id="bv-lp-position" style="display:none">
@@ -3412,7 +3412,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
           <details id="bv-lp-details">
             <summary class="card-title" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">Provide liquidity <span style="font-weight:400;font-size:11px;color:var(--muted)">— earn a share of fees ▾</span></summary>
             <div style="margin-top:12px">
-              <div style="font-size:11.5px;color:var(--muted);line-height:1.65;margin-bottom:14px">If the pool price moves while your liquidity sits in it, you'll take out a different mix of VELD and btcVELD than you put in. That gap is impermanent loss, and the 0.30%–1.00% output-asset swap fees you collect help offset it.</div>
+              <div style="font-size:11.5px;color:var(--muted);line-height:1.65;margin-bottom:14px">If the pool price moves while your liquidity sits in it, you'll take out a different mix of VELD and btcVELD than you put in. Your position can be worth less than holding those assets separately. Swap fees may offset that difference, but do not guarantee a profit.</div>
               <div class="form-row">
                 <label class="form-label" style="display:flex;justify-content:space-between"><span>Add VELD</span><span style="font-weight:400;font-size:10.5px;color:var(--muted)">btcVELD added to match</span></label>
                 <input class="form-input" id="bv-lp-veld" type="number" step="0.00000001" placeholder="0.00" data-act-input="hbv_lp_amt" autocomplete="off">
@@ -6343,6 +6343,16 @@ function bvAbsBig(n){ return n<0n?-n:n; }
 // amm_pool.h BandFeeBps/QuoteSwapLocked EXACTLY: this client preview has to equal the
 // consensus quote (bvDoSwap re-checks fee_bps against prepareammswap below).
 var BV_FEE_MODEL='seed-ratio-output-asset-4band-v1';
+var BV_FLAT_FEE_MODEL='market-output-asset-flat-30bps-v1', BV_FLAT_FEE_BPS=30;
+var BV_FLAT_FEE_ACTIVATION_HEIGHT=__VELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT__;
+function bvFeeModelAllowed(p){
+  if(!p) return false;
+  // Compiled policy, not an RPC-supplied rate or activation switch.
+  if(BV_FLAT_FEE_ACTIVATION_HEIGHT===0) return p.fee_model===BV_FEE_MODEL;
+  var h=p.quote_height;
+  if(!Number.isSafeInteger(h)||h<1) return false;
+  return p.fee_model===(h>=BV_FLAT_FEE_ACTIVATION_HEIGHT?BV_FLAT_FEE_MODEL:BV_FEE_MODEL);
+}
 var BV_BAND_EDGE=[500,1000,2000], BV_BAND_FEE=[30,50,75,100];
 // Locked seed core — mirrors AmmLedger::QuoteInitialSeed exactly.  The RPC
 // response is checked against this quote again before any signature is made.
@@ -6386,13 +6396,19 @@ function bvBandFee(delta,den){ // exact-integer band classifier -> [fee_bps, ban
 function bvQuote(p,payV,amtIn){
   var v=BigInt(p.reserve_veld||0), b=BigInt(p.reserve_btcveld||0), a=BigInt(amtIn||0);
   var none={out:0n,gross:0n,feeOut:0n,feeBps:0,band:0,rebalances:false,reject:false,rejectCode:'NONE',postV:0n,postB:0n,preNum:0n,preDen:0n,postNum:0n,postDen:0n,preBps:0,postBps:0};
-  if(p.fee_model!==BV_FEE_MODEL) return Object.assign({},none,{reject:true,rejectCode:'UNEXPECTED_FEE_MODEL'});
+  if(!bvFeeModelAllowed(p)) return Object.assign({},none,{reject:true,rejectCode:'UNEXPECTED_FEE_MODEL'});
   if(p.fee_model_active===false) return Object.assign({},none,{reject:true,rejectCode:'FEE_MODEL_NOT_ACTIVE'});
   if(v<=0n||b<=0n||a<=0n) return none;
   var rin=payV?v:b, rout=payV?b:v;
   var gross=rout*a/(rin+a); if(gross<=0n||gross>=rout) return none;
   var av=BigInt(p.anchor_veld||0), ab=BigInt(p.anchor_btcveld||0);
   if(av<=0n||ab<=0n) return Object.assign({},none,{gross:gross,reject:true,rejectCode:'INVALID_ANCHOR'});
+  if(p.fee_model===BV_FLAT_FEE_MODEL){
+    var flatOut=bvSwapOut(rin,rout,a,BV_FLAT_FEE_BPS);
+    if(flatOut<=0n) return Object.assign({},none,{gross:gross,reject:true,rejectCode:'INVALID_STATE'});
+    return Object.assign({},none,{out:flatOut,gross:gross,feeOut:gross-flatOut,feeBps:BV_FLAT_FEE_BPS,
+      postV:payV?v+a:v-flatOut,postB:payV?b-flatOut:b+a});
+  }
   var before=bvAbsBig(v*ab-b*av), beforeDen=b*av;
   function floorBps(delta,den){ if(den<=0n) return 0; var x=delta*10000n/den; return Number(x>10000n?10000n:x); }
   function evalFee(fee){
@@ -6437,9 +6453,9 @@ function bvSeedLiveness(v,b,continuation,tokenRemaining){
     v=BigInt(v); b=BigInt(b);
     var state=bvState.pool||{};
     if(!bvSeedQuote(v,b)||v<=0n||v>BV_MAX_SUPPLY_UNITS||b<=0n||b>BV_SEED_POOL_BTC_CAP) return null;
-    if(state.fee_model!==BV_FEE_MODEL||state.fee_model_active===false||state.swap_allowed===false||
+    if(!bvFeeModelAllowed(state)||state.fee_model_active===false||state.swap_allowed===false||
        (state.seed_liveness_policy&&state.seed_liveness_policy!==BV_SEED_LIVENESS_POLICY)) return null;
-    var p={reserve_veld:v.toString(),reserve_btcveld:b.toString(),anchor_veld:v.toString(),anchor_btcveld:b.toString(),fee_model:BV_FEE_MODEL,fee_model_active:true};
+    var p={reserve_veld:v.toString(),reserve_btcveld:b.toString(),anchor_veld:v.toString(),anchor_btcveld:b.toString(),fee_model:state.fee_model,quote_height:state.quote_height,fee_model_active:true};
     var initialK=v*b, dust=BigInt(VELD_DUST_THRESHOLD_UNITS), witnessFee=BigInt(VELD_MIN_TX_FEE_UNITS), feeReserve=2n*witnessFee;
     var totalHeadroom=BV_MAX_SUPPLY_UNITS-v;
     var resourceBound=(continuation!==undefined&&tokenRemaining!==undefined);
@@ -6656,12 +6672,19 @@ function bvRenderPool(){
   if(bvG('bv-pool-veld')) bvG('bv-pool-veld').textContent=bvFmt(p.reserve_veld)+' VELD';
   if(bvG('bv-pool-btc')){ var _pbu=bvUsd(p.reserve_btcveld); bvG('bv-pool-btc').textContent=bvFmt(p.reserve_btcveld)+' btcVELD'+(_pbu?(' ≈ '+_pbu):''); }
   var _fbase=(p.base_fee_bps||30)/100, _fceil=(p.fee_ceiling_bps||100)/100;
-  if(bvG('bv-pool-fee')) bvG('bv-pool-fee').textContent=_fbase.toFixed(2)+'–'+_fceil.toFixed(2)+'%';
+  var _flatFee=bvFeeModelAllowed(p)&&p.fee_model===BV_FLAT_FEE_MODEL;
+  if(bvG('bv-fee-title')) bvG('bv-fee-title').textContent=_flatFee?'Swap fee':'Deviation-fee bands';
+  ['bv-legacy-fee-curve','bv-legacy-fee-bands'].forEach(function(id){ if(bvG(id)) bvG(id).style.display=_flatFee?'none':''; });
+  if(bvG('bv-fee-explanation')) bvG('bv-fee-explanation').textContent=(_flatFee
+    ?'Both swap directions pay 0.30%. Price follows the pool reserves; there is no opening-price target. '
+    :'Four bands charge 0.30% to 1.00% based on deviation from the opening ratio. Trades that reduce deviation pay 0.30%. ')
+    +'Fees remain in the output reserve for LPs. There is no protocol cut.';
+  if(bvG('bv-pool-fee')) bvG('bv-pool-fee').textContent=(_fbase===_fceil?_fbase.toFixed(2):_fbase.toFixed(2)+'–'+_fceil.toFixed(2))+'%';
   if(bvG('bv-curve-now')){
     var _health=(p.current_reserve_health_band!=null)?(' · current reserve-health band '+p.current_reserve_health_band):'';
-    var _modelOk=(p.fee_model===BV_FEE_MODEL&&p.fee_model_active!==false&&p.anchor_valid!==false);
+    var _modelOk=(bvFeeModelAllowed(p)&&p.fee_model_active!==false&&p.anchor_valid!==false);
     bvG('bv-curve-now').textContent=_modelOk
-      ?('0.30% healing · 0.30 / 0.50 / 0.75 / 1.00% by quoted post-trade deviation'+_health)
+      ?(p.fee_model===BV_FLAT_FEE_MODEL?'0.30% LP fee · market pricing, no opening-price penalty':('0.30% healing · 0.30 / 0.50 / 0.75 / 1.00% by quoted post-trade deviation'+_health))
       :'Fee model/anchor is not active or valid — swaps fail closed';
   }
   var lpEl=bvG('bv-pool-lp'), rm=bvG('bv-lp-rm-btn'), pos=bvG('bv-lp-position');
@@ -6670,7 +6693,7 @@ function bvRenderPool(){
     var pctS=(pct<0.01?'<0.01':(pct>99.99?pct.toFixed(3):pct.toFixed(2)))+'%';
     if(lpEl) lpEl.textContent=pctS;
     if(bvG('bv-lp-share-pct')) bvG('bv-lp-share-pct').textContent=pctS;
-    if(bvG('bv-lp-fee')) bvG('bv-lp-fee').textContent=_fbase.toFixed(2)+'–'+_fceil.toFixed(2)+'% in the output asset';
+    if(bvG('bv-lp-fee')) bvG('bv-lp-fee').textContent=(_fbase===_fceil?_fbase.toFixed(2):_fbase.toFixed(2)+'–'+_fceil.toFixed(2))+'% in the output asset';
     if(rm){
       var _removePlan=bvMaxRemovalPlan(p,bvState.lp,bvState.lpSupply);
       rm.style.display='';
@@ -6781,10 +6804,10 @@ function bvCompute(){
   var _feeTxt=dustBlocked?'swap unavailable: native VELD output is below the dust floor'
     :quote.reject?((quote.rejectCode==='FEE_SCHEDULE_NO_FIXED_POINT')?'deviation-fee band unavailable — adjust the amount':('swap unavailable: '+quote.rejectCode))
     :((quote.feeBps/100).toFixed(2)+'% LP fee in '+getSym
-      +(quote.rebalances?' (healing → 0.30% base)':(' (band '+quote.band+' deviation fee)')));
+      +(p.fee_model===BV_FLAT_FEE_MODEL?'':(quote.rebalances?' (healing → 0.30% base)':(' (band '+quote.band+' deviation fee)'))));
   var rateHtml='1 btcVELD ≈ <b>'+escHtml(price?price.toLocaleString('en-US'):'—')+'</b> VELD · '+escHtml(_feeTxt)
     +(quote.feeOut>0n?' · <b>'+bvFmt(Number(quote.feeOut))+' '+getSym+'</b> retained for LPs':'')
-    +(!quote.reject&&inSats>0?' · deviation '+(quote.preBps/100).toFixed(2)+'% → '+(quote.postBps/100).toFixed(2)+'%':'')
+    +(!quote.reject&&inSats>0&&p.fee_model!==BV_FLAT_FEE_MODEL?' · deviation '+(quote.preBps/100).toFixed(2)+'% → '+(quote.postBps/100).toFixed(2)+'%':'')
     +' · native transaction fee shown separately at confirmation'
     +'<br><span style="opacity:.75">Pool holds <b>'+bvFmt(rout)+'</b> '+getSym+' — the ceiling on any one swap</span>';
   if(out>0n && rout>0){ var frac=Number(out)/Number(rout);
@@ -6863,7 +6886,7 @@ function bvDoSwap(){
     return rpc('prepareammswap',[currentAddr, dir, String(inSats)]);
   }).then(function(prep){
     _veldAssertActiveSignerSeed(seed,signerGeneration);
-    if(!prep||prep.fee_model!==BV_FEE_MODEL) throw new Error('unexpected AMM fee model — refusing to sign');
+    if(!bvFeeModelAllowed(prep)||prep.fee_model!==p.fee_model) throw new Error('AMM fee policy changed — refresh the quote before signing');
     if(String(prep.direction)!==dir) throw new Error('the quote direction changed — refusing to sign');
     if(String(prep.anchor_veld)!==String(p.anchor_veld)||String(prep.anchor_btcveld)!==String(p.anchor_btcveld)) throw new Error('the immutable pool anchor changed — refusing to sign');
     if(String(prep.amount_out_sats)!==String(expOut)) throw new Error('the pool just moved — please try again');
@@ -6935,7 +6958,7 @@ function bvSeedCompute(){
   var liveness=quote?bvSeedLiveness(BigInt(vSats),BigInt(bSats),continuation,tokenRemaining):null;
   if(lockNote){
     if(!quote) lockNote.textContent=BV_MARKET_SEED_ANCHOR_ACTIVE
-      ?'Choose both opening legs (minimum 50 VELD and 0.00050000 btcVELD); the first authorized valid seed establishes the permanent anchor.'
+      ?'Choose both opening legs (minimum 50 VELD and 0.00050000 btcVELD); the first authorized valid seed sets the opening price.'
       :'Use the fixed launch ratio: 100,000 VELD per btcVELD (minimum 50 VELD and 0.00050000 btcVELD).';
     else if(quote.fullyLocked){
       lockNote.textContent='Warning: all '+bvFmt(vSats)+' VELD and '+bvFmt(bSats)+' btcVELD are permanently locked; you receive 0 withdrawable LP and no LP fee ownership.';
@@ -6976,7 +6999,7 @@ function bvDoSeed(){
   if(!seedQuote||BigInt(bSats)>BV_SEED_POOL_BTC_CAP){ bvSeedErr(new Error('Seed does not satisfy the launch locked-core and pool-cap rules.')); return; }
   if(!seedLiveness){ bvSeedErr(new Error('Seed does not satisfy SEED_LIVENESS_PROBE_V1: neither swap direction is executable.')); return; }
   var warning='Open the VELD / btcVELD pool with '+bvFmt(vSats)+' VELD and '+bvFmt(bSats)+' btcVELD?\n\n'
-    +'The accepted opening ratio becomes the permanent four-band fee anchor. '+seedQuote.locked.toString()+' LP units are permanently locked and can never be withdrawn.';
+    +(bvState.pool.fee_model===BV_FLAT_FEE_MODEL?'The opening ratio sets the initial market price. ':'The accepted opening ratio becomes the permanent four-band fee anchor. ')+seedQuote.locked.toString()+' LP units are permanently locked and can never be withdrawn.';
   if(seedQuote.fullyLocked) warning+='\n\nCRITICAL: You receive ZERO withdrawable LP. Both deposited legs remain permanently locked, and you receive no LP fee ownership.';
   else warning+='\n\nYou receive '+seedQuote.minted.toString()+' withdrawable LP units and earn fees only in proportion to that position.';
   if(!window.confirm(warning)) return;
@@ -6991,7 +7014,7 @@ function bvDoSeed(){
     var expectedAnchorPolicy=BV_MARKET_SEED_ANCHOR_ACTIVE?'first-valid-seed-anchor-v1':'fixed-ratio-v1';
     if(String(prep.seed_anchor_policy)!==expectedAnchorPolicy) throw new Error('the opening-anchor policy identity changed — refusing to sign');
     if(!BV_MARKET_SEED_ANCHOR_ACTIVE&&String(prep.legacy_fixed_veld_units_per_btcveld_sat)!==BV_OPENING_VELD_UNITS_PER_BTC_SAT.toString()) throw new Error('the legacy fixed opening ratio changed — refusing to sign');
-    if(String(prep.fee_model)!==BV_FEE_MODEL) throw new Error('the seed fee model changed — refusing to sign');
+    if(!bvFeeModelAllowed(prep)||prep.fee_model!==bvState.pool.fee_model) throw new Error('the seed fee model changed — refusing to sign');
     if(String(prep.anchor_veld)!==String(vSats)||String(prep.anchor_btcveld)!==String(bSats)) throw new Error('the permanent anchor changed — refusing to sign');
     if(String(prep.seed_lock_veld_floor_sats)!==BV_SEED_LOCK_VELD.toString()||String(prep.seed_lock_btcveld_floor_sats)!==BV_SEED_LOCK_BTC.toString()) throw new Error('the locked seed policy changed — refusing to sign');
     var boundLiveness=bvSeedLiveness(BigInt(vSats),BigInt(bSats),BigInt(prep.seed_liveness_continuation_units),BigInt(prep.seed_liveness_token_remaining_sats));

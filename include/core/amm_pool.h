@@ -300,6 +300,14 @@ public:
     // Live positions are never evicted.
     static constexpr size_t AMM_MAX_LP_IDENTITIES = 65536;
     static constexpr const char* FEE_MODEL_ID = "seed-ratio-output-asset-4band-v1";
+    static constexpr const char* FLAT_FEE_MODEL_ID = "market-output-asset-flat-30bps-v1";
+    static bool FlatFeeActive(uint64_t height) {
+        return BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT != 0 &&
+               height >= BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT;
+    }
+    static const char* FeeModelAtHeight(uint64_t height) {
+        return FlatFeeActive(height) ? FLAT_FEE_MODEL_ID : FEE_MODEL_ID;
+    }
     static constexpr size_t MAX_FUNDING_INPUTS = MAX_AMM_FUNDING_INPUTS;
     static constexpr size_t MAX_TX_BYTES = MAX_AMM_TX_BYTES;
 
@@ -1385,6 +1393,27 @@ private:
             q.reject = true;
             q.reject_code = SwapRejectCode::INVALID_STATE;
             q.fee_bps = 0;
+            return q;
+        }
+        // Inclusion height selects the rule; no mutable policy flag or local
+        // clock participates. Preserve legacy anchor integrity and state format,
+        // but never use the opening price to charge a post-activation trader.
+        if (FlatFeeActive(height)) {
+            q.amount_out = SwapOut(rin, rout, amt_in, BTCVELD_AMM_FLAT_FEE_BPS);
+            if (q.amount_out <= 0) {
+                q.reject = true;
+                q.reject_code = SwapRejectCode::INVALID_STATE;
+                q.fee_bps = 0;
+                return q;
+            }
+            q.fee_bps = BTCVELD_AMM_FLAT_FEE_BPS;
+            q.fee_out = q.gross_out - q.amount_out;
+            q.post_reserve_veld = veld_in ? p.reserve_veld + amt_in
+                                        : p.reserve_veld - q.amount_out;
+            q.post_reserve_btcveld = veld_in ? p.reserve_btcveld - q.amount_out
+                                           : p.reserve_btcveld + amt_in;
+            // band=0 and zero deviation fields mean not applicable. They are
+            // not a claim that price is at, or should return to, the seed ratio.
             return q;
         }
         const int64_t anchor_veld = p.anchor_veld;

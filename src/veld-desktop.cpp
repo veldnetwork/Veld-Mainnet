@@ -1835,6 +1835,8 @@ private:
                 subst_all("__VELD_DUST_THRESHOLD_UNITS__", std::to_string(DUST_THRESHOLD_UNITS));
                 subst_all("__VELD_MIN_VALIDATOR_STAKE_UNITS__", std::to_string(MIN_VALIDATOR_STAKE));
                 subst_all("__VELD_STAKE_VAULT_ADDRESS__", std::string(STAKE_VAULT_ADDRESS));
+                subst_all("__VELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT__",
+                          std::to_string(BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT));
                 subst_all("__VELD_AMM_MARKET_SEED_ANCHOR_ACTIVE__",
                           AmmLedger::MarketSeedAnchorActive(1)
                               ? "true" : "false");
@@ -2338,6 +2340,8 @@ static void PrintDeploymentInfoJson() {
               << "\"network_magic\":\"" << magic.str() << "\","
               << "\"p2p_port\":" << config.port << ","
               << "\"profile_id\":\"" << veld::DEPLOYMENT_PROFILE_ID << "\","
+              << "\"amm_flat_fee_activation_height\":" << veld::BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT << ","
+              << "\"amm_flat_fee_bps\":" << veld::BTCVELD_AMM_FLAT_FEE_BPS << ","
 #ifdef _WIN32
               << "\"remote_tls_backend\":\"winhttp\","
 #elif defined(VELD_DESKTOP_OPENSSL_TLS)

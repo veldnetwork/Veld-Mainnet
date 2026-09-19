@@ -4619,12 +4619,21 @@ private:
             if (!amm_) return "{\"error\":\"amm not available\"}";
             std::string pool_id = params.empty() ? std::string("VELD:btcVELD") : params[0];
             AmmPool p = amm_->GetPool(pool_id);
+            const uint64_t quote_height = chain_.Height() + 1;
+            const bool flat_fee = AmmLedger::FlatFeeActive(quote_height);
             std::ostringstream j;
             j << "{\"pool\":" << JB::String(pool_id)
-              << ",\"exists\":" << (p.exists ? "true" : "false");
+              << ",\"exists\":" << (p.exists ? "true" : "false")
+              << ",\"fee_model\":" << JB::String(AmmLedger::FeeModelAtHeight(quote_height))
+              << ",\"flat_fee_activation_height\":" << BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT
+              << ",\"fourband_activation_height\":" << BTCVELD_AMM_FOURBAND_ACTIVATION_HEIGHT
+              << ",\"quote_height\":" << quote_height
+              << ",\"fee_model_active\":" << (AmmLedger::FourBandActive(quote_height) ? "true" : "false")
+              << ",\"price_anchor_used\":" << (flat_fee ? "false" : "true")
+              << ",\"swap_allowed\":" << (ammgate::SwapAllowed(quote_height) ? "true" : "false")
+              << ",\"seed_liveness_policy\":" << JB::String(AmmLedger::SEED_LIVENESS_POLICY_ID);
             if (p.exists) {
                 uint32_t base_fee_bps = amm_->EffectiveFeeBps(pool_id);
-                const uint64_t quote_height = chain_.Height() + 1;
                 const bool anchor_valid = p.anchor_veld > 0 && p.anchor_btcveld > 0;
                 const int64_t withdrawable_lp_supply =
                     p.lp_supply >= p.locked_lp ? p.lp_supply - p.locked_lp : 0;
@@ -4639,19 +4648,12 @@ private:
                   << AmmLedger::AMM_SEED_LOCK_BTCVELD_SATS
                   << ",\"pool_btcveld_cap_sats\":"
                   << BTCVELD_AMM_MAX_POOL_BTCVELD_SATS
-                  << ",\"fee_bps\":null"
+                  << ",\"fee_bps\":" << (flat_fee ? std::to_string(BTCVELD_AMM_FLAT_FEE_BPS) : "null")
                   << ",\"base_fee_bps\":" << base_fee_bps
-                  << ",\"healing_fee_bps\":" << BTCVELD_AMM_FEE_MIN_BPS
-                  << ",\"effective_fee_bps\":null"
-                  << ",\"fee_quote_dependent\":true"
-                  << ",\"fee_ceiling_bps\":" << BTCVELD_AMM_BAND_FEE_BPS[3]
-                  << ",\"fee_model\":\"" << AmmLedger::FEE_MODEL_ID << "\""
-                  << ",\"fourband_activation_height\":" << BTCVELD_AMM_FOURBAND_ACTIVATION_HEIGHT
-                  << ",\"quote_height\":" << quote_height
-                  << ",\"fee_model_active\":" << (AmmLedger::FourBandActive(quote_height) ? "true" : "false")
-                  << ",\"swap_allowed\":" << (ammgate::SwapAllowed(quote_height) ? "true" : "false")
-                  << ",\"seed_liveness_policy\":"
-                  << JB::String(AmmLedger::SEED_LIVENESS_POLICY_ID)
+                  << ",\"healing_fee_bps\":" << (flat_fee ? "null" : std::to_string(BTCVELD_AMM_FEE_MIN_BPS))
+                  << ",\"effective_fee_bps\":" << (flat_fee ? std::to_string(BTCVELD_AMM_FLAT_FEE_BPS) : "null")
+                  << ",\"fee_quote_dependent\":" << (flat_fee ? "false" : "true")
+                  << ",\"fee_ceiling_bps\":" << (flat_fee ? BTCVELD_AMM_FLAT_FEE_BPS : BTCVELD_AMM_BAND_FEE_BPS[3])
                   << ",\"seed_liveness_tx_fee_units\":"
                   << AMM_SEED_LIVENESS_TX_FEE_UNITS
                   << ",\"seed_liveness_fee_reserve_units\":"
@@ -4664,7 +4666,7 @@ private:
                 // worsening trade pays the band its post-trade deviation lands in; a healing
                 // trade (post-deviation <= pre-deviation) always pays healing_fee_bps.
                 j << ",\"fee_bands\":[";
-                for (int bi = 0; bi < 4; ++bi) {
+                for (int bi = 0; bi < (flat_fee ? 0 : 4); ++bi) {
                     if (bi) j << ",";
                     j << "{\"band\":" << (bi + 1)
                       << ",\"fee_bps\":" << BTCVELD_AMM_BAND_FEE_BPS[bi]
@@ -4676,7 +4678,7 @@ private:
                 // Normative field name from the public RPC contract. Keep the
                 // older fee_bands alias above for client compatibility.
                 j << ",\"bands\":[";
-                for (int bi = 0; bi < 4; ++bi) {
+                for (int bi = 0; bi < (flat_fee ? 0 : 4); ++bi) {
                     if (bi) j << ",";
                     j << "{\"band\":" << (bi + 1)
                       << ",\"fee_bps\":" << BTCVELD_AMM_BAND_FEE_BPS[bi]
@@ -4685,7 +4687,7 @@ private:
                     j << "}";
                 }
                 j << "]";
-                if (anchor_valid && p.reserve_veld > 0 && p.reserve_btcveld > 0) {
+                if (!flat_fee && anchor_valid && p.reserve_veld > 0 && p.reserve_btcveld > 0) {
                     const auto current_num = AmmLedger::AnchorCrossDistance(
                         p.reserve_veld, p.reserve_btcveld,
                         p.anchor_veld, p.anchor_btcveld);
@@ -4843,7 +4845,9 @@ private:
                 {"pool_input_index", JB::Number((uint64_t)0)},
                 {"direction",        JB::String(v2b ? "v2b" : "b2v")},
                 {"quote_height",     JB::Number(quote_height)},
-                {"fee_model",       JB::String(AmmLedger::FEE_MODEL_ID)},
+                {"fee_model",       JB::String(AmmLedger::FeeModelAtHeight(quote_height))},
+                {"flat_fee_activation_height", JB::Number(BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT)},
+                {"price_anchor_used", JB::Bool(!AmmLedger::FlatFeeActive(quote_height))},
                 {"fourband_activation_height", JB::Number(BTCVELD_AMM_FOURBAND_ACTIVATION_HEIGHT)},
                 {"amount_in_sats",   JB::Number((uint64_t)amount_in)},
                 {"amount_out_sats",  JB::Number((uint64_t)out)},
@@ -5198,7 +5202,8 @@ private:
                     (uint64_t)remaining_btcveld)},
                 {"anchor_veld", JB::Number((uint64_t)d_veld)},
                 {"anchor_btcveld", JB::Number((uint64_t)d_btc)},
-                {"fee_model", JB::String(AmmLedger::FEE_MODEL_ID)},
+                {"fee_model", JB::String(AmmLedger::FeeModelAtHeight(candidate_height))},
+                {"quote_height", JB::Number(candidate_height)},
                 {"fee", JB::Number(fee_units)}});
         });
 

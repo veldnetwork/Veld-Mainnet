@@ -1700,6 +1700,8 @@ static void PrintDeploymentInfoJson() {
 #endif
               << "\"p2p_port\":" << config.port << ","
               << "\"profile_id\":\"" << veld::DEPLOYMENT_PROFILE_ID << "\","
+              << "\"amm_flat_fee_activation_height\":" << veld::BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT << ","
+              << "\"amm_flat_fee_bps\":" << veld::BTCVELD_AMM_FLAT_FEE_BPS << ","
 #if defined(VELD_PUBLIC_MAINNET) || defined(VELD_BTCVELD_REGTEST)
               << "\"legacy_direct_mint_formats_accepted\":false,"
               << "\"reserve_proof_semantics\":\"RTP1/RVS1\","

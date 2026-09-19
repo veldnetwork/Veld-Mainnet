@@ -5,6 +5,9 @@ are tracked separately; publishing source does not release new binaries.
 
 ## Unreleased
 
+- Include the 3.2.1 mainnet candidate's flat 0.30% AMM fee in both swap directions from block 9,000. Preserve earlier fee rules for historical validation.
+- Remove opening-price deviation penalties after activation; fees remain in the output asset for liquidity providers. Bitcoin backing and custody requirements remain unchanged.
+- Match wallet previews and transaction preparation to the inclusion-height fee policy, and refresh quotes when the policy changes.
 - Prevent competing validator processes and restored chain directories from forgetting signing decisions within one OS profile.
 - Stop validator signing on damaged or changed safety journals; retain exact finality votes for safe restart and retry.
 - Save browser-wallet input reservations before signing and exact signed transactions before broadcasting.

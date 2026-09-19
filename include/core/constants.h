@@ -547,6 +547,25 @@ static_assert(BTCVELD_AMM_FEE_MIN_BPS <= BTCVELD_AMM_FEE_BPS,
 constexpr uint32_t BTCVELD_AMM_BAND_EDGE_BPS[3] = { 500, 1000, 2000 };
 constexpr uint32_t BTCVELD_AMM_BAND_FEE_BPS[4]  = { 30, 50, 75, 100 };
 constexpr uint64_t BTCVELD_AMM_FOURBAND_ACTIVATION_HEIGHT = 1;
+// Owner-approved market-neutral LP fee for the 3.2.1 production candidate.
+// Coordinate it with the selected future upgrade at mainnet block 9,000.
+// Historical quotes, serialized anchors and custody rules remain unchanged.
+constexpr uint32_t BTCVELD_AMM_FLAT_FEE_BPS = 30;
+#if defined(VELD_TEST_AMM_FLAT_FEE_HEIGHT)
+#if !defined(VELD_TEST_CHAIN_BUILD) || !defined(VELD_TEST_HOOKS) || \
+    defined(VELD_PUBLIC_RELEASE) || defined(VELD_PUBLIC_MAINNET)
+#error "AMM flat-fee activation override requires an isolated test chain"
+#endif
+constexpr uint64_t BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT = VELD_TEST_AMM_FLAT_FEE_HEIGHT;
+static_assert(BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT > BTCVELD_AMM_FOURBAND_ACTIVATION_HEIGHT,
+              "test activation must preserve a historical four-band interval");
+#elif defined(VELD_PUBLIC_MAINNET)
+constexpr uint64_t BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT = 9'000;
+#else
+constexpr uint64_t BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT = 0;
+#endif
+static_assert(BTCVELD_AMM_FLAT_FEE_BPS == BTCVELD_AMM_FEE_MIN_BPS,
+              "flat launch fee must preserve the existing base rate");
 static_assert(BTCVELD_AMM_BAND_FEE_BPS[0] == BTCVELD_AMM_FEE_MIN_BPS &&
               BTCVELD_AMM_BAND_FEE_BPS[3] == BTCVELD_AMM_FEE_BPS,
               "four-band endpoints must equal the 30-bps base and 100-bps ceiling");
