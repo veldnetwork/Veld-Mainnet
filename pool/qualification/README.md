@@ -47,7 +47,7 @@ Only historical construction time is accelerated. The two native worker and
 settlement exercises distinguish worker-mined blocks from funding/confirmation
 blocks produced by the canonical local mining function.
 
-`--through build` and `--through payments` are development stop points, never
+`--through focused`, `--through build` and `--through payments` are development stop points, never
 qualification passes. Commands, raw logs, exact source hashes, build identities,
 failures and independent wallet amounts are emitted under the selected output.
 No copied receipt or manually marked check is accepted as a fresh result.

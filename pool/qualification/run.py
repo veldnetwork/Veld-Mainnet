@@ -29,7 +29,7 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--service-roles',action='store_true',
                         help='requires Linux root; exercise real distinct service UIDs in the private network namespace')
-    parser.add_argument('--through',choices=('build','payments','complete'),default='complete',
+    parser.add_argument('--through',choices=('focused','build','payments','complete'),default='complete',
                         help='development stop point; never grants completed qualification')
     args=parser.parse_args()
     if args.service_roles and os.geteuid()!=0:
@@ -45,7 +45,12 @@ def main():
                 'pool.qualification.run',*sys.argv[1:]],cwd=SOURCE,env=env))
         raise SystemExit(subprocess.call([sys.executable,'-m','pool.qualification.isolation','--',
             sys.executable,'-m','pool.qualification.run',*sys.argv[1:]],cwd=SOURCE))
-    require_isolated_network();out=args.output.resolve()
+    require_isolated_network()
+    # A fresh network namespace starts with loopback DOWN. The focused HTTP
+    # fixtures run before the node/service fixtures and need it immediately.
+    # This happens only after proving that the namespace has no external link.
+    subprocess.run(['ip','link','set','lo','up'],check=True)
+    out=args.output.resolve()
     if out.is_relative_to(SOURCE):raise ValueError('evidence must be outside source')
     out.mkdir(parents=True,exist_ok=False);(out/'logs').mkdir()
     before=hashes();report={'status':'RUNNING','complete_pool_gate':False,'source_path':str(SOURCE),
@@ -66,6 +71,13 @@ def main():
     def receipt(path):return json.loads(path.read_text())
     try:
         run('focused-tests','unittest',['discover','-s','pool','-t','.','-p','test_*.py'],600)
+        if args.through=='focused':
+            report['source_unchanged']=before==hashes()
+            if not report['source_unchanged']:raise RuntimeError('source changed during focused qualification')
+            report['status']='BLOCKED'
+            report['blocked'].insert(0,'development stop after focused tests; native stages not executed')
+            print('Focused tests passed; native qualification remains BLOCKED.',flush=True)
+            return
         run('clean-native-build','pool.qualification.build',['--output',out/'build'],7200)
         run('native-focused-regressions','pool.qualification.native_regressions',
             ['--build-directory',out/'build/candidate','--output',out/'native-focused-regressions'])
