@@ -52,10 +52,12 @@ def prepare_evidence(keygen, call, expected_chain, unsigned_tx_hex, issuer_scrip
     _canonical_hex(unsigned_tx_hex, 128 * 1024, "unsigned transaction")
     if not re.fullmatch(r"76a914[0-9a-f]{40}88ac", str(issuer_script)):
         raise ValueError("issuer script is invalid")
-    if (operation_type not in {"BTCVELD_MINT", "BTCVELD_C1_RESERVE", "BTCVELD_C1_EXPOSE",
-                               "BTCVELD_C1_CANCEL", "BTCVELD_C1_FUND"} or
+    relay = (operation_type == "VELD_CST1|" and expected["disposable"] is True and
+             expected["external_value"] is False and recipient == "-" and type(amount) is int and amount == 0)
+    if ((not relay and operation_type not in {"BTCVELD_MINT", "BTCVELD_C1_RESERVE", "BTCVELD_C1_EXPOSE",
+                               "BTCVELD_C1_CANCEL", "BTCVELD_C1_FUND"}) or
             type(issuer) is not str or not _ADDRESS.fullmatch(issuer) or
-            type(recipient) is not str or not _ADDRESS.fullmatch(recipient) or
+            (not relay and (type(recipient) is not str or not _ADDRESS.fullmatch(recipient))) or
             type(amount) is not int or not 0 <= amount <= (1 << 63) - 1 or
             type(resolved_inputs) is not list or not 1 <= len(resolved_inputs) <= 180):
         raise ValueError("independently verified operation facts are invalid")

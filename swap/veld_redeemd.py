@@ -413,15 +413,20 @@ class VeldRpc:
         self.url = validate_backend_rpc_url(cfg["url"], "veld_rpc.url")
         self.token = _token_from_cfg(cfg)
 
-    def call(self, method, params=None):
+    def call(self, method, params=None, *, deadline=None):
+        timeout = 15 if deadline is None else min(15, deadline - time.monotonic())
+        if timeout <= 0:
+            raise RuntimeError("Veld RPC deadline reached")
         body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method,
                            "params": params or []}, separators=(",", ":")).encode()
         req = urllib.request.Request(self.url, data=body, headers={
             "Content-Type": "application/json",
             "Authorization": "Bearer " + self.token})
-        with open_rpc_request(req, timeout=15) as resp:
+        with open_rpc_request(req, timeout=timeout) as resp:
             env = load_bounded_json_response(
                 resp, 32 * 1024 * 1024, "Veld RPC response")
+        if deadline is not None and time.monotonic() >= deadline:
+            raise RuntimeError("Veld RPC deadline reached")
         if not isinstance(env, dict):
             raise RuntimeError("Veld RPC %s returned a non-object" % method)
         if env.get("error"):
@@ -1600,6 +1605,31 @@ def main():
         "redemption coordinator configuration")
     if not isinstance(cfg, dict):
         die("configuration root must be an object")
+    if "native_custody" in cfg:
+        if sys.argv[2:] not in (["--collect-native-payout"], ["--prepare-native-settlement"]):
+            die("native custody requires an explicit bounded entry point")
+        try:
+            from . import native_custody_service
+        except ImportError:
+            import native_custody_service
+        raw = sys.stdin.buffer.read(MAX_SIGNER_OUTPUT_BYTES + 1)
+        if len(raw) > MAX_SIGNER_OUTPUT_BYTES:
+            die("native custody request exceeds its bound")
+        request = strict_json_loads(raw, "native custody collection request")
+        if sys.argv[2:] == ["--prepare-native-settlement"]:
+            try:
+                from . import native_custody_settlement
+            except ImportError:
+                import native_custody_settlement
+            answer = native_custody_settlement.prepare(request, cfg,
+                VeldRpc(cfg["veld_rpc"]), Btc(cfg["cli_base"], cfg["wallet"]))
+            sys.stdout.write(json.dumps(answer, sort_keys=True, separators=(",", ":")) + "\n")
+            return
+        signed, members = native_custody_service.collect(request, cfg,
+            VeldRpc(cfg["veld_rpc"]), Btc(cfg["cli_base"], cfg["wallet"]))
+        sys.stdout.write(json.dumps({"signed_tx_hex": signed, "contributors": members,
+            "broadcast": False}, sort_keys=True, separators=(",", ":")) + "\n")
+        return
     state = os.path.abspath(cfg["state_dir"])
     _ensure_secure_directory(state, "redemption state directory",
                              create=True, private=True)

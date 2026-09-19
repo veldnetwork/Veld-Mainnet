@@ -413,6 +413,22 @@ def main():
         signer_id = cfg["signer_id"]
         if not isinstance(signer_id, str) or not signer_id:
             refuse("signer_id is required")
+        if "native_custody" in cfg:
+            import native_custody_service
+            initialize = sys.argv[1:] == ["--initialize-native-authority-state"]
+            if sys.argv[1:] and not initialize:
+                refuse("unknown native custody command option")
+            if initialize:
+                req = None
+            else:
+                raw = sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1)
+                if len(raw) > MAX_REQUEST_BYTES:
+                    refuse("request exceeds size limit")
+                req = strict_json_loads(raw, "native custody request")
+            result = native_custody_service.dispatch(req, cfg,
+                rd.VeldRpc(cfg["veld_rpc"]), rd.Btc(cfg["cli_base"], cfg["wallet"]), initialize=initialize)
+            sys.stdout.write(json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n")
+            return
         raw = sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1)
         if len(raw) > MAX_REQUEST_BYTES:
             refuse("request exceeds size limit")

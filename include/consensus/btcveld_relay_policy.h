@@ -12,6 +12,12 @@
 #include "../core/transaction.h"
 #include "btcveld_mint_nullifier.h"
 #include "btcveld_reserve_transition.h"
+#if defined(VELD_CUSTODY_AUTHORITY_PROPOSAL)
+#if defined(VELD_PUBLIC_RELEASE) || !defined(VELD_TEST_CHAIN_BUILD) || !defined(VELD_LOCAL_TEST_NETWORK)
+#error "Custody relay proposal is restricted to disposable native test profiles"
+#endif
+#include "consensus/proposed_custody_wire.h"
+#endif
 
 #include <cstdint>
 #include <string>
@@ -49,6 +55,10 @@ inline bool BtcVeldRelayPayloadShape(const std::string& op,
         const char* magic;
     };
     static constexpr PrefixMagic allowed[] = {
+#if defined(VELD_CUSTODY_AUTHORITY_PROPOSAL)
+        {"VELD_CIA1|", "CIA1"},
+        {"VELD_CST1|", "CST1"},
+#endif
         {"VELD_BHDR|",   "BHDR"},
         {"VELD_ANCHOR|", "ANCH"},
         {"VELD_MSPV|",   btcnull::CUSTODY_LINEAGE_REQUIRED ? "MSP3" : "MSP2"},
@@ -67,7 +77,7 @@ inline bool BtcVeldRelayPayloadShape(const std::string& op,
         }
     }
     if (!match || op.size() < 12) return false;
-    const size_t op_max = family == "VELD_MSPV|"
+    const size_t op_max = family == "VELD_MSPV|" || family == "VELD_CIA1|" || family == "VELD_CST1|"
         ? btcnull::MAX_MSPV_OP_PAYLOAD_BYTES
         : (family == btcveld::reserve::PUBLIC_CARRIER_PREFIX
                ? std::char_traits<char>::length(
@@ -82,6 +92,23 @@ inline bool BtcVeldRelayPayloadShape(const std::string& op,
     if (encoded != BytesToHex(raw)) return false; // lowercase, one text form
     for (size_t i = 0; i < 4; ++i)
         if (raw[i] != static_cast<uint8_t>(match->magic[i])) return false;
+
+#if defined(VELD_CUSTODY_AUTHORITY_PROPOSAL)
+    if (family == "VELD_CIA1|") {
+        const auto decoded = btcveld::proposed_custody::DecodeAuthorization(raw);
+        return decoded && btcveld::proposed_custody::EncodeAuthorization(*decoded) == raw;
+    }
+    if (family == "VELD_CST1|") {
+        const auto decoded = btcveld::proposed_custody::DecodeSettlement(raw);
+        btcveld::reserve::Claim claim;
+        return decoded && btcveld::proposed_custody::EncodeSettlement(*decoded) == raw &&
+            btcveld::reserve::DecodeProof(decoded->proof.data(), decoded->proof.size(), claim) &&
+            btcveld::reserve::EncodeProof(claim) == decoded->proof &&
+            claim.mint_amount == 0 && !claim.has_nullifier_proof &&
+            (claim.operation == btcveld::reserve::Operation::PAYOUT ||
+             claim.operation == btcveld::reserve::Operation::ROLLOVER);
+    }
+#endif
 
     if (family == "VELD_BHDR|") {
         if (raw.size() < 5 || raw[4] == 0) return false;

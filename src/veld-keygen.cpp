@@ -1890,6 +1890,10 @@ int main(int argc, char** argv) {
         }
         const bool relay = request.operation_type == "VELD_BHDR|" ||
                            request.operation_type == "VELD_ANCHOR|" ||
+#if defined(VELD_CUSTODY_AUTHORITY_PROPOSAL)
+                           request.operation_type == "VELD_CIA1|" ||
+                           request.operation_type == "VELD_CST1|" ||
+#endif
                            request.operation_type == "VELD_RSV1|";
         return CmdSignTx(argv[2], argv[3], "", output, relay, &request);
     }

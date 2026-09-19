@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import shutil
 import tempfile
 import time
 import unittest
@@ -22,6 +23,21 @@ TIP_HASH = "33" * 32
 BTC_TXID = "44" * 32
 OUTPOINT = BTC_TXID + ":0"
 REAL_FALSE = str(Path("/bin/false").resolve())
+_EXECUTABLE_FIXTURE = None
+
+
+def setUpModule():
+    global _EXECUTABLE_FIXTURE, REAL_FALSE
+    _EXECUTABLE_FIXTURE = tempfile.TemporaryDirectory(prefix="witness-executable-")
+    target = Path(_EXECUTABLE_FIXTURE.name) / "false"
+    shutil.copyfile(Path("/bin/false").resolve(), target)
+    target.chmod(0o700)
+    REAL_FALSE = str(target)
+
+
+def tearDownModule():
+    if _EXECUTABLE_FIXTURE is not None:
+        _EXECUTABLE_FIXTURE.cleanup()
 
 
 def bech32m_address(script):
