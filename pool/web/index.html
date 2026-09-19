@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Veld Pool</title><link rel="stylesheet" href="/pool.css"><script src="/pool.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><div><span class="eyebrow">PRIVATE TEST CANDIDATE</span><h1>Veld Pool</h1></div><span id="health" role="status">Checking service…</span></header>
+    <section class="notice">Test coins only. This candidate is still being qualified and is not a public mining service.</section>
+    <section>
+      <h2>Your account</h2>
+      <p>In your node's Pool tab, choose Copy view access and paste it below. Your payout address alone cannot open private account details.</p>
+      <form id="login">
+        <label>Viewing access from your client<input id="access" type="password" autocomplete="off" maxlength="4096" placeholder="Paste copied viewing access"></label>
+        <label>Account ID<input id="account" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="32" required pattern="[a-f0-9]{32}"></label>
+        <label>Viewing token<input id="token" type="password" autocomplete="off" maxlength="64" required pattern="[a-f0-9]{64}"></label>
+        <div class="actions"><button type="submit">View account</button><button id="forget" type="button" class="secondary">Clear</button></div>
+      </form>
+      <p class="subtext">Never enter a wallet seed or passphrase. The viewing token stays in this tab’s memory and is cleared when you close or reload it.</p>
+      <p id="message" role="status" aria-live="polite"></p>
+    </section>
+    <div id="private" hidden>
+      <section><h2>Payout address</h2><p id="address" class="address"></p><p class="subtext">This account’s destination is fixed. A different destination requires a new account; existing earnings remain owed to the original address.</p></section>
+      <div class="balances">
+        <section><h2>Pending</h2><strong id="pending">—</strong><p>Earned receipts awaiting maturity.</p></section>
+        <section><h2>Available</h2><strong id="available">—</strong><p>Mature earnings awaiting a batch.</p></section>
+        <section><h2>Payment in progress</h2><strong id="reserved">—</strong><p>Reserved for an existing payment.</p></section>
+        <section><h2>Paid</h2><strong id="paid">—</strong><p>Payments confirmed on this chain.</p></section>
+      </div>
+      <section><h2>Accepted work</h2><strong id="shares">—</strong><p id="payment-status"></p><p class="subtext">Candidate settings: 0% service fee, 1 VELD minimum automatic payment, daily batches, and at least 120 confirmations plus spendability. Small balances carry forward. Daily batches do not guarantee daily earnings.</p></section>
+      <section><h2>Payments</h2><div class="table-wrap"><table><thead><tr><th>Created</th><th>Amount</th><th>Status</th><th>Transaction</th></tr></thead><tbody id="payments"></tbody></table></div><button id="older" type="button" class="secondary" hidden>Older payments</button></section>
+      <section><h2>Co-mining and staking rewards</h2><p id="lottery"></p><p id="reward-policy"></p><p class="subtext">Actual lottery winnings and ordinary staking yield are shared with verified contributors from the earning window. Operator stake principal stays separate. Found or broadcast near misses are not confirmed entries.</p></section>
+    </div>
+    <footer>Keep your viewing token private. This page cannot sign transactions or change payout destinations.</footer>
+  </main>
+</body>
+</html>

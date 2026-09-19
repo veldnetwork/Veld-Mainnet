@@ -709,6 +709,18 @@ public:
     uint64_t TestBlockBodyLookupCount() const {
         return test_block_body_lookup_count_.load(std::memory_order_acquire);
     }
+    std::vector<std::vector<uint8_t>> TestSettlementHistory(uint64_t height) const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        const auto facts = SettlementHistoryNoLock_(height);
+        std::vector<std::vector<uint8_t>> encoded{facts->coinbase.Serialize()};
+        for (const auto& tx : facts->marker_transactions)
+            encoded.push_back(tx.Serialize());
+        return encoded;
+    }
+    std::pair<size_t, size_t> TestSettlementHistoryCacheSize() const {
+        std::lock_guard<std::mutex> lock(settlement_history_mutex_);
+        return {settlement_history_.size(), settlement_history_bytes_};
+    }
 #endif
 
     uint64_t TotalSupplyUnits() const { return total_supply_units_; }
@@ -1792,8 +1804,8 @@ public:
         uint64_t total_endorsements = 0;
         for (uint64_t h = window_start; h <= boundary_height; ++h) {
             if (h >= chain_.size()) break;
-            const Block blk = LoadCanonicalBlockNoLock_(h);
-            for (const auto& btx : blk.transactions) {
+            const auto history = SettlementHistoryNoLock_(h);
+            for (const auto& btx : history->marker_transactions) {
                 if (btx.IsCoinbase()) continue;
                 bool is_endorse = false;
                 bool canonical_endorsed_height = false;
@@ -2153,8 +2165,8 @@ public:
         uint64_t total = 0;
         for (uint64_t h = start; h <= boundary_height; ++h) {
             if (h >= chain_.size()) break;
-            const Block blk = LoadCanonicalBlockNoLock_(h);
-            const auto& coinbase = blk.transactions[0];
+            const auto history = SettlementHistoryNoLock_(h);
+            const auto& coinbase = history->coinbase;
             if (!coinbase.IsCoinbase()) continue;
             for (const auto& out : coinbase.outputs) {
                 if (out.script_pubkey == vault_script) {
@@ -4225,6 +4237,21 @@ public:
         std::optional<LocalWorkAdmissionTicket> local_work_ticket;
         const bool local_work_required =
             pow_admission.RequiresLocalWorkAdmission();
+#if defined(VELD_TEST_LOCAL_ADMISSION_TIMING)
+#if !defined(VELD_TEST_HOOKS) || defined(VELD_PUBLIC_RELEASE)
+#error "local admission timing is test-only"
+#endif
+        const auto admission_test_start = std::chrono::steady_clock::now();
+        const auto admission_test_phase = [&](const char* phase) {
+            if (local_work_required)
+                std::cerr << "ADMISSION_TIME h=" << block.height << " phase=" << phase
+                          << " ms=" << std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now()-admission_test_start).count()
+                          << std::endl;
+        };
+#else
+        const auto admission_test_phase = [](const char*) {};
+#endif
         if (local_work_required && pow_admission.HasRequiredProvenance()) {
             LocalWorkAdmissionPrepareFn prepare;
             {
@@ -4256,6 +4283,7 @@ public:
         // tip while the first block's module/persistence callback was still in
         // flight; a failure rollback could then disconnect the wrong block.
         std::lock_guard<std::mutex> connect_guard(block_connect_mutex_);
+        admission_test_phase("sequencer");
         // Shutdown may begin while this call waits behind another commit.
         // Cancel before validation; completed or active commits keep their
         // existing persistence guarantees and no peer validity decision changes.
@@ -5188,6 +5216,7 @@ public:
             Expired,
         };
         auto claim_local_ticket = [&](const Block& candidate) {
+            admission_test_phase("claim");
             if (!local_work_required || !local_work_ticket)
                 return LocalTicketClaimResult::Mismatch;
             const auto& ticket = *local_work_ticket;
@@ -5247,6 +5276,7 @@ public:
             ? HashIsZero(blk.header.prev_block_hash)
             : (blk.header.prev_block_hash == chain_.back().GetHash());
         if (extends_current_tip && module_precommit_validator_) {
+            admission_test_phase("module_preflight_start");
             uint64_t projected_supply = total_supply_units_.load();
             if (!AdvanceCanonicalSupply(blk, projected_supply))
                 return reject("module_supply_projection_failed");
@@ -5254,6 +5284,7 @@ public:
             try { modules_ok = module_precommit_validator_(blk, projected_supply); }
             catch (...) { modules_ok = false; }
             if (!modules_ok) return reject("module_apply_precommit_failed");
+            admission_test_phase("module_preflight_end");
         }
 
         // Local/RPC production is never allowed to register a stale template
@@ -6325,6 +6356,87 @@ private:
     DurableBlockBodyEraser                  durable_block_body_eraser_;
     std::optional<uint64_t>                 durable_canonical_height_;
     uint64_t                                next_body_prune_height_{0};
+    struct SettlementHistory {
+        Transaction coinbase;
+        std::vector<Transaction> marker_transactions;
+        size_t encoded_bytes{0};
+    };
+    // Only immutable, hash-bound historical facts are cached. Validator
+    // eligibility, amounts, weights and all settlement decisions are still
+    // derived on every call from the caller's current parent state.
+    static constexpr size_t SETTLEMENT_HISTORY_ENTRIES = 512;
+    static constexpr size_t SETTLEMENT_HISTORY_BYTES = 16 * 1024 * 1024;
+    mutable std::mutex settlement_history_mutex_;
+    mutable std::unordered_map<std::string,
+        std::shared_ptr<const SettlementHistory>> settlement_history_;
+    mutable std::deque<std::string> settlement_history_order_;
+    mutable size_t settlement_history_bytes_{0};
+
+    std::shared_ptr<const SettlementHistory> SettlementHistoryNoLock_(
+            uint64_t height) const {
+        // The caller holds chain_mutex_, including during alternate replay.
+        // Height alone would incorrectly reuse facts from a disconnected fork.
+        if (height >= chain_.size())
+            throw std::out_of_range("settlement history height out of range");
+        const auto key = HashToHex(chain_[height].GetHash());
+        {
+            std::lock_guard<std::mutex> guard(settlement_history_mutex_);
+            const auto it = settlement_history_.find(key);
+            if (it != settlement_history_.end()) return it->second;
+        }
+        Block block = LoadCanonicalBlockNoLock_(height);
+        if (block.transactions.empty())
+            throw std::runtime_error("settlement history has no coinbase");
+        auto facts = std::make_shared<SettlementHistory>();
+        facts->coinbase = std::move(block.transactions.front());
+        facts->encoded_bytes = facts->coinbase.Serialize().size();
+        for (size_t i = 1; i < block.transactions.size(); ++i) {
+            auto& tx = block.transactions[i];
+            if (tx.IsCoinbase()) continue;
+            // The existing endorsement parser only considers OP_RETURN
+            // outputs. Preserve those transactions byte-for-byte, including
+            // their sender signatures and malformed/unrecognized markers.
+            const bool marker = std::any_of(tx.outputs.begin(), tx.outputs.end(),
+                [](const TxOutput& output) {
+                    return output.script_pubkey.size() >= 2 &&
+                           output.script_pubkey[0] == 0x6A;
+                });
+            if (marker) {
+                facts->encoded_bytes += tx.Serialize().size();
+                facts->marker_transactions.push_back(std::move(tx));
+            }
+        }
+        // An oversized summary is used for this call without growing the
+        // cache. Encoded bytes and entry count have independent fixed bounds.
+        if (facts->encoded_bytes > SETTLEMENT_HISTORY_BYTES) return facts;
+        std::lock_guard<std::mutex> guard(settlement_history_mutex_);
+        const auto existing = settlement_history_.find(key);
+        if (existing != settlement_history_.end()) return existing->second;
+        while (!settlement_history_order_.empty() &&
+               (settlement_history_.size() >= SETTLEMENT_HISTORY_ENTRIES ||
+                settlement_history_bytes_ >
+                    SETTLEMENT_HISTORY_BYTES - facts->encoded_bytes)) {
+            const auto oldest = settlement_history_.find(settlement_history_order_.front());
+            if (oldest != settlement_history_.end()) {
+                settlement_history_bytes_ -= oldest->second->encoded_bytes;
+                settlement_history_.erase(oldest);
+            }
+            settlement_history_order_.pop_front();
+        }
+        try {
+            const auto inserted = settlement_history_.emplace(key, facts);
+            try {
+                settlement_history_order_.push_back(key);
+            } catch (...) {
+                settlement_history_.erase(inserted.first);
+                return facts;
+            }
+        } catch (...) {
+            return facts;
+        }
+        settlement_history_bytes_ += facts->encoded_bytes;
+        return facts;
+    }
 #ifdef VELD_TEST_HOOKS
     mutable std::atomic<uint64_t>           test_block_body_lookup_count_{0};
     mutable std::atomic<bool>               test_force_rebuild_utxo_miss_{false};

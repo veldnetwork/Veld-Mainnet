@@ -1,0 +1,159 @@
+"""Append-first event journal with an independently retained rollback anchor.
+
+SQLite is a rebuildable index. Restore must keep the current journal AND anchor;
+a backup which predates either is refused. Losing/rewinding both is not claimed
+to be recoverable: payments and work must remain stopped in that incident.
+"""
+import hashlib
+import os
+from pathlib import Path
+import sqlite3
+import threading
+import secrets
+import stat
+
+from .protocol import decode, encode, require, Refused, schema, hex64
+
+ZERO = '0' * 64
+MAX_EVENT = 4 * 1024 * 1024
+
+def directory_sync(path):
+    if os.name != 'nt':
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+def atomic(path, data):
+    path=Path(path)
+    temporary = path.with_name(path.name + '.' + secrets.token_hex(16) + '.new')
+    descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
+                         getattr(os,'O_NOFOLLOW',0), 0o600)
+    try:
+        with os.fdopen(descriptor, 'wb') as file:
+            file.write(data)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+        directory_sync(str(path.parent))
+    finally:
+        temporary.unlink(missing_ok=True)
+
+def private_directory(path):
+    path=Path(path)
+    path.mkdir(parents=True,exist_ok=True,mode=0o700)
+    metadata=path.lstat()
+    require(stat.S_ISDIR(metadata.st_mode),'journal directory must not be a symlink')
+    if os.name!='nt':
+        require(metadata.st_uid==os.geteuid() and metadata.st_mode & 0o077==0,
+                'journal directory must be owner-only')
+
+class Journal:
+    def __init__(self, directory, anchor):
+        self.db = self.log = self.guard = None
+        try:
+            self._open(directory, anchor)
+        except BaseException:
+            self.close()
+            raise
+
+    def _open(self, directory, anchor):
+        self.directory, self.anchor = Path(directory), Path(anchor)
+        private_directory(self.directory)
+        private_directory(self.anchor.parent)
+        require(not self.anchor.resolve().is_relative_to(self.directory.resolve()),
+                'anchor must be outside service backup directory')
+        self.lock = threading.RLock()
+        self.guard = open(self.directory/'coordinator.lock', 'a+b')
+        if os.name == 'nt':
+            import msvcrt
+            if os.fstat(self.guard.fileno()).st_size == 0:
+                self.guard.write(b'0'); self.guard.flush()
+            self.guard.seek(0)
+            msvcrt.locking(self.guard.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(self.guard.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        path = self.directory/'events.jsonl'
+        was_present = path.exists()
+        if was_present:
+            require(self.anchor.exists(), 'surviving rollback anchor required')
+        self.log = open(path, 'a+b', buffering=0)
+        if not was_present:
+            os.chmod(path, 0o600)
+            directory_sync(str(self.directory))
+        self.db = sqlite3.connect(self.directory/'index.sqlite', check_same_thread=False)
+        self.db.execute('PRAGMA journal_mode=WAL')
+        self.db.execute('PRAGMA synchronous=FULL')
+        self.db.execute('CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY, digest TEXT NOT NULL UNIQUE, body BLOB NOT NULL)')
+        self.db.commit()
+        self.sequence, self.digest = 0, ZERO
+        if self.anchor.exists():
+            with self.anchor.open('rb') as file:
+                marker = decode(file.read(257), 256)
+            schema(marker, ('seq', 'digest'))
+            require(type(marker['seq']) is int and 0 <= marker['seq'] < (1 << 63), 'anchor sequence')
+            hex64(marker['digest'])
+        else:
+            marker = {'seq': 0, 'digest': ZERO}
+        seen_anchor = marker == {'seq': 0, 'digest': ZERO}
+        self.log.seek(0)
+        # Bound the read itself: checking len() after an unbounded readline
+        # allows a damaged/restored file to exhaust memory before rejection.
+        for line in iter(lambda: self.log.readline(MAX_EVENT + 1), b''):
+            require(len(line) <= MAX_EVENT and line.endswith(b'\n'), 'damaged journal: stop and reconcile')
+            event = decode(line, MAX_EVENT)
+            require(set(event) == {'seq','previous','kind','payload','digest'}, 'journal schema')
+            digest = event.pop('digest')
+            require(type(event['seq']) is int and event['seq'] == self.sequence + 1 and
+                    event['previous'] == self.digest, 'journal ordering')
+            require(hashlib.sha256(encode(event)).hexdigest() == digest, 'journal integrity')
+            self.sequence, self.digest = event['seq'], digest
+            if self.sequence == marker['seq']:
+                require(digest == marker['digest'], 'rollback anchor mismatch')
+                seen_anchor = True
+            self._index(event, digest)
+        require(seen_anchor, 'journal rollback: current signing/work history required')
+        require(self.db.execute('SELECT COALESCE(MAX(seq),0) FROM events').fetchone()[0] == self.sequence, 'index ahead of journal')
+        self.db.commit()
+        atomic(self.anchor, encode({'seq': self.sequence, 'digest': self.digest}))
+        self.log.seek(0, os.SEEK_END)
+
+    def _index(self, event, digest):
+        prior = self.db.execute('SELECT digest FROM events WHERE seq=?', (event['seq'],)).fetchone()
+        if prior:
+            require(prior[0] == digest, 'index identity mismatch')
+        else:
+            self.db.execute('INSERT INTO events VALUES(?,?,?)', (event['seq'], digest, encode(event)))
+
+    def append(self, kind, payload):
+        with self.lock:
+            event = {'seq': self.sequence + 1, 'previous': self.digest, 'kind': kind, 'payload': payload}
+            digest = hashlib.sha256(encode(event)).hexdigest()
+            line = encode(dict(event, digest=digest)) + b'\n'
+            require(len(line) <= MAX_EVENT, 'event limit')
+            # Persistence failure poisons this process: callers must shut down,
+            # never continue with a potentially uncertain journal position.
+            try:
+                require(self.log.write(line) == len(line), 'partial journal write')
+                os.fsync(self.log.fileno())
+                atomic(self.anchor, encode({'seq': event['seq'], 'digest': digest}))
+                self._index(event, digest); self.db.commit()
+            except BaseException:
+                self.close()
+                raise
+            self.sequence, self.digest = event['seq'], digest
+            return self.sequence
+
+    def events(self):
+        with self.lock:
+            for (body,) in self.db.execute('SELECT body FROM events ORDER BY seq'):
+                yield decode(body, MAX_EVENT)
+
+    def close(self):
+        for name in ('db', 'log', 'guard'):
+            resource = getattr(self, name, None)
+            if resource is not None:
+                resource.close()
+                setattr(self, name, None)

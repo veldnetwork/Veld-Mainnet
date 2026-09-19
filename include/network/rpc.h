@@ -743,6 +743,8 @@ public:
     using PeerInfoFn     = std::function<std::string()>;
     using TokenSaveFn    = std::function<void()>;
     using MiningTemplatePreflightFn = std::function<bool(const Block&)>;
+    // Called only while holding the canonical consensus transition guard.
+    using MiningTemplateBuilderFn = std::function<Block(const std::vector<uint8_t>&)>;
     using RuntimeAdmissionFn = std::function<bool()>;
     using WorkAdmissionFn = std::function<work_admission::Decision(
         work_admission::Path, const work_admission::Subject&,
@@ -816,6 +818,9 @@ public:
     // The node supplies the exact same all-module dry run used by MineOnly.
     // getblocktemplate invokes it while already holding Blockchain's consensus
     // transition guard, so the callback must not acquire that guard recursively.
+    void SetMiningTemplateBuilderFn(MiningTemplateBuilderFn fn) {
+        mining_template_builder_fn_ = std::move(fn);
+    }
     void SetMiningTemplatePreflightFn(MiningTemplatePreflightFn fn) {
         mining_template_preflight_fn_ = std::move(fn);
     }
@@ -1386,6 +1391,17 @@ private:
     PeerInfoFn      peer_info_;
     TokenSaveFn     token_save_;
     MiningTemplatePreflightFn mining_template_preflight_fn_;
+    MiningTemplateBuilderFn mining_template_builder_fn_;
+#ifndef VELD_FLEET_NO_MINE
+    struct RetainedMiningTemplate {
+        Block block;
+        std::vector<uint8_t> miner_script;
+        std::chrono::steady_clock::time_point created;
+    };
+    // Bodies only, never extended-lifetime work tokens. Access is serialized by
+    // the consensus transition guard; renewals receive fresh admission checks.
+    std::map<std::string, RetainedMiningTemplate> retained_mining_templates_;
+#endif
     WorkAdmissionFn work_admission_fn_;
     IssueBlockTemplateAuthorizationFn
         issue_block_template_authorization_fn_;
@@ -1627,6 +1643,41 @@ private:
             return JB::Number((uint64_t)chain_.Height());
         });
 
+        // Bounded, read-only canonical policy/state for a private pool identity.
+        // It grants no signing authority and never changes staking/lottery rules.
+        methods_["getpoolidentitystate"] = RpcMethod([this](const P& params) -> std::string {
+            if (params.size() != 1) throw std::invalid_argument("pool identity address required");
+            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            const auto script = AddressToScript(params[0]);
+            if (script.size() != 25 || ScriptToAddress(script) != params[0] || !staking_)
+                throw std::invalid_argument("canonical identity or staking state unavailable");
+            const Block tip = chain_.TipCopy();
+            const uint64_t next = NextInclusionHeight(tip.height);
+            const bool needs = chain_.NmsNeedsSubmission(script, tip.GetHash());
+            const uint64_t stake = staking_->GetStake(params[0]);
+            const bool pending = mempool_.HasNmsSubmission(script, tip.GetHash());
+            const std::string result = JB::Object({
+                {"height", JB::Number(tip.height)},
+                {"parent", JB::String(HashToHex(tip.GetHash()))},
+                {"stake_units", JB::String(std::to_string(stake))},
+                {"required_stake_units", JB::String(std::to_string(NMS_MIN_BOND_UNITS))},
+                {"staking_active", JB::Bool(staking_->IsStakingActive(chain_.TotalSupplyUnits()))},
+                {"needs_submission", JB::Bool(needs)},
+                {"pending_submission", JB::Bool(pending)},
+                {"included_submission", JB::Bool(chain_.NmsGetCredit(BytesToHex(script)) > 0)},
+                {"eligible", JB::Bool(chain_.NmsBondSatisfied(script, next))},
+                {"window_blocks", JB::Number(COMINE_WINDOW_BLOCKS)},
+                {"yield_blocks", JB::Number(VAULT_DISTRIBUTION_INTERVAL)},
+                {"window_first", JB::Number(tip.height - tip.height % COMINE_WINDOW_BLOCKS + 1)},
+                {"window_draw", JB::Number(tip.height - tip.height % COMINE_WINDOW_BLOCKS + COMINE_WINDOW_BLOCKS)},
+                {"fee_units", JB::String(std::to_string(MIN_TX_FEE))},
+                {"dust_units", JB::String(std::to_string(DUST_THRESHOLD_UNITS))},
+            });
+            if (chain_.TipCopy().GetHash() != tip.GetHash())
+                throw rpc_error(-32005, "identity state changed; retry");
+            return result;
+        });
+
         methods_["getbestblockhash"] = RpcMethod([this](const P&) -> std::string {
             if (chain_.IsEmpty()) return JB::String(std::string(64, '0'));
             return JB::String(HashToHex(chain_.TipCopy().GetHash()));
@@ -1772,6 +1823,8 @@ private:
                             outputs.push_back(JB::Object({
                                 {"n",       JB::Number((uint64_t)i)},
                                 {"value",   JB::Float((double)tx.outputs[i].value / VELD_UNITS)},
+                                {"value_units", JB::String(std::to_string(tx.outputs[i].value))},
+                                {"script_pubkey", JB::String(BytesToHex(script))},
                                 {"address", JB::String(addr)},
                             }));
                         }
@@ -7616,8 +7669,8 @@ private:
 
 #ifndef VELD_FLEET_NO_MINE
         methods_["getblocktemplate"] = RpcMethod([this](const P& params) -> std::string {
-            if (params.size() != 1)
-                throw std::invalid_argument("Usage: getblocktemplate <miner_address>");
+            if (params.size() != 1 && params.size() != 2)
+                throw std::invalid_argument("Usage: getblocktemplate <miner_address> [issued_template_identity]");
 
             std::string miner_addr = params[0];
             auto miner_script = AddressToScript(miner_addr);
@@ -7663,180 +7716,62 @@ private:
                         work_admission::RefusalName(work_decision.refusal));
             }
 
+            if (!mining_template_builder_fn_)
+                throw rpc_error(-32603,
+                    "getblocktemplate unavailable: canonical node builder is not wired");
+            const auto template_now = std::chrono::steady_clock::now();
+            size_t retained_bytes = 0;
+            for (auto it = retained_mining_templates_.begin(); it != retained_mining_templates_.end();) {
+                if (it->second.block.header.prev_block_hash != canonical_tip.GetHash() ||
+                    template_now - it->second.created >= std::chrono::minutes(2))
+                    it = retained_mining_templates_.erase(it);
+                else { retained_bytes += it->second.block.SerializedSize(); ++it; }
+            }
             Block candidate;
-            candidate.height = work_subject.height;
-            candidate.header.version = PROTOCOL_VERSION;
-            candidate.header.prev_block_hash = work_subject.parent_hash;
-            candidate.header.timestamp = (uint64_t)std::time(nullptr);
-#if defined(VELD_ASERT_TESTCHAIN)
-            if (const auto supplied = asert_qualification::candidate_time.load())
-                candidate.header.timestamp = supplied;
-#endif
-            candidate.header.bits = chain_.ComputeNextBits();
-            candidate.header.nonce = 0;
-
-            // RpcServer does not own the node's staking/validator settlement
-            // builders.  Never hand an external miner a knowingly incomplete
-            // boundary template; the in-process VeldNode builder derives and
-            // embeds those canonical transactions.
-            if ((candidate.height % COMINE_WINDOW_BLOCKS) == 0 ||
-                (candidate.height % VAULT_DISTRIBUTION_INTERVAL) == 0 ||
-                (candidate.height % BOND_SETTLEMENT_INTERVAL) == 0) {
-                throw rpc_error(
-                    -32603,
-                    "getblocktemplate unavailable at a mandatory protocol "
-                    "settlement height; use the in-process VeldNode miner");
-            }
-
-            auto vault_script =
-                AddressToScript(VaultAddressAtHeight(candidate.height));
-            auto pool_script = AddressToScript(POOL_ADDRESS);
-            auto endorse_script = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
-
-            // Reserve the complete 92-byte block envelope plus a canonically
-            // serialized maximum coinbase built from the actual launch scripts.
-            // Amounts are fixed-width, so the eventual fee total cannot change
-            // this size; the real coinbase is a subset of this output shape.
-            std::vector<std::pair<std::vector<uint8_t>, uint64_t>> max_cb_outputs;
-            for (const auto* script : {&miner_script, &pool_script,
-                                       &vault_script, &endorse_script}) {
-                if (!script->empty()) max_cb_outputs.push_back({*script, 1});
-            }
-            if (max_cb_outputs.empty())
-                throw std::runtime_error("No canonical coinbase destination");
-            const size_t max_coinbase_size =
-                Transaction::CreateProportionalCoinbase(
-                    max_cb_outputs,
-                    "Veld block " + std::to_string(candidate.height))
-                    .Serialize().size();
-            if (max_coinbase_size > (size_t)MAX_BLOCK_SIZE - 92)
-                throw std::runtime_error(
-                    "Canonical coinbase exceeds the block-size envelope");
-            const size_t mempool_byte_budget =
-                (size_t)MAX_BLOCK_SIZE - 92 - max_coinbase_size;
-            // External miners must receive the same current-state AMM covenant
-            // revalidation as the in-process miner.  Without the chain view, a
-            // quote made stale by a pool rotation (or an unchecked legacy
-            // poison entry) could be handed out in an invalid template.
-            auto mempool_raw = mempool_.GetBlockTransactionsWithFees(
-                std::min<size_t>(999, MAX_TRANSACTIONS_PER_BLOCK - 1),
-                mempool_byte_budget, &chain_);
-            std::vector<std::pair<Transaction, uint64_t>> mempool_txs;
-            for (auto& [tx, fee] : mempool_raw) {
-                if (tx.IsCoinbase()) continue;
-                bool ok = true;
-                for (const auto& inp : tx.inputs) {
-                    if (inp.IsCoinbase()) continue;
-                    if (!chain_.GetUTXO(inp.prev_tx_hash, inp.prev_out_index)) { ok = false; break; }
-                }
-                if (ok) {
-                    try {
-                        if (!chain_.ValidateTransactionLocking(tx, false)) {
-                            ok = false;
-                        }
-                    } catch (...) { ok = false; }
-                }
-                if (ok) mempool_txs.push_back({tx, fee});
-            }
-
-            // Match the in-process miner: resolve same-candidate Bitcoin
-            // header dependencies before the existing all-module preflight.
-            btcspv::StableDependencyOrderBtcHeaderTransactions(mempool_txs);
-
+            if (params.size() == 2) {
+                const auto found = retained_mining_templates_.find(params[1]);
+                if (params[1].size() != 64 || found == retained_mining_templates_.end() ||
+                    found->second.miner_script != miner_script)
+                    throw rpc_error(-32010, "issued template unavailable on this node; never substitute another body");
+                candidate = found->second.block;
+            } else candidate = mining_template_builder_fn_(miner_script);
+            if (candidate.height != work_subject.height ||
+                candidate.header.prev_block_hash != work_subject.parent_hash ||
+                candidate.header.nonce != 0 || candidate.transactions.empty() ||
+                !chain_.ValidateMiningCoinbase(candidate) ||
+                !mining_template_preflight_fn_(candidate))
+                throw rpc_error(-32603,
+                    "getblocktemplate canonical builder binding or preflight failed");
             const bool is_vault_block = candidate.height > 0 &&
                 candidate.height % VAULT_BLOCK_INTERVAL == 0;
-            const uint64_t total_supply_now = chain_.TotalSupplyUnits();
-            const uint64_t remaining_to_cap =
-                MAX_SUPPLY_UNITS > total_supply_now
-                    ? MAX_SUPPLY_UNITS - total_supply_now : 0;
-            const uint64_t effective_reward = std::min(
-                Blockchain::ExpectedBlockSubsidy(candidate.height),
-                remaining_to_cap);
-            const bool is_pre_activation =
-                total_supply_now < STAKING_UNLOCK_SUPPLY;
-
-            // Match MineOnly and ValidateCanonicalCoinbaseSplit exactly so
-            // locally submitted templates use the canonical reward split.
-            auto build_coinbase = [&](uint64_t fees) {
-                std::vector<std::pair<std::vector<uint8_t>, uint64_t>> outputs;
-                if (effective_reward == 0) {
-                    if (fees > 0) {
-                        const uint64_t vault_cut = (fees * 40) / 100;
-                        const uint64_t endorse_cut = (fees * 10) / 100;
-                        const uint64_t miner_cut = fees - vault_cut - endorse_cut;
-                        outputs.push_back({miner_script, miner_cut});
-                        if (!vault_script.empty() && vault_script != miner_script)
-                            outputs.push_back({vault_script, vault_cut});
-                        else
-                            outputs[0].second += vault_cut;
-                        if (!endorse_script.empty() && endorse_cut > 0)
-                            outputs.push_back({endorse_script, endorse_cut});
-                        else
-                            outputs[0].second += endorse_cut;
-                    } else {
-                        outputs.push_back({vault_script, 0});
-                    }
-                } else if (is_vault_block) {
-                    outputs.push_back({vault_script, effective_reward + fees});
-                } else if (is_pre_activation) {
-                    const uint64_t miner_cut = (effective_reward * 50) / 100;
-                    const uint64_t vault_cut =
-                        effective_reward - miner_cut + fees;
-                    outputs.push_back({miner_script, miner_cut});
-                    if (!vault_script.empty() && vault_script != miner_script)
-                        outputs.push_back({vault_script, vault_cut});
-                    else
-                        outputs[0].second += vault_cut;
-                } else {
-                    const uint64_t pool_cut = (effective_reward * 20) / 100;
-                    const uint64_t vault_cut = (effective_reward * 20) / 100;
-                    const uint64_t endorse_cut = (effective_reward * 10) / 100;
-                    const uint64_t winner_cut = effective_reward - pool_cut -
-                                                vault_cut - endorse_cut;
-                    const uint64_t vault_total = vault_cut + fees;
-                    outputs.push_back({miner_script, winner_cut});
-                    if (!pool_script.empty() && pool_script != miner_script)
-                        outputs.push_back({pool_script, pool_cut});
-                    else
-                        outputs[0].second += pool_cut;
-                    if (!vault_script.empty() && vault_script != miner_script)
-                        outputs.push_back({vault_script, vault_total});
-                    else
-                        outputs[0].second += vault_total;
-                    if (!endorse_script.empty() && endorse_script != miner_script)
-                        outputs.push_back({endorse_script, endorse_cut});
-                    else
-                        outputs[0].second += endorse_cut;
+            // Category evidence for private pool accounting. A protocol-owned
+            // destination cannot distinguish miner earnings from its protocol
+            // allocation, so explicitly mark that configuration as unsuitable.
+            const bool reserved_miner_destination =
+                miner_script == AddressToScript(PoolAddressAtHeight(candidate.height)) ||
+                miner_script == AddressToScript(VaultAddressAtHeight(candidate.height)) ||
+                miner_script == AddressToScript(EndorsementPoolAddressAtHeight(candidate.height)) ||
+                miner_script == AddressToScript(StakeVaultAddressAtHeight(candidate.height));
+            std::vector<std::string> miner_receipts;
+            if (!reserved_miner_destination) {
+                for (size_t i = 0; i < candidate.transactions[0].outputs.size(); ++i) {
+                    const auto& output = candidate.transactions[0].outputs[i];
+                    if (output.script_pubkey == miner_script && output.value > 0)
+                        miner_receipts.push_back(JB::Object({
+                            {"n", JB::Number(static_cast<uint64_t>(i))},
+                            {"value_units", JB::String(std::to_string(output.value))},
+                            {"script_pubkey", JB::String(BytesToHex(output.script_pubkey))}}));
                 }
-                if (ProtocolUpgradeActive(candidate.height))
-                    return Blockchain::BuildCanonicalCoinbase(
-                        candidate.height, total_supply_now, fees, miner_script);
-                return Transaction::CreateProportionalCoinbase(
-                    outputs, "Veld block " + std::to_string(candidate.height));
-            };
-
-            // Run the same constructive selector as MineOnly.  The existing
-            // mempool/AMM and Bitcoin-header dependency ordering is the shared
-            // deterministic priority order; excluded trials remain in mempool.
-            auto full_preflight = [&](const Block& trial) {
-                try { return chain_.ValidateMiningCoinbase(trial) &&
-                             mining_template_preflight_fn_(trial); }
-                catch (...) { return false; }
-            };
-            const std::vector<Transaction> mandatory_txs;
-            auto selection = mining::SelectConstructivePreflightCandidate(
-                candidate, mempool_txs, mandatory_txs, build_coinbase,
-                full_preflight);
-            if (!selection.success) {
-                throw rpc_error(
-                    -32603,
-                    "getblocktemplate " + selection.error);
             }
-            candidate = std::move(selection.candidate);
 
             if (candidate.SerializedSize() > (size_t)MAX_BLOCK_SIZE)
                 throw std::runtime_error(
                     "getblocktemplate exceeded its canonical size budget");
+            const std::string immutable_identity = HashToHex(candidate.header.GetTemplateWorkIdentity());
+            if (!retained_mining_templates_.contains(immutable_identity) &&
+                (retained_mining_templates_.size() >= 64 ||
+                 retained_bytes + candidate.SerializedSize() > 16U * 1024U * 1024U))
+                throw rpc_error(-32005, "issued template retention capacity; retry shortly");
 
             work_admission::Decision final_work_decision;
             try {
@@ -7908,6 +7843,8 @@ private:
                     -32603,
                     "getblocktemplate authorization binding mismatch");
             }
+            retained_mining_templates_.try_emplace(immutable_identity,
+                RetainedMiningTemplate{candidate, miner_script, template_now});
 
             std::ostringstream j;
             j << "{\"height\":" << candidate.height
@@ -7924,6 +7861,8 @@ private:
               << ",\"work_ttl_ms\":"
               << template_authorization.ttl_ms
               << ",\"coinbase_value\":" << candidate.transactions[0].TotalOutput()
+              << ",\"reserved_miner_destination\":" << (reserved_miner_destination ? "true" : "false")
+              << ",\"miner_receipts\":" << JB::Array(miner_receipts)
               << ",\"tx_count\":" << candidate.transactions.size()
               << ",\"is_vault_block\":" << (is_vault_block ? "true" : "false")
               << "}";

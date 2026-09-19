@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "../crypto/vendored.h"
+#include "chacha20_bulk.h"
 #include <iomanip>
 #include <stdexcept>
 #include <atomic>
@@ -585,7 +586,7 @@ public:
                 iv[2] = static_cast<uint8_t>(counter_ >> 16);
                 iv[3] = static_cast<uint8_t>(counter_ >> 24);
                 std::memcpy(iv + 4, nonce_, 12);
-                ::veld::vendored_crypto::chacha20_keystream(key_, iv, out, complete_bytes);
+                MiningChaChaKeystream(key_, iv, out, complete_bytes);
                 counter_ += static_cast<uint32_t>(complete_bytes / 64);
                 out += complete_bytes;
                 len -= complete_bytes;

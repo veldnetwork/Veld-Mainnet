@@ -216,11 +216,11 @@ html[data-theme="light"] .liq-card{box-shadow:0 10px 28px rgba(31,58,37,.07)}
     <div class="liq-sub">Add both assets at the pool's current ratio. Your LP shares track your percentage of the reserves, including fees retained by the pool.</div>
     <div class="earn-flow">
       <div class="earn-step"><div class="k">1 &middot; A swap executes</div><p>A trade moves through the on-chain VELD and btcVELD pool.</p></div>
-      <div class="earn-step"><div class="k">2 &middot; The fee stays in the pool</div><p>The trading fee remains in the reserves instead of being paid separately.</p></div>
+      <div class="earn-step"><div class="k">2 &middot; The fee stays in the pool</div><p>The swap fee stays in the reserve of the asset you receive. The VELD network fee is separate.</p></div>
       <div class="earn-step"><div class="k">3 &middot; Your share includes it</div><p>When you withdraw, your LP shares claim the same percentage of both current reserves.</p></div>
     </div>
     <div class="earn-summary">
-      <div class="liq-stat"><div class="liq-label">Swap fee</div><div class="liq-value">1.00% &rarr; 0.30%<small> by depth</small></div><div class="liq-usd">Eases to 0.30% as btcVELD depth grows past 0.5 BTC</div></div>
+      <div class="liq-stat"><div class="liq-label">Swap fee</div><div class="liq-value">0.30% &ndash; 1.00%<small> four bands</small></div><div class="liq-usd">Based on deviation from the opening ratio. Trades toward it pay 0.30%.</div></div>
       <div class="liq-stat"><div class="liq-label">Your ownership</div><div class="liq-value">your shares &divide; all shares</div><div class="liq-usd">Your percentage of the pool</div></div>
       <div class="liq-stat"><div class="liq-label">On withdrawal</div><div class="liq-value">claim both reserves</div><div class="liq-usd">At your current pool percentage</div></div>
     </div>

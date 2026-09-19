@@ -73,6 +73,7 @@ FIXED_COVERAGE = {
     "THIRD_PARTY_NOTICES.md",
     "build/mainnet-v2-linux.sh",
     "build/mainnet-v2-windows.sh",
+    "build/mainnet-v2-pool.sh",
     "include/crypto/mldsa65_nist_kat.h",
     "include/crypto/vendored.h",
     "include/crypto/vendored_pin.h",

@@ -1,9 +1,10 @@
 sha256	role	origin	upstream_revision	upstream_path	upstream_sha256	patch	path
 59538d1aed02ee4fcd5e858d3633ebc848d3ee5a5dd9723f1247c26d952a54e7	distributed-source	Veld	-	-	-	-	.gitattributes
-2ede0197b8ef88a380981f8855e7568a595e98817e1187322205408f3d38e23a	distributed-source	Veld	-	-	-	-	.gitignore
+4e3ce863b337b80356e02b6202e9522bfda48b1d5e58b3e65252223e6224c8d9	distributed-source	Veld	-	-	-	-	.gitignore
 2712c6e470f165ec2a628eec255abaae5b1653ea5d6ff19b2f4ba905462feec6	license-notice	Veld	-	-	-	-	THIRD_PARTY_NOTICES.md
 a078108f42cd2e218f0f955e375d6b228cde5137526d27fabbce35fde1242d4b	build-controller	Veld	-	-	-	-	build/mainnet-v2-linux.sh
-2c15892678a4a28572733134640d57681725fe5d85991db347da6451f7711400	build-controller	Veld	-	-	-	-	build/mainnet-v2-windows.sh
+97fad35909ae4bfcae1476a75d8fe65492f43907a2c3ab296f9f9981c603bd20	build-controller	Veld	-	-	-	-	build/mainnet-v2-pool.sh
+15cee088e4a7ec4e2f5b7c9ebbd006535fb152acbde616adcf635448a7b1062b	build-controller	Veld	-	-	-	-	build/mainnet-v2-windows.sh
 815ba0a5536669f3e2652b94d560759e6b5037410f2011382e8c00a550ddfc8f	generated-kat-header	PQClean-generated	202a8f96315f9ed219387a50f7e40d04af037ea8	crypto_sign/ml-dsa-65/META.yml	e83150131384d5e43a2a59baedcef96c48f5bbf4dce9377094f9bdc3ed12f7d6	-	include/crypto/mldsa65_nist_kat.h
 88d5ad6faeb0e54a806563d4078845dd48e50ea4915d5d1410235d737bf52eb9	pinned-crypto-header	Veld	-	-	-	-	include/crypto/vendored.h
 253f7dff8e87d93025df0aaba47fbf37e7e924c1c254f30a2f67b2fcd2e8cca4	pinned-crypto-header	Veld	-	-	-	-	include/crypto/vendored_pin.h
@@ -13,7 +14,7 @@ dcac6e31e580896634ce481db20218c6187ba2508b95d2f18cc1cfc099ccf9d0	pinned-crypto-h
 bf995271d47654a972df770ad351f063771c9f678ae8c193b198061ed1cf30ff	kat-generator	Veld	-	-	-	-	scripts/generate-mldsa65-nist-kat.py
 2b1ed987e49d28bc9ca55eaf992e10926f11ad83174d95cd523b75b7cf1ba4d9	rebuild-tool	Veld	-	-	-	-	scripts/rebuild-pqc-wasm.py
 ba6e9bad42c60047a900e3ab2cd79d75a1e7ad0934c679f7bfcb50a6f8db24e6	rebuild-tool	Veld	-	-	-	-	scripts/rebuild-pqc-wasm.sh
-46cebb5008ff8ed5ea1dcb129ebae5afb52469d6f39ad52b8f59ddca493740ff	verification-tool	Veld	-	-	-	-	scripts/verify-pqc-provenance.py
+5fabe24900a92284b44e77db34a86fd04375fc6cb9c0c328e4be0aaa229495f5	verification-tool	Veld	-	-	-	-	scripts/verify-pqc-provenance.py
 3b7ec2977d6f8b7dd2de982112e1db5e4ebdccd11cea50dbff830a01bd1f3cb1	regression-test	Veld	-	-	-	-	tests/pqc_provenance_tests.py
 7b82219bdad5e2a9558f7d22877a35c37eecc5e6b40424ff4fe697c486c2d1df	regression-test	Veld	-	-	-	-	tests/pqc_wasm_smoke.js
 620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86	license-notice	Veld	-	-	-	-	third_party_licenses/Emscripten-LICENSE.txt

@@ -1,0 +1,91 @@
+import http.client
+import ipaddress
+import threading
+import urllib.parse
+from pathlib import Path
+from .protocol import decode, encode, require, hex64, Refused, Busy
+from .private_file import read_private
+
+class Node:
+    """Private, pinned node connection. Never follows redirects or environment proxies."""
+    def __init__(self, url, token_path, genesis):
+        endpoint = urllib.parse.urlsplit(url)
+        require(endpoint.scheme == 'http' and not endpoint.username and not endpoint.password and
+                endpoint.path in ('', '/') and not endpoint.query and not endpoint.fragment, 'private RPC URL')
+        require(ipaddress.ip_address(endpoint.hostname).is_loopback, 'RPC must be loopback')
+        self.host, self.port = endpoint.hostname, endpoint.port
+        require(self.port is not None and self.port > 1024, 'RPC port')
+        self.token_path = Path(token_path)
+        self.genesis = hex64(genesis)
+        self.lock = threading.Lock()
+        self.counter = 0
+
+    def call(self, method, *parameters):
+        # Token rotation is read for every request; stale cached authority is not used.
+        token = read_private(self.token_path, 128).decode('ascii').strip()
+        require(len(token) == 64 and all(c in '0123456789abcdef' for c in token), 'RPC credential unavailable')
+        with self.lock:
+            self.counter += 1
+            identity = self.counter
+        request = encode({'jsonrpc':'2.0','id':identity,'method':method,'params':list(parameters)})
+        connection = http.client.HTTPConnection(self.host, self.port, timeout=10)
+        try:
+            connection.request('POST', '/', request, {'Authorization':'Bearer '+token, 'Content-Type':'application/json'})
+            response = connection.getresponse()
+            raw = response.read(4*1024*1024 + 1)
+            require(response.status == 200, 'RPC HTTP failure')
+            result = decode(raw, 4*1024*1024)
+            require(result.get('id') == identity, 'RPC response identity')
+            if result.get('error') is not None:
+                error=result['error']
+                require(isinstance(error,dict) and type(error.get('code')) is int and
+                        isinstance(error.get('message'),str),'RPC error schema')
+                if error['code']==-32005 or (error['code']==-32010 and
+                    ('local-work-unavailable' in error['message'] or 'capacity' in error['message'])):
+                    raise Busy('node temporarily unavailable; retry the same operation')
+                raise Refused('node refused '+method+': '+str(error)[:300])
+            require('result' in result, 'RPC result missing')
+            return result['result']
+        except http.client.HTTPException as error:
+            # During local listener startup/restart a TCP connection can close
+            # mid-frame (and a Linux ephemeral port can self-connect to a not
+            # yet listening port). No malformed HTTP is usable RPC evidence.
+            # Surface a bounded retryable failure; writes are reconciled by
+            # their existing exact-byte intent rather than retried here.
+            raise Busy('node returned an incomplete or invalid HTTP response') from error
+        finally:
+            connection.close()
+
+    def check_chain(self):
+        require(self.call('getblockhash', '0') == self.genesis, 'wrong node genesis')
+        require(self.call('getcompiledgenesis') == self.genesis, 'wrong compiled genesis')
+
+    def template(self, address, identity=None):
+        self.check_chain()
+        result = self.call('getblocktemplate', address,hex64(identity)) if identity is not None else self.call('getblocktemplate', address)
+        require(isinstance(result, dict), 'template object')
+        for key in ('block_hex','work_binding','work_token','work_ttl_ms','height','target','prev_block_hash'):
+            require(key in result, 'template missing '+key)
+        raw = bytes.fromhex(result['block_hex'])
+        require(92 <= len(raw) <= 1024*1024 and raw.hex() == result['block_hex'], 'template encoding')
+        require(raw[80:88] == bytes(8), 'template nonce')
+        hex64(result['target']); hex64(result['prev_block_hash'])
+        require(type(result['height']) is int and result['height'] > 0, 'template height')
+        require(type(result['work_ttl_ms']) is int and 0 < result['work_ttl_ms'] <= 10000, 'template deadline')
+        require(result.get('reserved_miner_destination') is False,'protocol destination is not a pool identity')
+        require(isinstance(result.get('miner_receipts'),list) and len(result['miner_receipts'])<=1,'canonical miner category')
+        return result
+
+    def renew(self,template,address):
+        import hashlib
+        header=bytes.fromhex(template['block_hex'][:176]);require(header[80:88]==bytes(8),'unsigned template nonce')
+        identity=hashlib.sha256(hashlib.sha256(header).digest()).hexdigest()
+        renewed=self.template(address,identity)
+        require(renewed['block_hex']==template['block_hex'] and renewed['target']==template['target'] and
+                renewed['height']==template['height'],'renewal must preserve exact candidate')
+        return renewed
+
+    def submit(self, template, nonce):
+        raw = bytearray.fromhex(template['block_hex'])
+        raw[80:88] = nonce.to_bytes(8, 'little')
+        return self.call('submitblock', raw.hex(), template['work_binding'], template['work_token'])

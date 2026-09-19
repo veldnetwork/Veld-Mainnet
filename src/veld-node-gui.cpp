@@ -13,6 +13,9 @@
 #if defined(VELD_PUBLIC_RELEASE) && defined(VELD_GUI_TEST_INSTANCE)
 #error "VELD_GUI_TEST_INSTANCE cannot bypass package verification in a public release"
 #endif
+#if defined(VELD_POOL_GUI_QUALIFICATION) && (!defined(VELD_GUI_TEST_INSTANCE) || defined(VELD_PUBLIC_RELEASE))
+#error "pool GUI qualification must be isolated from public release profiles"
+#endif
 
 #include <windows.h>
 #include <windowsx.h>
@@ -34,6 +37,7 @@
 #include "../include/gui/state_file.h"
 #include "../include/gui/update_resume.h"
 #include "../include/gui/portal_unlock.h"
+#include "../include/gui/pool_panel.h"
 #include "../include/node/client_exit_policy.h"
 #include "../include/network/chainparams.h"
 #include "../include/wallet/passphrase_policy.h"
@@ -1418,7 +1422,7 @@ bool VerifySignedPackage(const std::filesystem::path& module,
     // second GUI executable in bin/: one signed launcher plus the node and
     // wallet helpers is the complete runtime layout.
     std::unordered_set<std::string> required{
-        "bin/veld-node.exe", "bin/veld-wallet.exe"};
+        "bin/veld-node.exe", "bin/veld-wallet.exe", "bin/veld-pool-client.exe"};
     const std::string current_relative = launched_from_bin
         ? "bin/" + module.filename().string() : module.filename().string();
     required.insert(LowerAscii(current_relative));
@@ -1847,7 +1851,7 @@ bool RequestGuiNodeShutdown(DWORD pid) {
 }
 
 enum class Page {
-    Overview, Blockchain, Mining, Workers, Explorer, Network, Logs, Settings
+    Overview, Blockchain, Mining, Workers, Explorer, Network, Logs, Settings, Pool
 };
 
 enum class UpdateOperation {
@@ -1938,6 +1942,16 @@ public:
         else
             data_dir_ = module.parent_path() / L"veld-data";
         ParseArguments();
+#ifdef VELD_POOL_GUI_QUALIFICATION
+        // The same pool panel/worker logic runs without reading production GUI
+        // state or starting reference, portal, update, node, or wallet services.
+        state_dir_=module.parent_path()/L"pool-lab-state";
+        data_dir_=state_dir_/L"unused-node-data";
+        node_path_=module.parent_path()/L"unconfigured-lab-node.exe";
+        page_=Page::Pool;
+        reference_display_enabled_=false;
+        return;
+#endif
         std::error_code state_error;
         std::filesystem::create_directories(state_dir_, state_error);
         LoadRemoteTrust();
@@ -1965,6 +1979,7 @@ public:
     }
 
     ~NodeGuiApp() {
+        pool_panel_.reset();
         stop_worker_.store(true);
         worker_cv_.notify_all();
         if (worker_.joinable()) worker_.join();
@@ -2014,18 +2029,37 @@ public:
         AdjustWindowRectEx(&desired, WS_OVERLAPPEDWINDOW, FALSE, 0);
         hwnd_ = CreateWindowExW(
             0, wc.lpszClassName, L"Veld Node",
-            WS_OVERLAPPEDWINDOW | WS_VSCROLL,
+            WS_OVERLAPPEDWINDOW | WS_VSCROLL | WS_CLIPCHILDREN,
             window_x_, window_y_, window_width_ > 0 ? window_width_ :
                 desired.right - desired.left,
             window_height_ > 0 ? window_height_ : desired.bottom - desired.top,
             nullptr, nullptr, instance_, this);
         if (!hwnd_) return 2;
+        const auto module=ModulePath();
+        auto pool_binary=module.parent_path()/L"bin"/L"veld-pool-client.exe";
+        if(!std::filesystem::is_regular_file(pool_binary))pool_binary=module.parent_path()/L"veld-pool-client.exe";
+        pool_panel_=std::make_unique<veld::node_gui::PoolPanel>(hwnd_,state_dir_/L"pool-client",pool_binary,
+            mining_thread_count_,[this] {
+                if(SnapshotState().process_running || FindNodeProcess(node_path_)) {
+                    MessageBoxW(hwnd_,L"Stop solo mining before starting pool mining.",L"Veld Pool",MB_OK|MB_ICONINFORMATION);return false;
+                }
+#ifdef VELD_PUBLIC_RELEASE
+                std::wstring error;
+                if(!VerifySignedPackage(ModulePath(),error)) {
+                    MessageBoxW(hwnd_,error.c_str(),L"Pool package blocked",MB_OK|MB_ICONERROR);return false;
+                }
+#endif
+                return true;
+            });
         ShowWindow(hwnd_, window_maximized_ ? SW_SHOWMAXIMIZED : show);
         UpdateWindow(hwnd_);
+#ifndef VELD_POOL_GUI_QUALIFICATION
         worker_ = std::thread([this] { PollLoop(); });
+#endif
 
         MSG msg{};
         while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+            if(IsDialogMessageW(hwnd_,&msg))continue;
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
@@ -2037,7 +2071,9 @@ private:
     HWND hwnd_{nullptr};
     UINT dpi_{96};
     Page page_{Page::Overview};
-    std::array<int, 8> page_scroll_offsets_{};
+    std::array<int, 9> page_scroll_offsets_{};
+    std::unique_ptr<veld::node_gui::PoolPanel> pool_panel_;
+    RECT pool_nav_{};
     std::filesystem::path node_path_;
     std::filesystem::path wallet_path_;
     std::filesystem::path data_dir_;
@@ -2259,7 +2295,7 @@ private:
         const RECT* sidebar_controls[] = {
             &overview_nav_, &blockchain_nav_, &mining_nav_, &workers_nav_,
             &explorer_nav_, &network_nav_, &logs_nav_,
-            &settings_nav_, &follow_x_link_
+            &settings_nav_, &pool_nav_, &follow_x_link_
         };
         for (const RECT* control : sidebar_controls) {
             if (control && PtInRect(control, point)) return true;
@@ -2548,10 +2584,18 @@ private:
                 SaveWindowPlacement();
                 return 0;
             case WM_COMMAND:
+                if(pool_panel_ && pool_panel_->Command(wp))return 0;
                 if (LOWORD(wp) == ID_TRAY_RESTORE) RestoreFromTray();
                 else if (LOWORD(wp) == ID_TRAY_TOGGLE_NODE) ToggleNode();
                 else if (LOWORD(wp) == ID_TRAY_EXIT) DestroyWindow(hwnd_);
                 return 0;
+            case WM_CTLCOLORSTATIC:
+            case WM_CTLCOLOREDIT:
+                if(pool_panel_) {
+                    const auto brush=pool_panel_->Color(reinterpret_cast<HDC>(wp),reinterpret_cast<HWND>(lp));
+                    if(brush)return reinterpret_cast<LRESULT>(brush);
+                }
+                return DefWindowProcW(hwnd_,msg,wp,lp);
             case WM_TRAY_ICON:
                 if (LOWORD(lp) == WM_LBUTTONDBLCLK) RestoreFromTray();
                 else if (LOWORD(lp) == WM_RBUTTONUP ||
@@ -2580,12 +2624,16 @@ private:
                 if (wp == '6') page_ = Page::Network;
                 if (wp == '7') page_ = Page::Logs;
                 if (wp == '8') page_ = Page::Settings;
+                if (wp == '9') page_ = Page::Pool;
                 InvalidateRect(hwnd_, nullptr, FALSE);
                 return 0;
             case WM_TIMER:
             case WM_NODE_REFRESH:
+                if(pool_panel_)pool_panel_->Tick();
+#ifndef VELD_POOL_GUI_QUALIFICATION
                 ObserveOwnedNodeExit();
                 TickAutomaticUpdates();
+#endif
                 InvalidateRect(hwnd_, nullptr, FALSE);
                 return 0;
             case WM_TOR_SETUP_COMPLETE:
@@ -2938,6 +2986,8 @@ private:
         network_topology_rects_.clear();
         network_topology_indices_.clear();
         DrawSidebar(dc, client, live);
+        if(pool_panel_)pool_panel_->Show(page_==Page::Pool,S(292),S(145)-page_scroll,
+            std::max(S(340),static_cast<int>(client.right)-S(332)),dpi_,font_body_);
         const POINT raw_hover = hover_point_;
         hover_point_ = ContentPoint(raw_hover);
         const int saved_dc = SaveDC(dc);
@@ -2951,6 +3001,13 @@ private:
             case Page::Network: DrawNetwork(dc, page_client, live); break;
             case Page::Logs: DrawLogs(dc, page_client, live); break;
             case Page::Settings: DrawSettings(dc, page_client, live); break;
+            case Page::Pool: {
+                RECT title{S(292),S(34),client.right-S(40),S(78)};
+                DrawTextAt(dc,L"Pool mining",title,font_title_,C_TEXT);
+                RECT note{S(292),S(80),client.right-S(40),S(125)};
+                DrawTextAt(dc,L"Mine with a pool using your payout address. Keep control of your own wallet.",note,font_body_,C_SUBTEXT);
+                action_button_={};break;
+            }
         }
         RestoreDC(dc, saved_dc);
         hover_point_ = raw_hover;
@@ -3002,6 +3059,8 @@ private:
         DrawNav(dc, logs_nav_, L"Logs", page_ == Page::Logs);
         settings_nav_ = {nav_x, S(456), nav_x + nav_w, S(502)};
         DrawNav(dc, settings_nav_, L"Settings", page_ == Page::Settings);
+        pool_nav_={nav_x,S(506),nav_x+nav_w,S(552)};
+        DrawNav(dc,pool_nav_,L"Pool mining",page_==Page::Pool);
 
         RECT version{S(28), client.bottom - S(110), width - S(22),
                      client.bottom - S(82)};
@@ -5728,6 +5787,7 @@ private:
         else if (PtInRect(&network_nav_, p)) page_ = Page::Network;
         else if (PtInRect(&logs_nav_, p)) page_ = Page::Logs;
         else if (PtInRect(&settings_nav_, p)) page_ = Page::Settings;
+        else if (PtInRect(&pool_nav_, p)) page_ = Page::Pool;
         else if (PtInRect(&follow_x_link_, p)) {
             ShellExecuteW(hwnd_, L"open", L"https://x.com/VeldNetwork",
                           nullptr, nullptr, SW_SHOWNORMAL);
@@ -6714,6 +6774,12 @@ private:
     }
 
     void StartNode() {
+#ifdef VELD_POOL_GUI_QUALIFICATION
+        MessageBoxW(hwnd_,L"This isolated test bundle only runs the pool worker.",L"Pool qualification",MB_OK);return;
+#endif
+        if(pool_panel_ && pool_panel_->Running()) {
+            MessageBoxW(hwnd_,L"Stop pool mining before starting solo mining.",L"Veld Node",MB_OK|MB_ICONINFORMATION);return;
+        }
         recovery_restarts_ = 0;
         recovery_restart_window_ = {};
         stopping_node_.store(false);

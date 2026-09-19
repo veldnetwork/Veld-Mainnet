@@ -275,6 +275,31 @@ libraries=("${static_openssl_archives[@]}" -lws2_32 -ladvapi32 -lbcrypt -lcrypt3
 extra_objects=()
 link_flags=()
 if [[ $role == gui ]]; then
+  if [[ $source_is_git == 1 ]]; then
+    git -C "$src" ls-files --error-unmatch src/veld-pool-client.cpp >/dev/null
+  fi
+  # The seedless helper is part of the same attested GUI package and profile.
+  # It has neither a backend RPC credential nor any signing authority.
+  pool_artifact="$output/bin/veld-pool-client.exe"
+  command=(clang++ -std=c++20 -O2 -DNDEBUG -pthread -nostdlib++ \
+    -I"$src/include" -I"$src/vendor/pqc" -I"$src/vendor/pqc/mldsa65" \
+    "${base_definitions[@]}" "$src/src/veld-pool-client.cpp" "${objects[@]}" \
+    "${static_runtime_archives[@]}" "${libraries[@]}" -o "$pool_artifact")
+  printf 'COMMAND'; printf ' %q' "${command[@]}"; printf '\n'
+  "${command[@]}"
+  objdump -p "$pool_artifact" > "$output/pool-worker-pe-metadata.txt"
+  "$pqc_python" "$src/scripts/verify-windows-runtime.py" \
+    --binary "$pool_artifact" --role pool-worker \
+    --imports "$output/pool-worker-pe-metadata.txt" \
+    | tee "$output/pool-worker-stock-runtime.txt"
+  "$pool_artifact" --deployment-info | tee "$output/pool-worker-deployment-info.txt"
+  "$pqc_python" "$src/scripts/verify-release-version.py" --root "$src" \
+    --deployment-info "$output/pool-worker-deployment-info.txt"
+  grep -F '"binary_role":"pool-worker"' "$output/pool-worker-deployment-info.txt"
+  grep -F '"profile_id":"veld-public-mainnet-v2"' "$output/pool-worker-deployment-info.txt"
+  grep -F '"signing_authority":false' "$output/pool-worker-deployment-info.txt"
+fi
+if [[ $role == gui ]]; then
   command=(llvm-windres -I"$src" "$src/resources/veld-node.rc" -O coff \
     -o "$output/obj/veld-node-gui-resource.o")
   printf 'COMMAND'; printf ' %q' "${command[@]}"; printf '\n'
@@ -340,7 +365,7 @@ if [[ $role == gui ]]; then
   cp "$src/pkg/tor-setup.ps1" "$output/tor-setup.ps1"
   cmp "$artifact" "$output/Veld Node.exe"
   sha256sum "$output/bin/veld-node.exe" "$artifact" \
-    "$output/bin/veld-wallet.exe" "$output/Veld Node.exe" \
+    "$output/bin/veld-wallet.exe" "$pool_artifact" "$output/Veld Node.exe" \
     | tee "$output/binary-sha256.txt"
   printf 'GUI role is a windowed package launcher; runtime identity is bound by the signed package manifest.\n' \
     | tee "$output/runtime-version.txt" "$output/deployment-info.txt"

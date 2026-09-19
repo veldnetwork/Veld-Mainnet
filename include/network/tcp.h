@@ -99,6 +99,18 @@ namespace _detail {
 
 class Connection {
 public:
+    // Download continuation is separate from peer-height/work evidence. Only
+    // byte-exact known or newly accepted blocks may populate this hint.
+    void RememberValidatedDownload(const Hash256& hash) {
+        std::lock_guard<std::mutex> lock(download_cursor_mutex_);
+        download_cursor_ = hash;
+    }
+
+    std::optional<Hash256> ValidatedDownloadCursor() const {
+        std::lock_guard<std::mutex> lock(download_cursor_mutex_);
+        return download_cursor_;
+    }
+
     using CloseReason = connection_diagnostics::Reason;
     static constexpr size_t RECV_BUFFER_SIZE = 1024 * 1024;
     static constexpr size_t MAX_MESSAGE_SIZE = 32 * 1024 * 1024;
@@ -845,6 +857,9 @@ public:
     uint64_t mempool_budget_used   = 0;
 
 private:
+    mutable std::mutex download_cursor_mutex_;
+    std::optional<Hash256> download_cursor_;
+
     static uint64_t NextIdentity_() {
         static std::atomic<uint64_t> next{1};
         uint64_t id = next.fetch_add(1, std::memory_order_relaxed);
@@ -4315,6 +4330,15 @@ public:
         return peer_tip_recovery_hints_.size();
     }
 
+    P2PMessage TestDownloadLocator(const Connection& connection) const {
+        return BuildChainLocatorGetBlocks(&connection);
+    }
+
+    void TestRememberValidatedDownload(Connection& connection,
+                                       const Hash256& hash) {
+        RecordValidatedDownload_(connection, hash);
+    }
+
     IngestEnqueueResult TestEnqueueBlockIngest(
             Block blk, size_t wire_bytes, const std::string& source_key) {
         return EnqueueBlockIngest(std::move(blk), wire_bytes,
@@ -6245,6 +6269,7 @@ private:
                     entry.source, entry.source_pow_budget,
                     peer_work_stop_.get_token()));
             if (admission.IsAccepted()) {
+                RecordValidatedDownload_(conn, orphan.GetHash());
                 uint64_t h = chain_.Height();
                 RecordVerifiedPeerHeight_(entry.source, orphan.GetHash());
                 int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
@@ -6279,7 +6304,18 @@ private:
         }
     }
 
-    P2PMessage BuildChainLocatorGetBlocks() const {
+    void RecordValidatedDownload_(Connection& connection,
+                                   const Hash256& hash) const {
+        // Quarantined, deferred and unknown bodies cannot move this cursor.
+        // The hint never publishes canonical state or trusted peer height.
+        const auto height = chain_.GetKnownBlockHeightByHash(hash);
+        const auto tip = chain_.Height();
+        if (height && (*height >= tip || tip - *height <= 2 * MAX_REORG_DEPTH))
+            connection.RememberValidatedDownload(hash);
+    }
+
+    P2PMessage BuildChainLocatorGetBlocks(
+            const Connection* connection = nullptr) const {
         PeerManager pm(magic_, chain_.Height());
         if (chain_.IsEmpty()) {
             Hash256 zero{}; zero.fill(0);
@@ -6297,7 +6333,25 @@ private:
         }
         try { extra.push_back(chain_.GetBlock(0).GetHash()); } catch (...) {}
 
-        return pm.BuildGetBlocksMessage(chain_.TipCopy().GetHash(), extra);
+        const Hash256 tip = chain_.TipCopy().GetHash();
+        if (connection) {
+            const auto cursor = connection->ValidatedDownloadCursor();
+            const auto cursor_height = cursor
+                ? chain_.GetKnownBlockHeightByHash(*cursor) : std::nullopt;
+            const auto current_height = chain_.Height();
+            if (cursor && *cursor != tip && cursor_height &&
+                (*cursor_height >= current_height ||
+                 current_height - *cursor_height <= 2 * MAX_REORG_DEPTH)) {
+                // A bounded response can end in shared history, or in a
+                // validated lower-work branch which has not won fork choice.
+                // Continue from that exact body instead of repeatedly asking
+                // for the same canonical locator suffix. Keep the canonical
+                // tip and history as fallbacks when this peer changed branch.
+                extra.insert(extra.begin(), tip);
+                return pm.BuildGetBlocksMessage(*cursor, extra);
+            }
+        }
+        return pm.BuildGetBlocksMessage(tip, extra);
     }
 
     void AcceptLoop() {
@@ -6773,7 +6827,7 @@ private:
             }
 
             if (just_became_ready) {
-                if (conn.TrySend(BuildChainLocatorGetBlocks())) {
+                if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                     const auto now = std::chrono::steady_clock::now();
                     ps.last_getblocks = now;
                     ps.last_ibd_progress = now;
@@ -6871,7 +6925,7 @@ private:
             }
 
             if (just_became_ready) {
-                if (conn.TrySend(BuildChainLocatorGetBlocks())) {
+                if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                     const auto now = std::chrono::steady_clock::now();
                     ps.last_getblocks = now;
                     ps.last_ibd_progress = now;
@@ -7974,7 +8028,7 @@ private:
                 const bool send_now = TakeKeyCooldown(
                     tipsig_getblocks_at_, src_ip, 10, 600, 4096);
                 if (send_now) {
-                    conn.Send(BuildChainLocatorGetBlocks());
+                    conn.Send(BuildChainLocatorGetBlocks(&conn));
                 }
 
                 const bool already_have_their_tip =
@@ -8171,6 +8225,7 @@ private:
                     CancelProtectedBlockRequest_(
                         conn.Identity(), received_block_hash);
                     ErasePendingGetData_(received_block_hash);
+                    RecordValidatedDownload_(conn, new_block.GetHash());
                     return StepResult::Handled;
                 }
                 // A byte-exact retained side block may represent a previously
@@ -8245,6 +8300,7 @@ private:
             if (admission.IsDeferred() && peer_work_stop_.stop_requested())
                 return StepResult::Handled;
             if (admission.IsAccepted()) {
+                RecordValidatedDownload_(conn, new_block.GetHash());
                 uint64_t h = chain_.Height();
                 {
                     std::string peer_ip = conn.RemoteAddr();
@@ -8290,7 +8346,7 @@ private:
                 }
                 ProcessOrphanChain(new_block.GetHash(), pm, conn, key);
                 if (ibd_complete_flag_.load()) {
-                    conn.Send(BuildChainLocatorGetBlocks());
+                    conn.Send(BuildChainLocatorGetBlocks(&conn));
                     ps.last_getblocks = std::chrono::steady_clock::now();
                 }
             } else {
@@ -8385,7 +8441,7 @@ private:
                                     orphan_getblocks_at_, src_ip,
                                     10, 600, 4096);
                                 if (send_getblocks)
-                                    conn.Send(BuildChainLocatorGetBlocks());
+                                    conn.Send(BuildChainLocatorGetBlocks(&conn));
                                 // Fetch orphan parents directly. The locator
                                 // walk above can fail when its byte budget is
                                 // exhausted or no advertised locator is known.
@@ -8823,7 +8879,7 @@ private:
                 if (ms_since_gb >= 5000) should_request = true;
             }
             if (should_request) {
-                if (conn.TrySend(BuildChainLocatorGetBlocks())) {
+                if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                     ps.last_getblocks = now;
                 }
             }
@@ -10819,7 +10875,11 @@ private:
                 return;
             }
             if (chain_.IsCanonicalBlock(job.new_block.GetHash()) ||
-                !chain_.IsVolatileSideBlock(job.new_block.GetHash())) return;
+                !chain_.IsVolatileSideBlock(job.new_block.GetHash())) {
+                if (auto sc = job.sender_conn.lock())
+                    RecordValidatedDownload_(*sc, job.new_block.GetHash());
+                return;
+            }
             // Only volatile quarantine entries fall through: a transient local
             // work deferral may be retried without another ingress hash.
         }
@@ -10840,6 +10900,7 @@ private:
             // point may the sender influence height/tip evidence.
             if (auto sc = job.sender_conn.lock()) {
                 const std::string peer_ip = sc->RemoteAddr();
+                RecordValidatedDownload_(*sc, job.new_block.GetHash());
                 RecordVerifiedPeerHeight_(peer_ip, job.new_block.GetHash());
                 int64_t now_s = (int64_t)std::chrono::duration_cast<
                     std::chrono::seconds>(

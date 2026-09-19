@@ -4,6 +4,7 @@ build/
 build/*
 !build/mainnet-v2-linux.sh
 !build/mainnet-v2-windows.sh
+!build/mainnet-v2-pool.sh
 *.exe
 *.o
 *.obj
@@ -99,6 +100,10 @@ Thumbs.db
 !/src/veld-keygen.cpp
 !/src/veld-miner-portal.py
 !/src/veld-checkpoint-tool.cpp
+!/src/veld-pool-work.cpp
+!/src/veld-pool-payout.cpp
+!/src/veld-pool-client.cpp
+!/src/veld-pool-identity.cpp
 
 # Sources not used by a public mainnet program
 /include/compat/avx512_guards.h

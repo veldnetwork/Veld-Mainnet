@@ -532,10 +532,8 @@ inline MineBlockResult MineOnly(
     std::atomic<uint64_t>* progress_counter = nullptr,
     const std::vector<Transaction>& mandatory_txs = {},
     MiningCandidatePreflight candidate_preflight = nullptr,
-    const std::vector<std::vector<uint8_t>>& coinbase_metadata_scripts = {}
-#if defined(VELD_TEST_HOOKS) && defined(VELD_DSTATE_QUALIFICATION)
-    , bool qualification_candidate_only = false
-#endif
+    const std::vector<std::vector<uint8_t>>& coinbase_metadata_scripts = {},
+    bool candidate_only = false
 ) {
     MineBlockResult result{};
     result.success = false;
@@ -742,22 +740,16 @@ inline MineBlockResult MineOnly(
     if (candidate.header.timestamp < min_ts)
         candidate.header.timestamp = min_ts;
 
-#if defined(VELD_TEST_HOOKS) && defined(VELD_DSTATE_QUALIFICATION)
-    // The native state-capacity harness needs the exact production candidate builder
-    // without spending five synthetic years of memory-hard work.  This returns
-    // an uncommitted candidate only; AddBlockDirect still runs afterward with
-    // skip_pow=false, where VELD_TEST_BRANCH_CONTEXT bypasses only the final
-    // hash-vs-target comparison.  Public builds cannot contain either seam.
-    if (qualification_candidate_only) {
+    // Return the exact uncommitted canonical candidate for external workers.
+    // This performs no hashing or admission; callers must retain authorization
+    // and submit solved bytes through the full normal node validation path.
+    if (candidate_only) {
         result.success = true;
         result.block = candidate;
         result.hash = candidate.GetHash();
         result.new_height = candidate.height;
-        result.elapsed_ms = 0.0;
-        result.hashes_tried = 0;
         return result;
     }
-#endif
 
     size_t selected_nms_claims = 0;
     for (const auto& tx : candidate.transactions)
@@ -4183,21 +4175,7 @@ public:
             // MineAndCommit helper correctly refuses protocol boundaries;
             // using it here made VeldNode::MineBlocks halt at the first
             // co-mine boundary once roll-forwards became mandatory.
-            Block settlement_probe;
-            settlement_probe.height = chain_.Height() + 1;
-            settlement_probe.header.prev_block_hash = chain_.Tip().GetHash();
-            if (settlement_probe.height > 0 &&
-                settlement_probe.height % VAULT_DISTRIBUTION_INTERVAL == 0) {
-                (void)BuildEndorsementFlushTx(settlement_probe);
-                (void)BuildVaultDistributionTx(settlement_probe);
-                (void)BuildBondSettlementTx(settlement_probe);
-                (void)BuildBondYieldSettlementTx(settlement_probe);
-            }
-            if (settlement_probe.height > 0 &&
-                settlement_probe.height % COMINE_WINDOW_BLOCKS == 0) {
-                (void)BuildPoolPayoutTx(
-                    settlement_probe, AddressToScript(POOL_ADDRESS), mempool_);
-            }
+            Block settlement_probe = PrepareMiningSettlements_();
             std::vector<Transaction> mandatory_settlements =
                 std::move(settlement_probe.transactions);
             auto finality_metadata = PendingFinalityCoinbaseMetadata_(
@@ -10588,9 +10566,17 @@ private:
     // wrong-branch certificate while a competing block is arriving.
     std::vector<std::vector<uint8_t>> PendingFinalityCoinbaseMetadata_(
             uint64_t candidate_height) {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        return PendingFinalityCoinbaseMetadataUnderTransition_(candidate_height);
+    }
+
+    // The external-template builder already owns the transition sequencer.
+    // Reacquiring its non-recursive mutex would deadlock even before finality
+    // activates. Keep certificate selection under the caller's same snapshot.
+    std::vector<std::vector<uint8_t>> PendingFinalityCoinbaseMetadataUnderTransition_(
+            uint64_t candidate_height) {
         namespace fq = ::veld::finality::qc;
         std::vector<std::vector<uint8_t>> out;
-        auto transition = chain_.AcquireConsensusTransitionGuard();
         if (!fin_state_.FinalityActive()) return out;
 
         std::lock_guard<std::mutex> g(fin_assembler_mu_);
@@ -12103,29 +12089,47 @@ private:
         const std::vector<uint8_t> script = AddressToScript(address);
         if (!address_history::IsCanonicalAddressScript(script))
             throw std::invalid_argument("invalid mainnet Veld address");
-        if (chain_.IsEmpty())
-            throw std::runtime_error("address history has no canonical tip");
-        const Block canonical_tip = chain_.TipCopy();
-        if (!address_history::MarkersMatch(
-                db_.GetIndexDB(), canonical_tip.height,
-                canonical_tip.GetHash())) {
-            CloseAddressHistory_();
-            throw std::runtime_error(
-                "address history index is stale; rebuild required");
-        }
-        const uint64_t revision =
-            address_history_revision_.load(std::memory_order_acquire);
-        const auto page = address_history::ReadPage(
-            db_.GetIndexDB(), script, limit, cursor);
-        if (!page ||
-            !address_history_ready_.load(std::memory_order_acquire) ||
-            address_history_revision_.load(std::memory_order_acquire) !=
-                revision ||
-            !address_history::MarkersMatch(
-                db_.GetIndexDB(), canonical_tip.height,
-                canonical_tip.GetHash()))
-            throw std::runtime_error(
-                "address history changed while reading; retry shortly");
+        const auto page = [&]() {
+            // A tip and its derived index publish in the same canonical
+            // transition. Pin that bounded read: observing the old tip with
+            // the newly published marker must not close a healthy index.
+            // Release the sequencer before formatting the response. The
+            // four-query admission bound above also limits waiting readers.
+            auto transition = chain_.AcquireConsensusTransitionGuard();
+            if (!address_history_ready_.load(std::memory_order_acquire))
+                throw std::runtime_error(
+                    "address history index is rebuilding; retry shortly");
+            if (chain_.IsEmpty())
+                throw std::runtime_error("address history has no canonical tip");
+            const Block canonical_tip = chain_.TipCopy();
+#ifdef VELD_TEST_ADDRESS_HISTORY_READ_HOOK
+#if !defined(VELD_TEST_HOOKS) || defined(VELD_PUBLIC_RELEASE)
+#error "address-history interleave hook is test-only"
+#endif
+            VELD_TEST_ADDRESS_HISTORY_READ_HOOK();
+#endif
+            if (!address_history::MarkersMatch(
+                    db_.GetIndexDB(), canonical_tip.height,
+                    canonical_tip.GetHash())) {
+                CloseAddressHistory_();
+                throw std::runtime_error(
+                    "address history index is stale; rebuild required");
+            }
+            const uint64_t revision =
+                address_history_revision_.load(std::memory_order_acquire);
+            const auto snapshot = address_history::ReadPage(
+                db_.GetIndexDB(), script, limit, cursor);
+            if (!snapshot ||
+                !address_history_ready_.load(std::memory_order_acquire) ||
+                address_history_revision_.load(std::memory_order_acquire) !=
+                    revision ||
+                !address_history::MarkersMatch(
+                    db_.GetIndexDB(), canonical_tip.height,
+                    canonical_tip.GetHash()))
+                throw std::runtime_error(
+                    "address history changed while reading; retry shortly");
+            return snapshot;
+        }();
 
         std::vector<std::string> rows;
         rows.reserve(page->entries.size());
@@ -12755,6 +12759,27 @@ private:
                 return ReadMinerArchiveRecord_(script_hex);
             });
 
+        rpc_.SetMiningTemplateBuilderFn([this](const std::vector<uint8_t>& script) {
+#if defined(VELD_FLEET_NO_MINE)
+            throw std::runtime_error("VELD_FLEET_NO_MINE: external mining disabled");
+            return Block{};
+#else
+            // RpcServer holds the consensus transition guard across this call.
+            RealKeyPair recipient;
+            recipient.script_override = script; // no miner private key needed
+            const auto settlements = PrepareMiningSettlements_();
+            const auto metadata = PendingFinalityCoinbaseMetadataUnderTransition_(settlements.height);
+            auto result = MineOnly(chain_, mempool_, recipient, 0, nullptr,
+                AddressToScript(POOL_ADDRESS), 1, nullptr, {}, nullptr, nullptr,
+                settlements.transactions,
+                [this](const Block& candidate) {
+                    return PreflightMiningCandidateUnderTransition_(candidate);
+                }, metadata, true);
+            if (!result.success)
+                throw std::runtime_error("canonical mining builder: " + result.error);
+            return result.block;
+#endif
+        });
         rpc_.SetMiningTemplatePreflightFn([this](const Block& candidate) {
             // RpcServer owns the consensus transition guard across the exact
             // parent snapshot, template construction, and this dry run.
@@ -14736,6 +14761,21 @@ private:
         std::cerr.flush();
     }
 
+    Block PrepareMiningSettlements_() {
+        Block block;
+        block.height = chain_.Height() + 1;
+        block.header.prev_block_hash = chain_.Tip().GetHash();
+        if (block.height > 0 && block.height % VAULT_DISTRIBUTION_INTERVAL == 0) {
+            (void)BuildEndorsementFlushTx(block);
+            (void)BuildVaultDistributionTx(block);
+            (void)BuildBondSettlementTx(block);
+            (void)BuildBondYieldSettlementTx(block);
+        }
+        if (block.height > 0 && block.height % COMINE_WINDOW_BLOCKS == 0)
+            (void)BuildPoolPayoutTx(block, AddressToScript(POOL_ADDRESS), mempool_);
+        return block;
+    }
+
     bool BuildPoolPayoutTx(Block& block, const std::vector<uint8_t>& pool_script, Mempool& ) {
         auto pool_utxos = chain_.GetUTXOsForScript(pool_script);
         if (pool_utxos.empty()) return false;
@@ -15734,22 +15774,7 @@ private:
                 // their exact canonical bytes and includes the same objects in
                 // the candidate, preventing a full mempool template from being
                 // solved and only then growing past MAX_BLOCK_SIZE.
-                Block settlement_probe;
-                settlement_probe.height = chain_.Height() + 1;
-                settlement_probe.header.prev_block_hash = chain_.Tip().GetHash();
-                if (settlement_probe.height > 0 &&
-                    settlement_probe.height % VAULT_DISTRIBUTION_INTERVAL == 0) {
-                    (void)BuildEndorsementFlushTx(settlement_probe);
-                    (void)BuildVaultDistributionTx(settlement_probe);
-                    (void)BuildBondSettlementTx(settlement_probe);
-                    (void)BuildBondYieldSettlementTx(settlement_probe);
-                }
-                if (settlement_probe.height > 0 &&
-                    settlement_probe.height % COMINE_WINDOW_BLOCKS == 0) {
-                    (void)BuildPoolPayoutTx(
-                        settlement_probe, AddressToScript(POOL_ADDRESS),
-                        mempool_);
-                }
+                Block settlement_probe = PrepareMiningSettlements_();
                 std::vector<Transaction> mandatory_settlements =
                     std::move(settlement_probe.transactions);
                 auto finality_metadata = PendingFinalityCoinbaseMetadata_(

@@ -5,6 +5,7 @@
 #include "../core/hash.h"
 #include "../core/pqc_script.h"
 #include "../core/pow_target.h"
+#include "nms_pow.h"
 #include "../mining/veldhash.h"
 #include "../crypto/ripemd160.h"
 #include <cstdint>
@@ -292,43 +293,9 @@ inline bool ValidateNms(const NmsRecord& rec,
         return false;
     }
 
-    const std::vector<uint8_t> target(
-        canonical_target.bytes.begin(), canonical_target.bytes.end());
-    std::vector<uint8_t> four_target(32, 0);
-    uint32_t carry = 0;
-    for (int i = 31; i >= 0; --i) {
-        uint32_t v = (uint32_t)target[i] * 4u + carry;
-        four_target[i] = (uint8_t)(v & 0xFF);
-        carry = v >> 8;
-    }
-    if (carry != 0) {
-        g_nms_verify_cache.Insert(cache_key, false);
-        return false;
-    }
-
-    bool pow_le_4tgt = false;
-    for (int i = 0; i < 32; ++i) {
-        if (pow[i] < four_target[i]) { pow_le_4tgt = true; break; }
-        if (pow[i] > four_target[i]) { pow_le_4tgt = false; break; }
-        if (i == 31) pow_le_4tgt = true;
-    }
-    if (!pow_le_4tgt) {
-        g_nms_verify_cache.Insert(cache_key, false);
-        return false;
-    }
-
-    bool pow_gt_tgt = false;
-    for (int i = 0; i < 32; ++i) {
-        if (pow[i] > target[i]) { pow_gt_tgt = true; break; }
-        if (pow[i] < target[i]) { pow_gt_tgt = false; break; }
-    }
-    if (!pow_gt_tgt) {
-        g_nms_verify_cache.Insert(cache_key, false);
-        return false;
-    }
-
-    g_nms_verify_cache.Insert(cache_key, true);
-    return true;
+    const bool valid = IsNmsProofInRange(pow, canonical_target);
+    g_nms_verify_cache.Insert(cache_key, valid);
+    return valid;
 }
 
 template <typename ChainT>
