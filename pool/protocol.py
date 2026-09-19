@@ -2,6 +2,12 @@ import json
 import re
 
 VERSION = 'veld-pool/1'
+# Private node responses carry the exact canonical block as hex. These bounds
+# track MAX_BLOCK_SIZE in core/constants.h; they do not change consensus or
+# the public worker's default 16 KiB message limit.
+MAX_BLOCK_BYTES = 8_000_000
+MAX_RPC_BYTES = 2 * MAX_BLOCK_BYTES + 64 * 1024
+MAX_JOURNAL_BYTES = MAX_RPC_BYTES + 64 * 1024
 HEX64 = re.compile(r'[0-9a-f]{64}\Z')
 NONCE = re.compile(r'[0-9a-f]{16}\Z')
 

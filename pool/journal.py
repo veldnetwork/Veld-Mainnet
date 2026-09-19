@@ -12,10 +12,12 @@ import threading
 import secrets
 import stat
 
-from .protocol import decode, encode, require, Refused, schema, hex64
+from .protocol import decode, encode, require, Refused, schema, hex64, MAX_JOURNAL_BYTES
 
 ZERO = '0' * 64
-MAX_EVENT = 4 * 1024 * 1024
+# Exact issued candidates must survive restart, including maximum-size blocks.
+# Leave bounded room for RPC metadata and the journal's integrity envelope.
+MAX_EVENT = MAX_JOURNAL_BYTES
 
 def directory_sync(path):
     if os.name != 'nt':

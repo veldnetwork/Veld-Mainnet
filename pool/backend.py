@@ -3,7 +3,7 @@ import ipaddress
 import threading
 import urllib.parse
 from pathlib import Path
-from .protocol import decode, encode, require, hex64, Refused, Busy
+from .protocol import decode, encode, require, hex64, Refused, Busy, MAX_BLOCK_BYTES, MAX_RPC_BYTES
 from .private_file import read_private
 
 class Node:
@@ -28,13 +28,14 @@ class Node:
             self.counter += 1
             identity = self.counter
         request = encode({'jsonrpc':'2.0','id':identity,'method':method,'params':list(parameters)})
+        require(len(request) <= MAX_RPC_BYTES, 'RPC request limit')
         connection = http.client.HTTPConnection(self.host, self.port, timeout=10)
         try:
             connection.request('POST', '/', request, {'Authorization':'Bearer '+token, 'Content-Type':'application/json'})
             response = connection.getresponse()
-            raw = response.read(4*1024*1024 + 1)
+            raw = response.read(MAX_RPC_BYTES + 1)
             require(response.status == 200, 'RPC HTTP failure')
-            result = decode(raw, 4*1024*1024)
+            result = decode(raw, MAX_RPC_BYTES)
             require(result.get('id') == identity, 'RPC response identity')
             if result.get('error') is not None:
                 error=result['error']
@@ -66,8 +67,15 @@ class Node:
         require(isinstance(result, dict), 'template object')
         for key in ('block_hex','work_binding','work_token','work_ttl_ms','height','target','prev_block_hash'):
             require(key in result, 'template missing '+key)
-        raw = bytes.fromhex(result['block_hex'])
-        require(92 <= len(raw) <= 1024*1024 and raw.hex() == result['block_hex'], 'template encoding')
+        encoded = result['block_hex']
+        # Bound before decoding or allocating a second full candidate copy.
+        require(isinstance(encoded, str) and 184 <= len(encoded) <= 2*MAX_BLOCK_BYTES,
+                'template encoding')
+        try:
+            raw = bytes.fromhex(encoded)
+        except ValueError as error:
+            raise Refused('template encoding') from error
+        require(raw.hex() == encoded, 'template encoding')
         require(raw[80:88] == bytes(8), 'template nonce')
         hex64(result['target']); hex64(result['prev_block_hash'])
         require(type(result['height']) is int and result['height'] > 0, 'template height')
