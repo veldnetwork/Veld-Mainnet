@@ -41,6 +41,14 @@ class Node:
                 error=result['error']
                 require(isinstance(error,dict) and type(error.get('code')) is int and
                         isinstance(error.get('message'),str),'RPC error schema')
+                # Native work admission remains closed until the node is ready.
+                # Tell workers to wait through replay/IBD instead of treating
+                # those exact read-only readiness refusals as fatal policy errors.
+                if method=='getblocktemplate' and error['code']==-32010 and error['message'] in (
+                    'getblocktemplate refused: sync_incomplete',
+                    'getblocktemplate refused: startup_replay_incomplete',
+                    'getblocktemplate refused: independent_validation_incomplete'):
+                    raise Busy('node still validating chain history; retry work when ready')
                 if error['code']==-32005 or (error['code']==-32010 and
                     ('local-work-unavailable' in error['message'] or 'capacity' in error['message'])):
                     raise Busy('node temporarily unavailable; retry the same operation')
