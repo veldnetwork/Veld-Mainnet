@@ -11,6 +11,7 @@
 #include "../include/consensus/validators.h"
 #include "../include/consensus/finality_daemon.h"
 #include "../include/consensus/finality_codec.h"
+#include "../include/consensus/finality_signing_journal.h"
 #include "../include/consensus/btcveld_anchor_params.h"
 #include "../include/wallet/wallet.h"
 #include "../include/wallet/wallet_crypto.h"
@@ -19,6 +20,7 @@
 #include "../include/compat/platform.h"
 #include "../include/compat/process.h"
 #include "../include/compat/endorse_guard.h"   //  shared anti-equivocation guard
+#include "../include/compat/validator_signing_state.h"
 #include "../include/network/strict_json.h"
 #include "../include/network/finality_rpc_limits.h"
 #if defined(VELD_RELEASE_INTEGRATION_NETWORK)
@@ -920,73 +922,8 @@ static bool submit_finality_vote(const std::string& host, uint16_t port,
            json_bool(*result, "accepted", accepted) && accepted;
 }
 
-static std::vector<uint8_t> encode_finality_journal(
-        const fq::DaemonJournal& journal) {
-    std::vector<uint8_t> out{'V','F','J','1'};
-    state_digest::put_u32_le(out, journal.version);
-    state_digest::put_u8(out, journal.lock.held ? 1 : 0);
-    state_digest::put_u64_le(out, journal.lock.epoch_id);
-    state_digest::put_u32_le(out, journal.lock.round);
-    state_digest::put_u64_le(out, journal.lock.target.height);
-    state_digest::put_bytes(out, journal.lock.target.hash.data(), 32);
-    state_digest::put_u8(out, journal.last_vote ? 1 : 0);
-    if (journal.last_vote) {
-        const auto vote = fq::EncodeSignedVoteWire(*journal.last_vote);
-        if (vote.size() != fq::SIGNED_VOTE_WIRE_BYTES) return {};
-        state_digest::put_bytes(out, vote.data(), vote.size());
-    }
-    const Hash256 checksum = state_digest::sha256_domain(
-        "VELD_FINALITY_DAEMON_JOURNAL_v1|", out);
-    state_digest::put_bytes(out, checksum.data(), checksum.size());
-    return out;
-}
-
-static std::optional<fq::DaemonJournal> decode_finality_journal(
-        const std::vector<uint8_t>& in) {
-    constexpr size_t BASE = 4 + 4 + 1 + 8 + 4 + 8 + 32 + 1;
-    if (in.size() != BASE + 32 &&
-        in.size() != BASE + fq::SIGNED_VOTE_WIRE_BYTES + 32)
-        return std::nullopt;
-    if (!std::equal(in.begin(), in.begin() + 4,
-                    std::array<uint8_t,4>{'V','F','J','1'}.begin()))
-        return std::nullopt;
-    const size_t checksum_at = in.size() - 32;
-    std::vector<uint8_t> body(in.begin(), in.begin() + (ptrdiff_t)checksum_at);
-    const Hash256 checksum = state_digest::sha256_domain(
-        "VELD_FINALITY_DAEMON_JOURNAL_v1|", body);
-    if (!std::equal(checksum.begin(), checksum.end(),
-                    in.begin() + (ptrdiff_t)checksum_at)) return std::nullopt;
-    size_t p = 4;
-    auto u8 = [&]() -> uint8_t { return in[p++]; };
-    auto u32 = [&]() { uint32_t v=0; for(int i=0;i<4;++i)v|=(uint32_t)in[p++]<<(8*i); return v; };
-    auto u64 = [&]() { uint64_t v=0; for(int i=0;i<8;++i)v|=(uint64_t)in[p++]<<(8*i); return v; };
-    fq::DaemonJournal journal;
-    journal.version = u32();
-    const uint8_t held = u8();
-    if (held > 1) return std::nullopt;
-    journal.lock.held = held != 0;
-    journal.lock.epoch_id = u64();
-    journal.lock.round = u32();
-    journal.lock.target.height = u64();
-    std::copy_n(in.begin() + (ptrdiff_t)p, 32,
-                journal.lock.target.hash.begin());
-    p += 32;
-    const uint8_t has_vote = u8();
-    if (has_vote > 1) return std::nullopt;
-    if (has_vote) {
-        if (p + fq::SIGNED_VOTE_WIRE_BYTES != checksum_at)
-            return std::nullopt;
-        std::vector<uint8_t> vote(
-            in.begin() + (ptrdiff_t)p,
-            in.begin() + (ptrdiff_t)(p + fq::SIGNED_VOTE_WIRE_BYTES));
-        auto decoded = fq::DecodeSignedVoteWire(vote);
-        if (!decoded) return std::nullopt;
-        journal.last_vote = std::move(*decoded);
-        p += fq::SIGNED_VOTE_WIRE_BYTES;
-    }
-    if (p != checksum_at) return std::nullopt;
-    return journal;
-}
+using fq::encode_finality_journal;
+using fq::decode_finality_journal;
 
 static bool broadcast_op_return(const std::string& host, uint16_t port,
                                   const std::string& from_address,
@@ -1347,7 +1284,12 @@ static int run_daemon(const std::string& host, uint16_t port,
     // endorsement at a height already endorsed — the slashable pattern a reorg
     // would otherwise trigger. See include/compat/endorse_guard.h.
     EndorseAntiEquivGuard endorse_guard;
-    endorse_guard.load(keyfile + ".endorsed");
+    veld::compat::ValidatorSigningState signing_state(veld::GENESIS_HASH);
+    if (!endorse_guard.load(keyfile + ".endorsed") ||
+        !signing_state.Acquire(vk.pubkey_hex, endorse_guard)) {
+        log(RED, "Validator signing disabled: " + endorse_guard.error() + " " + signing_state.error());
+        return 1;
+    }
 
     // The same 32-byte validator seed deterministically expands to the full
     // ML-DSA secret key used by finality votes. Refuse startup unless the
@@ -1364,9 +1306,7 @@ static int run_daemon(const std::string& host, uint16_t port,
         return 1;
     }
 
-    const std::string finality_dir = keyfile + ".finality-state";
-    const std::string finality_journal =
-        (std::filesystem::path(finality_dir) / "journal.bin").string();
+    const std::string finality_dir = signing_state.Directory(vk.pubkey_hex);
     std::string journal_error;
     if (!veld::channel::secure_file::EnsurePrivateDirectory(
             finality_dir, &journal_error)) {
@@ -1420,38 +1360,16 @@ static int run_daemon(const std::string& host, uint16_t port,
         transport_grant.deadline = grant.deadline;
         return submit_finality_vote(host, port, vote, transport_grant);
     };
+    fq::DurableFinalityJournal durable_finality(finality_dir);
     finality_hooks.persist_journal = [&](const fq::DaemonJournal& journal) {
-        auto bytes = encode_finality_journal(journal);
-        std::string why;
-        const bool ok = !bytes.empty() &&
-            veld::channel::secure_file::AtomicWrite(
-                finality_journal, bytes, &why, true);
-        veld::compat::SecureZero(bytes.data(), bytes.size());
-        if (!ok) log(RED, "Finality journal durable write failed: " + why);
+        const bool ok = durable_finality.Persist(journal);
+        if (!ok) log(RED, "Finality signing stopped: " + durable_finality.error());
         return ok;
     };
-    finality_hooks.load_journal = [&]()
-        -> std::optional<fq::DaemonJournal> {
-        std::vector<uint8_t> bytes;
-        std::string why;
-        const auto result = veld::channel::secure_file::Read(
-            finality_journal, bytes, &why, 64u * 1024u, true);
-        if (result == veld::channel::secure_file::ReadResult::NotFound)
-            return std::nullopt;
-        if (result == veld::channel::secure_file::ReadResult::Error) {
-            log(RED, "Finality journal read failed: " + why);
-            fq::DaemonJournal invalid;
-            invalid.version = 0;  // constructor latches fail-closed
-            return invalid;
-        }
-        auto journal = decode_finality_journal(bytes);
-        veld::compat::SecureZero(bytes.data(), bytes.size());
-        if (!journal) {
-            log(RED, "Finality journal is malformed; voting disabled");
-            fq::DaemonJournal invalid;
-            invalid.version = 0;
-            return invalid;
-        }
+    finality_hooks.load_journal = [&]() -> std::optional<fq::DaemonJournal> {
+        auto journal = durable_finality.Load(keyfile + ".finality-state");
+        if (journal && journal->version != 1)
+            log(RED, "Finality signing disabled: " + durable_finality.error());
         return journal;
     };
     finality_hooks.fetch_finalized = [&]() { return cached_finalized; };
@@ -1557,7 +1475,7 @@ static int run_daemon(const std::string& host, uint16_t port,
                     }
                     WorkGrantCancelGuard endorsement_release(
                         host, port, *endorsement_work);
-                    if (!endorse_guard.record(eq_key, block_hash)) {
+                    if (!signing_state.Record(vk.pubkey_hex, height, block_hash, endorse_guard)) {
                         ++consecutive_errors;
                         log(RED, "Refusing to sign block " +
                             std::to_string(height) +

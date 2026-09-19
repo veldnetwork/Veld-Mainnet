@@ -1657,6 +1657,7 @@ static LONG WINAPI VeldCrashFilter_(EXCEPTION_POINTERS* ep) {
 // src/veld-validator.cpp via this header so the slashing-safety logic lives in
 // exactly one place. See the header for the full rationale.
 #include "../include/compat/endorse_guard.h"
+#include "../include/compat/validator_signing_state.h"
 
 static void PrintDeploymentInfoJson() {
     const veld::NetworkConfig config = veld::MainnetConfig();
@@ -4784,9 +4785,11 @@ int main(int argc, char* argv[]) {
             static std::mutex local_attempt_ts_mu_;
             //  persistent per-(height,pubkey) anti-equivocation record.
             static EndorseAntiEquivGuard endorse_guard_;
+            static veld::compat::ValidatorSigningState validator_signing_state_(veld::GENESIS_HASH);
             static std::once_flag endorse_guard_init_;
             std::call_once(endorse_guard_init_, [&]{
-                endorse_guard_.load(opt_datadir + "/endorsed_heights.dat");
+                if (!endorse_guard_.load(opt_datadir + "/endorsed_heights.dat"))
+                    std::cerr << "[endorse] Signing disabled: " << endorse_guard_.error() << '\n';
             });
             const uint64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -4883,14 +4886,15 @@ int main(int argc, char* argv[]) {
                             }
                             continue;
                         }
-                        if (!endorse_guard_.record(eq_key, ehash_hex)) {
+                        if (!validator_signing_state_.Record(epub, eh, ehash_hex, endorse_guard_)) {
                             ++total_mp_reject;
                             last_mp_reject = "ENDORSE_JOURNAL_IO";
                             if (log_this_round) {
                                 std::cerr << "  [endorse] REFUSE h=" << eh
                                           << " — anti-equivocation journal could not "
                                              "durably record this vote (or records a "
-                                             "conflict); no signature produced.\n";
+                                             "conflict); no signature produced. "
+                                          << validator_signing_state_.error() << "\n";
                                 std::cerr.flush();
                             }
                             continue;

@@ -5,6 +5,8 @@ are tracked separately; publishing source does not release new binaries.
 
 ## Unreleased
 
+- Prevent competing validator processes and restored chain directories from forgetting signing decisions within one OS profile.
+- Stop validator signing on damaged or changed safety journals; retain exact finality votes for safe restart and retry.
 - Save browser-wallet input reservations before signing and exact signed transactions before broadcasting.
 - Recover uncertain sends across browser restarts and resume interrupted signing of the original transaction.
 - Keep spendable balances consistent with saved input reservations across wallet tabs and reversible confirmations.

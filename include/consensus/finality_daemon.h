@@ -22,9 +22,9 @@
 // because it is the same hazard: a reorg that tempts a validator to re-vote a
 // conflicting target.
 //
-// NOT consensus-critical. Nothing here is a validation rule; a daemon that
-// misbehaves produces votes that fail verification and are ignored. This can be
-// rewritten without a fork.
+// Local signing policy, not a consensus validation rule. Conflicting valid
+// signatures can be slashable even when no conflicting certificate forms.
+// Changes to this protection do not change block acceptance or require a fork.
 
 #include "consensus/finality_producer.h"
 #include "consensus/finality_snapshot.h"
@@ -186,17 +186,27 @@ public:
     // Feed a prevote QC the daemon observed (from the node's assembler, over
     // the same transport). Held until the daemon reaches the precommit step.
     bool ObservePrevoteQc(DecodedQc qc, const EpochSnapshot& snapshot) {
+        std::lock_guard<std::mutex> lock(mu_);
+        return ObservePrevoteQc_(std::move(qc), snapshot);
+    }
+
+private:
+    bool ObservePrevoteQc_(DecodedQc qc, const EpochSnapshot& snapshot) {
         if (!VerifyDecodedQc(qc, snapshot, network_id_, genesis_hash_) ||
             qc.qc.phase != Phase::PREVOTE) return false;
         latest_prevote_qc_ = std::move(qc);
         return true;
     }
 
+public:
     bool Tick() {
+        // Serialize the complete read/authorize/sign/persist/send transition.
+        // The voter's own mutex alone does not protect the daemon journal.
+        std::lock_guard<std::mutex> lock(mu_);
         if (!hooks_.fetch_snapshot || !hooks_.fetch_tip_height ||
             !hooks_.fetch_block_hash || !hooks_.authorize_work ||
             !hooks_.gossip_vote ||
-            !hooks_.persist_journal || journal_invalid_)
+            !hooks_.persist_journal || !hooks_.load_journal || journal_invalid_)
             return false;
 
         const uint64_t tip = hooks_.fetch_tip_height();
@@ -212,7 +222,7 @@ public:
 
         if (hooks_.fetch_prevote_qc) {
             if (auto observed = hooks_.fetch_prevote_qc(*snap))
-                (void)ObservePrevoteQc(std::move(*observed), *snap);
+                (void)ObservePrevoteQc_(std::move(*observed), *snap);
         }
 
         auto target_hash = hooks_.fetch_block_hash(target_h);
@@ -347,7 +357,7 @@ public:
                 }
                 // Persist the complete lock+vote frame BEFORE gossiping.
                 DaemonJournal next{1, voter_.lock(), *pc};
-                if (!hooks_.persist_journal(next)) {
+                if (!Persist_(next)) {
                     return false;
                 }
                 journal_ = std::move(next);
@@ -382,7 +392,7 @@ public:
             return false;
         }
         DaemonJournal next{1, voter_.lock(), *pv};
-        if (!hooks_.persist_journal(next)) {
+        if (!Persist_(next)) {
             return false;
         }
         journal_ = std::move(next);
@@ -399,6 +409,15 @@ public:
     const FinalityVoter& voter() const { return voter_; }
 
 private:
+    bool Persist_(const DaemonJournal& next) {
+        // A failed flush/rename may still have committed bytes. Do not continue
+        // from stale memory; restart must reload and validate the durable frame.
+        try {
+            if (hooks_.persist_journal(next)) return true;
+        } catch (...) {}
+        journal_invalid_ = true;
+        return false;
+    }
     // Newest checkpoint height <= tip that is buried by at least the vote
     // window (so the block is stable enough that honest nodes agree on its
     // hash). Zero if none qualifies yet.
@@ -412,6 +431,7 @@ private:
         return cp;
     }
 
+    std::mutex            mu_;
     FinalityVoter          voter_;
     uint32_t               network_id_;
     Hash256                genesis_hash_;

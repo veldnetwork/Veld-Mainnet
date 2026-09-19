@@ -156,6 +156,20 @@ operator's data directory or public infrastructure.
 
 ## Reporting results
 
+Validator signing safety has a reproducible native gate:
+
+```sh
+python3 tests/run_validator_signing_safety.py --output ../validator-safety-results
+```
+
+Run separately on Linux (GCC) and Windows (MSYS2 CLANG64 compiler/runtime on
+PATH, native Python). `--cc` and `--cxx` accept explicit compiler paths. The
+output directory must be new and outside the source tree. The gate compiles
+fresh PQC objects, records commands, source/binary hashes and logs, and uses
+only disposable safety directories and keys. Chain callbacks are synthetic;
+signatures, journal code, quorum assembly and verification are production paths.
+See [validator signing safety](../docs/operations/validator-signing-safety.md).
+
 Include the source commit, platform, commands, and results in a pull request.
 Distinguish source checks, native execution, browser rendering, and release
 build validation. A skipped platform or unavailable dependency is an unrun
