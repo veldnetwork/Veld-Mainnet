@@ -26,8 +26,8 @@ and systemd installation remain explicit unexecuted requirements.
 
 The entrypoint creates a loopback-only network namespace before starting tests.
 It builds both the unchanged validator-gate profile and a candidate with an
-isolated activation at height 6800. That height is a disposable test boundary,
-not a proposed or selected mainnet activation. All output directories must be
+isolated activation at height 9000. It matches the selected candidate boundary
+on a separate disposable chain; this exercise does not activate mainnet. All output directories must be
 new. Runtime chain data, keys and signing history are private `/var/tmp/veld-pool-*`
 directories outside the checkout. No existing production datadir is selected.
 

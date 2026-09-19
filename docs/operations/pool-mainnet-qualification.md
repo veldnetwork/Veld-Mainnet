@@ -4,11 +4,12 @@ This candidate can build unsigned public-profile artifacts. It is not an
 approved release, deployment or completed qualification result.
 
 The owner authorized a new mainnet activation on 19 September 2026. The
-candidate selects block 12,000, with 3,675 blocks remaining at the observed
-height 8,325. This is approximately 7.7 days at the target block interval,
-not a wall-clock guarantee. The inherited proposed height 6,200 is superseded.
+candidate selects block 9,000, with 675 blocks remaining at the observed
+height 8,325. This is approximately 34 hours at the target block interval,
+not a wall-clock guarantee. The inherited proposed height 6,200 and the later
+12,000 proposal are superseded following the owner's request for earlier activation.
 Public validation retains the aggregate registration prerequisite through
-block 11,999 and removes it at inclusion height 12,000. The individual 10,000 VELD bond,
+block 8,999 and removes it at inclusion height 9,000. The individual 10,000 VELD bond,
 1,000 VELD co-mining eligibility, governance, finality and custody gates remain
 unchanged. This is a coordinated consensus upgrade. Production nodes must be
 updated before the boundary. Candidate configuration does not prove rollout;

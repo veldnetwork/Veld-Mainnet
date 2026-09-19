@@ -70,7 +70,7 @@ def main():
             if not line or line.startswith('#'):continue
             obj=str(out/'obj'/f'pqc-{index}.o');objects.append(obj)
             run('pqc-'+str(index),['cc','-std=c11','-O2','-Ivendor/pqc','-Ivendor/pqc/mldsa65','-c',line,'-o',obj])
-        for variant,height in [('existing',0),('candidate',6800)]:
+        for variant,height in [('existing',0),('candidate',9000)]:
             target=out/variant;target.mkdir()
             for name,source,stateful in [
                 ('pool-work','src/veld-pool-work.cpp',False),('pool-client','src/veld-pool-client.cpp',False),
@@ -86,12 +86,12 @@ def main():
         # The shipped service wrapper is exercised against the actual CLI
         # entrypoint too. Its test-only chain identity cannot reach mainnet.
         run('canonical-cli',['c++','-std=c++20','-O2','-g0','-pthread',*BASE,
-            '-DVELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT=6800','-DVELD_USE_LEVELDB','-DVELD_LIGHT_VERIFY',
+            '-DVELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT=9000','-DVELD_USE_LEVELDB','-DVELD_LIGHT_VERIFY',
             '-Iinclude','-Ivendor/pqc','src/veld-node.cpp',*objects,'-lleveldb','-lssl','-lcrypto',
             '-o',str(out/'candidate/veld-node')])
         report['binaries']['candidate/veld-node']=hashlib.sha256((out/'candidate/veld-node').read_bytes()).hexdigest()
         run('native-history-race',['c++','-std=c++20','-O2','-g0','-pthread',*BASE,
-            '-DVELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT=6800','-DVELD_USE_LEVELDB','-DVELD_LIGHT_VERIFY',
+            '-DVELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT=9000','-DVELD_USE_LEVELDB','-DVELD_LIGHT_VERIFY',
             '-Iinclude','-Ivendor/pqc','tests/pool_history_publication_race.cpp',*objects,'-lleveldb','-lssl','-lcrypto',
             '-o',str(out/'candidate/history-race')])
         report['binaries']['candidate/history-race']=hashlib.sha256((out/'candidate/history-race').read_bytes()).hexdigest()

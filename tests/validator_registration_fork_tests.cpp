@@ -3,7 +3,7 @@
 #define VELD_TEST_HOOKS 1
 #define VELD_DSTATE_QUALIFICATION 1
 #define VELD_PROTOCOL_UPGRADE_TEST_HEIGHT 3840
-#define VELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT 6200
+#define VELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT 9000
 
 #include "consensus/validators.h"
 #include "wallet/wallet.h"
@@ -32,7 +32,7 @@ static Block Operation(const RealKeyPair& key, uint64_t height,
 
 int main() {
     constexpr uint64_t H = VALIDATOR_REGISTRATION_FORK_HEIGHT;
-    static_assert(H == 6200);
+    static_assert(H == 9000);
     static_assert(MIN_VALIDATOR_STAKE == 10000ULL * VELD_UNITS);
     static_assert(MIN_STAKE_UNITS == 1000ULL * VELD_UNITS);
     static_assert(MinimumStakeAtHeight(H) == 500ULL * VELD_UNITS);
@@ -45,6 +45,26 @@ int main() {
         std::vector<uint8_t>(key.public_key.begin(), key.public_key.end()));
     ValidatorRegistry registry;
     const auto empty = registry.SnapshotState();
+    // Isolated module fixtures: real signatures, synthetic input references.
+    // Full UTXO funding and block admission are exercised by the native chain
+    // qualification; these cases establish the exact height/floor contract.
+    for (uint64_t height : {H - 1, H, H + 1}) {
+        for (uint64_t total : {uint64_t{0}, VALIDATOR_UNLOCK_STAKED - 1,
+                               VALIDATOR_UNLOCK_STAKED, VALIDATOR_UNLOCK_STAKED + 1}) {
+            ValidatorRegistry boundary;
+            boundary.SetTotalStaked(total);
+            const bool permitted = height >= H || total >= VALIDATOR_UNLOCK_STAKED;
+            assert(boundary.RegistrationPreparationError(public_key, key.address, height, total).empty() == permitted);
+            assert(boundary.IsValidatorSystemActive(height) == permitted);
+            assert(boundary.ProcessBlock(Operation(key, height, "REGISTER", MIN_VALIDATOR_STAKE), zero_stake));
+            const auto applied = boundary.SnapshotState();
+            assert(applied.validators.contains(public_key) == permitted);
+            if (permitted) {
+                assert(applied.validators.at(public_key).bond_units == MIN_VALIDATOR_STAKE);
+                assert(applied.validators.at(public_key).bond_custodial);
+            }
+        }
+    }
     assert(!registry.RegistrationPreparationError(public_key, key.address, H - 1, 0).empty());
     assert(registry.RegistrationPreparationError(public_key, key.address, H, 0).empty());
     assert(!registry.IsValidatorSystemActive(H - 1));
@@ -107,5 +127,5 @@ int main() {
     registry.RestoreState(empty);
     assert(registry.ProcessBlock(register_at_fork, zero_stake));
     assert(registry.ValidatorsDigest() == digest);
-    std::cout << "PASS validator_registration_fork_tests height=6200 module-boundary-only\n";
+    std::cout << "PASS validator_registration_fork_tests height=9000 module-boundary-only\n";
 }

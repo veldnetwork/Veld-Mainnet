@@ -1,7 +1,7 @@
 """Naturally funded first-validator admission on a private canonical chain.
 
-The isolated boundary is 6800, allowing a sole miner to earn the unchanged 10k
-individual bond before activation. This is NOT a live activation selection.
+The isolated boundary is 9000, matching the candidate's selected height while
+using a separate disposable chain. The individual 10k bond is unchanged.
 No synthetic UTXOs, altered subsidies, signature bypass or fake node is used.
 """
 import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile,time,traceback
@@ -18,7 +18,7 @@ parser.add_argument('--history-state',type=pathlib.Path,required=True)
 parser.add_argument('--output',type=pathlib.Path,required=True)
 parser.add_argument('--public-identities',type=pathlib.Path,help='public identity receipt for an older closed fixture')
 args=parser.parse_args();build=args.build_directory;out=args.output
-H=6800  # isolated funded qualification boundary; not a mainnet selection
+H=9000  # disposable network; no live activation is performed by this exercise
 history=pathlib.Path(args.history_state).resolve()
 assert history.parent==pathlib.Path('/var/tmp') and history.name.startswith('veld-pool-history-')
 for p in pathlib.Path('/proc').iterdir():
