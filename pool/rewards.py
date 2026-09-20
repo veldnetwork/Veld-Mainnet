@@ -5,7 +5,7 @@ using contributions at [previous D+1,D-2]. A missed seal quarantines income.
 Neither a payment-time participant list nor a sender-supplied marker is evidence.
 """
 from fractions import Fraction
-from .accounting import allocate, window_weights, text
+from .accounting import allocate_policy, window_weights, text
 from .protocol import require, units, hex64
 
 
@@ -35,7 +35,7 @@ class Rewards:
             if identity in self.seals:continue
             self.record('reward_seal',{'id':identity,'category':category,'draw':draw,
                 'first':max(1,draw-interval+1),'last':draw-2,'parent':parent,
-                'cutoff':self.pool.journal.sequence,'policy':'verified-window-shared-yield-fee-0-v1'})
+                'cutoff':self.pool.journal.sequence,'policy':'verified-window-shared-yield-share-policy-v2'})
 
     def reconcile(self):
         # Bounded native address index pagination. Each tick processes at most
@@ -68,12 +68,12 @@ class Rewards:
             if self.pool.unresolved(seal['cutoff']):continue
             receipts=self.pool.receipts.select(status='verified',cutoff=seal['cutoff'],
                                                first=seal['first'],last=seal['last'])
-            weights=window_weights(receipts,seal['first'],seal['last'],seal['cutoff'])
+            weights=window_weights(receipts,seal['first'],seal['last'],seal['cutoff'],fee_policy=True)
             if not weights:
                 if identity not in self.quarantined:self.record('reward_quarantine',
                     {'id':identity,'block':block,'txid':txid,'amount':str(amount),'reason':'no verified contributors'})
                 continue
-            credits,fee=allocate(amount,weights)
+            credits,fee=allocate_policy(amount,weights)
             self.pool.record('income',{'id':identity,'block':block,'height':height,'txid':txid,
                 'outputs':[{'vout':o['n'],'units':o['value_units']} for o in outputs],
                 'amount':str(amount),'category':category,'policy':seal['policy'],'seal':seal['id'],

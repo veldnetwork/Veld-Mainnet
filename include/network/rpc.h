@@ -753,6 +753,9 @@ public:
         work_admission::Decision decision{};
         std::string token;
         uint64_t ttl_ms{0};
+        // Only an exhausted bounded issuance store sets this. Other runtime,
+        // binding, entropy and policy failures retain their refusal semantics.
+        bool capacity_limited{false};
     };
     using IssueBlockTemplateAuthorizationFn =
         std::function<BlockTemplateAuthorizationResult(
@@ -3056,10 +3059,17 @@ private:
         });
 #endif
 
-        methods_["getaddressfrompubkey"] = RpcMethod([](const P& params) -> std::string {
+        methods_["getaddressfrompubkey"] = RpcMethod([this](const P& params) -> std::string {
             if (params.empty()) throw std::invalid_argument("Missing pubkey_hex");
             auto pk_hex = params[0];
             if (pk_hex.size() != 3904) throw std::invalid_argument("Public key must be 1952 bytes (3904 hex chars, ML-DSA-65)");
+            if (pk_hex.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+                throw std::invalid_argument("Public key must be hexadecimal");
+            const bool wide = params.size() == 2 && params[1] == "sha384-v1";
+            if (params.size() > 2 || (params.size() == 2 && !wide && params[1] != "legacy"))
+                throw std::invalid_argument("Destination type must be legacy or sha384-v1");
+            if (wide && !Sha384DestinationsActive(chain_.Height() + 1))
+                throw std::invalid_argument("SHA-384 destinations are not active at the next block height");
             std::array<uint8_t,1952> pubkey;
             for (size_t i = 0; i < 1952; ++i)
                 pubkey[i] = (uint8_t)std::stoi(pk_hex.substr(i*2, 2), nullptr, 16);
@@ -3068,7 +3078,7 @@ private:
 #else
             constexpr bool rpc_testnet_address = true;
 #endif
-            std::string addr = PubKeyToAddress(pubkey, rpc_testnet_address);
+            std::string addr = wide ? PubKeyToSha384Address(pubkey, rpc_testnet_address) : PubKeyToAddress(pubkey, rpc_testnet_address);
             return "{\"address\":\"" + addr + "\"}";
         });
 
@@ -3247,14 +3257,15 @@ private:
         });
 #endif
 
-        methods_["validateaddress"] = RpcMethod([](const P& params) -> std::string {
+        methods_["validateaddress"] = RpcMethod([this](const P& params) -> std::string {
             if (params.empty()) throw std::invalid_argument("Missing address");
             const std::string& addr = params[0];
             uint8_t version = 0;
             std::vector<uint8_t> payload;
-            bool valid = addr.size() <= 50 && Base58CheckDecode(addr, version, payload)
-                         && payload.size() == 20
-                         && (version == 0x46 || version == 0x6F);
+            const bool decoded = addr.size() <= 75 && Base58CheckDecode(addr, version, payload);
+            const bool wide = decoded && payload.size() == 48 &&
+                version == (SHA384_DESTINATION_TEST_NETWORK ? SHA384_DESTINATION_TESTNET : SHA384_DESTINATION_MAINNET);
+            bool valid = decoded && ((payload.size() == 20 && (version == 0x46 || version == 0x6F)) || wide);
             std::string network = (version == 0x6F) ? "testnet" :
 #ifdef VELD_PUBLIC_TESTNET
                 "public-testnet";
@@ -3265,6 +3276,8 @@ private:
                 {"isvalid", JsonBuilder::Bool(valid)},
                 {"address", JsonBuilder::String(addr)},
                 {"ismine",  JsonBuilder::Bool(false)},
+                {"destination_type", JsonBuilder::String(valid ? (wide ? "sha384-v1" : "legacy") : "unknown")},
+                {"active_for_next_block", JsonBuilder::Bool(valid && (!wide || Sha384DestinationsActive(chain_.Height()+1)))},
                 {"network", JsonBuilder::String(valid ? network : "unknown")},
 #ifdef VELD_PUBLIC_TESTNET
                 {"profile_id", JsonBuilder::String(DEPLOYMENT_PROFILE_ID)},
@@ -6524,6 +6537,9 @@ private:
             auto to_script = AddressToScript(to_addr);
             if (to_script.empty())
                 throw std::invalid_argument("Invalid to address: " + to_addr);
+            if ((IsSha384KeyScript(from_script) || IsSha384KeyScript(to_script)) &&
+                !Sha384DestinationsActive(chain_.Height()+1))
+                throw std::invalid_argument("SHA-384 destinations are not active at the next block height");
 
             WalletState ws = ComputeWalletState(from_addr);
             const uint64_t staked_units = ws.staked_units;
@@ -6659,6 +6675,8 @@ private:
 
             WalletState ws = ComputeWalletState(addr);
             constexpr size_t MIN_UTXOS_TO_CONSOLIDATE = 2;
+            if (IsSha384KeyScript(script) && !Sha384DestinationsActive(chain_.Height()+1))
+                throw std::invalid_argument("SHA-384 destinations are not active at the next block height");
             if (ws.selectable.size() < MIN_UTXOS_TO_CONSOLIDATE) {
                 throw std::runtime_error(
                     "Wallet not fragmented enough to consolidate (has " +
@@ -7689,6 +7707,8 @@ private:
             // template even though the in-process miner is protected.
             auto transition_guard = chain_.AcquireConsensusTransitionGuard();
             if (chain_.IsEmpty()) throw std::runtime_error("Chain not ready");
+            if (IsSha384KeyScript(miner_script) && !Sha384DestinationsActive(chain_.Height()+1))
+                throw std::invalid_argument("SHA-384 miner destination is not active at the next block height");
             if (!mining_template_preflight_fn_)
                 throw rpc_error(-32603,
                     "getblocktemplate unavailable: full module preflight is not wired");
@@ -7823,6 +7843,14 @@ private:
             } catch (...) {
                 template_authorization.decision = {
                     false, work_admission::Refusal::Unwired, std::nullopt};
+            }
+            if (template_authorization.capacity_limited &&
+                !template_authorization.decision.allowed &&
+                !template_authorization.decision.binding &&
+                template_authorization.token.empty() &&
+                template_authorization.ttl_ms == 0) {
+                throw rpc_error(-32005,
+                    "getblocktemplate authorization capacity; retry shortly");
             }
             if (!template_authorization.decision.allowed ||
                 !template_authorization.decision.binding ||

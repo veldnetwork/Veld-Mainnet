@@ -3,17 +3,21 @@
 This candidate can build unsigned public-profile artifacts. It is not an
 approved release, deployment or completed qualification result.
 
-The owner authorized a new mainnet activation on 19 September 2026. The
-candidate selects block 9,000, with 675 blocks remaining at the observed
-height 8,325. This is approximately 34 hours at the target block interval,
-not a wall-clock guarantee. The inherited proposed height 6,200 and the later
-12,000 proposal are superseded following the owner's request for earlier activation.
+The owner postponed the unpublished candidate activation to block **9,500**
+on 20 September 2026. This supersedes the 9,000 candidate. Validator registration,
+SHA-384 destinations and the 0.30% flat AMM fee use the same inclusion boundary.
+At the observed height 8,807, 693 blocks remained (about 34.7 hours at the
+180-second target, not a wall-clock guarantee). Recheck the tip and rollout
+coverage before releasing or activating; no production rollout is established
+by this document.
+
 Public validation retains the aggregate registration prerequisite through
-block 8,999 and removes it at inclusion height 9,000. The individual 10,000 VELD bond,
-1,000 VELD co-mining eligibility, governance, finality and custody gates remain
-unchanged. This is a coordinated consensus upgrade. Production nodes must be
-updated before the boundary. Candidate configuration does not prove rollout;
-record the deployed versions and exact release identities independently.
+block 9,499 and removes it at inclusion height 9,500. The individual 10,000 VELD
+bond, 1,000 VELD co-mining eligibility, governance, finality and custody gates
+remain unchanged. Previously distributed binaries carrying the 9,000 rules
+must be replaced or stopped before their old boundary. Changing this source
+does not change binaries already installed. Selected-miner package signing is
+authorized; public release, deployment and publication remain on hold.
 
 Build the dedicated Linux backend and pool with `build/mainnet-v2-pool.sh`
 from this clean candidate checkout. Build Windows node, desktop and GUI roles

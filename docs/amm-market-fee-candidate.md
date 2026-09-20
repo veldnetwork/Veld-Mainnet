@@ -1,7 +1,7 @@
 # Market-priced VELD swaps: 3.2.1 production candidate
 
 Status: included in the isolated production source candidate, scheduled at
-mainnet block **9,000**. This document does not establish a signed release,
+mainnet block **9,500**. This document does not establish a signed release,
 deployment or activation on the running network.
 Starting source: `1e28248ee6b5c248f54b79d22766dab97ba65b69`, tree
 `3535475029fbcd949165bb363275ec58a1f2fceb`. Build receipts identify the exact
@@ -72,11 +72,11 @@ automatic fee controller, coordinator discretion or new governance power.
 
 ## Consensus and migration
 
-`BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT` is **9,000 in public mainnet builds**,
+`BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT` is **9,500 in public mainnet builds**,
 coordinated with the candidate's existing validator upgrade. Other production
 profiles retain height 0 (inactive). Only an isolated test-chain build with test
 hooks may override it. The accelerated component-test boundary is height 100;
-tests also exercise the actual public boundary at blocks 8,999/9,000/9,001.
+tests also exercise the actual public boundary at blocks 9,499/9,500/9,501.
 
 Before activation, the old four-band algorithm executes unchanged. At and after
 activation, the same canonical quote entrypoint applies 30 bps without using

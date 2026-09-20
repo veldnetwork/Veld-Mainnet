@@ -8,5 +8,6 @@ int main(int argc,char** argv) {
         veld::pool::TlsClient client(argv[1],argv[2]);
         client.Call("register","{\"address\":\"transport-test-not-a-wallet\"}");
         std::cout<<"PASS authenticated bounded response\n";return 0;
-    } catch(const std::exception&) {std::cout<<"REFUSED\n";return 1;}
+    } catch(const veld::pool::Retry& retry) {std::cout<<"RETRY "<<retry.what()<<'\n';return 2;}
+      catch(const std::exception&) {std::cout<<"REFUSED\n";return 1;}
 }

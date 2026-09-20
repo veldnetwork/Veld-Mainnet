@@ -4,6 +4,7 @@ from collections import OrderedDict
 import http.client
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import math
 import os
 import re
 import time
@@ -232,11 +233,36 @@ def network_hashrate(bits, seconds):
     return round((2**256) / (target + 1) / seconds, 2)
 
 
+def observed_hashrate(blocks):
+    """Legacy-backend display fallback; blocks are canonical, newest first."""
+    if len(blocks) < 2:
+        return None, 0, 0
+    # The oldest block is the starting boundary, not an earned interval.
+    work = 0
+    for block in blocks[:-1]:
+        bits = block.get('bits')
+        if type(bits) is not int or not 0 < bits <= 0xffffffff or bits & 0x00800000:
+            raise ValueError('invalid compact target')
+        exponent, mantissa = bits >> 24, bits & 0x007fffff
+        target = mantissa >> (8 * (3-exponent)) if exponent <= 3 else mantissa << (8 * (exponent-3))
+        if not 0 < target <= (0x7fffff << (8 * 29)):
+            raise ValueError('invalid target range')
+        size=(target.bit_length()+7)//8
+        compact=target << (8*(3-size)) if size<=3 else target >> (8*(size-3))
+        if compact & 0x800000: compact >>= 8; size += 1
+        if compact | (size << 24) != bits:
+            raise ValueError('noncanonical compact target')
+        work += (1 << 256) // (target + 1)
+    seconds=max(b['time'] for b in blocks)-min(b['time'] for b in blocks)
+    return (work / seconds if seconds else None), len(blocks)-1, seconds
+
+
 class StatsCollector:
     def __init__(self, read=read_public):
         self.read = read
         self.tip_key = None
         self.bits = None
+        self.estimate = None
 
     def collect(self):
         for _ in range(2):
@@ -247,24 +273,33 @@ class StatsCollector:
             if not isinstance(tip, str) or re.fullmatch("[a-f0-9]{64}", tip) is None:
                 raise ValueError("invalid tip")
             key = (height, tip)
+            if stats.get('hashrate_method') == 'canonical_work_over_observed_time':
+                rate, count, seconds = (stats.get(k) for k in ('hashrate','hashrate_window_blocks','hashrate_window_seconds'))
+                if (stats.get('hashrate_sample_height') != height or type(count) is not int or not 0 <= count <= 144
+                    or type(seconds) is not int or not 0 <= seconds < 2**64
+                    or (rate is not None and (type(rate) not in (int,float) or not math.isfinite(rate) or rate <= 0))
+                    or (rate is not None and (not count or not seconds))):
+                    raise ValueError('invalid native hashrate estimate')
+                return dict(stats)
             if key == self.tip_key:
-                bits = self.bits
+                estimate = self.estimate
             else:
-                blocks = bounded_block_page(self.read, height, 1)
-                if not isinstance(blocks, list) or len(blocks) != 1:
-                    raise ValueError("missing block")
+                blocks = bounded_block_page(self.read, height, min(25,height+1))
                 block = blocks[0]
                 if not isinstance(block, dict):
                     raise ValueError("invalid block")
                 if block.get("height") != height or block.get("hash") != tip:
                     continue
-                bits = block.get("bits")
-            hashrate = network_hashrate(bits, stats.get("block_time_target"))
-            # A block's difficulty is immutable for this exact height AND hash.
-            # Reorganizations at the same height must fetch the replacement block.
-            self.tip_key, self.bits = key, bits
+                estimate = observed_hashrate(blocks)
+                final = self.read.fresh_stats() if hasattr(self.read,'fresh_stats') else self.read('/api/stats')
+                if (final.get('height'),final.get('best_block_hash')) != key:
+                    continue
+            # Cache observed work only for this exact canonical tip, not height alone.
+            self.tip_key, self.estimate = key, estimate
             result = dict(stats)
-            result["hashrate"] = hashrate
+            result.update(hashrate=estimate[0],hashrate_method='canonical_work_over_observed_time',
+                          hashrate_sample_height=height,hashrate_window_blocks=estimate[1],
+                          hashrate_window_seconds=estimate[2])
             return result
         raise ValueError("chain changed during stats read")
 

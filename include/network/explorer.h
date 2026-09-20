@@ -2,6 +2,7 @@
 
 #include "../core/blockchain.h"
 #include "../core/mempool.h"
+#include "../core/network_hashrate.h"
 #include "../core/pqc_script.h"
 #include "../consensus/tiers.h"
 #include "../core/constants.h"
@@ -210,7 +211,7 @@ struct HttpResponse {
                    "script-src 'self' 'nonce-" << nonce_hex << "'; "
                    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                    "font-src 'self' https://fonts.gstatic.com; "
-                   "connect-src 'self'; "
+                   "connect-src 'self' https://pool.veld.network; "
                    "img-src 'self' data:; "
                    "object-src 'none'; "
                    "frame-ancestors 'none'; "
@@ -1340,6 +1341,8 @@ public:
             return HttpResponse::HTML("<script nonce=\"__CSP_NONCE__\">window.location='/';</script>");
         if (parts.size() == 1 && parts[0] == "tiers")
             return HttpResponse::HTML("<script nonce=\"__CSP_NONCE__\">window.location='/mining';</script>");
+        if (parts.size() == 1 && parts[0] == "pool")
+            return ServePoolPage();
         if (parts.size() == 1 && parts[0] == "mining")
             return ServeMiningPage();
         if (parts.size() == 1 && parts[0] == "governance")
@@ -4447,7 +4450,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
 
         std::string out;
         auto is_more = [&](const std::string& a){
-            return a == "staking" || a == "validators" || a == "vault" || a == "rich" || a == "rules" || a == "liquidity" || a == "wallet";
+            return a == "pool" || a == "staking" || a == "validators" || a == "vault" || a == "rich" || a == "rules" || a == "liquidity" || a == "wallet";
         };
         bool more_active = is_more(active);
 
@@ -4495,6 +4498,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
         side("blocks",     "Blocks",     kIconBlocks,                       "/blocks");
         side("mempool",    "Mempool",    kIconMempool,                      "/mempool");
         side("mining",     "Mining",     "\xE2\x9B\x8F\xEF\xB8\x8E",  "/mining");
+        side("pool",       "Pool",       kIconLiquidity,                    "/pool");
         side("staking",    "Stake",      "\x25",                       "/staking");
         side("validators", "Validators", kIconValidators,                   "/validators");
         side("vault",      "Vault",      kIconVault,                        "/vault");
@@ -4522,6 +4526,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
         // but the panel only opens on explicit tap. Auto-opening trapped users
         // who tapped a More item and saw the panel still open on the new page.
         out += "<div class=\"nav-more\" id=\"nav-more\"><div class=\"nm-grid\">\n";
+        more_cell("pool",       "Pool",       kIconLiquidity,                    "/pool");
         more_cell("staking",    "Stake",      "\x25",                          "/staking");
         more_cell("validators", "Validators", kIconValidators,                       "/validators");
         more_cell("vault",      "Vault",      kIconVault,                            "/vault");
@@ -4671,7 +4676,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
   <div class="tile gold"><div class="l">Total supply</div><div class="v" id="s-supply">)HTML";
         page << std::fixed << std::setprecision(0) << supply;
         page << R"HTML(<span class="u">VELD</span></div></div>
-  <div class="tile"><div class="l">Hashrate</div><div class="v" id="s-hashrate">&mdash;<span class="u">KH/s</span></div></div>
+  <div class="tile"><div class="l">Network hashrate · estimated</div><div class="v" id="s-hashrate" title="Canonical proof of work over the observed time of up to 144 blocks">&mdash;<span class="u">KH/s</span></div></div>
   <div class="tile span2"><div class="l">Mempool</div><div class="v"><span id="s-mempool">&mdash;</span><span class="u">tx &middot; <span id="s-mempool-kb">&mdash;</span> KB &middot; <span id="s-peers">&mdash;</span> network nodes</span></div></div>
 </div>
 
@@ -4754,7 +4759,7 @@ function loadStats(){
     var mempoolKb=document.getElementById('s-mempool-kb');if(mempoolKb)mempoolKb.textContent=Math.round((d.mempool_bytes||0)/1024*10)/10;
     document.getElementById('s-supply').innerHTML=fmtInt(sup)+'<span class="u">VELD</span>';
     refreshNetworkNodes();
-    document.getElementById('s-hashrate').innerHTML=fmtHashrate(d.hashrate);
+    document.getElementById('s-hashrate').innerHTML=(typeof d.hashrate==='number'&&Number.isFinite(d.hashrate))?fmtHashrate(d.hashrate):'&mdash;';
     var pct=Math.max(0,Math.min(100,sup/21000000*100));
     var bar=document.getElementById('s-supply-bar');if(bar)bar.style.width=pct.toFixed(4)+'%';
     var pctEl=document.getElementById('s-supply-pct');if(pctEl)pctEl.textContent=pct.toFixed(3)+'% mined';
@@ -5925,7 +5930,8 @@ setInterval(loadStats,2000);
             }
         }
         std::ostringstream j;
-        uint64_t height  = chain_.Height();
+        uint64_t height = 0;
+        const auto headers = chain_.RecentCanonicalHeaders(height);
         double   supply  = chain_.TotalSupplyVeld();
         uint64_t s_units = chain_.TotalSupplyUnits();
 
@@ -5992,13 +5998,12 @@ setInterval(loadStats,2000);
         j << "\"peers_local\":" << local_peers << ",";
         j << "\"fleet_responsive\":" << fleet_responsive << ",";
         j << "\"block_time_target\":" << TARGET_BLOCK_TIME << ",";
-        uint32_t bits = 0;
-        uint32_t tip_ts = 0;
-        try {
-            auto tip = chain_.TipCopy();
-            bits = tip.header.bits;
-            tip_ts = tip.header.timestamp;
-        } catch (...) {}
+        const auto estimate = EstimateNetworkHashrate(headers);
+        std::ostringstream estimated_rate;
+        if (estimate.available) estimated_rate << std::setprecision(12) << estimate.hashes_per_second;
+        else estimated_rate << "null";
+        const uint32_t bits = headers.empty() ? 0 : headers.back().bits;
+        const uint64_t tip_ts = headers.empty() ? 0 : headers.back().timestamp;
         double difficulty = 0.0;
         if (bits != 0) {
             uint32_t exp = bits >> 24;
@@ -6006,24 +6011,13 @@ setInterval(loadStats,2000);
             if (exp >= 3 && exp <= 32 && mant > 0)
                 difficulty = (double)0x00000808 / (double)mant * pow(256.0, (int)(0x1f - exp));
         }
-        double hashrate_hps = 0.0;
-        if (bits != 0 && TARGET_BLOCK_TIME > 0) {
-            const uint32_t exp = bits >> 24;
-            const uint32_t mantissa = bits & 0x007fffff;
-            if (mantissa > 0 && exp >= 3) {
-                const int shift_exp = 256 - 8 * (static_cast<int>(exp) - 3);
-                if (shift_exp >= 0 && shift_exp < 1023) {
-                    const double expected_hashes =
-                        std::ldexp(1.0, shift_exp) /
-                        static_cast<double>(mantissa);
-                    hashrate_hps = expected_hashes /
-                        static_cast<double>(TARGET_BLOCK_TIME);
-                }
-            }
-        }
-        j << "\"best_block_hash\":\"" << HashToHex(chain_.TipCopy().GetHash()) << "\","
+        j << "\"best_block_hash\":\"" << (headers.empty() ? "" : HashToHex(headers.back().GetHash())) << "\","
           << "\"difficulty\":" << std::setprecision(4) << difficulty << ","
-          << "\"hashrate\":" << std::setprecision(2) << hashrate_hps << ","
+          << "\"hashrate\":" << estimated_rate.str() << ","
+          << "\"hashrate_method\":\"canonical_work_over_observed_time\","
+          << "\"hashrate_sample_height\":" << height << ","
+          << "\"hashrate_window_blocks\":" << estimate.intervals << ","
+          << "\"hashrate_window_seconds\":" << estimate.seconds << ","
           << "\"tip_timestamp\":" << tip_ts << ","
           << "\"phase\":\"" << (staking_active ? "standard" : "bootstrap") << "\","
           << "\"supply\":" << std::setprecision(8) << supply << ","
@@ -6554,6 +6548,65 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         return HttpResponse::HTML(body);
     }
 
+    HttpResponse ServePoolPage() {
+        std::string page = ArcadeHead("Veld · Pool") + ArcadePrimaryTabs("pool");
+        page += R"VLDPOOL(<h2>Veld Pool</h2>
+<div class="note em"><strong>Pool status</strong><p id="pool-public-status" role="status">Connecting to Veld Pool…</p></div>
+<div class="grid2">
+<div class="tile"><div class="l">Active accounts · last 2 minutes</div><div class="v" id="pool-public-active_accounts">—</div></div>
+<div class="tile"><div class="l">Verified shares</div><div class="v" id="pool-public-verified_shares">—</div></div>
+<div class="tile"><div class="l">Reconciled height</div><div class="v" id="pool-public-reconciled_height">—</div></div>
+<div class="tile"><div class="l">Payments</div><div class="v" id="pool-public-payments">Unknown</div></div>
+<div class="tile"><div class="l">Co-mining</div><div class="v" id="pool-public-comining">Unknown</div></div>
+</div>
+<h3>Start pool mining</h3><div class="card"><ol><li>Open Veld Node and select Pool.</li><li>Use <strong>https://pool.veld.network</strong> and enter your own wallet’s payout address.</li><li>Choose your CPU threads, then start mining.</li></ol><p>No deposit, personal stake, or private key is needed. Your PC and laptop can use the same payout address.</p></div>
+<h3>Rewards and payment history</h3><div class="card"><p>Open the pool dashboard with your separate account access to see pending, available and paid balances. A payout address alone does not unlock private history.</p><p><span id="pool-public-policy">Loading payment policy…</span> Earned receipts need at least 120 confirmations and must be spendable. Daily processing does not guarantee daily earnings.</p><a class="btn" href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Open pool dashboard →</a></div>
+<script nonce="__CSP_NONCE__">// Shared public Pool-tab view, embedded in Explorer and portal by the source generator.
+// No account identifiers, cookies, pairing credentials or private tokens leave the page.
+(function(){
+  'use strict';
+  var busy=false, next=0, last=null, failed=false;
+  function put(id,value){var e=document.getElementById(id);if(e)e.textContent=value;}
+  function render(){
+    put('pool-public-status',failed?'Pool status unavailable. Retrying.':last?last.status:'Connecting to Veld Pool…');
+    ['active_accounts','verified_shares','reconciled_height'].forEach(function(k){
+      put('pool-public-'+k,!failed&&last&&last[k]!==null?BigInt(last[k]).toLocaleString():'—');
+    });
+    put('pool-public-payments',failed||!last?'Unknown':last.payments_enabled?'Enabled':'Not enabled');
+    put('pool-public-comining',failed||!last?'Unknown':last.co_mining_enabled?'Enabled':'Not enabled');
+    var p=!failed&&last&&last.payment_policy;
+    function amount(v,scale){var n=BigInt(v),d=10n**BigInt(scale);return (n/d+'.'+(n%d).toString().padStart(scale,'0')).replace(/\.?0+$/,'');}
+    put('pool-public-policy',p?amount(p.fee_ppm,4)+'% service fee · '+amount(p.minimum_units,8)+' VELD minimum · batches every '+(Number(p.batch_seconds)/3600)+' hours.':'Payment policy unavailable. Check the pool dashboard.');
+  }
+  async function refresh(){
+    if(!document.getElementById('pool-public-status')||document.hidden)return;
+    render();if(busy||Date.now()<next)return;busy=true;next=Date.now()+15000;
+    var stop=new AbortController(),timer=setTimeout(function(){stop.abort();},5000);
+    try{
+      var r=await fetch('https://pool.veld.network/v1/public',{credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',redirect:'error',signal:stop.signal});
+      if(!r.ok||!r.body)throw Error('unavailable');
+      var reader=r.body.getReader(),parts=[],size=0;
+      for(;;){var part=await reader.read();if(part.done)break;size+=part.value.length;if(size>4096){await reader.cancel();throw Error('response limit');}parts.push(part.value);}
+      var bytes=new Uint8Array(size),offset=0;parts.forEach(function(p){bytes.set(p,offset);offset+=p.length;});
+      var j=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),s=j&&j.result;
+      if(j.ok!==true||!s||s.chain!=='7be77ab9e820bd9ffb60b269b45ced48288056e5839a1135fafc2f8557000a88')throw Error('network');
+      ['active_accounts','verified_shares','reconciled_height'].forEach(function(k){if(k==='reconciled_height'&&s[k]===null)return;if(typeof s[k]!=='string'||!/^(0|[1-9][0-9]{0,19})$/.test(s[k]))throw Error('count');});
+      if(typeof s.payments_enabled!=='boolean'||typeof s.co_mining_enabled!=='boolean')throw Error('flags');
+      if(!['Service responding','Reconciliation paused or starting'].includes(s.status))throw Error('status');
+      if(s.payment_policy!==undefined){
+        if(!s.payment_policy||typeof s.payment_policy!=='object'||Array.isArray(s.payment_policy))throw Error('policy');
+        ['fee_ppm','minimum_units','batch_seconds','revision'].forEach(function(k){if(typeof s.payment_policy[k]!=='string'||!/^(0|[1-9][0-9]{0,19})$/.test(s.payment_policy[k]))throw Error('policy value');});
+        if(BigInt(s.payment_policy.fee_ppm)>100000n||BigInt(s.payment_policy.minimum_units)<100000000n||BigInt(s.payment_policy.minimum_units)>1000000000000n||BigInt(s.payment_policy.batch_seconds)<3600n||BigInt(s.payment_policy.batch_seconds)>604800n)throw Error('policy bounds');
+      }
+      last=s;failed=false;
+    }catch(_){failed=true;last=null;}finally{clearTimeout(timer);busy=false;render();}
+  }
+  setInterval(refresh,1000);refresh();
+})();
+</script>)VLDPOOL";
+        return HttpResponse::HTML(page + ArcadeFoot());
+    }
+
     HttpResponse ServeMempoolPage() {
         const auto format_fee = [](double value) {
             std::ostringstream out;
@@ -6640,9 +6693,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << "    <span class=\"it em\"><span class=\"dot\"></span><b>";
         if (total_bytes >= 1024) page << (total_bytes / 1024) << " KB";
         else                     page << total_bytes << " B";
-        page << "</b> &middot; <b>"
-             << format_fee((double)total_fee_units / VELD_UNITS)
-             << " VELD</b> pending fees</span>\n";
+        page << "</b></span>\n";
         page << "    <span class=\"it\"><span class=\"dot\"></span>fee sorted</span>\n";
         page << "    <span class=\"it\"><span class=\"dot\"></span>tip h=" << tip << "</span>\n";
         page << "  </div>\n";
@@ -6654,9 +6705,9 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << "  <div class=\"tile gold span2\"><div class=\"l\">Lifetime fees collected &middot; chain-wide</div><div class=\"v\">"
              << format_fee(lifetime_fees_veld)
              << "<span class=\"u\">VELD</span></div></div>\n";
-        page << "  <div class=\"tile em\"><div class=\"l\">Transfers &middot; shown</div><div class=\"v\">"   << transfers  << "</div></div>\n";
-        page << "  <div class=\"tile\"><div class=\"l\">Stake ops &middot; shown</div><div class=\"v\">"      << stake_ops  << "</div></div>\n";
-        page << "  <div class=\"tile\"><div class=\"l\">Endorsements &middot; shown</div><div class=\"v\">"   << endorse_ops<< "</div></div>\n";
+        page << "  <div class=\"tile em\"><div class=\"l\">Transfers</div><div class=\"v\">"   << transfers  << "</div></div>\n";
+        page << "  <div class=\"tile\"><div class=\"l\">Stake ops</div><div class=\"v\">"      << stake_ops  << "</div></div>\n";
+        page << "  <div class=\"tile\"><div class=\"l\">Endorsements</div><div class=\"v\">"   << endorse_ops<< "</div></div>\n";
         page << "  <div class=\"tile\"><div class=\"l\">Mempool fees &middot; pending</div><div class=\"v\">"
              << format_fee((double)total_fee_units / VELD_UNITS)
              << "<span class=\"u\">VELD</span></div></div>\n";

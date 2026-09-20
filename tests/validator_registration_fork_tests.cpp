@@ -3,7 +3,7 @@
 #define VELD_TEST_HOOKS 1
 #define VELD_DSTATE_QUALIFICATION 1
 #define VELD_PROTOCOL_UPGRADE_TEST_HEIGHT 3840
-#define VELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT 9000
+#define VELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT 9500
 
 #include "consensus/validators.h"
 #include "wallet/wallet.h"
@@ -32,7 +32,7 @@ static Block Operation(const RealKeyPair& key, uint64_t height,
 
 int main() {
     constexpr uint64_t H = VALIDATOR_REGISTRATION_FORK_HEIGHT;
-    static_assert(H == 9000);
+    static_assert(H == 9500);
     static_assert(MIN_VALIDATOR_STAKE == 10000ULL * VELD_UNITS);
     static_assert(MIN_STAKE_UNITS == 1000ULL * VELD_UNITS);
     static_assert(MinimumStakeAtHeight(H) == 500ULL * VELD_UNITS);
@@ -127,5 +127,5 @@ int main() {
     registry.RestoreState(empty);
     assert(registry.ProcessBlock(register_at_fork, zero_stake));
     assert(registry.ValidatorsDigest() == digest);
-    std::cout << "PASS validator_registration_fork_tests height=9000 module-boundary-only\n";
+    std::cout << "PASS validator_registration_fork_tests height=9500 module-boundary-only\n";
 }

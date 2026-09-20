@@ -310,6 +310,10 @@ inline MineBlockResult MineAndCommit(
     uint64_t reward = Blockchain::ExpectedBlockSubsidy(candidate.height);
     auto vault_script  = AddressToScript(VaultAddressAtHeight(candidate.height));
     auto miner_script  = miner_keypair.GetP2PKHScript();
+    if (IsSha384KeyScript(miner_script) && !Sha384DestinationsActive(candidate.height)) {
+        result.error = "SHA-384 mining destination is not active at this block height";
+        return result;
+    }
 
     std::vector<std::pair<std::vector<uint8_t>, uint64_t>> cb_outputs;
     bool is_vault_block = (candidate.height > 0 && candidate.height % VAULT_BLOCK_INTERVAL == 0);
@@ -565,6 +569,10 @@ inline MineBlockResult MineOnly(
     auto miner_script  = miner_keypair.script_override.empty()
                        ? miner_keypair.GetP2PKHScript()
                        : miner_keypair.script_override;
+    if (IsSha384KeyScript(miner_script) && !Sha384DestinationsActive(candidate.height)) {
+        result.error = "SHA-384 mining destination is not active at this block height";
+        return result;
+    }
 
     const auto shared_pool_script = AddressToScript(POOL_ADDRESS);
     const auto effective_pool_script = !shared_pool_script.empty()
@@ -4672,6 +4680,8 @@ public:
                 published_binding, coordinator.configuration_generation,
                 *lifetime);
             if (!issued || !issued.authorization) {
+                result.capacity_limited = issued.error ==
+                    work_admission::BlockTemplateAuthorizationStore::Error::Capacity;
                 result.decision = {
                     false, work_admission::Refusal::RuntimeClosed,
                     std::nullopt};
@@ -8038,8 +8048,8 @@ private:
             if (derived_public != miner_keypair.public_key)
                 return refuse("generation identity public/private key mismatch");
             if (miner_keypair.script_override.empty()) {
-                if (PubKeyToAddress(derived_public, config_.IsTestNetwork()) !=
-                    miner_keypair.address)
+                if (!PublicKeyOwnsAddress(derived_public, miner_keypair.address,
+                                         config_.IsTestNetwork()))
                     return refuse("generation identity address/key mismatch");
             } else {
                 const auto override_script =
@@ -8050,6 +8060,11 @@ private:
             }
             if (miner_keypair.GetP2PKHScript().empty())
                 return refuse("generation identity has no payout script");
+            const auto payout = miner_keypair.script_override.empty()
+                ? miner_keypair.GetP2PKHScript() : miner_keypair.script_override;
+            if (IsSha384KeyScript(payout) &&
+                !Sha384DestinationsActive(chain_.Height()+1))
+                return refuse("SHA-384 mining destination is not active at the next block height");
         } catch (const std::exception& e) {
             return refuse(std::string("generation identity validation failed: ") +
                           e.what());

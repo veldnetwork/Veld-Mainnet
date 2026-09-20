@@ -25,7 +25,7 @@ function setup() {
     document:{getElementById:el},window:{addEventListener:(event,fn)=>listeners[event]=fn},
     localStorage:{getItem:k=>{if(readFails)throw Error('storage');return items.get(k)??null;},setItem:(k,v)=>{if(writeFails)throw Error('storage');items.set(k,v);}},
     setInterval(){},setTimeout:fn=>{queueMicrotask(fn);},loadWalletAddr(){},fmt:(x,n)=>Number(x).toFixed(n),escHtml:s=>String(s),
-    _veldAddrToHash160Hex:a=>'hash:'+a,
+    _veldAddrToKeyCommitmentHex:a=>'hash:'+a,
     rpc:async(method,params)=>{calls.push([method,...params]);return state.rpc?state.rpc(method,params):(method==='getbalance'?state.balance:state.counts);},
     signAndBroadcast:async(...args)=>{batches.push(args);return state.sign?state.sign(args):{verified_consolidation_inputs:0};},
     __opLock:(name)=>{if(ctx.__opLocks[name])return false;ctx.__opLocks[name]=true;return true;},

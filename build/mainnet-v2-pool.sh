@@ -30,10 +30,11 @@ for name in work client identity payout; do
   grep -F 'veld-public-mainnet-v2' "$output/logs/$name-deployment.txt"
   readelf -h -l -d "$output/bin/veld-pool-$name" >"$output/logs/$name-elf.txt"
 done
-for module in __init__ accounting backend coordinator gateway identity journal native node_service payments private_file protocol records rewards service; do
+for module in __init__ accounting admin backend coordinator gateway identity journal native node_service operator payments private_file protocol public_status records rewards service; do
   cp "$src/pool/$module.py" "$output/lib/pool/"
 done
 cp -r "$src/pool/web" "$output/lib/pool/web"
+cp -r "$src/pool/admin_web" "$output/lib/pool/admin_web"
 cp -r "$src/pkg/pool" "$output/setup"
 cp "$src/docs/operations/pool-candidate.md" "$output/README.md"
 cp -r "$output/backend/third-party" "$output/third-party"

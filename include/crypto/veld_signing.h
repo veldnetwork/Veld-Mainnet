@@ -3,6 +3,7 @@
 #include "../compat/platform.h"
 #include "../core/hash.h"
 #include "../core/transaction.h"
+#include "../core/destination.h"
 #include "../crypto/ripemd160.h"
 #include "../crypto/dilithium.h"
 #include <array>
@@ -318,6 +319,8 @@ struct RealKeyPair {
 
     std::vector<uint8_t> GetP2PKHScript() const {
         if (!script_override.empty()) return script_override;
+        if (address.size() > 50 && address == Sha384KeyAddress(public_key, testnet))
+            return BuildSha384KeyScript(PublicKeyCommitment384(public_key, testnet));
         Hash160 h = Hash160Compute(public_key);
         std::vector<uint8_t> s;
         s.push_back(0x76); s.push_back(0xA9); s.push_back(0x14);

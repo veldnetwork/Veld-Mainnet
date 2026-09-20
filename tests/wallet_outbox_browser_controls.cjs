@@ -14,7 +14,7 @@ const sourcePath = process.env.VELD_WALLET_TEST_SOURCE || path.join(__dirname, '
 const source = fs.readFileSync(sourcePath, 'utf8').split(')HTMLEOF"')[0];
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'veld-outbox-controls-'));
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
-const functions = ['hexToBytes', 'bytesToHex', 'sha256Compress', 'sha256', 'sha256d',
+const functions = ['_veldKeyCommitmentToScriptHex', 'hexToBytes', 'bytesToHex', 'sha256Compress', 'sha256', 'sha256d',
   '_veldHexToBytes', '_veldBytesToHex', '_veldParseVarint', '_veldParseUnsignedTx',
   '_veldAssertPreparedRelaySize', '_veldJournal', '_veldJournalOperation',
   '_veldGetSingleCanonicalOpReturnPayload', '_veldRecoverLegacyTransactions',
@@ -24,6 +24,7 @@ const constants = source.slice(source.indexOf('  var K256 = ['), source.indexOf(
 const application = constants + functions.map(name => extractFunction(source, name)).join('\n');
 const fixture = `
 var VELD_GENESIS_HASH='${'a1'.repeat(32)}', VELD_DEPLOYMENT_PROFILE_ID='disposable-outbox-controls';
+var currentAddr='fixture-owner';
 var owner='fixture-owner', generation=7, signatureCalls=0, sends=[], notifications=[];
 var unavailable=false, selected=[], nodeSpendable=0;
 var __veldTxChannel={postMessage:function(message){notifications.push(message);}};
@@ -34,7 +35,7 @@ function _veldAssertActiveSignerSeed(seed, expected) {
   return generation;
 }
 function _veldRequireBoundIdentity(){return {address:owner};}
-function _veldAddrToHash160Hex(){return '19'.repeat(20);}
+function _veldAddrToKeyCommitmentHex(){return '19'.repeat(20);}
 function _veldVerifyInputSighashes(prep){if(!prep.inputs.length)throw Error('Missing metadata');}
 async function _veldAuthenticatePreparedPrevouts(){}
 function buildScriptSig(){signatureCalls++;return '00';}

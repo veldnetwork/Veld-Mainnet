@@ -48,7 +48,7 @@ const signing = vm.createContext({
   _veldParseUnsignedTx: () => transaction,
   _veldRequireSelfCustodySigner: () => {},
   _veldRequireBoundIdentity: () => ({address: "fixture-owner"}),
-  _veldAddrToHash160Hex: () => "19".repeat(20),
+  _veldAddrToKeyCommitmentHex: () => "19".repeat(20),
   _veldVerifyUnsignedTxOutputs: () => {},
   _veldAssertAllP2PKHOutputsToSelf: () => {},
   _veldAssertAllP2PKHOutputsInAllowed: () => {},
@@ -66,7 +66,7 @@ const signing = vm.createContext({
   },
   rpc: async () => ({...prep})
 });
-vm.runInContext(["_veldAssertActiveSignerSeed", "_veldConsolidationProgress", "_veldConsolidationBudget", "signAndBroadcast"].map(extract).join("\n"), signing);
+vm.runInContext(["_veldKeyCommitmentToScriptHex", "_veldAssertActiveSignerSeed", "_veldConsolidationProgress", "_veldConsolidationBudget", "signAndBroadcast"].map(extract).join("\n"), signing);
 const call = budget => signing.signAndBroadcast("prepareconsolidatetx", ["fixture-owner"], "inert-seed-placeholder", null, null, null, null, "", budget);
 (async () => {
   const result = await call();

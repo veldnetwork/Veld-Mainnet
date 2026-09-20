@@ -6,7 +6,7 @@ const {extractFunction} = require('./javascript_function_source');
 const source = fs.readFileSync(path.join(__dirname, '../include/network/ui_desktop.h'), 'utf8');
 const functions = ['_veldHexToBytes', '_veldParseVarint', '_veldBytesToHex',
   '_veldParseUnsignedTx', '_veldAssertPreparedRelaySize', '_veldBroadcastExactSigned',
-  '_veldAssertActiveSignerSeed', 'signAndBroadcast'].map(name => extractFunction(source, name)).join('\n');
+  '_veldAssertActiveSignerSeed', '_veldKeyCommitmentToScriptHex', 'signAndBroadcast'].map(name => extractFunction(source, name)).join('\n');
 
 async function runFixture(context) {
   let checks = 0;
@@ -48,7 +48,7 @@ async function runFixture(context) {
     VELD_MIN_TX_FEE_UNITS: 100000,
     _veldRequireSelfCustodySigner() {},
     _veldRequireBoundIdentity: () => ({address: 'disposable-fixture'}),
-    _veldAddrToHash160Hex: () => '19'.repeat(20),
+    _veldAddrToKeyCommitmentHex: () => '19'.repeat(20),
     VELD_SIGNER_IDLE_MS: 300000, _veldSignerLastActivity: Date.now(),
     __veldKey: {get: () => seed, generation: () => 7},
     _veldAssertOpReturnExact() {},

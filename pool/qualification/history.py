@@ -14,6 +14,7 @@ import time
 from ..backend import Node
 from ..protocol import Busy
 from .isolation import require_isolated_network
+from .control import mine_block
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--build-directory',type=Path,required=True)
@@ -32,13 +33,14 @@ def main():
     report={'status':'RUNNING','accelerated_historical_clock':True,'money_or_pow_bypassed':False,
             'pool_worker_evidence':False,'state_directory':str(state),'closed_snapshots':{}}
     def save():(out/'result.json').write_text(json.dumps(report,indent=2)+'\n')
-    node=None;logs=[]
+    node=None;logs=[];logpaths={}
     genesis=bytes.fromhex('ee875e86d25aabad2442451b82f6550b732a1387cbc172c2a3fc02eb216af3d5')[::-1].hex()
     rpc=Node('http://127.0.0.1:32662',state/'node/lab-rpc-token',genesis)
     def start(label):
         log=(out/(label+'.log')).open('w');logs.append(log)
         p=subprocess.Popen([str(args.build_directory/'pool-backend'),str(state/'node'),'32661','32662'],
             cwd=source,stdin=subprocess.PIPE,stdout=log,stderr=subprocess.STDOUT,text=True)
+        logpaths[p.pid]=out/(label+'.log')
         until=time.monotonic()+1200
         while time.monotonic()<until:
             if p.poll() is not None:raise RuntimeError('history backend exited')
@@ -56,15 +58,8 @@ def main():
         with (out/'blocks.jsonl').open('w') as receipts:
             for height in range(1,args.final_height+1):
                 address=identities['addresses']['fees' if height<=10 else 'pool']
-                node.stdin.write('clock '+str(1767225600+height*180)+'\n');node.stdin.flush()
-                until=time.monotonic()+180;next_attempt=0
-                while time.monotonic()<until:
-                    if node.poll() is not None:raise RuntimeError('history backend exited')
-                    if rpc.call('getblockcount')>=height:break
-                    if time.monotonic()>=next_attempt:
-                        node.stdin.write('mine '+address+'\n');node.stdin.flush();next_attempt=time.monotonic()+15
-                    time.sleep(.05)
-                else:raise RuntimeError('canonical mining remained unavailable at '+str(height))
+                actual=mine_block(node,rpc,address,logpaths[node.pid])
+                if actual!=height:raise RuntimeError('funding history advanced beyond the acknowledged height')
                 receipts.write(json.dumps({'height':height,'block':rpc.call('getblockhash',str(height)),'miner':address})+'\n')
                 receipts.flush()
                 if height%100==0:report['height']=height;save();print('native history',height,flush=True)

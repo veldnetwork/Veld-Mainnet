@@ -18,6 +18,7 @@ from ..backend import Node
 from ..protocol import encode,Busy,Refused
 from .isolation import require_isolated_network
 from .control import mine_block
+from .progress import ValidationProgress
 
 def main():
     parser=argparse.ArgumentParser()
@@ -170,10 +171,17 @@ def main():
             time.sleep(.1)
         (state/'worker/stop.request').write_text('stop\n');worker.wait(timeout=60)
         check('native pool worker carried the actual finality certificate',finalized['height']==target and finalized['hash']==block)
-        tip=rpc.call('getbestblockhash');digest=rpc.call('getstatedigest');until=time.monotonic()+1800
+        tip=rpc.call('getbestblockhash');digest=rpc.call('getstatedigest')
+        progress=ValidationProgress(independent.call('getblockcount'),rpc.call('getblockcount'),time.monotonic())
+        report['independent_validation_budget_seconds']=progress.budget_seconds
+        report['independent_validation_progress']=[]
         while independent.call('getbestblockhash')!=tip:
-            if time.monotonic()>until:raise RuntimeError('independent QC validation deadline')
-            time.sleep(.3)
+            now=time.monotonic();height=independent.call('getblockcount')
+            report['independent_validation_progress'].append({'height':height,'seconds':now-progress.started})
+            save();progress.observe(height,now)
+            assert observer.poll() is None and node.poll() is None,'independent finality node exited'
+            assert rpc.call('getbestblockhash')==tip,'finality verification target changed'
+            time.sleep(10)
         check('independent node validated the same finality and state',independent.call('getstatedigest')==digest and
               independent.call('getfinalitysnapshot')['snapshot']['finalized']==finalized)
         report.update(status='PASS',finalized=finalized,carrier_height=rpc.call('getblockcount'),consolidations=consolidations,

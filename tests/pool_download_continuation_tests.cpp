@@ -42,6 +42,28 @@ int main() {
         }
         Mempool pool;
         net::NodeServer server(0, MAINNET_MAGIC, chain, pool);
+        auto response_frames = [&](const P2PMessage& request, const char* address) {
+            const auto socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            Check(compat::IsValidSocket(socket), "unconnected response queue socket");
+            net::Connection queued(socket, address, 1);
+            queued.EnableEventLoopIO();
+            server.TestDispatchPeerMessage(queued, request);
+            // Exercise the actual handler and bounded serialization queue.
+            // Nothing is transmitted on this unconnected local socket.
+            return queued.QueuedSendFrames();
+        };
+        PeerManager messages(MAINNET_MAGIC, chain.Height());
+        const auto start = chain.GetBlock(224).GetHash();
+        const auto fallback = chain.GetBlock(227).GetHash();
+        Check(response_frames(messages.BuildGetBlocksMessage(start, std::vector<Hash256>{fallback}), "127.0.0.2") == 33,
+              "remaining locator must not be interpreted as stop hash");
+        Check(response_frames(messages.BuildGetBlocksMessage(start, {fallback},
+              chain.GetBlock(226).GetHash()), "127.0.0.3") == 3,
+              "explicit stop hash is read after every locator");
+        auto truncated = messages.BuildGetBlocksMessage(start, std::vector<Hash256>{fallback});
+        truncated.payload.resize(truncated.payload.size()-1);
+        Check(response_frames(truncated, "127.0.0.4") == 0,
+              "truncated locator envelope cannot trigger block work");
         const auto fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         Check(compat::IsValidSocket(fd), "unconnected local socket");
         net::Connection connection(fd, "127.0.0.1", 1);
@@ -56,8 +78,29 @@ int main() {
         server.TestRememberValidatedDownload(connection, common);
         Check(First(server.TestDownloadLocator(connection)) == common,
               "validated shared-history batch must advance download locator");
+        const auto late = chain.GetBlock(223).GetHash();
+        server.TestRememberValidatedDownload(connection, late);
+        const auto continued = server.TestDownloadLocator(connection);
+        Check(First(continued) == common,
+              "late near-tip duplicate cannot rewind validated download progress");
+        Hash256 second{};
+        std::copy_n(continued.payload.begin() + 37, 32, second.begin());
+        Check(second == late,
+              "peer branch change retains one bounded lower continuation fallback");
+        // This focused fixture covers cursor ordering on locally indexed
+        // bodies. Genuine fork validation is covered by native co-mining and
+        // payment reorganization exercises, not synthetic PoW-free branches.
+        const auto higher = chain.GetBlock(227).GetHash();
+        server.TestRememberValidatedDownload(connection,higher);
+        Check(First(server.TestDownloadLocator(connection))==higher,
+              "higher validated progress replaces lower shared-history cursor");
+        server.TestRememberValidatedDownload(connection,common);
+        const auto changed_branch=server.TestDownloadLocator(connection);
+        Check(First(changed_branch)==higher,"lower canonical duplicate preserves progress");
+        std::copy_n(changed_branch.payload.begin()+37,32,second.begin());
+        Check(second==common,"highest cursor retains recent common-history fallback");
         server.TestRememberValidatedDownload(connection, chain.GetBlock(0).GetHash());
-        Check(First(server.TestDownloadLocator(connection)) == common,
+        Check(First(server.TestDownloadLocator(connection)) == higher,
               "ancient duplicate cannot rewind the bounded fork download");
         Check(server.GetPeerHeightView().verified_height == 0,
               "download cursor never grants trusted peer-height evidence");

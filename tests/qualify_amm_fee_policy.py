@@ -20,12 +20,12 @@ def main():
             for d in (0,1):
                 rin=rv if d else rb
                 for a in (1,2,100,rin//10000,rin//100,rin//10,rin,10*rin):
-                    for h in (0,1,99,100,101,8999,9000,9001,2**32):
+                    for h in (0,1,99,100,101,8999,9000,9001,9499,9500,9501,2**32):
                         cases.append((rv,rb,av,ab,a,d,h))
     for _ in range(1500):
         rv=rng.randrange(10**9,2*10**15);rb=rng.randrange(1000,10**9)
         cases.append((rv,rb,rng.randrange(1,10**15),rng.randrange(1,10**9),
-                      rng.randrange(1,10**12),rng.randrange(2),rng.choice((99,100,101,8999,9000,9001))))
+                      rng.randrange(1,10**12),rng.randrange(2),rng.choice((99,100,101,8999,9000,9001,9499,9500,9501))))
     for bad in [(0,1000,100,100,1,1,100),(1000,0,100,100,1,1,100),
                 (1000,1000,0,100,10,1,100),(1000,1000,100,0,10,0,100),
                 (1000,1000,100,100,0,0,100),(1000,1000,100,100,-1,1,100),
@@ -33,7 +33,7 @@ def main():
                 (1000,2**63-2,100,100,2,0,100)]:cases.append(bad)
     lines=['Q '+' '.join(map(str,t)) for t in cases]
     # Exercise state snapshots, rollback and same-height replay separately.
-    states=[(10**12,10**8,10**12,10**8,10**10,1,h) for h in (99,100,101,8999,9000,9001)]
+    states=[(10**12,10**8,10**12,10**8,10**10,1,h) for h in (99,100,101,8999,9000,9001,9499,9500,9501)]
     lines+=['S '+' '.join(map(str,t)) for t in states]
     data='\n'.join(lines)+'\n';(out/'inputs.txt').write_text(data)
     def run(label,exe):
@@ -46,7 +46,7 @@ def main():
     checked=history=public_history=public_flat=0;js=[]
     for i,t in enumerate(cases+states):
         v,b,av,ab,a,d,h=t;n=candidate[i]
-        if h<9000:
+        if h<9500:
             assert public[i]==baseline[i],('public historical drift',t,public[i],baseline[i])
             public_history+=1
         else:
@@ -78,7 +78,7 @@ def main():
     if r.returncode:raise RuntimeError(r.stderr[-3000:])
     report=dict(status='PASS',scope='offline component and wallet quote qualification; not full-chain or mainnet activation',
         cases=len(lines),historical_comparisons=history,flat_exact_arithmetic=checked,
-        public_activation_height=9000,public_historical_matches=public_history,
+        public_activation_height=9500,public_historical_matches=public_history,
         public_flat_matches=public_flat,wallet=json.loads(r.stdout),
         binaries={name:hashlib.sha256(pathlib.Path(getattr(args,name)).read_bytes()).hexdigest() for name in ('candidate','public','baseline')},
         source={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [root/'include/core/amm_pool.h',root/'include/core/constants.h',root/'include/network/rpc.h',root/'include/network/ui_desktop.h',root/'src/veld-desktop.cpp']})

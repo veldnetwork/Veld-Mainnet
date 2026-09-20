@@ -101,14 +101,23 @@ class Connection {
 public:
     // Download continuation is separate from peer-height/work evidence. Only
     // byte-exact known or newly accepted blocks may populate this hint.
-    void RememberValidatedDownload(const Hash256& hash) {
+    void RememberValidatedDownload(const Hash256& hash, uint64_t height) {
         std::lock_guard<std::mutex> lock(download_cursor_mutex_);
-        download_cursor_ = hash;
+        if (!download_cursor_ || height > download_cursor_height_) {
+            download_cursor_ = hash;
+            download_cursor_height_ = height;
+            download_fallback_cursor_.reset();
+        } else if (hash != *download_cursor_) {
+            // A delayed known body must not replace furthest validated
+            // progress. Keep one bounded secondary hint so a peer which
+            // switched branches can still continue from a lower common body.
+            download_fallback_cursor_ = hash;
+        }
     }
 
-    std::optional<Hash256> ValidatedDownloadCursor() const {
+    std::array<std::optional<Hash256>, 2> ValidatedDownloadCursors() const {
         std::lock_guard<std::mutex> lock(download_cursor_mutex_);
-        return download_cursor_;
+        return {download_cursor_, download_fallback_cursor_};
     }
 
     using CloseReason = connection_diagnostics::Reason;
@@ -859,6 +868,8 @@ public:
 private:
     mutable std::mutex download_cursor_mutex_;
     std::optional<Hash256> download_cursor_;
+    std::optional<Hash256> download_fallback_cursor_;
+    uint64_t download_cursor_height_{0};
 
     static uint64_t NextIdentity_() {
         static std::atomic<uint64_t> next{1};
@@ -6311,7 +6322,7 @@ private:
         const auto height = chain_.GetKnownBlockHeightByHash(hash);
         const auto tip = chain_.Height();
         if (height && (*height >= tip || tip - *height <= 2 * MAX_REORG_DEPTH))
-            connection.RememberValidatedDownload(hash);
+            connection.RememberValidatedDownload(hash, *height);
     }
 
     P2PMessage BuildChainLocatorGetBlocks(
@@ -6335,20 +6346,29 @@ private:
 
         const Hash256 tip = chain_.TipCopy().GetHash();
         if (connection) {
-            const auto cursor = connection->ValidatedDownloadCursor();
-            const auto cursor_height = cursor
-                ? chain_.GetKnownBlockHeightByHash(*cursor) : std::nullopt;
             const auto current_height = chain_.Height();
-            if (cursor && *cursor != tip && cursor_height &&
-                (*cursor_height >= current_height ||
-                 current_height - *cursor_height <= 2 * MAX_REORG_DEPTH)) {
-                // A bounded response can end in shared history, or in a
-                // validated lower-work branch which has not won fork choice.
-                // Continue from that exact body instead of repeatedly asking
-                // for the same canonical locator suffix. Keep the canonical
-                // tip and history as fallbacks when this peer changed branch.
-                extra.insert(extra.begin(), tip);
-                return pm.BuildGetBlocksMessage(*cursor, extra);
+            std::vector<Hash256> preferred;
+            for (const auto& cursor : connection->ValidatedDownloadCursors()) {
+                const auto height = cursor
+                    ? chain_.GetKnownBlockHeightByHash(*cursor) : std::nullopt;
+                if (cursor && height && (*height >= current_height ||
+                    current_height - *height <= 2 * MAX_REORG_DEPTH) &&
+                    std::find(preferred.begin(), preferred.end(), *cursor) == preferred.end())
+                    preferred.push_back(*cursor);
+            }
+            if (!preferred.empty()) {
+                // Highest verified progress leads. A lower, recent verified
+                // body is a fallback for a peer changing branch; delayed
+                // duplicate batches cannot rewind the primary cursor. These
+                // two hints never change fork choice or peer work evidence.
+                if (std::find(preferred.begin(), preferred.end(), tip) == preferred.end())
+                    preferred.push_back(tip);
+                for (const auto& hash : extra)
+                    if (std::find(preferred.begin(), preferred.end(), hash) == preferred.end())
+                        preferred.push_back(hash);
+                const auto first = preferred.front();
+                preferred.erase(preferred.begin());
+                return pm.BuildGetBlocksMessage(first, preferred);
             }
         }
         return pm.BuildGetBlocksMessage(tip, extra);
@@ -6561,7 +6581,7 @@ private:
             // tip sentinel + clock-drift sample, then reply VERACK and
             // possibly transition to handshake_done.
             //
-            // BIT-IDENTICAL to inline. Notable preservation points:
+            // Bounded legacy wire format. Notable preservation points:
             //
             // Defence layers (each layer drops the connection on fail):
             //   1) payload missing any mandatory field through the 32-byte
@@ -7822,6 +7842,12 @@ private:
                     RecordViolation(conn.RemoteAddr(), 5, "oversized_locator");
                     return StepResult::Handled;
                 }
+                // Validate the complete envelope before any chain lookup or
+                // response work. The stop hash follows ALL declared locators,
+                // even when the first locator is recognized.
+                const size_t stop_offset = 5 + static_cast<size_t>(locator_count) * 32;
+                if (locator_count == 0 || msg.payload.size() != stop_offset + 32)
+                    return StepResult::Handled;
 
                 uint64_t start_height = 0;
                 bool found_locator = false;
@@ -7842,10 +7868,7 @@ private:
                 }
 
                 Hash256 stop_hash{};
-                if (pos + 32 <= msg.payload.size())
-                    std::copy(msg.payload.begin() + pos,
-                              msg.payload.begin() + pos + 32,
-                              stop_hash.begin());
+                std::copy_n(msg.payload.begin() + stop_offset, 32, stop_hash.begin());
                 bool has_stop = !HashIsZero(stop_hash);
 
                 if (!found_locator) start_height = 0;

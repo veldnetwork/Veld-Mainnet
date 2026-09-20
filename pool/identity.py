@@ -74,7 +74,7 @@ class Identity:
             if 'signed_hex' not in intent:continue
             try:
                 tx=(self.node.call('gettransaction',intent['txid'],intent['block']) if intent.get('block')
-                    else self.node.call('gettransactionrecent',intent['txid']))
+                    else self.node.call('getrawtransaction',intent['txid']))
                 confirmed=(tx.get('confirmations',0)>0 and tx.get('block_hash') and
                            self.node.call('getblockhash',str(tx['block_height']))==tx['block_hash'])
             except (Refused,Busy):confirmed=False

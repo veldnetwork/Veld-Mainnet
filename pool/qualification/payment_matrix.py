@@ -77,6 +77,14 @@ def main():
             return response['result']
         def balances():
             return {name:ipc('account',{'account':a['account'],'token':a['view_token']}) for name,a in accounts.items()}
+        def wallet_totals(chain):
+            return {address:sum(u['value_units'] for u in chain.call('listunspent',address))
+                    for address in {fixture['addresses'][n] for n in accounts}}
+        def expected_wallets(amounts):
+            result={}
+            for name,amount in amounts.items():
+                address=fixture['addresses'][name];result[address]=result.get(address,0)+amount
+            return result
         def service_ready(process):
             for _ in range(600):
                 if process.poll() is not None:raise RuntimeError('coordinator exited before readiness')
@@ -129,8 +137,8 @@ def main():
                 mine();time.sleep(.5)
             else:raise RuntimeError('payment recovery did not confirm')
             expected={n:int(a['paid_units']) for n,a in current.items()}
-            actual={n:sum(u['value_units'] for u in rpc.call('listunspent',fixture['addresses'][n])) for n in accounts}
-            assert actual==expected,'native recipient accounting mismatch'
+            actual=wallet_totals(rpc);expected_by_wallet=expected_wallets(expected)
+            assert actual==expected_by_wallet,'native recipient accounting mismatch'
             fee_after=sum(u['value_units'] for u in rpc.call('listunspent',fixture['addresses']['fees']))
             assert fee_before-fee_after==100000,'operator fee paid more than once'
             tip=rpc.call('getblockcount')
@@ -138,13 +146,19 @@ def main():
                 if independent.call('getblockcount')==tip and independent.call('getbestblockhash')==rpc.call('getbestblockhash'):break
                 time.sleep(.25)
             else:raise RuntimeError('independent peer did not validate payout')
-            independent_actual={n:sum(u['value_units'] for u in independent.call('listunspent',fixture['addresses'][n])) for n in accounts}
-            assert independent_actual==expected,'independent wallet mismatch'
+            independent_actual=wallet_totals(independent)
+            assert independent_actual==expected_by_wallet,'independent wallet mismatch'
             payment_events=[json.loads(line) for line in (state/'payments/events.jsonl').read_text().splitlines()]
             signed=[e['payload'] for e in payment_events if e['kind']=='payment_signed']
             assert len(signed)==1,'more than one signed economic intent'
+            intents=[e['payload'] for e in payment_events if e['kind']=='payment_intent']
+            assert len(intents)==1 and {r['address']:int(r['units']) for r in intents[0]['wire']['recipients']}==expected_by_wallet
+            assert len(intents[0]['wire']['recipients'])==len(expected_by_wallet)
+            assert {accounts[n]['account']:str(v) for n,v in expected.items()}==intents[0]['deductions']
+            assert len({a['account'] for a in accounts.values()})==2,'worker accounts were merged'
             result.update(height=tip,recipient_wallet_units=actual,independent_wallet_units=independent_actual,
-                          operator_fee_units='100000',signed_transaction_count=1,txid=signed[0]['txid'])
+                          operator_fee_units='100000',signed_transaction_count=1,txid=signed[0]['txid'],
+                          account_paid_units=expected,shared_destination=fixture.get('shared_destination',False))
             # An extra restart plus ordinary maintenance cannot create a retry
             # payment for an obligation already confirmed on the chain.
             stop(service);service=start('second-recovery',[sys.executable,'-m','pool.service','--config',str(config)])
@@ -167,7 +181,7 @@ def main():
                 authoritative.write_bytes(surviving)
                 service=start('restored-current-authority',[sys.executable,'-m','pool.service','--config',str(config)])
                 service_ready(service);again=balances();assert {n:int(a['paid_units']) for n,a in again.items()}==expected
-                assert {n:sum(u['value_units'] for u in rpc.call('listunspent',fixture['addresses'][n])) for n in accounts}==expected
+                assert wallet_totals(rpc)==expected_by_wallet
                 result['backup_recovery']={'old_index_replayed':True,'stale_authoritative_log_refused':True,
                     'current_signing_log_restored':True,'recipient_balances_unchanged':True}
             result.update(status='PASS')

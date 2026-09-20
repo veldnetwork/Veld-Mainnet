@@ -5,7 +5,13 @@ are tracked separately; publishing source does not release new binaries.
 
 ## Unreleased
 
-- Include the 3.2.1 mainnet candidate's flat 0.30% AMM fee in both swap directions from block 9,000. Preserve earlier fee rules for historical validation.
+- Add configurable Windows pool mining, persistent work accounting, shared mining, lottery and ordinary staking rewards, restricted payout signing, and an authenticated operator panel.
+- Combine a wallet's balances across its worker accounts when checking the payout minimum; preserve each account's exact entitlement and payment recovery records.
+- Bind pool workers to the Windows app's lifetime so closing or losing the app cannot leave hidden miners running.
+- Preserve verified block-download progress across late duplicates and read the stop hash after the complete block locator, avoiding truncated recovery batches.
+- Use charcoal action buttons and stable pool status fields across the client and pool interfaces.
+- Activate SHA-384 destinations and removal of the aggregate validator staking floor at block 9,500; retain individual bonds and historical rules.
+- Include the 3.2.1 mainnet candidate's flat 0.30% AMM fee in both swap directions from block 9,500. Preserve earlier fee rules for historical validation.
 - Remove opening-price deviation penalties after activation; fees remain in the output asset for liquidity providers. Bitcoin backing and custody requirements remain unchanged.
 - Match wallet previews and transaction preparation to the inclusion-height fee policy, and refresh quotes when the policy changes.
 - Prevent competing validator processes and restored chain directories from forgetting signing decisions within one OS profile.

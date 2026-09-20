@@ -36,7 +36,7 @@ function fixture() {
     _veldParseVeldUnitsExact:text => BigInt(Math.round(Number(text) * 100000000)),
     _veldUnitsToAmountString:units => String(Number(units) / 100000000),
     _veldBuildProtocolOpReturnHex:text => text,
-    _veldAddrToHash160Hex:address => 'owner-hash:' + address,
+    _veldAddrToKeyCommitmentHex:address => 'owner-hash:' + address,
     veldCrypto:{derivePublicKey:() => 'inert-public-key'},
     document:{getElementById:element, querySelector:() => element('unstake-button')},
     __opLock:name => { if (locks.has(name)) return false; locks.add(name); return true; },

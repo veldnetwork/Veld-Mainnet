@@ -27,7 +27,7 @@ class IdentityTests(unittest.TestCase):
     def call(self,method,*args):
         if method=='listunspent':return self.coins
         if method=='getpoolidentitystate':return self.state
-        if method in ('gettransaction','gettransactionrecent'):
+        if method in ('gettransaction','getrawtransaction'):
             if args[0] not in self.txs:raise Refused('not included')
             return self.txs[args[0]]
         if method=='getblockhash':return self.state['parent']

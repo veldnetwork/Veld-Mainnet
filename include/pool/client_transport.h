@@ -249,7 +249,14 @@ public:
         const auto& ok=Field(result,"ok");Require(ok.kind==Json::Kind::Bool,"pool response status");
         if (status!=200 || !ok.boolean) {
             const auto retry=result.Get("retryable");
-            if (retry && retry->kind==Json::Kind::Bool && retry->boolean) throw Retry("pool busy; retrying");
+            if (retry && retry->kind==Json::Kind::Bool && retry->boolean) {
+                // Report bounded categories, never echo arbitrary remote text.
+                if(status==429)throw Retry("pool rate limit; retrying");
+                const auto error=result.Get("error");
+                if(error && error->kind==Json::Kind::String && error->text=="busy")
+                    throw Retry("pool work temporarily unavailable");
+                throw Retry("pool service temporarily unavailable");
+            }
             throw std::runtime_error("pool refused request");
         }
         const auto& value=Field(result,"result");Require(value.kind==Json::Kind::Object,"pool result schema");return value;

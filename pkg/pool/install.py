@@ -38,14 +38,15 @@ def verify(package):
     if 'bin/veld-node' not in seen:raise ValueError('canonical backend absent from pool manifest')
     return hashlib.sha256(manifest.read_bytes()).hexdigest()
 
-def unit(role,prefix,config,state,core,gateway):
+def unit(role,prefix,config,state,core,gateway,admin=None):
     prefix,config,state=map(str,(prefix,config,state))
-    user=gateway if role=='gateway' else core
-    executable={'backend':'node_service','coordinator':'service','gateway':'gateway'}[role]
+    user=admin if role=='admin' else gateway if role=='gateway' else core
+    executable={'backend':'node_service','coordinator':'service','gateway':'gateway','admin':'admin'}[role]
     dependencies={'backend':'','coordinator':'After=veld-pool-backend.service\nRequires=veld-pool-backend.service\n',
-                  'gateway':'After=veld-pool-coordinator.service\nRequires=veld-pool-coordinator.service\n'}[role]
-    writable=(f'{state}/ipc {state}/core {state}/anchors {state}/backend {state}/rpc'
-              if role!='gateway' else '')
+                  'gateway':'After=veld-pool-coordinator.service\nRequires=veld-pool-coordinator.service\n',
+                  'admin':'After=veld-pool-coordinator.service\nRequires=veld-pool-coordinator.service\n'}[role]
+    writable=(f'{state}/ipc {state}/core {state}/anchors {state}/backend {state}/rpc'+(f' {state}/operator-ipc' if admin else '')
+              if role not in ('gateway','admin') else '')
     return f'''[Unit]
 Description=Veld pool {role}
 {dependencies}StartLimitIntervalSec=300
@@ -54,8 +55,8 @@ StartLimitBurst=5
 [Service]
 Type=simple
 User={user}
-Group={core if role!='gateway' else gateway}
-SupplementaryGroups={gateway}
+Group={user}
+SupplementaryGroups={gateway if role not in ('gateway','admin') else ''}
 WorkingDirectory={prefix}/lib
 Environment=PYTHONPATH={prefix}/lib
 Environment=PYTHONDONTWRITEBYTECODE=1
@@ -70,7 +71,7 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths={writable}
-InaccessiblePaths={state+'/core '+state+'/anchors '+state+'/backend '+state+'/rpc' if role=='gateway' else ''}
+InaccessiblePaths={state+'/core '+state+'/anchors '+state+'/backend '+state+'/rpc '+config+'/private' if role in ('gateway','admin') else ''}{' '+state+'/operator-ipc '+config+'/admin' if role=='gateway' and admin else ''}
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
@@ -89,11 +90,15 @@ IPAddressAllow=localhost
 WantedBy=multi-user.target
 '''
 
-def stage(package,prefix,config,state,core,gateway):
+def stage(package,prefix,config,state,core,gateway,admin=None):
     for path in (prefix,config,state):
         if not path.is_absolute() or '..' in path.parts or not re.fullmatch(r'/[A-Za-z0-9_./-]+',str(path)):
             raise ValueError('absolute paths without whitespace or systemd expansion required')
     if core==gateway:raise ValueError('gateway and private core must use different users')
+    for name in (core,gateway):checked_name(name)
+    if admin:
+        checked_name(admin)
+        if admin in (core,gateway):raise ValueError('admin needs its own service identity')
     if prefix.resolve().is_relative_to(package):raise ValueError('installation must be outside the package')
     digest=verify(package)
     if prefix.exists():raise ValueError('side-by-side installation requires a new version directory')
@@ -105,18 +110,19 @@ def stage(package,prefix,config,state,core,gateway):
         if path.is_file():path.chmod(0o755 if path.parent.name=='bin' else 0o644)
         elif path.is_dir():path.chmod(0o755)
     (prefix/'systemd').mkdir(mode=0o755)
-    for role in ('backend','coordinator','gateway'):
-        (prefix/'systemd'/f'veld-pool-{role}.service').write_text(unit(role,prefix,config,state,core,gateway))
+    for role in ('backend','coordinator','gateway')+(('admin',) if admin else ()):
+        (prefix/'systemd'/f'veld-pool-{role}.service').write_text(unit(role,prefix,config,state,core,gateway,admin))
     (prefix/'installation.json').write_text(json.dumps({'artifact_manifest_sha256':digest,'prefix':str(prefix),
-        'config_directory':str(config),'state_directory':str(state),'core_user':core,'gateway_user':gateway,
+        'config_directory':str(config),'state_directory':str(state),'core_user':core,'gateway_user':gateway,'admin_user':admin,
         'services_enabled':False,'services_started':False},indent=2)+'\n')
 
 def main():
     parser=argparse.ArgumentParser()
     for name in ('package','prefix','config','state','core-user','gateway-user'):parser.add_argument('--'+name,required=True)
+    parser.add_argument('--admin-user')
     args=parser.parse_args()
     stage(Path(args.package).resolve(),Path(args.prefix),Path(args.config),Path(args.state),
-          checked_name(args.core_user),checked_name(args.gateway_user))
+          checked_name(args.core_user),checked_name(args.gateway_user),checked_name(args.admin_user) if args.admin_user else None)
     print('INSTALLED_OFFLINE: units prepared; no services started or enabled')
 
 if __name__=='__main__':main()

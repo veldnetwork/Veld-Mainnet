@@ -14,6 +14,7 @@
 #include "network/rpc_http.h"
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 int main(int argc, char** argv) {
     using namespace veld;
@@ -31,6 +32,10 @@ int main(int argc, char** argv) {
             throw std::runtime_error("lab ports");
         VeldNode node(config, directory.string());
         node.SetQuietBoot(true);
+        // Match the real pool node_service --txindex contract. Without it,
+        // expired fork-context identity searches can consume the bounded cold
+        // lookup budget before a confirmed payment can be observed.
+        node.SetTxIndexEnabled(true);
         node.SetP2PPort(config.port);
         node.Start();
         std::array<uint8_t, 32> entropy{};
@@ -62,12 +67,29 @@ int main(int argc, char** argv) {
                 // actual VeldHash, preflight and canonical commit. No target,
                 // subsidy, validation, or admission-policy override is supplied.
                 // This is NOT evidence of the external pool worker path.
-                const std::string address=command.substr(5);
+                std::istringstream request(command.substr(5));
+                std::string address, request_id, extra;
+                request >> address;
+                request >> request_id;
+                if ((!request_id.empty() &&
+                     (request_id.size()!=32 || request_id.find_first_not_of("0123456789abcdef")!=std::string::npos)) ||
+                    (request >> extra)) throw std::runtime_error("fixture mining command schema");
                 const auto script=AddressToScript(address);
                 if(script.size()!=25 || ScriptToAddress(script)!=address)
                     throw std::runtime_error("fixture miner address");
                 RealKeyPair recipient;recipient.script_override=script;
                 const auto mined=node.MineBlocks(recipient,1,0);
+                // A dedicated atomic receipt is not mixed with concurrent RPC,
+                // validation or peer log output. Only this test entrypoint
+                // accepts these command IDs; no public RPC/profile is added.
+                if (!request_id.empty()) {
+                    std::string acknowledgement="V1 "+request_id+" ";
+                    if (mined.size()==1 && mined[0].success)
+                        acknowledgement+="MINED "+std::to_string(mined[0].new_height)+" "+HashToHex(mined[0].block.GetHash())+"\n";
+                    else acknowledgement+="DEFERRED\n";
+                    if (!channel::secure_file::AtomicWriteText((directory/"lab-mining-ack.txt").string(),acknowledgement,&error,true))
+                        throw std::runtime_error("fixture mining acknowledgement persistence failed");
+                }
                 if(mined.size()!=1 || !mined[0].success) {
                     // A normal work-admission cancellation is retryable by the
                     // lab driver. It must not terminate a healthy full node.

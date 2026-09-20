@@ -7,7 +7,7 @@ const {extractFunction} = require('./javascript_function_source');
 const source = fs.readFileSync(process.env.VELD_WALLET_TEST_SOURCE ||
   path.join(__dirname, '../include/network/ui_desktop.h'), 'utf8');
 const names = ['sendSourceAddress', 'refreshWalletAfterBroadcast', 'onFromChange',
-  '_veldAssertActiveSignerSeed', 'signAndBroadcast', '_veldConsolidationBudget', '_veldConsolidationProgress'];
+  '_veldAssertActiveSignerSeed', '_veldKeyCommitmentToScriptHex', 'signAndBroadcast', '_veldConsolidationBudget', '_veldConsolidationProgress'];
 const elements = new Map();
 const element = id => {
   if (!elements.has(id)) elements.set(id, {value:'', textContent:'', style:{}});
@@ -71,7 +71,7 @@ function answer(batch, balance, outputs = []) {
     __veldKey:{get:() => 'inert-test-seed', generation:() => 7},
     _veldRequireSelfCustodySigner() {},
     _veldRequireBoundIdentity:() => ({address:'owner'}),
-    _veldAddrToHash160Hex:() => '19'.repeat(20),
+    _veldAddrToKeyCommitmentHex:() => '19'.repeat(20),
     _veldAssertPreparedRelaySize() {}, _veldAssertOpReturnExact() {},
     _veldVerifyInputSighashes() {}, _veldAuthenticatePreparedPrevouts:async () => {},
     veldCrypto:{injectSignatures:async () => 'inert-test-bytes', sha256d:() => '12'.repeat(32)},

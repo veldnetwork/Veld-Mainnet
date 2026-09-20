@@ -20,7 +20,7 @@ class FixtureNode:
     def call(self,method,*args):
         if method=='getblockcount':return 150 if self.confirmed else 149
         if method=='listunspent':return self.coins[args[0]]
-        if method in ('gettransaction','gettransactionrecent'):
+        if method in ('gettransaction','getrawtransaction'):
             if method=='gettransaction' and len(args)!=2:raise Refused('block reference required')
             if not self.confirmed:raise Refused('not found')
             return {'confirmations':1,'block_height':150,'block_hash':'d'*64,'vout':[]}
@@ -32,6 +32,19 @@ class FixtureNode:
         raise AssertionError(method)
 
 class PaymentTests(unittest.TestCase):
+    def test_wide_payout_rechecks_activation_before_private_signer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            node,pool,journal,payment=self.fixture(Path(directory))
+            for value in pool.accounts.values():value['address']='x'*73
+            identity=payment.plan(now=100000);original=node.call;response=[None]
+            node.call=lambda method,*args:response[0] if method=='validateaddress' else original(method,*args)
+            with patch('pool.payments.subprocess.run',side_effect=AssertionError('signer must not run')):
+                for value in [None,[],{'isvalid':True,'destination_type':'sha384-v1','active_for_next_block':False}]:
+                    response[0]=value
+                    with self.assertRaisesRegex(Refused,'not active'):payment.sign(identity)
+                    self.assertNotIn('signed_hex',payment.intents[identity])
+            self.assertEqual(node.broadcasts,[]);journal.close()
+
     def test_missing_payment_history_cannot_spend_other_miners_backing(self):
         with tempfile.TemporaryDirectory() as directory:
             node,pool,journal,payment=self.fixture(Path(directory))
@@ -48,7 +61,7 @@ class PaymentTests(unittest.TestCase):
             payment.record('payment_signed',{'id':identity,'txid':txid,'signed_hex':raw.hex(),'state':'signed'})
             original=node.call
             def call(method,*args):
-                if method=='gettransactionrecent':raise Busy('bounded lookup incomplete')
+                if method=='getrawtransaction':raise Busy('indexed lookup incomplete')
                 return original(method,*args)
             node.call=call
             self.assertEqual(payment.reconcile(identity),'broadcast')

@@ -38,12 +38,28 @@ endpoint. No default public endpoint is supplied. A separate reviewed private
 subnet allow rule is needed to attach another test machine. Configure the backend
 wrapper with `enabled: true` only after verifying these private-network settings.
 
+For the optional secured operator panel, pass `--admin-user` consistently to
+install/configure/provision and follow [ADMIN.md](ADMIN.md). It uses a third
+service identity, private loopback HTTPS and its own UID-checked control socket.
+It is never routed through the public worker gateway. Setup does not activate it.
+
 The backend wrapper launches the ordinary mining-capable node with full IBD,
 transaction indexing, explicit peers and no competing solo mining thread. Its
 RPC token stays encrypted in the node directory. The existing local export
 utility produces an owner-only runtime token used by the private coordinator;
 rotation is re-exported and an invalid replacement stops service. The public
 gateway receives neither that token nor template admission tokens.
+
+When identity or payment signing is configured, the coordinator requires the
+backend to report an operational transaction index before opening its journals.
+It checks again during maintenance and pauses signing while the index is
+unavailable. Keep `--txindex` enabled and allow validation/index recovery to
+finish; bounded recent-history searches are not a substitute for this index.
+Recovery uses the full canonical transaction index for signed payments and
+operator transactions without a saved block reference, including receipts
+older than the recent 2,016-block window. An unavailable lookup retains the
+original signed bytes and input reservations; it never creates a replacement
+economic payment.
 
 Stop gateway first, then coordinator, then backend. Back up closed core journals
 and key material with authenticated encryption; retain newer rollback anchors
@@ -58,6 +74,17 @@ state/configuration/anchors and verify outstanding exact signed transactions
 before resuming. Binary rollback is safe only if the older binary accepts the
 current journal format and canonical chain rules. Never roll back payment or
 nonce journals together with an executable. Refuse unsupported downgrade paths.
+
+New payment batches use `operator-payment-policy-v3`: the automatic minimum
+applies to the combined available whole units for one payout address. The batch
+freezes each account's quota and destination. Payments preserve exact per-account
+deductions, private history and any unpaid remainder. A shared payout address
+does not grant access to another account. Existing batches without this scope
+keep their original per-account minimum until completed; daily scheduling stays
+unchanged. Never rewrite a historical batch or reset signed obligations to force
+an earlier payout. Once a v3 batch exists, an older payment engine that lacks
+destination grouping is not a supported rollback target. Keep payments stopped
+until a compatible engine has replayed the current journal and reconciled it.
 
 The isolated installation exercise runs these restrictions in temporary systemd
 units under distinct service identities. It verifies accepted native work,

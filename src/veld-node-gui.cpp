@@ -2218,7 +2218,8 @@ private:
     }
 
     int PageContentHeight(const RECT& client) const {
-        const int minimum = page_ == Page::Settings ? S(1030) : S(900);
+        const int minimum = page_ == Page::Settings ? S(1030) :
+                            page_ == Page::Pool ? S(1080) : S(900);
         return std::max(static_cast<int>(client.bottom), minimum);
     }
 
@@ -2589,6 +2590,9 @@ private:
                 else if (LOWORD(wp) == ID_TRAY_TOGGLE_NODE) ToggleNode();
                 else if (LOWORD(wp) == ID_TRAY_EXIT) DestroyWindow(hwnd_);
                 return 0;
+            case WM_DRAWITEM:
+                if(pool_panel_ && lp && pool_panel_->Draw(*reinterpret_cast<const DRAWITEMSTRUCT*>(lp)))return TRUE;
+                return DefWindowProcW(hwnd_,msg,wp,lp);
             case WM_CTLCOLORSTATIC:
             case WM_CTLCOLOREDIT:
                 if(pool_panel_) {

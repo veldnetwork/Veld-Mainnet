@@ -434,9 +434,9 @@ constexpr bool VALIDATOR_SYSTEM_ALWAYS_ACTIVE = true;
 #endif
 constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = VELD_VALIDATOR_REGISTRATION_FORK_TEST_HEIGHT;
 #elif defined(VELD_PUBLIC_MAINNET)
-// Coordinated future activation authorized on 2026-09-19. Earlier public
+// Coordinated candidate postponed to 9,500 by the owner on 2026-09-20. Earlier public
 // blocks retain the aggregate registration gate; individual bonds are unchanged.
-constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = 9'000;
+constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = 9'500;
 #else
 constexpr uint64_t VALIDATOR_REGISTRATION_FORK_HEIGHT = 0;
 #endif
@@ -445,6 +445,22 @@ inline constexpr bool ValidatorRegistrationForkActive(uint64_t height) noexcept 
 }
 inline constexpr uint64_t ValidatorRegistrationNetworkStakeFloor(uint64_t height) noexcept {
     return ValidatorRegistrationForkActive(height) ? 0 : VALIDATOR_UNLOCK_STAKED;
+}
+
+#if defined(VELD_SHA384_DESTINATION_TEST_HEIGHT)
+#if !defined(VELD_TEST_CHAIN_BUILD) || !defined(VELD_TEST_HOOKS) || \
+    defined(VELD_PUBLIC_RELEASE) || defined(VELD_PUBLIC_MAINNET) || defined(VELD_PUBLIC_TESTNET)
+#error "destination test height requires an isolated non-public test build"
+#endif
+constexpr uint64_t SHA384_DESTINATION_ACTIVATION_HEIGHT = VELD_SHA384_DESTINATION_TEST_HEIGHT;
+#elif defined(VELD_PUBLIC_MAINNET)
+constexpr uint64_t SHA384_DESTINATION_ACTIVATION_HEIGHT = 9'500;
+#else
+constexpr uint64_t SHA384_DESTINATION_ACTIVATION_HEIGHT = 0;
+#endif
+inline constexpr bool Sha384DestinationsActive(uint64_t height) noexcept {
+    return SHA384_DESTINATION_ACTIVATION_HEIGHT != 0 &&
+           height >= SHA384_DESTINATION_ACTIVATION_HEIGHT;
 }
 
 constexpr uint64_t SLASH_EVIDENCE_WINDOW = 7ULL * BLOCKS_PER_DAY;
@@ -548,7 +564,7 @@ constexpr uint32_t BTCVELD_AMM_BAND_EDGE_BPS[3] = { 500, 1000, 2000 };
 constexpr uint32_t BTCVELD_AMM_BAND_FEE_BPS[4]  = { 30, 50, 75, 100 };
 constexpr uint64_t BTCVELD_AMM_FOURBAND_ACTIVATION_HEIGHT = 1;
 // Owner-approved market-neutral LP fee for the 3.2.1 production candidate.
-// Coordinate it with the selected future upgrade at mainnet block 9,000.
+// Coordinate it with the selected future upgrade at mainnet block 9,500.
 // Historical quotes, serialized anchors and custody rules remain unchanged.
 constexpr uint32_t BTCVELD_AMM_FLAT_FEE_BPS = 30;
 #if defined(VELD_TEST_AMM_FLAT_FEE_HEIGHT)
@@ -560,7 +576,7 @@ constexpr uint64_t BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT = VELD_TEST_AMM_FLAT_F
 static_assert(BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT > BTCVELD_AMM_FOURBAND_ACTIVATION_HEIGHT,
               "test activation must preserve a historical four-band interval");
 #elif defined(VELD_PUBLIC_MAINNET)
-constexpr uint64_t BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT = 9'000;
+constexpr uint64_t BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT = 9'500;
 #else
 constexpr uint64_t BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT = 0;
 #endif

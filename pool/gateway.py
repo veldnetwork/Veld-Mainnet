@@ -10,6 +10,7 @@ import signal
 
 from .protocol import decode, encode, require, Refused
 from .private_file import read_private
+from .public_status import public_status
 
 class Gateway(http.server.ThreadingHTTPServer):
     daemon_threads=True
@@ -51,7 +52,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options','nosniff')
         self.send_header('Cache-Control','no-store')
     def do_GET(self):
+        if self.path=='/v1/public':
+            if not self.server.allow(self.client_address[0],'public'):
+                self.reply(429,{'ok':False,'error':'rate limit','retryable':True});return
+            try:
+                self.reply(200,public_status(self.coordinator_request('health',{})))
+            except (Refused,ValueError,OSError,TimeoutError):
+                self.reply(503,{'ok':False,'error':'temporarily unavailable','retryable':True})
+            return
         assets={'/':('index.html','text/html; charset=utf-8'),'/pool.css':('pool.css','text/css; charset=utf-8'),
+                '/site.css':('site.css','text/css; charset=utf-8'),
                 '/pool.js':('pool.js','application/javascript; charset=utf-8')}
         if self.path not in assets:
             self.reply(404,{'ok':False,'error':'not found','retryable':False});return
@@ -66,9 +76,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body=encode(value)
         self.send_response(code)
         self.security_headers()
+        origin=self.headers.get('Origin')
+        if self.command=='GET' and self.path=='/v1/public' and origin in (
+                'https://explorer.veld.network','https://portal.veld.network'):
+            # Anonymous aggregates only. No credentials, private read or write
+            # endpoints receive CORS permission. No arbitrary upstream URL.
+            self.send_header('Access-Control-Allow-Origin',origin)
+            self.send_header('Vary','Origin')
         for key,value in {'Content-Type':'application/json','Content-Length':str(len(body)),
                           'Connection':'close'}.items():self.send_header(key,value)
         self.end_headers();self.wfile.write(body);self.close_connection=True
+    def coordinator_request(self,action,payload):
+        with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
+            connection.settimeout(15);connection.connect(self.server.ipc)
+            connection.sendall(encode({'action':action,'payload':payload})+b'\n')
+            with connection.makefile('rb') as file:return decode(file.readline(16385))
     def do_POST(self):
         try:
             require(self.path in ('/v1/register','/v1/work','/v1/submit','/v1/account','/v1/history','/v1/health'),'endpoint')
@@ -80,10 +102,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not self.server.allow(self.client_address[0],action):
                 self.reply(429,{'ok':False,'error':'rate limit','retryable':True});return
             payload=decode(self.rfile.read(int(length)))
-            with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
-                connection.settimeout(15);connection.connect(self.server.ipc)
-                connection.sendall(encode({'action':action,'payload':payload})+b'\n')
-                with connection.makefile('rb') as file:response=decode(file.readline(16385))
+            response=self.coordinator_request(action,payload)
             self.reply(200,response)
         except (Refused,ValueError):self.reply(400,{'ok':False,'error':'invalid request','retryable':False})
         except (OSError,TimeoutError):self.reply(503,{'ok':False,'error':'temporarily unavailable','retryable':True})

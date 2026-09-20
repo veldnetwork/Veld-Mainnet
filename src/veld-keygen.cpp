@@ -385,7 +385,7 @@ static int ValidateNewOutputPath(const std::string& out_path) {
 }
 
 static int CmdNew(const std::string& out_path, bool testnet,
-                  LockedSeed* seed_opt, SensitiveString& pass) {
+                  LockedSeed* seed_opt, SensitiveString& pass, bool sha384 = false) {
     // Recheck after the passphrase/seed prompts. AtomicWriteNew below remains
     // authoritative for a destination created after this race-safe preflight.
     const int output_status = ValidateNewOutputPath(out_path);
@@ -422,7 +422,7 @@ static int CmdNew(const std::string& out_path, bool testnet,
                   << e.what() << "\n";
         return 1;
     }
-    auto addr = veld::PubKeyToAddress(pub, testnet);
+    auto addr = sha384 ? veld::PubKeyToSha384Address(pub, testnet) : veld::PubKeyToAddress(pub, testnet);
 
     // Reserve once so appending the secret cannot leave an abandoned plaintext
     // allocation during growth. Do not create a temporary std::string copy of
@@ -1599,6 +1599,8 @@ static void PrintUsage() {
         "[--seed-input-handle DECIMAL]\n"
 #endif
         "  veld-keygen show FILE [--full-pubkey-hex]\n"
+        "  new/from-seed: add --sha384-destination for a version-one full-key\n"
+        "    destination. Fund/use it only after coordinated chain activation.\n"
         "  veld-keygen export-public-key-raw <keyfile> <new-output>\n"
         "  veld-keygen sign-release <keyfile> <input> <outsig>\n"
         "  veld-keygen verify-release <pubhex|@file> <input> <sigfile>\n"
@@ -1678,6 +1680,7 @@ int main(int argc, char** argv) {
     if (cmd == "new" || cmd == "from-seed") {
         std::string out_path;
         bool testnet = false;
+        bool sha384 = false;
         bool have_seed_input_handle = false;
         uint64_t seed_input_handle = 0;
         int first_opt = 2;
@@ -1690,6 +1693,7 @@ int main(int argc, char** argv) {
             std::string a = argv[i];
             if (a == "--out" && i + 1 < argc) { out_path = argv[++i]; }
             else if (a == "--testnet") { testnet = true; }
+            else if (a == "--sha384-destination") { sha384 = true; }
             else if (a == "--seed-input-handle" && i + 1 < argc &&
                      cmd == "from-seed" && !have_seed_input_handle &&
                      ParseCanonicalU64Arg(argv[i + 1], seed_input_handle)) {
@@ -1738,9 +1742,9 @@ int main(int argc, char** argv) {
                 std::cerr << "error: seed must be 64 hex chars, nonzero\n";
                 return 2;
             }
-            return CmdNew(out_path, testnet, &seed, pass);
+            return CmdNew(out_path, testnet, &seed, pass, sha384);
         }
-        return CmdNew(out_path, testnet, nullptr, pass);
+        return CmdNew(out_path, testnet, nullptr, pass, sha384);
     }
 
     if (cmd == "show") {

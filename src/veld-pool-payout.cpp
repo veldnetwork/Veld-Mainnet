@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
             const auto address=Text(*recipient.Get("address"));
             const auto script=AddressToScript(address);
             const auto amount=Amount(*recipient.Get("units"));
-            Require(script.size()==25 && script!=pool_script && script!=fee_script &&
+            Require((script.size()==25 || IsSha384KeyScript(script)) && script!=pool_script && script!=fee_script &&
                     destinations.insert(address).second && amount>0, "recipient policy");
             paid=Add(paid,amount);tx.outputs.emplace_back(amount,script);
         }

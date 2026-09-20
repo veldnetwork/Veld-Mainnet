@@ -59,10 +59,20 @@ inline void MiningChaChaKeystream(const uint8_t key[32], const uint8_t iv[16],
         for (unsigned word = 0; word < 16; ++word) {
             const __m128i original = word == 12 ? counters :
                 _mm_set1_epi32(static_cast<int32_t>(base[word]));
-            alignas(16) uint32_t lanes[4];
-            _mm_store_si128(reinterpret_cast<__m128i*>(lanes), _mm_add_epi32(words[word], original));
-            for (unsigned lane = 0; lane < 4; ++lane)
-                vc_store32_le(output + 64 * lane + 4 * word, lanes[lane]);
+            words[word] = _mm_add_epi32(words[word], original);
+        }
+        // Transpose four word vectors into four contiguous block fragments.
+        // SSE2 unaligned stores preserve the exact little-endian RFC stream,
+        // avoiding 64 scalar word stores and the intermediate lane array.
+        for (unsigned word = 0; word < 16; word += 4) {
+            const auto lo01 = _mm_unpacklo_epi32(words[word], words[word + 1]);
+            const auto hi01 = _mm_unpackhi_epi32(words[word], words[word + 1]);
+            const auto lo23 = _mm_unpacklo_epi32(words[word + 2], words[word + 3]);
+            const auto hi23 = _mm_unpackhi_epi32(words[word + 2], words[word + 3]);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(output + 4 * word), _mm_unpacklo_epi64(lo01, lo23));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(output + 64 + 4 * word), _mm_unpackhi_epi64(lo01, lo23));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(output + 128 + 4 * word), _mm_unpacklo_epi64(hi01, hi23));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(output + 192 + 4 * word), _mm_unpackhi_epi64(hi01, hi23));
         }
         counter += 4;
         output += 256;

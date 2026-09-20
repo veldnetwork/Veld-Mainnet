@@ -6,7 +6,7 @@ import time
 from fractions import Fraction
 
 from .protocol import VERSION, Busy, Refused, require, hex64, nonce, units
-from .accounting import pplns, allocate, text, floor_total
+from .accounting import pplns, allocate_policy, text, floor_total
 from .records import Records
 
 def sha(raw):
@@ -34,10 +34,12 @@ class Coordinator:
         self.payments = None
         self.rewards = None
         self.identity = None
+        self.operator = None
         self.solutions = Records(journal,'solutions')
         self.inflight = set()
         self.verified_counts = {}
         self.last_healthy = 0
+        self.active_accounts = {} # authenticated activity; never a hashrate estimate
         for event in journal.events(): self.apply(event['kind'], event['payload'], event['seq'])
         for receipt in self.receipts.select(status='pending'):
             self.record('verification', {'identity':receipt['identity'],'status':'deferred'})
@@ -87,10 +89,14 @@ class Coordinator:
                    for status in ('pending','deferred'))
 
     def register(self, address):
-        require(isinstance(address,str) and 25 <= len(address) <= 50, 'payout address')
+        require(isinstance(address,str) and 25 <= len(address) <= 75, 'payout address')
         require(address!=self.pool_address, 'pool identity cannot be a worker payout address')
         require(not self.payments or address!=self.payments.fee_address,'operator fee identity cannot be a worker payout address')
-        require(self.node.call('validateaddress',address).get('isvalid') is True, 'invalid payout address')
+        validation=self.node.call('validateaddress',address)
+        require(isinstance(validation,dict) and validation.get('isvalid') is True, 'invalid payout address')
+        if len(address)>50:
+            require(validation.get('destination_type')=='sha384-v1' and validation.get('active_for_next_block') is True,
+                    'SHA-384 payout destination is not active on this node')
         with self.lock:
             require(len(self.accounts)<10000, 'account capacity')
             worker, view = secrets.token_hex(32), secrets.token_hex(32)
@@ -121,11 +127,13 @@ class Coordinator:
                         raise Busy('chain advanced while sealing reward window; retry')
                 header=bytes.fromhex(template['block_hex'])[:88]
                 identity=self.node.genesis+':'+template_identity(header)
+                policy=self.operator.policy() if self.operator else {'fee_ppm':'0','revision':'0'}
                 job={'id':secrets.token_hex(16),'template':identity,'height':template['height'],
                      # Every full solution is also an accounting share. Freeze
                      # this adjustment in the job before assigning any work.
                      'target':max(self.target,hex64(template['target'])),
-                     'node':template,'policy':'pplns-2-blocks-fee-0-v1'}
+                     'node':template,'policy':'pplns-2-blocks-fee-0-v1' if policy['fee_ppm']=='0' else 'pplns-share-policy-v2',
+                     'fee_ppm':policy['fee_ppm'],'operator_revision':policy['revision']}
                 self.record('job',job)
                 self.active=(job['id'],started+template['work_ttl_ms']/1000)
             job=self.jobs[self.active[0]]
@@ -134,18 +142,22 @@ class Coordinator:
             lease={'id':secrets.token_hex(16),'account':account,'job':job['id'],
                    'template':job['template'],'start':str(start),'end':str(start+count)}
             self.record('lease',lease) # durable BEFORE delivery, including alias/restart
+            self.active_accounts[account] = time.monotonic()
             return {'version':VERSION,'lease':lease['id'],'chain':self.node.genesis,'height':str(job['height']),
                     'header':job['node']['block_hex'][:176], 'target':job['target'],
+                    'fee_ppm':job.get('fee_ppm','0'),'policy_revision':job.get('operator_revision','0'),
                     'start':f'{start:016x}','count':str(count),'ttl_ms':str(max(0,int((self.active[1]-time.monotonic())*1000)))}
 
     def account(self, account, credential):
         self.authenticate(account,credential,'view')
         with self.lock:
-            pending=[];available=[]
+            pending=[];available=[];categories={}
             for income in self.incomes.values():
                 credit=Fraction(income['credits'].get(account,'0'))
                 if income['state']=='pending':pending.append(credit)
                 elif income['state']=='available':available.append(credit)
+                if income['state'] in ('pending','available'):
+                    categories.setdefault(income.get('category','unclassified'),[]).append(credit)
             payment = self.payments.summary(account) if self.payments else {'reserved_units':'0','paid_units':'0'}
             pending_units=floor_total(pending)
             available_units=floor_total(available)-int(payment['reserved_units'])-int(payment['paid_units'])
@@ -156,13 +168,25 @@ class Coordinator:
                     'fractional_units':'retained in exact earning records',
                     'lottery_status':self.identity.status() if self.identity else 'Co-mining disabled; operator funding required.',
                     'reward_windows':self.rewards.status() if self.rewards else {},
+                    'reward_totals':{key:str(floor_total(value)) for key,value in categories.items()},
                     **payment,'payment_status':('reconciliation required' if available_units<0 else
+                        'paused' if self.operator and self.operator.settings['payments_paused'] else
                         'enabled' if self.payments else 'not enabled')}
 
     def health(self):
         with self.lock:
+            now=time.monotonic()
+            self.active_accounts={key:seen for key,seen in self.active_accounts.items() if now-seen<120}
+            tip=getattr(self,'income_tip',None)
             return {'version':VERSION,'status':'Service responding' if time.monotonic()-self.last_healthy<15
                     else 'Reconciliation paused or starting','test_candidate':True,
+                    'chain':self.node.genesis,
+                    'reconciled_height':str(tip[0]) if tip else None,
+                    'active_accounts':str(len(self.active_accounts)),
+                    'verified_shares':str(sum(self.verified_counts.values())),
+                    'payments_enabled':self.payments is not None and not (self.operator and self.operator.settings['payments_paused']),
+                    'co_mining_enabled':self.identity is not None and not (self.operator and self.operator.settings['comining_paused']),
+                    'payment_policy':self.operator.policy() if self.operator else {'minimum_units':'100000000','batch_seconds':'86400','fee_ppm':'0','revision':'0'},
                     'verification_queue':{'waiting':self.unverified_count,'capacity':self.queue_capacity},
                     'retrying':getattr(self,'deferred_phases',[])}
 
@@ -207,11 +231,11 @@ class Coordinator:
                     outputs.extend(matching)
                 amount=sum(units(o['value_units']) for o in outputs)
                 weights=pplns(self.receipts.select(status='verified',cutoff=earned['cutoff'],reverse=True,sequence=True),
-                              earned['cutoff'],self.jobs[earned['job']]['node']['target'],ordered=True)
-                credits,fee=allocate(amount,weights)
+                              earned['cutoff'],self.jobs[earned['job']]['node']['target'],ordered=True,fee_policy=True)
+                credits,fee=allocate_policy(amount,weights)
                 self.record('income',{'id':block,'height':earned['height'],'txid':tx['txid'],
                             'outputs':[{'vout':o['n'],'units':o['value_units']} for o in outputs],
-                            'amount':str(amount),'category':'mining','policy':self.jobs[earned['job']]['policy'],
+                            'amount':str(amount),'category':'mining','policy':'pplns-share-policy-v2',
                             'cutoff':earned['cutoff'],'credits':{a:text(v) for a,v in credits.items()},
                             'operator_fee':text(fee),'state':'pending'})
             spendable={(u['txid'],u['vout']):u for u in self.node.call('listunspent',self.pool_address)}
@@ -239,14 +263,14 @@ class Coordinator:
             require(self.node.call('getblockhash',str(height))==tip,'chain changed during income reconciliation')
             self.income_tip=(height,tip)
 
-    def reconcile_solutions(self):
+    def reconcile_solutions(self,submit=True):
         with self.lock:
             height=self.node.call('getblockcount')
             if self.active and self.jobs[self.active[0]]['height']!=height+1:
                 self.active=None
             for solution in self.solutions.select(status=''):
                 if solution['block'] in self.earnings:continue
-                if height==solution['height']-1:
+                if submit and height==solution['height']-1:
                     try:
                         job=self.jobs[solution['job']]
                         # A deferred external-work budget may outlive its one-use
@@ -302,7 +326,8 @@ class Coordinator:
                 if not prior:
                     self.record('receipt',{'identity':identity,'account':account,'lease':lease_id,
                                 'height':job['height'],'target':job['target'],'nonce':encoded_nonce,
-                                'admitted_parent':admitted_parent})
+                                'admitted_parent':admitted_parent,'fee_ppm':job.get('fee_ppm','0'),
+                                'operator_revision':job.get('operator_revision','0')})
             except BaseException:
                 self.inflight.discard(identity)
                 self.admission.release()

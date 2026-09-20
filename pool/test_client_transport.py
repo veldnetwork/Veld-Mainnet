@@ -32,6 +32,16 @@ def main():
             ('redirect refused','trusted','trusted',normal.replace(b'200 OK',b'302 Found'),False,True),
             ('wrong JSON shape','trusted','trusted',normal[:-len(body)]+b'['+b' '*(len(body)-2)+b']',False,True),
         ]
+        expected_retries={}
+        for name,status,error,expected in (
+            ('bounded work retry',200,'busy','pool work temporarily unavailable'),
+            ('bounded rate retry',429,'busy','pool rate limit; retrying'),
+            ('untrusted retry text',503,'<untrusted remote message>','pool service temporarily unavailable')):
+            import json
+            retry_body=json.dumps(dict(ok=False,error=error,retryable=True)).encode()
+            response=(f'HTTP/1.1 {status} Retry\r\nContent-Type: application/json\r\nContent-Length: {len(retry_body)}\r\n\r\n').encode()+retry_body
+            cases.append((name,'trusted','trusted',response,False,True))
+            expected_retries[name]=expected
         for name,certificate,ca,response,success,sent in cases:
             context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(root/(certificate+'.crt'),root/(certificate+'.key'))
@@ -60,6 +70,8 @@ def main():
             assert not thread.is_alive() and not failures,(name,failures)
             assert (result.returncode==0)==success,(name,result.returncode,result.stdout,result.stderr)
             assert bool(requests)==sent,(name,'credentials sent before TLS authentication')
+            if name in expected_retries:
+                assert result.returncode==2 and result.stdout.strip()=='RETRY '+expected_retries[name],(name,result.stdout)
             print('PASS',name)
         print('PASS native TLS transport fault suite; no mining claim')
 

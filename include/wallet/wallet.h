@@ -8,6 +8,7 @@
 #include "../crypto/ripemd160.h"
 #include <vector>
 #include <string>
+#include <string_view>
 #include <array>
 #include <cstdint>
 #include <stdexcept>
@@ -138,6 +139,16 @@ inline std::string PubKeyToAddress(const PublicKey& pubkey, bool testnet = false
     return Base58CheckEncode(version, payload);
 }
 
+inline std::string PubKeyToSha384Address(const PublicKey& pubkey, bool testnet = false) {
+    return Sha384KeyAddress(pubkey, testnet);
+}
+
+inline bool PublicKeyOwnsAddress(const PublicKey& pubkey, std::string_view address,
+                                 bool testnet = false) {
+    return address == PubKeyToAddress(pubkey, testnet) ||
+           address == PubKeyToSha384Address(pubkey, testnet);
+}
+
 inline std::vector<uint8_t> BuildP2PKHScript(const std::array<uint8_t, 20>& pubkey_hash) {
     std::vector<uint8_t> script;
     script.push_back(0x76);
@@ -187,6 +198,8 @@ struct KeyPair {
     std::string address;
 
     std::vector<uint8_t> GetP2PKHScript() const {
+        if (address.size() > 50 && address == Sha384KeyAddress(public_key))
+            return BuildSha384KeyScript(PublicKeyCommitment384(public_key));
         Hash160 pubkey_hash = Hash160Compute(public_key.data(), public_key.size());
         return BuildP2PKHScript(pubkey_hash);
     }

@@ -27,16 +27,21 @@ static_assert(finality::qc::REGISTRATION_MATURITY == 480);
 static_assert(finality::qc::MIN_VALIDATOR_COUNT == 7);
 
 #ifdef VELD_PUBLIC_MAINNET
-static_assert(VALIDATOR_REGISTRATION_FORK_HEIGHT == 9000);
+static_assert(VALIDATOR_REGISTRATION_FORK_HEIGHT == 9500);
+static_assert(SHA384_DESTINATION_ACTIVATION_HEIGHT == VALIDATOR_REGISTRATION_FORK_HEIGHT);
+static_assert(BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT == VALIDATOR_REGISTRATION_FORK_HEIGHT);
+static_assert(!ValidatorRegistrationForkActive(9000));
+static_assert(!Sha384DestinationsActive(9000));
+static_assert(ValidatorRegistrationNetworkStakeFloor(9000) == 10000 * VELD_UNITS);
 static_assert(ValidatorRegistrationNetworkStakeFloor(6199) == 10000 * VELD_UNITS);
 static_assert(ValidatorRegistrationNetworkStakeFloor(6200) == 10000 * VELD_UNITS);
-static_assert(ValidatorRegistrationNetworkStakeFloor(8999) == 10000 * VELD_UNITS);
-static_assert(ValidatorRegistrationNetworkStakeFloor(9000) == 0);
-static_assert(ValidatorRegistrationNetworkStakeFloor(9001) == 0);
+static_assert(ValidatorRegistrationNetworkStakeFloor(9499) == 10000 * VELD_UNITS);
+static_assert(ValidatorRegistrationNetworkStakeFloor(9500) == 0);
+static_assert(ValidatorRegistrationNetworkStakeFloor(9501) == 0);
 static_assert(ValidatorRegistrationNetworkStakeFloor(UINT64_MAX) == 0);
-static_assert(!ValidatorRegistrationForkActive(8999));
-static_assert(ValidatorRegistrationForkActive(9000));
-static_assert(ValidatorRegistrationForkActive(9001));
+static_assert(!ValidatorRegistrationForkActive(9499));
+static_assert(ValidatorRegistrationForkActive(9500));
+static_assert(ValidatorRegistrationForkActive(9501));
 static_assert(PROTOCOL_UPGRADE_HEIGHT == 3840);
 static_assert(ASERT_ACTIVATION_HEIGHT == 3840);
 static_assert(SECURITY_STATE_MIGRATION_HEIGHT == 3840);

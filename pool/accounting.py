@@ -13,7 +13,13 @@ def expected_work(target):
     require(0 < target < SPACE, 'target range')
     return Fraction(SPACE, target)  # canonical proof rule is hash < target
 
-def pplns(receipts, cutoff, network_target, lookback=2, ordered=False):
+def fee_key(receipt):
+    fee=receipt.get('fee_ppm','0')
+    from .protocol import units
+    return receipt['account'],units(fee,1000000)
+
+
+def pplns(receipts, cutoff, network_target, lookback=2, ordered=False, fee_policy=False):
     remaining = lookback * expected_work(network_target)
     weights = {}
     # Durable arrival order, regardless of verification completion order.
@@ -21,18 +27,20 @@ def pplns(receipts, cutoff, network_target, lookback=2, ordered=False):
         if receipt['seq'] > cutoff or receipt['status'] != 'verified':
             continue
         work = min(expected_work(receipt['target']), remaining)
-        weights[receipt['account']] = weights.get(receipt['account'], Fraction()) + work
+        key=fee_key(receipt) if fee_policy else receipt['account']
+        weights[key] = weights.get(key, Fraction()) + work
         remaining -= work
         if remaining == 0:
             break
     return weights
 
-def window_weights(receipts, first, last, cutoff):
+def window_weights(receipts, first, last, cutoff, fee_policy=False):
     weights = {}
     for receipt in receipts:
         if (receipt['seq'] <= cutoff and first <= receipt['height'] <= last and
                 receipt['status'] == 'verified'):
-            weights[receipt['account']] = weights.get(receipt['account'], Fraction()) + expected_work(receipt['target'])
+            key=fee_key(receipt) if fee_policy else receipt['account']
+            weights[key] = weights.get(key, Fraction()) + expected_work(receipt['target'])
     return weights
 
 def allocate(amount, weights, fee_ppm=0):
@@ -46,6 +54,17 @@ def allocate(amount, weights, fee_ppm=0):
 
 def text(value):
     return f'{value.numerator}/{value.denominator}'
+
+
+def allocate_policy(amount, weights):
+    """Fees follow each assigned share's policy, including mixed PPLNS windows."""
+    gross,_=allocate(amount,weights)
+    credits={};fee=Fraction()
+    for (account,ppm),value in gross.items():
+        require(type(ppm) is int and 0<=ppm<=1000000,'receipt fee')
+        charge=value*Fraction(ppm,1000000);fee+=charge
+        credits[account]=credits.get(account,Fraction())+value-charge
+    return credits,fee
 
 
 def floor_total(values):

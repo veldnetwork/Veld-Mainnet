@@ -25,7 +25,7 @@ function context(activation){
     vm.runInContext(fn(name),ctx);
   return ctx;
 }
-const c=context(100),pub=context(9000);
+const c=context(100),pub=context(9500);
 let count=0;
 for(const t of vectors){
   const [v,b,av,ab,a,d,h]=t.input;
@@ -37,14 +37,14 @@ for(const t of vectors){
     const got=[q.band,q.feeBps,q.out,q.gross,q.feeOut,q.postV,q.postB,Number(q.rebalances)].map(String);
     assert.deepEqual(got,n.slice(1,9).map(String));
   }
-  const pp={...p,fee_model:h>=9000?pub.BV_FLAT_FEE_MODEL:pub.BV_FEE_MODEL};
+  const pp={...p,fee_model:h>=9500?pub.BV_FLAT_FEE_MODEL:pub.BV_FEE_MODEL};
   const pq=pub.bvQuote(pp,!!d,a),pn=t.public;
   assert.equal(pq.reject,!!pn[0]);
   if(!pq.reject && pn[3]>0){
     const got=[pq.band,pq.feeBps,pq.out,pq.gross,pq.feeOut,pq.postV,pq.postB,Number(pq.rebalances)].map(String);
     assert.deepEqual(got,pn.slice(1,9).map(String));
   }
-  assert(pub.bvQuote({...pp,fee_model:h>=9000?pub.BV_FEE_MODEL:pub.BV_FLAT_FEE_MODEL},!!d,a).reject);
+  assert(pub.bvQuote({...pp,fee_model:h>=9500?pub.BV_FEE_MODEL:pub.BV_FLAT_FEE_MODEL},!!d,a).reject);
   for(const bad of ['unknown',h>=100?c.BV_FEE_MODEL:c.BV_FLAT_FEE_MODEL])
     assert(c.bvQuote({...p,fee_model:bad},!!d,a).reject);
   // An arbitrary server fee does not change the compiled 30-bps policy.

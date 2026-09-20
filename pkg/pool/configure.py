@@ -75,7 +75,17 @@ def render(values):
             operator_funding_file=config+'/private/operator-funding.json', tier=1)
     gateway = dict(host=str(listen), port=values['tls_port'], certificate=config+'/tls/certificate.pem',
         private_key=config+'/tls/private-key.pem', coordinator_socket=state+'/ipc/coordinator.sock')
-    return dict(backend=backend, coordinator=coordinator, gateway=gateway)
+    result=dict(backend=backend, coordinator=coordinator, gateway=gateway)
+    if values.get('admin_uid') is not None:
+        uid=values['admin_uid'];port=values.get('admin_port',24444);ceiling=values.get('approved_max_fee_ppm',0)
+        if type(uid) is not int or uid<=0:raise ValueError('non-root admin UID required')
+        if type(port) is not int or not 1024<port<=65535 or port in ports:raise ValueError('distinct admin port required')
+        if type(ceiling) is not int or not 0<=ceiling<=100000:raise ValueError('approved fee ceiling required')
+        coordinator['operator']=dict(socket=state+'/operator-ipc/operator.sock',uid=uid,max_fee_ppm=str(ceiling))
+        result['admin']=dict(host='127.0.0.1',port=port,certificate=config+'/admin/certificate.pem',
+            private_key=config+'/admin/private-key.pem',credential_file=config+'/admin/access.json',
+            operator_socket=coordinator['operator']['socket'])
+    return result
 
 
 def main():
@@ -87,7 +97,13 @@ def main():
         parser.add_argument('--'+name, type=int, required=True)
     parser.add_argument('--comining', action='store_true')
     parser.add_argument('--runtime-network',choices=('mainnet','testnet','regtest'),required=True)
+    parser.add_argument('--admin-user')
+    parser.add_argument('--admin-port',type=int,default=24444)
+    parser.add_argument('--approved-max-fee-ppm',type=int,default=0)
     args = parser.parse_args()
+    if args.admin_user:
+        import pwd
+        args.admin_uid=pwd.getpwnam(args.admin_user).pw_uid
     configs = render(vars(args))
     output = Path(args.config)
     if output.exists():

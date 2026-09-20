@@ -6,6 +6,18 @@ from pathlib import Path
 from .protocol import decode, encode, require, hex64, Refused, Busy, MAX_BLOCK_BYTES, MAX_RPC_BYTES
 from .private_file import read_private
 
+# The canonical builder checks the same readiness gates before construction,
+# before publication and when issuing the final authorization. A transient
+# loss of readiness at any of those stages supplies no usable work. Keep only
+# the existing three readiness reasons retryable; authority/trust/binding
+# failures and writes retain their existing refusal behavior.
+WORK_READINESS_REFUSALS=frozenset(
+    prefix+reason
+    for prefix in ('getblocktemplate refused: ',
+                   'getblocktemplate closed before publication: ',
+                   'getblocktemplate authorization refused: ')
+    for reason in ('sync_incomplete','startup_replay_incomplete','independent_validation_incomplete'))
+
 class Node:
     """Private, pinned node connection. Never follows redirects or environment proxies."""
     def __init__(self, url, token_path, genesis):
@@ -44,10 +56,7 @@ class Node:
                 # Native work admission remains closed until the node is ready.
                 # Tell workers to wait through replay/IBD instead of treating
                 # those exact read-only readiness refusals as fatal policy errors.
-                if method=='getblocktemplate' and error['code']==-32010 and error['message'] in (
-                    'getblocktemplate refused: sync_incomplete',
-                    'getblocktemplate refused: startup_replay_incomplete',
-                    'getblocktemplate refused: independent_validation_incomplete'):
+                if method=='getblocktemplate' and error['code']==-32010 and error['message'] in WORK_READINESS_REFUSALS:
                     raise Busy('node still validating chain history; retry work when ready')
                 if error['code']==-32005 or (error['code']==-32010 and
                     ('local-work-unavailable' in error['message'] or 'capacity' in error['message'])):
@@ -68,6 +77,14 @@ class Node:
     def check_chain(self):
         require(self.call('getblockhash', '0') == self.genesis, 'wrong node genesis')
         require(self.call('getcompiledgenesis') == self.genesis, 'wrong compiled genesis')
+
+    def require_transaction_index(self):
+        # Complete canonical lookup is a prerequisite for funds-bearing pool
+        # operations, including recovery after a fork or extended downtime.
+        # The native bit means enabled AND operational, not just configured.
+        info=self.call('getblockchaininfo')
+        require(isinstance(info,dict) and info.get('txindex_enabled') is True,
+                'pool signing requires an operational transaction index; enable --txindex and finish validation')
 
     def template(self, address, identity=None):
         self.check_chain()

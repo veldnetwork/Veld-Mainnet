@@ -67,4 +67,24 @@ class InstallTests(unittest.TestCase):
                        {'genesis':'AB'*32},{'prefix':'/opt/%n'},{'fee_script':values['pool_script']}):
             with self.assertRaises(ValueError):configure.render(dict(values,**change))
 
+    @unittest.skipUnless(os.name=='posix','Linux service installation')
+    def test_admin_staging_has_separate_identity_fixed_local_listener_and_no_keys(self):
+        values=dict(self.values(),admin_uid=61004,admin_port=24444)
+        configs=configure.render(values)
+        self.assertEqual(configs['admin']['host'],'127.0.0.1')
+        self.assertEqual(configs['coordinator']['operator']['max_fee_ppm'],'0')
+        self.assertEqual(configs['admin']['operator_socket'],configs['coordinator']['operator']['socket'])
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);package=self.package(root);prefix=root/'version1'
+            install.stage(package,prefix,root/'config',root/'state','pool-core','pool-gateway','pool-admin')
+            admin=(prefix/'systemd/veld-pool-admin.service').read_text()
+            self.assertIn('User=pool-admin',admin);self.assertIn('IPAddressAllow=localhost',admin)
+            self.assertIn(str(root/'config/private'),admin)
+            self.assertIn('ReadWritePaths=\n',admin)
+            gateway=(prefix/'systemd/veld-pool-gateway.service').read_text()
+            self.assertIn(str(root/'state/operator-ipc'),gateway)
+            with self.assertRaises(ValueError):install.stage(package,root/'bad',root/'config',root/'state','pool-core','pool-gateway','pool-core')
+        for changes in ({'admin_uid':0},{'admin_port':values['tls_port']},{'approved_max_fee_ppm':100001}):
+            with self.assertRaises(ValueError):configure.render(dict(values,**changes))
+
 if __name__=='__main__':unittest.main()

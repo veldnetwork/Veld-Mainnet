@@ -70,28 +70,60 @@ class Payments:
         require(all(amount>=0 for amount in result.values()),'income reorganization deficit: payments stopped for reconciliation')
         return result
 
+    def eligible_groups(self,quotas,minimum,address_scope):
+        # Payout grouping grants no account access and does not merge balances.
+        # Retain individual deductions while evaluating the automatic minimum
+        # against all payable work directed to the same immutable destination.
+        groups={}
+        for account,amount in sorted(quotas.items()):
+            if amount<=0:continue
+            key=self.pool.accounts[account]['address'] if address_scope else account
+            groups.setdefault(key,{})[account]=amount
+        return {key:amounts for key,amounts in groups.items() if sum(amounts.values())>=minimum}
+
     def plan(self,now=None):
         now=int(time.time()) if now is None else now
         with self.pool.lock,self.lock:
+            operator=getattr(self.pool,'operator',None)
+            require(not operator or not operator.faulted,'operator journal failed; payments stopped')
+            if operator and operator.settings['payments_paused']:return None
+            policy=operator.policy() if operator else {'minimum_units':'100000000','batch_seconds':'86400','fee_ppm':'0','revision':'0'}
+            minimum=units(policy['minimum_units'])
             # Freeze a daily batch, then split it into native-size transactions.
             # Large fragmented receipts must not stop all automatic payments.
             # Existing intents deduct their exact quota before any new chunk.
-            available=self.available();batch=None;quotas={}
+            available=self.available();batch=None;quotas={};groups={};address_scope=True
             if self.batches:
                 batch=max(self.batches.values(),key=lambda b:b['created'])
+                minimum=units(batch.get('minimum_units','100000000'))
+                scope=batch.get('threshold_scope','account')
+                require(scope in ('account','payout_address'),'unknown frozen payout threshold scope')
+                address_scope=scope=='payout_address'
+                if address_scope:
+                    require(set(batch.get('destinations',{}))==set(batch['quotas']) and
+                            all(self.pool.accounts[a]['address']==destination for a,destination in batch['destinations'].items()),
+                            'frozen payout destination changed')
                 spent={}
                 for intent in self.intents.values():
                     if intent.get('batch')==batch['id']:
                         for account,amount in intent['deductions'].items():spent[account]=spent.get(account,0)+units(amount)
                 quotas={a:units(v)-spent.get(a,0) for a,v in batch['quotas'].items()}
                 require(all(v>=0 for v in quotas.values()),'batch quota overdrawn')
-                quotas={a:v for a,v in quotas.items() if v>=100000000}
+                groups=self.eligible_groups(quotas,minimum,address_scope)
+                quotas={a:v for values in groups.values() for a,v in values.items()}
             if not quotas:
                 prior=[i['created'] for i in self.intents.values()]+[b['created'] for b in self.batches.values()]
-                if prior and now-max(prior)<86400:return None
-                quotas={a:v for a,v in available.items() if v>=100000000}
+                if prior and now-max(prior)<units(policy['batch_seconds']):return None
+                minimum=units(policy['minimum_units'])
+                address_scope=True
+                groups=self.eligible_groups(available,minimum,address_scope)
+                quotas={a:v for values in groups.values() for a,v in values.items()}
                 if not quotas:return None
-                batch={'created':now,'quotas':{a:str(v) for a,v in sorted(quotas.items())},'policy':'daily-1-veld-fee-0-v1'}
+                batch={'created':now,'quotas':{a:str(v) for a,v in sorted(quotas.items())},
+                       'policy':'operator-payment-policy-v3','threshold_scope':'payout_address',
+                       'destinations':{a:self.pool.accounts[a]['address'] for a in sorted(quotas)},
+                       'minimum_units':str(minimum),
+                       'batch_seconds':policy['batch_seconds'],'operator_revision':policy['revision']}
                 batch['id']=hashlib.sha256(encode(batch)).hexdigest();self.record('payment_batch',batch)
             require(all(available.get(a,0)>=v for a,v in quotas.items()),'batch income no longer available')
             allowed={(i['txid'],o['vout']) for i in self.pool.incomes.values() if i['state']=='available' for o in i['outputs']}
@@ -126,18 +158,28 @@ class Payments:
                     require(gathered>=needed,'insufficient segregated operator fee funding')
                     require(gathered==needed or gathered-needed>=self.dust,'operator change below native dust policy')
                 else:
-                    if gathered<100000000:return None # Wait for confirmed change; keep the frozen batch.
+                    if gathered<minimum:return None # Wait for confirmed change; keep the frozen batch.
                     pool_funding=gathered
-            amounts={};remaining=pool_funding
-            for account,owed in sorted(quotas.items()):
-                if len(amounts)>=128 or remaining<100000000:break
-                amount=min(owed,remaining);amounts[account]=amount;remaining-=amount
+            selected_groups={};remaining=pool_funding
+            for group,values in sorted(groups.items()):
+                if len(selected_groups)>=128 or remaining<minimum:break
+                amount=min(sum(values.values()),remaining)
+                selected_groups[group]=amount;remaining-=amount
             if 0<remaining<self.dust:
                 # Preserve a relayable change output without donating liabilities
                 # as fees. Sub-threshold leftovers remain owed for a later batch.
-                account=max(amounts,key=lambda a:(amounts[a],a))
-                amounts[account]-=self.dust-remaining
-                if amounts[account]<100000000:del amounts[account]
+                group=max(selected_groups,key=lambda g:(selected_groups[g],g))
+                selected_groups[group]-=self.dust-remaining
+                if selected_groups[group]<minimum:del selected_groups[group]
+            amounts={}
+            for group,amount in selected_groups.items():
+                # A partial input-bounded payment debits only the exact account
+                # units it sends. Remaining quotas survive for subsequent chunks.
+                for account,owed in sorted(groups[group].items()):
+                    take=min(owed,amount)
+                    if take:amounts[account]=take;amount-=take
+                    if amount==0:break
+                require(amount==0,'payout destination deduction mismatch')
             if not amounts:return None
             require(len(selected)<=64,'batch input bound')
             recipients={}
@@ -156,9 +198,17 @@ class Payments:
         with self.pool.lock,self.lock:
             intent=self.intents[identity]
             if 'signed_hex' in intent:return intent['txid']
+            operator=getattr(self.pool,'operator',None)
+            require(not operator or not operator.faulted,'operator journal failed; signing stopped')
+            require(not operator or not operator.settings['payments_paused'],'new payment signatures are paused')
             # A preparation is not proof of spendability; recheck immediately
             # before any signature. Only this private engine invokes the helper.
             self.available()
+            for recipient in intent['wire']['recipients']:
+                if len(recipient['address'])>50:
+                    active=self.node.call('validateaddress',recipient['address'])
+                    require(isinstance(active,dict) and active.get('isvalid') is True and active.get('destination_type')=='sha384-v1' and
+                            active.get('active_for_next_block') is True,'SHA-384 payout destination is not active')
             coins={}
             for role,address in [('pool',self.pool.pool_address),('fees',self.fee_address)]:
                 for coin in self.node.call('listunspent',address):coins[(role,coin['txid'],str(coin['vout']))]=coin
@@ -177,7 +227,7 @@ class Payments:
             self.record('payment_signed',{'id':identity,'txid':txid,'signed_hex':fields[1],'state':'signed'})
             return txid
 
-    def reconcile(self,identity):
+    def reconcile(self,identity,broadcast=True):
         with self.lock:
             intent=self.intents[identity]
             if 'signed_hex' not in intent:return 'reserved'
@@ -188,18 +238,22 @@ class Payments:
                 self.record('payment_state',{'id':identity,'state':'signed','block_hash':None})
             try:
                 tx=(self.node.call('gettransaction',intent['txid'],intent['block_hash'])
-                    if intent.get('block_hash') else self.node.call('gettransactionrecent',intent['txid']))
+                    if intent.get('block_hash') else self.node.call('getrawtransaction',intent['txid']))
                 confirmed=(tx.get('confirmations',0)>0 and tx.get('block_hash') and
                            self.node.call('getblockhash',str(tx['block_height']))==tx['block_hash'])
             except (Refused,Busy):confirmed=False
             if confirmed:
                 if intent['state']!='confirmed':self.record('payment_state',{'id':identity,'state':'confirmed','block_hash':tx['block_hash'],'block_height':tx['block_height']})
                 return 'confirmed'
-            # An incomplete bounded lookup is not evidence that no payment
+            # The full canonical index also finds signatures retained across
+            # downtime beyond the recent-block window. An incomplete lookup
+            # (including index recovery) is not evidence that no payment
             # happened. Rebroadcast ONLY the already persisted identical bytes.
             # Loss, disconnection, and rejection retain the same reservation and
             # exact bytes. They never authorize construction of another payment.
             if intent['state']=='confirmed':self.record('payment_state',{'id':identity,'state':'signed','block_hash':None})
+            operator=getattr(self.pool,'operator',None)
+            if not broadcast or (operator and (operator.faulted or operator.settings['payments_paused'])):return 'signed'
             try:
                 result=self.node.call('sendrawtransaction',intent['signed_hex'])
                 require(result==intent['txid'],'broadcast identity mismatch')

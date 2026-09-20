@@ -1043,7 +1043,7 @@ private:
                     return AddResult::INVALID;
                 if (!Blockchain::VerifyInputAgainstScript(
                         tx, static_cast<uint32_t>(input_index),
-                        parent_out.script_pubkey)) {
+                        parent_out.script_pubkey, chain.Height() + 1)) {
                     return AddResult::INVALID;
                 }
                 if (resolved_input_total > UINT64_MAX - parent_out.value)

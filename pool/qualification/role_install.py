@@ -24,6 +24,13 @@ from ..native import Native
 from ..protocol import encode,Busy
 from .isolation import MARKER,require_isolated_network
 
+def identity_lease_seconds(maturity_timeout):
+    if type(maturity_timeout) is not int or not 3600 <= maturity_timeout <= 43200:
+        raise ValueError('maturity deadline must be between one and twelve hours')
+    # Cover the full bounded maturity exercise, both short upgrade phases,
+    # startup and teardown. A fixed four-hour NSS lease expired mid-exercise.
+    return maturity_timeout + 2 * 900 + 7200
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--build-directory',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
@@ -61,6 +68,7 @@ def main():
     for file in (source/'pool').glob('*.py'):
         if not file.name.startswith('test_'):shutil.copy2(file,package/'lib/pool'/file.name)
     shutil.copytree(source/'pool/web',package/'lib/pool/web')
+    shutil.copytree(source/'pool/admin_web',package/'lib/pool/admin_web')
     shutil.copytree(source/'pkg/pool',package/'setup',dirs_exist_ok=True,ignore=shutil.ignore_patterns('__pycache__'))
     # Preserve actual attribution in this test staging artifact. This is not
     # the final distribution dependency/license inventory.
@@ -171,7 +179,7 @@ def main():
                     '--property=DynamicUser=yes','--property=User='+name,
                     '--property=NetworkNamespacePath=/proc/'+str(os.getpid())+'/ns/net',
                     '--property=NoNewPrivileges=yes','--property=CapabilityBoundingSet=',
-                    '/usr/bin/sleep','14400'],capture_output=True,check=True,timeout=30)
+                    '/usr/bin/sleep',str(identity_lease_seconds(args.maturity_timeout))],capture_output=True,check=True,timeout=30)
                 account=pwd.getpwnam(name);allocated.append(account.pw_uid)
             core,gateway=allocated
             check('temporary systemd identities are distinct and non-root',0 not in allocated and len(set(allocated))==2)

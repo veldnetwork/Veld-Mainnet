@@ -227,13 +227,12 @@ struct WalletFile {
             }
             try {
                 const auto pub = DerivePublicKey(priv);
-                const std::string derived = PubKeyToAddress(pub, wf.testnet);
-                if (derived != file_addr) return std::nullopt;
+                if (!PublicKeyOwnsAddress(pub, file_addr, wf.testnet)) return std::nullopt;
                 RealKeyPair kp;
                 kp.testnet = wf.testnet;
                 kp.private_key = priv;
                 kp.public_key = pub;
-                kp.address = derived;
+                kp.address = file_addr;
                 wf.keys.push_back(std::move(kp));
             } catch (...) {
                 return std::nullopt;

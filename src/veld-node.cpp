@@ -601,10 +601,16 @@ static bool _wiz_encrypt_key_record(const veld::Secp256k1PrivKey& priv,
                                     const std::string& passphrase,
                                     bool testnet,
                                     std::vector<uint8_t>& encrypted,
-                                    std::string* address = nullptr) {
+                                    std::string* address = nullptr,
+                                    const std::string& preserved_address = {}) {
     encrypted.clear();
     auto pub  = veld::DerivePublicKey(priv);
     auto addr = veld::PubKeyToAddress(pub, testnet);
+    if (!preserved_address.empty()) {
+        if (!veld::PublicKeyOwnsAddress(pub, preserved_address, testnet))
+            return false;
+        addr = preserved_address;
+    }
     static constexpr char hex[] = "0123456789abcdef";
     std::string priv_hex;
     std::string pub_hex;
@@ -631,10 +637,11 @@ static bool _wiz_encrypt_key_record(const veld::Secp256k1PrivKey& priv,
 static bool _wiz_save_key_encrypted(const std::string& key_file,
                                      const veld::Secp256k1PrivKey& priv,
                                      const std::string& passphrase,
-                                     bool testnet = false) {
+                                     bool testnet = false,
+                                     const std::string& preserved_address = {}) {
     std::vector<uint8_t> encrypted;
     if (!_wiz_encrypt_key_record(
-            priv, passphrase, testnet, encrypted)) return false;
+            priv, passphrase, testnet, encrypted, nullptr, preserved_address)) return false;
     std::string error;
     const bool ok = veld::channel::secure_file::AtomicWrite(
         key_file, encrypted, &error, /*require_private_parent=*/true);
@@ -838,8 +845,7 @@ static bool _wiz_parse_key_record(std::string_view content,
     if (!_wiz_parse_privkey(priv_hex, priv)) return false;
     try {
         const auto pub = veld::DerivePublicKey(priv);
-        const std::string derived_addr = veld::PubKeyToAddress(pub, testnet);
-        if (pub_hex.size() != pub.size() * 2 || stored_addr != derived_addr)
+        if (pub_hex.size() != pub.size() * 2 || !veld::PublicKeyOwnsAddress(pub, stored_addr, testnet))
             return false;
         auto nibble = [](char c) -> int {
             if (c >= '0' && c <= '9') return c - '0';
@@ -858,7 +864,7 @@ static bool _wiz_parse_key_record(std::string_view content,
         verified.testnet = testnet;
         verified.private_key = priv;
         verified.public_key = pub;
-        verified.address = derived_addr;
+        verified.address = stored_addr;
         kp = std::move(verified);
         return true;
     } catch (...) {
@@ -927,6 +933,7 @@ static bool _wiz_import_encrypted_keyfile(
             veld::RealKeyPair imported;
             if (_wiz_parse_key_record(decrypted, imported, testnet)) {
                 private_key = imported.private_key;
+                imported_address = imported.address;
                 veld::compat::SecureZero(imported.private_key.data(),
                                          imported.private_key.size());
                 have_private_key = true;
@@ -952,7 +959,14 @@ static bool _wiz_import_encrypted_keyfile(
     }
     try {
         const auto public_key = veld::DerivePublicKey(private_key);
-        imported_address = veld::PubKeyToAddress(public_key, testnet);
+        if (browser_keystore) imported_address = authenticated_browser_address;
+        if (imported_address.empty())
+            imported_address = veld::PubKeyToAddress(public_key, testnet);
+        if (!veld::PublicKeyOwnsAddress(public_key, imported_address, testnet)) {
+            imported_address.clear();
+            error = "authenticated key/address mismatch";
+            return false;
+        }
     } catch (...) {
         error = "keyfile contains an invalid private key";
         return false;
@@ -965,7 +979,7 @@ static bool _wiz_import_encrypted_keyfile(
         return false;
     }
     if (!_wiz_save_key_encrypted(
-            destination_path, private_key, passphrase, testnet)) {
+            destination_path, private_key, passphrase, testnet, imported_address)) {
         error = "could not write the protected mining identity";
         imported_address.clear();
         return false;
@@ -996,7 +1010,7 @@ static bool _wiz_load_key_encrypted(const std::string& key_file,
         // and a failed rewrite leaves the original keyfile intact.
         if (!veld::wallet_crypto::IsCurrentWalletEnvelope(data)
                 && !_wiz_save_key_encrypted(
-                    key_file, kp.private_key, passphrase, testnet)) {
+                    key_file, kp.private_key, passphrase, testnet, kp.address)) {
             std::cerr << "[keyfile] warning: unlocked an older protected "
                          "keyfile but could not upgrade its encryption; "
                          "the original file remains usable\n";
@@ -1702,6 +1716,8 @@ static void PrintDeploymentInfoJson() {
               << "\"profile_id\":\"" << veld::DEPLOYMENT_PROFILE_ID << "\","
               << "\"amm_flat_fee_activation_height\":" << veld::BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT << ","
               << "\"amm_flat_fee_bps\":" << veld::BTCVELD_AMM_FLAT_FEE_BPS << ","
+              << "\"sha384_destination_activation_height\":" << veld::SHA384_DESTINATION_ACTIVATION_HEIGHT << ","
+              << "\"sha384_destination_version\":" << unsigned(veld::SHA384_DESTINATION_VERSION) << ","
 #if defined(VELD_PUBLIC_MAINNET) || defined(VELD_BTCVELD_REGTEST)
               << "\"legacy_direct_mint_formats_accepted\":false,"
               << "\"reserve_proof_semantics\":\"RTP1/RVS1\","

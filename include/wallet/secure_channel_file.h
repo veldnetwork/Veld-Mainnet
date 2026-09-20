@@ -419,8 +419,20 @@ inline bool AtomicWrite(const std::string& path, const uint8_t* data, size_t siz
     const HANDLE raw = handle.release();
     if (!::CloseHandle(raw)) ok = false;
     if (ok) {
-        ok = ::MoveFileExW(tmp.c_str(), target.c_str(),
-                           MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+        // A validated reader (including our own Read) can briefly hold a
+        // handle without delete sharing. Retry only publication of these
+        // same flushed bytes; never rewrite the payload or relax DACL checks.
+        // Access denied also covers Windows' pending-delete state. Permanent
+        // ACL failures remain failures after this bounded one-second wait.
+        for (unsigned attempt = 0; ; ++attempt) {
+            ok = ::MoveFileExW(tmp.c_str(), target.c_str(),
+                              MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+            if (ok) break;
+            const DWORD code = ::GetLastError();
+            if (attempt == 20 || (code != ERROR_SHARING_VIOLATION &&
+                code != ERROR_LOCK_VIOLATION && code != ERROR_ACCESS_DENIED)) break;
+            ::Sleep(50);
+        }
     }
     if (ok) ok = ValidatePrivateFilePath(target, owner, error);
     if (!ok) {

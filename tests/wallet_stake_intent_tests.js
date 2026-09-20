@@ -36,7 +36,7 @@ function fixture(options = {}) {
     },
     _veldParseVeldUnitsExact:text => BigInt(text) * 100000000n,
     _veldUnitsToAmountString:units => String(Number(units) / 100000000),
-    _veldAddrToHash160Hex:() => 'inert-owner-hash',
+    _veldAddrToKeyCommitmentHex:() => 'inert-owner-hash',
     _veldBuildProtocolOpReturnHex:text => text,
     fmt:(value, places) => Number(value).toFixed(places), escHtml:String,
     formatBlockDuration:blocks => blocks + ' blocks',

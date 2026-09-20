@@ -2,19 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Veld Pool</title><link rel="stylesheet" href="/pool.css"><script src="/pool.js" defer></script>
+  <meta name="description" content="Veld Pool: setup, live service monitoring and private miner rewards and payment history.">
+  <title>Veld Pool</title><link rel="stylesheet" href="/pool.css"><link rel="stylesheet" href="/site.css"><script src="/pool.js" defer></script>
 </head>
 <body>
   <main>
-    <header><div><span class="eyebrow">PRIVATE TEST CANDIDATE</span><h1>Veld Pool</h1></div><span id="health" role="status">Checking service…</span></header>
-    <section class="notice">Test coins only. This candidate is still being qualified and is not a public mining service.</section>
-    <section>
+    <header><a href="#" class="brand" aria-label="Veld Pool home"><span class="mark" aria-hidden="true">◈</span> Veld <span>Pool</span></a><nav aria-label="Page"><a href="#setup">Setup</a><a href="#monitoring">Monitoring</a><a href="#account-section">My account</a></nav></header>
+    <div class="hero"><span class="eyebrow">MINE TOGETHER</span><h1>Your CPU.<br>Shared rewards.</h1><p>Mine with Veld Node. Keep your keys. Track your share of the pool’s earnings in one place.</p><div class="actions"><a class="button" href="#setup">Set up pool mining <span aria-hidden="true">↗</span></a><a class="text-link" href="#account-section">View my account →</a></div></div>
+    <aside class="notice"><strong>Mine to your own wallet</strong><p>Use your personal Veld payout address. No deposit, personal stake or wallet import is needed to join. Your keys stay with you.</p></aside>
+    <section id="monitoring"><div class="section-heading"><h2>Pool monitoring</h2><span id="health" role="status">Checking service…</span></div><div class="metrics"><div><span>Reconciled height</span><strong id="height">—</strong></div><div><span>Active accounts · 2 min</span><strong id="active">—</strong></div><div><span>Verified shares</span><strong id="total-shares">—</strong></div><div><span>Verification queue</span><strong id="queue">—</strong></div></div><p id="service-details" class="subtext">Waiting for the pool’s health report.</p><details><summary>Network identity</summary><p id="chain" class="address">—</p><p class="subtext">Match this genesis hash to the network in your node. Activity counts are accounts, not a measurement of hashrate.</p></details></section>
+    <section id="setup"><div class="section-heading"><h2>From node to pool in four steps</h2><span class="eyebrow">YOUR KEYS STAY WITH YOU</span></div><ol class="steps"><li><span>01</span><div><h3>Open Veld Node</h3><p>Install Veld Node from <a href="https://veld.network/" target="_blank" rel="noopener noreferrer">the official Veld website</a> and choose the <b>Pool</b> tab. Solo mining remains on the Mining tab.</p></div></li><li><span>02</span><div><h3>Choose your pool and payout address</h3><p>Use <b>https://pool.veld.network</b> and enter your own Veld payout address. Leave the optional certificate field blank for Veld Pool. You can also choose another HTTPS pool endpoint.</p><p class="endpoint">Pool endpoint: <code id="endpoint">—</code></p><button id="copy-endpoint" type="button" class="secondary">Copy endpoint</button></div></li><li><span>03</span><div><h3>Choose CPU workers and start</h3><p>Select how many CPU workers to use, then Start pool mining. The node reports accepted work and reconnects after interruptions. No deposit, personal stake or wallet passphrase is needed.</p></div></li><li><span>04</span><div><h3>See your earnings</h3><p>Choose Copy view access in the node and paste it below. Earnings remain assigned to your account when you disconnect. Stop disables automatic pool resume.</p></div></li></ol><details><summary>Connection help</summary><p>Check the endpoint and network first. Veld Pool uses your system’s trusted certificates. Other pools may supply a custom certificate authority; never disable certificate verification. “Busy; retrying” means the worker is waiting for resources; it does not mean your proof is invalid. Keep the private account folder when reinstalling. Changing the payout address creates a separate account and does not move earlier earnings.</p></details></section>
+    <section class="terms"><h2>How rewards and payments work</h2><div class="terms-grid"><div><h3>Block rewards</h3><p>Your verified work earns a proportional share using a rolling PPLNS window of two network blocks of expected work. Only actual pool miner outputs create earnings.</p></div><div><h3>Co-mining &amp; staking</h3><p>When funded and enabled, actual lottery winnings and staking yield are shared with contributors from the earning window. The operator’s contributed stake principal stays separate.</p></div><div><h3>Payments</h3><p><span id="payment-policy">Loading payment policy…</span> Receipts need at least 120 confirmations and actual spendability. Small balances carry forward. Daily earnings are not guaranteed.</p></div></div></section>
+    <section id="account-section">
       <h2>Your account</h2>
       <p>In your node's Pool tab, choose Copy view access and paste it below. Your payout address alone cannot open private account details.</p>
       <form id="login">
         <label>Viewing access from your client<input id="access" type="password" autocomplete="off" maxlength="4096" placeholder="Paste copied viewing access"></label>
+        <details><summary>Enter account details manually</summary>
         <label>Account ID<input id="account" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="32" required pattern="[a-f0-9]{32}"></label>
         <label>Viewing token<input id="token" type="password" autocomplete="off" maxlength="64" required pattern="[a-f0-9]{64}"></label>
+        </details>
         <div class="actions"><button type="submit">View account</button><button id="forget" type="button" class="secondary">Clear</button></div>
       </form>
       <p class="subtext">Never enter a wallet seed or passphrase. The viewing token stays in this tab’s memory and is cleared when you close or reload it.</p>
@@ -28,11 +35,11 @@
         <section><h2>Payment in progress</h2><strong id="reserved">—</strong><p>Reserved for an existing payment.</p></section>
         <section><h2>Paid</h2><strong id="paid">—</strong><p>Payments confirmed on this chain.</p></section>
       </div>
-      <section><h2>Accepted work</h2><strong id="shares">—</strong><p id="payment-status"></p><p class="subtext">Candidate settings: 0% service fee, 1 VELD minimum automatic payment, daily batches, and at least 120 confirmations plus spendability. Small balances carry forward. Daily batches do not guarantee daily earnings.</p></section>
+      <section><h2>Accepted work</h2><strong id="shares">—</strong><p id="payment-status"></p><p class="subtext">Verified shares are work credit. Earnings appear only after the pool receives an eligible reward. Category totals are rounded down to the smallest VELD unit; fractional entitlements remain recorded.</p><div id="reward-totals" class="metrics"></div></section>
       <section><h2>Payments</h2><div class="table-wrap"><table><thead><tr><th>Created</th><th>Amount</th><th>Status</th><th>Transaction</th></tr></thead><tbody id="payments"></tbody></table></div><button id="older" type="button" class="secondary" hidden>Older payments</button></section>
       <section><h2>Co-mining and staking rewards</h2><p id="lottery"></p><p id="reward-policy"></p><p class="subtext">Actual lottery winnings and ordinary staking yield are shared with verified contributors from the earning window. Operator stake principal stays separate. Found or broadcast near misses are not confirmed entries.</p></section>
     </div>
-    <footer>Keep your viewing token private. This page cannot sign transactions or change payout destinations.</footer>
+    <footer><span class="brand">◈ Veld Pool</span><p>Keep your viewing token private. This page cannot sign transactions or change payout destinations.</p><a href="#setup">Back to setup ↑</a></footer>
   </main>
 </body>
 </html>

@@ -89,7 +89,7 @@ const context = vm.createContext({
   setTimeout: fn => setImmediate(fn),
   _veldAutoLockSigner() { throw new Error('ordinary fixture unexpectedly expired'); },
   _veldRequireBoundIdentity: () => ({address: 'ordinary-owner'}),
-  _veldAddrToHash160Hex: () => ownerHash,
+  _veldAddrToKeyCommitmentHex: () => ownerHash,
   _veldAssertOpReturnExact: (_, value) => assert.equal(value, ''),
   _veldVerifyInputSighashes() {},
   _veldAuthenticatePreparedPrevouts: async () => { events.push('parents'); },
@@ -111,7 +111,7 @@ const context = vm.createContext({
 const names = ['_veldRequireSelfCustodySigner', '_veldAssertActiveSignerSeed', '_veldActivateBoundIdentity',
   'hexToBytes', 'bytesToHex', '_veldHexToBytes', '_veldBytesToHex', '_veldParseVarint',
   '_veldParseUnsignedTx', '_veldAssertPreparedRelaySize', 'injectSignatures',
-  '_veldBroadcastExactSigned', 'signAndBroadcast'];
+  '_veldBroadcastExactSigned', '_veldKeyCommitmentToScriptHex', 'signAndBroadcast'];
 vm.runInContext(names.map(extract).join('\n'), context);
 context.veldCrypto.injectSignatures = (...args) => {
   events.push('sign');

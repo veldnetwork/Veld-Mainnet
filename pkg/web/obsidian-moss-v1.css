@@ -176,7 +176,7 @@ html:not([data-theme="light"]) .wallet-bal-hero,
 html:not([data-theme="light"]) .bv-lp-hero{
   background:radial-gradient(circle at 12% 0%,rgba(126,217,73,.055),transparent 42%),linear-gradient(145deg,#111914,#0b100d)!important;
   background-size:auto!important;
-  border:1px solid #334239!important;
+  border:1px solid #41464e!important;
   border-top-color:#4d6956!important;
   border-radius:10px!important;
   box-shadow:0 12px 34px rgba(0,0,0,.28)!important;
@@ -210,12 +210,12 @@ html:not([data-theme="light"]) .wallet-bal-hero .ar{
   justify-content:center!important;
   gap:8px!important;
   padding:10px 14px!important;
-  background:#303832!important;
-  border:1px solid #59645b!important;
+  background:#292c30!important;
+  border:1px solid #555b63!important;
   border-radius:9px!important;
   box-shadow:inset 0 1px rgba(255,255,255,.05)!important;
 }
-html:not([data-theme="light"]) .wallet-bal-hero .ar:hover{background:#3a443c!important;border-color:#6a756d!important}
+html:not([data-theme="light"]) .wallet-bal-hero .ar:hover{background:#373b40!important;border-color:#747c86!important}
 html:not([data-theme="light"]) .wallet-bal-hero .ar .ic{
   width:22px!important;
   height:22px!important;
@@ -231,27 +231,27 @@ html:not([data-theme="light"]) .wallet-bal-hero .ar .lbl{color:#f5f7f5!important
 html:not([data-theme="light"]) .btn-em,
 html:not([data-theme="light"]) .btn-gold,
 html:not([data-theme="light"]) #pwa-install-btn{
-  background:#303832!important;
+  background:#292c30!important;
   color:#f5f7f5!important;
-  border:1px solid #59645b!important;
+  border:1px solid #555b63!important;
   border-radius:9px!important;
   box-shadow:inset 0 1px rgba(255,255,255,.05)!important;
   filter:none!important;
 }
 html:not([data-theme="light"]) .btn-em:hover,
 html:not([data-theme="light"]) .btn-gold:hover,
-html:not([data-theme="light"]) #pwa-install-btn:hover{background:#3a443c!important;border-color:#6a756d!important;box-shadow:none!important;filter:none!important}
+html:not([data-theme="light"]) #pwa-install-btn:hover{background:#373b40!important;border-color:#747c86!important;box-shadow:none!important;filter:none!important}
 html:not([data-theme="light"]) .btn-ghost,
 html:not([data-theme="light"]) .copy-btn,
 html:not([data-theme="light"]) .pag-btn{
-  background:#151d17!important;
+  background:#1b1e22!important;
   color:#cbd4cd!important;
-  border:1px solid #334239!important;
+  border:1px solid #41464e!important;
   border-radius:8px!important;
 }
 html:not([data-theme="light"]) .btn-ghost:hover,
 html:not([data-theme="light"]) .copy-btn:hover,
-html:not([data-theme="light"]) .pag-btn:hover{background:#1b251e!important;color:#edf4ee!important;border-color:#4a5c4e!important}
+html:not([data-theme="light"]) .pag-btn:hover{background:#292d33!important;color:#edf4ee!important;border-color:#656c77!important}
 
 html:not([data-theme="light"]) input,
 html:not([data-theme="light"]) select,
@@ -297,12 +297,12 @@ html:not([data-theme="light"]) .modal,
 html:not([data-theme="light"]) .pwa-sheet-card{
   background:#0e1410!important;
   color:#edf4ee!important;
-  border:1px solid #334239!important;
+  border:1px solid #41464e!important;
   border-radius:12px!important;
   box-shadow:0 24px 70px rgba(0,0,0,.55)!important;
 }
 html:not([data-theme="light"]) .modal-title{color:#edf4ee!important;font-family:var(--font)!important}
-html:not([data-theme="light"]) #pwa-install-banner{background:#040705!important;border-bottom:1px solid #334239!important;box-shadow:0 10px 28px rgba(0,0,0,.35)!important}
+html:not([data-theme="light"]) #pwa-install-banner{background:#040705!important;border-bottom:1px solid #41464e!important;box-shadow:0 10px 28px rgba(0,0,0,.35)!important}
 html:not([data-theme="light"]) #pwa-install-banner .pwa-title{color:#edf4ee!important}
 
 html:not([data-theme="light"]) .tokens-card{border-radius:8px!important}
@@ -329,7 +329,7 @@ html:not([data-theme="light"]) #mobile-status{
 html:not([data-theme="light"]) #mobile-status,
 html:not([data-theme="light"]) #mobile-status *{color:#edf4ee!important}
 html:not([data-theme="light"]) #height-mob.hm-login,
-html:not([data-theme="light"]) #height-mob{background:#303832!important;color:#f5f7f5!important;border:1px solid #59645b!important;box-shadow:none!important}
+html:not([data-theme="light"]) #height-mob{background:#292c30!important;color:#f5f7f5!important;border:1px solid #555b63!important;box-shadow:none!important}
 html:not([data-theme="light"]) #mobile-nav{
   height:68px!important;
   background:rgba(14,20,16,.98)!important;
@@ -344,7 +344,7 @@ html:not([data-theme="light"]) .mob-tab.active .mob-icon{color:#7ED949!important
 html:not([data-theme="light"]) #mobile-more-menu{background:rgba(9,14,11,.98)!important;border-top:1px solid #28332b!important}
 html:not([data-theme="light"]) .mob-more-btn{background:#0e1410!important;color:#839088!important;border:1px solid #28332b!important;border-radius:8px!important}
 html:not([data-theme="light"]) .mob-more-btn:active{background:rgba(126,217,73,.12)!important;color:#edf4ee!important;border-color:rgba(126,217,73,.30)!important}
-html:not([data-theme="light"]) .theme-tog{background:#151d17!important;color:#cbd4cd!important;border:1px solid #334239!important;border-radius:8px!important}
+html:not([data-theme="light"]) .theme-tog{background:#1b1e22!important;color:#cbd4cd!important;border:1px solid #41464e!important;border-radius:8px!important}
 
 @media(max-width:768px){
   html:not([data-theme="light"]) .page{padding:24px 17px calc(92px + env(safe-area-inset-bottom,0px))!important}
@@ -554,7 +554,7 @@ html[data-theme="light"] #height-mob.hm-login,
 html[data-theme="light"] #mobile-status .theme-tog,
 html[data-theme="light"] .pwa-sheet-close,
 html[data-theme="light"] body #pwa-install-banner #pwa-install-btn{
-  background:#dfe5e0!important;
+  background:#e9eaec!important;
   color:#172119!important;
   -webkit-text-fill-color:#172119!important;
   border:1px solid #b9c7bb!important;
@@ -570,8 +570,8 @@ html[data-theme="light"] #height-mob.hm-login:hover,
 html[data-theme="light"] #mobile-status .theme-tog:hover,
 html[data-theme="light"] .pwa-sheet-close:hover,
 html[data-theme="light"] body #pwa-install-banner #pwa-install-btn:hover{
-  background:#d3ddd5!important;
-  border-color:#91ad96!important;
+  background:#dfe1e5!important;
+  border-color:#9fa4ad!important;
   box-shadow:none!important;
   filter:none!important;
 }
@@ -582,7 +582,7 @@ html[data-theme="light"] input,html[data-theme="light"] select,html[data-theme="
 html[data-theme="light"] input::placeholder,html[data-theme="light"] textarea::placeholder{color:#506057!important;opacity:.82!important}
 html[data-theme="light"] input:focus,html[data-theme="light"] select:focus,html[data-theme="light"] textarea:focus,html[data-theme="light"] .form-input:focus,html[data-theme="light"] .bv-io.focus{border-color:#5f8967!important;box-shadow:0 0 0 2px rgba(24,125,55,.10)!important;outline:none!important}
 html[data-theme="light"] .confirm-box,html[data-theme="light"] .file-drop,html[data-theme="light"] .addr-pill,html[data-theme="light"] .prev,html[data-theme="light"] .tier,html[data-theme="light"] .bv-action-card,html[data-theme="light"] .bv-lp-card{background:#f8fbf8!important;border:1px solid #cbd7cc!important;border-radius:8px!important;box-shadow:none!important}
-html[data-theme="light"] .tier.on,html[data-theme="light"] .tab-btn.active,html[data-theme="light"] .bv-seg-btn.active{background:#d8eadc!important;color:#155f2c!important;border-color:#91ad96!important;box-shadow:none!important}
+html[data-theme="light"] .tier.on,html[data-theme="light"] .tab-btn.active,html[data-theme="light"] .bv-seg-btn.active{background:#d8eadc!important;color:#155f2c!important;border-color:#9fa4ad!important;box-shadow:none!important}
 html[data-theme="light"] .tbl,html[data-theme="light"] table{background:transparent!important;color:#172119!important}
 html[data-theme="light"] .tbl th,html[data-theme="light"] table th{background:#eaf1ea!important;color:#344238!important;border-color:#cbd7cc!important}
 html[data-theme="light"] .tbl td,html[data-theme="light"] table td{color:#172119!important;border-color:#d8e1d9!important}
@@ -680,7 +680,7 @@ html[data-theme="light"] .bv-inactive-mark{
 }
 
 html[data-theme="light"] .wallet-bal-hero .ar{
-  background:#dfe5e0!important;
+  background:#e9eaec!important;
   color:#172119!important;
   border-color:#b9c7bb!important;
   box-sizing:border-box!important;
@@ -693,8 +693,8 @@ html[data-theme="light"] .wallet-bal-hero .ar{
   padding:10px 14px!important;
 }
 html[data-theme="light"] .wallet-bal-hero .ar:hover{
-  background:#d3ddd5!important;
-  border-color:#91ad96!important;
+  background:#dfe1e5!important;
+  border-color:#9fa4ad!important;
 }
 html[data-theme="light"] .wallet-bal-hero .ar.send .ic,
 html[data-theme="light"] .wallet-bal-hero .ar.recv .ic,
@@ -961,7 +961,7 @@ html[data-theme="light"] .alert.alert-info{
 html[data-theme="light"] .gov-tab-bar button.active,
 html[data-theme="light"] #page-btcveld .bv-seg-btn.active{
   background:#d8eadc!important;
-  border-color:#91ad96!important;
+  border-color:#9fa4ad!important;
   color:#155f2c!important;
   -webkit-text-fill-color:#155f2c!important;
   box-shadow:none!important;
@@ -1066,7 +1066,7 @@ html body #pwa-install-banner .pwa-text{min-width:0!important;display:grid!impor
 html body #pwa-install-banner .pwa-title{color:#f4f7f4!important;font:700 13px/1.2 var(--font)!important;letter-spacing:.01em!important}
 html body #pwa-install-banner .pwa-sub{color:#9ea9a1!important;font:500 11px/1.35 var(--font)!important}
 html body #pwa-install-banner #pwa-ios-hint{color:#9ea9a1!important;font:500 11px/1.35 var(--font)!important}
-html body #pwa-install-banner #pwa-install-btn{min-height:36px!important;padding:0 16px!important;border:1px solid #59645b!important;border-radius:9px!important;background:#303832!important;color:#f5f7f5!important;font:700 11px var(--font)!important;box-shadow:inset 0 1px rgba(255,255,255,.05)!important}
+html body #pwa-install-banner #pwa-install-btn{min-height:36px!important;padding:0 16px!important;border:1px solid #555b63!important;border-radius:9px!important;background:#292c30!important;color:#f5f7f5!important;font:700 11px var(--font)!important;box-shadow:inset 0 1px rgba(255,255,255,.05)!important}
 html body #pwa-install-banner #pwa-dismiss{color:#9ea9a1!important;font-size:20px!important}
 html[data-theme="light"] body #pwa-install-banner{background:rgba(247,250,247,.98)!important;border-color:#bdc9bf!important;color:#172119!important;box-shadow:0 16px 38px rgba(31,58,37,.15)!important}
 html[data-theme="light"] body #pwa-install-banner .pwa-icon{background:#edf3ed!important;box-shadow:inset 0 0 0 1px #c7d3c9!important}
@@ -1257,3 +1257,10 @@ html:not([data-theme="light"]) #bv-validator-fill{background:linear-gradient(90d
   overscroll-behavior:contain!important;
   -webkit-overflow-scrolling:touch!important;
 }
+
+/* Action buttons use charcoal in both themes. */
+html body .btn-gold{background:linear-gradient(#353940,#292c31)!important;border:1px solid #646b76!important;color:#f2f3f5!important;box-shadow:inset 0 1px #ffffff12!important}html body .btn-gold:hover{background:#3b4048!important;border-color:#858e9a!important;color:#f2f3f5!important}html body .btn:focus-visible{outline:2px solid #e8af48!important;outline-offset:4px!important}
+
+/* Charcoal is the action default in both themes, including light mode. */
+html[data-theme="light"] body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn),html:not([data-theme="light"]) body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn){background:linear-gradient(#353940,#292c31)!important;color:#f2f3f5!important;-webkit-text-fill-color:#f2f3f5!important;border:1px solid #646b76!important;box-shadow:inset 0 1px #ffffff12!important;filter:none!important}
+html[data-theme="light"] body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn):hover,html:not([data-theme="light"]) body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn):hover{background:#3b4048!important;border-color:#858e9a!important;color:#fff!important}

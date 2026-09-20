@@ -129,6 +129,8 @@ try:
  rpc=Node('http://127.0.0.1:32662',state/'node/lab-rpc-token',genesis);ready(rpc,node)
  observer=start('observer',[str(build/'pool-backend'),str(state/'observer'),'32671','32672'],True)
  independent=Node('http://127.0.0.1:32672',state/'observer/lab-rpc-token',genesis);ready(independent,observer)
+ rpc.require_transaction_index();independent.require_transaction_index()
+ report['operational_transaction_indexes_verified']=True
  observer.stdin.write('peer 32661\n');observer.stdin.flush()
  initial=rpc.call('getpoolidentitystate',addresses['pool']);assert initial['staking_active'] and int(initial['stake_units'])==0
  report['starting_height']=clock();report['initial_identity']=initial
@@ -191,12 +193,19 @@ try:
   # which created the stake, NMS, lottery receipt and yield receipt using only
   # normal P2P admission. The common ancestor is a closed mined fixture.
   original_rewards=dict(categories);old_tip=rpc.call('getbestblockhash');old_height=rpc.call('getblockcount')
-  assert old_height-report['starting_height']<100,'fixture exceeds the unchanged reorganization bound'
+  # Both peers must still be able to exchange the first divergent block.
+  # An eight-block lead put the replacement tip102 blocks beyond this fixture's
+  # ancestor, so its peer correctly refused the original branch before sync.
+  # Keep both branch depths inside the actual unchanged native history bound.
+  depth_limit=rpc.call('getblockchaininfo')['max_reorg_depth']
+  replacement_height=old_height+3
+  assert 0<old_height-report['starting_height']<depth_limit
+  assert replacement_height-report['starting_height']<depth_limit,'replacement exceeds native peer history bound'
   stop(gateway);stop(coordinator)
   fork=start('fork',[str(build/'pool-backend'),str(state/'fork'),'32681','32682'],True)
   alternate=Node('http://127.0.0.1:32682',state/'fork/lab-rpc-token',genesis);ready(alternate,fork)
   assert alternate.call('getblockcount')==report['starting_height']
-  while alternate.call('getblockcount')<old_height+8:
+  while alternate.call('getblockcount')<replacement_height:
    mine_block(fork,alternate,addresses['fees'],out/'fork.log')
   replacement=alternate.call('getbestblockhash');fork.stdin.write('peer 32661\n');fork.stdin.flush();until=time.monotonic()+1200
   while rpc.call('getbestblockhash')!=replacement:
@@ -214,6 +223,7 @@ try:
    time.sleep(.25)
   assert all(a['available_units']=='0' and a['paid_units']=='0' and a['pending_units']=='0' for a in accounts().values())
   report['reorganization']={'original_height':old_height,'replacement_height':rpc.call('getblockcount'),
+      'common_ancestor_height':report['starting_height'],'native_depth_limit':depth_limit,
       'removed_reward_ids':[i['id'] for i in original_rewards.values()],
       'stake_and_entry_rolled_back':True,'orphaned_rewards_not_payable':True}
   save('reorganization.json',report['reorganization']);print('native lottery/yield branch rolled back without payable liabilities',flush=True)

@@ -45,7 +45,7 @@ def main():
         if method=='sendrawtransaction':
             if fault=='after_broadcast':hit()
             if fault=='lost_response' and hit():raise OSError('injected loss of actual accepted broadcast response')
-        if method in ('gettransactionrecent','gettransaction') and isinstance(result,dict) and result.get('confirmations',0)>0:
+        if method in ('getrawtransaction','gettransaction') and isinstance(result,dict) and result.get('confirmations',0)>0:
             if fault=='after_confirmation_before_journal' and result.get('coinbase') is False:hit()
         return result
     def run(command,*args,**kwargs):

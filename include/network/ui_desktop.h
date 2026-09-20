@@ -696,6 +696,14 @@ table{min-width:100%}
 .mono{font-size:13px !important}
 }
 @media(max-width:480px){.main{padding:calc(36px + env(safe-area-inset-top,0px)) 10px calc(74px + env(safe-area-inset-bottom,0)) 10px}.card{padding:16px 14px}.stat{padding:12px 14px}.page-title{font-size:18px}.tbl-scroll{margin:0 -14px;padding:0 14px}.balance-amount{font-size:32px}}
+
+/* Charcoal actions, including primary wallet operations. */
+.btn-em{background:linear-gradient(#353940,#292c31);color:#f2f3f5;border:1px solid #646b76;box-shadow:inset 0 1px #ffffff12}.btn-em:hover{background:#3b4048;box-shadow:none}.btn-em:active{background:#24272c;box-shadow:none}.btn-ghost{background:#202328;border-color:#4c525b;color:#eceef0}.btn-ghost:hover,.btn-ghost:active{background:#30353c;border-color:#727b87;color:#fff}.btn:focus-visible,.copy-btn:focus-visible,.tab-btn:focus-visible{outline:2px solid #e8af48;outline-offset:4px}
+
+/* Charcoal is the action default in both themes, including light mode. */
+html[data-theme="light"] body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn),html:not([data-theme="light"]) body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn){background:linear-gradient(#353940,#292c31)!important;color:#f2f3f5!important;-webkit-text-fill-color:#f2f3f5!important;border:1px solid #646b76!important;box-shadow:inset 0 1px #ffffff12!important;filter:none!important}
+html[data-theme="light"] body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn):hover,html:not([data-theme="light"]) body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn):hover{background:#3b4048!important;border-color:#858e9a!important;color:#fff!important}
+
 </style>
 <!-- Wallet presentation overrides. Kept after the base stylesheet so the
      responsive cascade remains deterministic. -->
@@ -4619,7 +4627,7 @@ function _sanitiseAddr(v) {
   if (!v) return '';
   if (typeof v !== 'string') return '';
   if (v === 'null' || v === 'undefined') return '';
-  if (!_veldAddrToHash160Hex(v)) return '';
+  if (!_veldAddrToKeyCommitmentHex(v)) return '';
   return v;
 }
 // Single write-point for veld_current_addr. Rejects anything that would
@@ -4649,7 +4657,7 @@ function _setCurrentAddr(v) {
 // (prefix/alphabet/length) being mistaken for cryptographic validation.
 const _BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 function isValidVeldAddr(addr) {
-  return _veldAddrToHash160Hex(addr) !== null;
+  return _veldAddrToKeyCommitmentHex(addr) !== null;
 }
 
 var currentAddr = _sanitiseAddr(localStorage.getItem('veld_current_addr'));
@@ -5186,8 +5194,8 @@ function _veldJournalOperation(bytes, owner) {
   for (var kind of kinds) if (payload.indexOf(kind[0]) === 0) return {label:kind[1], feature:kind[2]};
   if (payload.indexOf('GOV_PROPOSAL') >= 0) return {label:'Gov Proposal', feature:''};
   if (payload.indexOf('GOV_VOTE') >= 0) return {label:'Gov Vote', feature:''};
-  var tx = _veldParseUnsignedTx(bytes), hash = _veldAddrToHash160Hex(owner);
-  var self = hash && '76a914' + hash + '88ac';
+  var tx = _veldParseUnsignedTx(bytes), hash = _veldAddrToKeyCommitmentHex(owner);
+  var self = hash && _veldKeyCommitmentToScriptHex(hash);
   var consolidation = tx.inputs.length > tx.outputs.length && tx.outputs.every(function(output) {
     return self && output.script_pubkey_hex === self;
   });
@@ -5222,7 +5230,7 @@ async function _veldRecoverLegacyTransactions(owner) {
 
 async function _veldJournalSign(unsigned, inputs, seed, generation, sign) {
   _veldAssertActiveSignerSeed(seed, generation);
-  var owner = _veldRequireBoundIdentity(seed).address;
+  var owner = _veldRequireBoundIdentity(seed, null, currentAddr).address;
   await _veldRecoverLegacyTransactions(owner);
   return _veldJournal().sign(unsigned, inputs, owner, function() {
     _veldAssertActiveSignerSeed(seed, generation);
@@ -5233,7 +5241,7 @@ async function _veldJournalSign(unsigned, inputs, seed, generation, sign) {
 async function _veldJournalBroadcast(signed, seed, generation) {
   var txid = veldCrypto.sha256d(signed);
   var saved = await _veldJournal().get(txid);
-  if (!saved || saved.payload.signed !== signed || saved.record.owner !== _veldRequireBoundIdentity(seed).address)
+  if (!saved || saved.payload.signed !== signed || saved.record.owner !== _veldRequireBoundIdentity(seed, null, currentAddr).address)
     throw new Error('Save the exact transaction for recovery before broadcasting.');
   _veldAssertActiveSignerSeed(seed, generation);
   var reply = await _veldRpcTransport('sendrawtransaction', [saved.payload.signed]);
@@ -5248,7 +5256,7 @@ async function _veldRetryJournalTransaction(txid) {
   var saved = await _veldJournal().get(txid);
   if (!saved) return rpc('rebroadcasttx', [txid]);
   var seed = __veldKey.get(), generation = _veldAssertActiveSignerSeed(seed);
-  if (_veldRequireBoundIdentity(seed).address !== saved.record.owner)
+  if (_veldRequireBoundIdentity(seed, null, currentAddr).address !== saved.record.owner)
     throw new Error('Unlock the original wallet to retry this transaction.');
   if (saved.record.state === 'reserved') {
     if (!window.confirm('Resume signing the saved transaction with its original recipient, amount and fee?'))
@@ -5261,7 +5269,7 @@ async function _veldRetryJournalTransaction(txid) {
     }
     var sigless = [];
     prep.inputs.forEach(function(input, index) { if (input.sigless) sigless.push(index); });
-    _veldVerifyInputSighashes(prep, sigless, '76a914' + _veldAddrToHash160Hex(saved.record.owner) + '88ac');
+    _veldVerifyInputSighashes(prep, sigless, _veldKeyCommitmentToScriptHex(_veldAddrToKeyCommitmentHex(saved.record.owner)));
     await _veldAuthenticatePreparedPrevouts(prep, VELD_MIN_TX_FEE_UNITS);
     var signed = await veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, seed, null, generation);
     await _veldBroadcastExactSigned(signed, seed, generation);
@@ -5478,11 +5486,83 @@ function _veldAddrToHash160Hex(addr) {
   return hex;
 }
 
+function _veldAddrToKeyCommitmentHex(addr) {
+  var legacy = _veldAddrToHash160Hex(addr);
+  if (legacy) return legacy;
+  if (typeof addr !== 'string' || addr.length < 70 || addr.length > 75) return null;
+  var raw = _veldBase58Decode(addr);
+  if (!raw || raw.length !== 53 || raw[0] !== (VELD_NETWORK_BYTE === 0x4d ? 0x47 : 0x70)) return null;
+  var body = _veldBytesToHex(Uint8Array.from(raw.slice(0,49)));
+  var checksum = veldCrypto.sha256d(body);
+  if (_veldBytesToHex(Uint8Array.from(raw.slice(49))) !== checksum.slice(0,8)) return null;
+  return _veldBytesToHex(Uint8Array.from(raw.slice(1,49)));
+}
+function _veldKeyCommitmentToScriptHex(commitment) {
+  if (typeof commitment !== 'string') throw new Error('missing destination commitment');
+  if (/^[0-9a-f]{40}$/.test(commitment)) return '76a914'+commitment+'88ac';
+  if (/^[0-9a-f]{96}$/.test(commitment)) return 'c00130'+commitment;
+  throw new Error('invalid destination commitment');
+}
+function _veldScriptToKeyCommitmentHex(script) {
+  var legacy = _veldScriptToHash160Hex(script);
+  if (legacy && /^[0-9a-f]{40}$/.test(legacy)) return legacy;
+  return typeof script === 'string' && /^c00130[0-9a-f]{96}$/.test(script) ? script.slice(6) : null;
+}
+
 // Local, consensus-parity address derivation. No RPC participates in wallet
 // identity: ML-DSA seed -> public key -> HASH160 -> this build's Base58Check
 // address. `VELD_NETWORK_BYTE` must never be used here; it is only the sighash
 // domain separator.
-function _veldAddressForPublicKey(pubHex) {
+// SHA-384, FIPS 180-4 sections 4.2.3, 5.3.4 and 6.5. This bounded
+// public-key-only helper is synchronous so key/address validation cannot race
+// an unlock or signing-session change. No private data or RPC enters it.
+function _veldSha384PublicBytes(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.length > 4096)
+    throw new Error('invalid public commitment preimage');
+  var constants = ('428a2f98d728ae22 7137449123ef65cd b5c0fbcfec4d3b2f e9b5dba58189dbbc '+
+    '3956c25bf348b538 59f111f1b605d019 923f82a4af194f9b ab1c5ed5da6d8118 '+
+    'd807aa98a3030242 12835b0145706fbe 243185be4ee4b28c 550c7dc3d5ffb4e2 '+
+    '72be5d74f27b896f 80deb1fe3b1696b1 9bdc06a725c71235 c19bf174cf692694 '+
+    'e49b69c19ef14ad2 efbe4786384f25e3 0fc19dc68b8cd5b5 240ca1cc77ac9c65 '+
+    '2de92c6f592b0275 4a7484aa6ea6e483 5cb0a9dcbd41fbd4 76f988da831153b5 '+
+    '983e5152ee66dfab a831c66d2db43210 b00327c898fb213f bf597fc7beef0ee4 '+
+    'c6e00bf33da88fc2 d5a79147930aa725 06ca6351e003826f 142929670a0e6e70 '+
+    '27b70a8546d22ffc 2e1b21385c26c926 4d2c6dfc5ac42aed 53380d139d95b3df '+
+    '650a73548baf63de 766a0abb3c77b2a8 81c2c92e47edaee6 92722c851482353b '+
+    'a2bfe8a14cf10364 a81a664bbc423001 c24b8b70d0f89791 c76c51a30654be30 '+
+    'd192e819d6ef5218 d69906245565a910 f40e35855771202a 106aa07032bbd1b8 '+
+    '19a4c116b8d2d0c8 1e376c085141ab53 2748774cdf8eeb99 34b0bcb5e19b48a8 '+
+    '391c0cb3c5c95a63 4ed8aa4ae3418acb 5b9cca4f7763e373 682e6ff3d6b2b8a3 '+
+    '748f82ee5defb2fc 78a5636f43172f60 84c87814a1f0ab72 8cc702081a6439ec '+
+    '90befffa23631e28 a4506cebde82bde9 bef9a3f7b2c67915 c67178f2e372532b '+
+    'ca273eceea26619c d186b8c721c0c207 eada7dd6cde0eb1e f57d4f7fee6ed178 '+
+    '06f067aa72176fba 0a637dc5a2c898a6 113f9804bef90dae 1b710b35131c471b '+
+    '28db77f523047d84 32caab7b40c72493 3c9ebe0a15c9bebc 431d67c49c100d4c '+
+    '4cc5d4becb3e42b6 597f299cfc657e2a 5fcb6fab3ad6faec 6c44198c4a475817').split(' ').map(function(h){return BigInt('0x'+h);});
+  var h = ['cbbb9d5dc1059ed8','629a292a367cd507','9159015a3070dd17','152fecd8f70e5939',
+    '67332667ffc00b31','8eb44a8768581511','db0c2e0d64f98fa7','47b5481dbefa4fa4'].map(function(x){return BigInt('0x'+x);});
+  var mask = (1n<<64n)-1n, padded = new Uint8Array(Math.ceil((bytes.length+17)/128)*128);
+  padded.set(bytes); padded[bytes.length]=128;
+  var bitLength=BigInt(bytes.length)*8n;
+  for(var i=0;i<16;i++){padded[padded.length-1-i]=Number(bitLength&255n);bitLength>>=8n;}
+  function r(x,n){return ((x>>n)|(x<<(64n-n)))&mask;}
+  for(var offset=0;offset<padded.length;offset+=128){
+    var w=new Array(80);
+    for(var t=0;t<16;t++){w[t]=0n;for(var j=0;j<8;j++)w[t]=(w[t]<<8n)|BigInt(padded[offset+t*8+j]);}
+    for(var t=16;t<80;t++)w[t]=(w[t-16]+(r(w[t-15],1n)^r(w[t-15],8n)^(w[t-15]>>7n))+w[t-7]+(r(w[t-2],19n)^r(w[t-2],61n)^(w[t-2]>>6n)))&mask;
+    var a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],z=h[7];
+    for(var t=0;t<80;t++){
+      var t1=(z+(r(e,14n)^r(e,18n)^r(e,41n))+((e&f)^((~e)&g))+constants[t]+w[t])&mask;
+      var t2=((r(a,28n)^r(a,34n)^r(a,39n))+((a&b)^(a&c)^(b&c)))&mask;
+      z=g;g=f;f=e;e=(d+t1)&mask;d=c;c=b;b=a;a=(t1+t2)&mask;
+    }
+    var v=[a,b,c,d,e,f,g,z];for(var j=0;j<8;j++)h[j]=(h[j]+v[j])&mask;
+  }
+  var out=new Uint8Array(48);
+  for(var i=0;i<6;i++)for(var j=0;j<8;j++)out[i*8+j]=Number((h[i]>>BigInt(56-j*8))&255n);
+  return out;
+}
+function _veldAddressForPublicKey(pubHex, destinationType) {
   pubHex = String(pubHex || '').toLowerCase();
   if (!/^[0-9a-f]{3904}$/.test(pubHex))
     throw new Error('invalid ML-DSA-65 public key');
@@ -5499,6 +5579,17 @@ function _veldAddressForPublicKey(pubHex) {
     return Array.from(_veldHexToBytes(
       veldCrypto.sha256d(_veldBytesToHex(Uint8Array.from(bytes)))));
   };
+  if (destinationType === 'sha384-v1') {
+    if (!/^[0-9a-f]{64}$/.test(VELD_GENESIS_HASH)) throw new Error('invalid compiled chain identity');
+    var prefix=new TextEncoder().encode('VELD:DESTINATION:MLDSA65:KEY:V1\0'+
+      String.fromCharCode(VELD_NETWORK_BYTE === 0x4d ? 0 : 1)+VELD_GENESIS_HASH);
+    var preimage=new Uint8Array(prefix.length+4+pub.length);
+    preimage.set(prefix);new DataView(preimage.buffer).setUint32(prefix.length,pub.length,true);
+    preimage.set(pub,prefix.length+4);
+    return VeldCovenant.base58CheckEncode(VELD_NETWORK_BYTE === 0x4d ? 0x47 : 0x70,
+      Array.from(_veldSha384PublicBytes(preimage)),sha2);
+  }
+  if (destinationType && destinationType !== 'legacy') throw new Error('unsupported destination type');
   return VeldCovenant.base58CheckEncode(
     VELD_ADDRESS_VERSION,
     VeldCovenant.hash160(Array.from(pub), sha),
@@ -5541,7 +5632,8 @@ function _veldRequireBoundIdentity(seedHex, claimedPubHex, claimedAddress) {
     if (claimedPub !== pubHex.slice(0, claimedPub.length))
       throw new Error('public key does not belong to the private seed');
   }
-  var address = _veldAddressForPublicKey(pubHex);
+  var destinationType = claimedAddress && String(claimedAddress).trim().length > 50 ? 'sha384-v1' : 'legacy';
+  var address = _veldAddressForPublicKey(pubHex, destinationType);
   if (claimedAddress !== null && claimedAddress !== undefined &&
       String(claimedAddress).trim() !== '') {
     var claimed = String(claimedAddress).trim();
@@ -5640,7 +5732,7 @@ function _veldAssertAllP2PKHOutputsToSelf(prep, selfHash160Hex) {
   for (var ii = 0; ii < parsed2.outputs.length; ii++) {
     var spk = parsed2.outputs[ii].script_pubkey_hex;
     if (typeof spk === 'string' && spk.length >= 2 && spk.substring(0,2) === '6a') continue;
-    var hh = _veldScriptToHash160Hex(spk);
+    var hh = _veldScriptToKeyCommitmentHex(spk);
     if (hh !== selfHash160Hex) {
       throw new Error('Refusing to sign: tx output #' + ii +
         ' is a P2PKH to hash160=' + (hh || '(non-P2PKH script ' + spk + ')') +
@@ -5662,7 +5754,7 @@ function _veldAssertAllP2PKHOutputsInAllowed(prep, allowedHash160s) {
   if (!Array.isArray(allowedHash160s) || allowedHash160s.length === 0) return;
   var allowSet = {};
   for (var k = 0; k < allowedHash160s.length; k++) {
-    if (typeof allowedHash160s[k] === 'string' && allowedHash160s[k].length === 40) {
+    if (typeof allowedHash160s[k] === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{96})$/.test(allowedHash160s[k])) {
       allowSet[allowedHash160s[k].toLowerCase()] = true;
     }
   }
@@ -5670,7 +5762,7 @@ function _veldAssertAllP2PKHOutputsInAllowed(prep, allowedHash160s) {
   for (var jj = 0; jj < parsed3.outputs.length; jj++) {
     var spk2 = parsed3.outputs[jj].script_pubkey_hex;
     if (typeof spk2 === 'string' && spk2.length >= 2 && spk2.substring(0,2) === '6a') continue;
-    var hh2 = _veldScriptToHash160Hex(spk2);
+    var hh2 = _veldScriptToKeyCommitmentHex(spk2);
     if (!hh2 || !allowSet[hh2.toLowerCase()]) {
       throw new Error('Refusing to sign: tx output #' + jj +
         ' is a P2PKH to hash160=' + (hh2 || '(non-P2PKH script ' + spk2 + ')') +
@@ -5692,7 +5784,7 @@ function _veldVerifyUnsignedTxOutputs(prep, expectedOutputs) {
       if (p.value_units_str !== e.value_units_str) continue;
       if (e.expected_spk_hex && p.script_pubkey_hex !== e.expected_spk_hex) continue;
       if (e.expected_hash160_hex) {
-        var h = _veldScriptToHash160Hex(p.script_pubkey_hex);
+        var h = _veldScriptToKeyCommitmentHex(p.script_pubkey_hex);
         if (h !== e.expected_hash160_hex) continue;
       }
       matched = true;
@@ -5713,7 +5805,7 @@ function _veldVerifyUnsignedTxOutputs(prep, expectedOutputs) {
         throw new Error('Tx verification failed: exact output-total policy has no destination.');
       var exactTotal = 0n, exactCount = 0;
       for (var k = 0; k < parsed.outputs.length; k++) {
-        if (_veldScriptToHash160Hex(parsed.outputs[k].script_pubkey_hex) === e.expected_hash160_hex) {
+        if (_veldScriptToKeyCommitmentHex(parsed.outputs[k].script_pubkey_hex) === e.expected_hash160_hex) {
           exactTotal += BigInt(parsed.outputs[k].value_units_str);
           exactCount++;
         }
@@ -5913,7 +6005,7 @@ function _veldVerifyInputSighashes(prep, allowedSiglessIndices, expectedSignedPr
   // oracle by supplying an arbitrary prev_script_hex.  Protocol inputs that are
   // deliberately sigless remain covered by the explicit index allow-list.
   var expectedPrevSpk = String(expectedSignedPrevSpkHex || '').toLowerCase();
-  if (!/^76a914[0-9a-f]{40}88ac$/.test(expectedPrevSpk)) {
+  if (!_veldScriptToKeyCommitmentHex(expectedPrevSpk)) {
     throw new Error('Refusing to sign: the locally-derived input ownership script is unavailable.');
   }
   for (var ui = 0; ui < ptx.inputs.length; ui++) {
@@ -6185,9 +6277,11 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
     if(prepareMethod === 'prepareconsolidatetx' && expectedOpReturnHex !== '')
       throw new Error('Refusing to sign: consolidation requires an empty instruction policy.');
     var identity = _veldRequireBoundIdentity(keyHex, null, claimedAddress);
-    var ownerHash160 = _veldAddrToHash160Hex(identity.address);
+    var ownerHash160 = _veldAddrToKeyCommitmentHex(identity.address);
     if (!ownerHash160) throw new Error('Refusing to sign: locally-derived wallet address is invalid.');
-    var ownerPrevSpk = '76a914' + ownerHash160.toLowerCase() + '88ac';
+    var ownerPrevSpk = _veldKeyCommitmentToScriptHex(ownerHash160);
+    if (ownerHash160.length === 96 && prepareMethod !== 'preparerawtransaction' && prepareMethod !== 'prepareconsolidatetx')
+      throw new Error('This protocol operation requires its existing legacy identity. Use the wallet holding that stake or position.');
     var budget = prepareMethod === 'prepareconsolidatetx'
       ? (consolidationBudget || _veldConsolidationBudget(1)) : null;
     return rpc(prepareMethod, params).then(function(prep) {
@@ -6199,7 +6293,7 @@ function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2
     }
     // optional self-P2PKH guard for stake/unstake.
     // Asserts every P2PKH output targets the user's hash160 (OP_RETURN allowed).
-    if (typeof selfP2PKHGuardHash160 === 'string' && selfP2PKHGuardHash160.length === 40) {
+    if (typeof selfP2PKHGuardHash160 === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{96})$/.test(selfP2PKHGuardHash160)) {
       _veldAssertAllP2PKHOutputsToSelf(prep, selfP2PKHGuardHash160);
     }
     // /C6: allow-list guard for Send-VELD (recipient +
@@ -6515,7 +6609,7 @@ function _bvVerifyAmmPrepared(prep,spec){
   if(tx.outputs[0].script_pubkey_hex!==poolSpk||
      tx.outputs[0].value_units_str!==String(spec.poolValue))
     throw new Error('Refusing to sign: AMM pool output does not match the reviewed operation.');
-  var myH=(_veldAddrToHash160Hex(currentAddr)||'').toLowerCase();
+  var myH=(_veldAddrToKeyCommitmentHex(currentAddr)||'').toLowerCase();
   if(myH.length!==40) throw new Error('Refusing to sign: wallet address is invalid.');
   var mySpk='76a914'+myH+'88ac', wantOp=_bvOpReturnHex(spec.op), opCount=0, payoutFound=!spec.requiredSelfValue;
   for(var oi=1;oi<tx.outputs.length;oi++){
@@ -7505,7 +7599,7 @@ function bvDoRedeem(){
         // 3. VERIFY before signing: every non-OP_RETURN output must be P2PKH change
         //    back to us, and the OP_RETURN must be EXACTLY our REDEEM op.
         var ptx=_veldParseUnsignedTx(prep.unsigned_tx_hex);
-        var myH160=(_veldAddrToHash160Hex(currentAddr)||'').toLowerCase();
+        var myH160=(_veldAddrToKeyCommitmentHex(currentAddr)||'').toLowerCase();
         var mySpk='76a914'+myH160+'88ac';
         var wantOp='VELD_TOKEN|REDEEM|btcVELD|'+currentAddr+'||'+String(sats)+'|'+spk;
         var sawOp=false;
@@ -10621,7 +10715,7 @@ function autoConsolidateRun(keyHex, address, revision, totalAtStart, thresholdVe
   if (__autoConsolidateActive || !autoConsolidateContextReady(keyHex, address, revision, false)) return;
   var signerGeneration;
   try { signerGeneration = _veldAssertActiveSignerSeed(keyHex, expectedGeneration); } catch (_) { return; }
-  var guard = _veldAddrToHash160Hex(address);
+  var guard = _veldAddrToKeyCommitmentHex(address);
   if (!__opLock('consolidate', ['w-utxo-consolidate-btn'], 'Cleaning up…')) return;
   __autoConsolidateActive = true;
   var sweptInputs = 0, batchN = 0;
@@ -10697,8 +10791,8 @@ function doConsolidateUtxos() {
   // sub-1.0-VELD true-dust. Matches the trigger threshold in
   // loadDustUtxoCount.
   var DUST_THRESHOLD_VELD = '5.0';
-  var allowed = [_veldAddrToHash160Hex(currentAddr)];
-  var guard   = _veldAddrToHash160Hex(currentAddr);
+  var allowed = [_veldAddrToKeyCommitmentHex(currentAddr)];
+  var guard   = _veldAddrToKeyCommitmentHex(currentAddr);
   var totalInputsSwept = 0;
   var batchTxids = [];
   var signingBudget = _veldConsolidationBudget(64);
@@ -11510,14 +11604,14 @@ function doSend() {
   // leg goes back to `from` and is not attacker-relevant. amount → vel:
   // round-trip via toFixed(8) avoids fp drift, matching the server's
   // ParseAmountVeldToUnitsOrThrow(VELD_UNITS = 1e8).
-  var __expRecipHash160 = _veldAddrToHash160Hex(to);
+  var __expRecipHash160 = _veldAddrToKeyCommitmentHex(to);
   if (!__expRecipHash160) {
     msgEl.innerHTML = '<div class="alert alert-err">⚠ Recipient address could not be decoded locally.</div>';
     __opUnlock('send', ['send-btn']);
     return;
   }
   var __sendExpectedEntry = {value_units_str: amountUnits.toString(), expected_hash160_hex: __expRecipHash160};
-  var __fromHash160 = _veldAddrToHash160Hex(from);
+  var __fromHash160 = _veldAddrToKeyCommitmentHex(from);
   if (__fromHash160 !== __expRecipHash160) {
     __sendExpectedEntry.exact_hash160_total_units = amountUnits.toString();
     __sendExpectedEntry.exact_hash160_count = 1;
@@ -13895,7 +13989,7 @@ function doRegisterValidator() {
   // protocol constant (NOT read from the node), so a compromised node
   // cannot redirect the bond to an attacker. The previous self-only guard
   // pre-dated the custodial bond and rejected the legitimate vault output.
-  var vaultHash160 = _veldAddrToHash160Hex(VELD_STAKE_VAULT_ADDRESS);
+  var vaultHash160 = _veldAddrToKeyCommitmentHex(VELD_STAKE_VAULT_ADDRESS);
   var regOpHex = _veldBuildProtocolOpReturnHex('VELD_VALIDATOR|REGISTER|' + pubHex);
   var regExpected = [{
     value_units_str: String(VELD_MIN_VALIDATOR_STAKE_UNITS),
@@ -13905,7 +13999,7 @@ function doRegisterValidator() {
   }];
   signAndBroadcast('prepareregistervalidator', [addr, pubHex], keyHex,
                    regExpected, null,
-                   [_veldAddrToHash160Hex(addr), vaultHash160], null, regOpHex, null, signerGeneration).then(function(r) {
+                   [_veldAddrToKeyCommitmentHex(addr), vaultHash160], null, regOpHex, null, signerGeneration).then(function(r) {
     var txid = r && r.txid ? r.txid : '';
     var link = txid
       ? '<br><span style="font-size:10px;color:var(--muted)">TXID: </span>'
@@ -13956,7 +14050,7 @@ function doDeregisterValidator() {
   // + OP_RETURN. Pass user's hash160 so signAndBroadcast asserts no P2PKH
   // leg has been redirected to an attacker.
   signAndBroadcast('preparederegistervalidator', [addr, pubHex], keyHex,
-                   null, _veldAddrToHash160Hex(addr), null, null, deregOpHex).then(function(r) {
+                   null, _veldAddrToKeyCommitmentHex(addr), null, null, deregOpHex).then(function(r) {
     var txid = r && r.txid ? r.txid : '';
     var link = txid
       ? '<br><span style="font-size:10px;color:var(--muted)">TXID: </span>'
@@ -14549,7 +14643,7 @@ function _doStakeContinue(intent, keyHex, msgEl, operation, reenable) {
     msgEl.innerHTML = '<div class="alert alert-info">Submitting stake…</div>';
     return signAndBroadcast('preparestake',
       [addr, _veldUnitsToAmountString(intent.units), String(intent.tier)], keyHex,
-      null, _veldAddrToHash160Hex(addr), null, null, stakeOpHex, null, intent.generation);
+      null, _veldAddrToKeyCommitmentHex(addr), null, null, stakeOpHex, null, intent.generation);
   }).then(function(result){
     var txid = result && result.txid;
     if (typeof txid !== 'string' || !/^[0-9a-f]{64}$/.test(txid))
@@ -14652,7 +14746,7 @@ async function doIncrementalUnstake(addr, totalAmount, keyHex, msgEl, unstakeBtn
       // (P2PKH to `addr`) + value=0 OP_RETURN. Pass user's hash160 so
       // signAndBroadcast asserts no P2PKH leg redirects to an attacker.
       var r = await signAndBroadcast('prepareunstake', [addr, batchAmountCanonical], keyHex,
-                                     null, _veldAddrToHash160Hex(addr), null, null, batchOpHex, null, signerGeneration);
+                                     null, _veldAddrToKeyCommitmentHex(addr), null, null, batchOpHex, null, signerGeneration);
       completed++;
       var txid = r && r.txid ? r.txid : '';
       msgEl.innerHTML = '<div class="alert alert-ok">\u2713 Batch ' + (i+1) + '/' + totalBatches +
@@ -14755,7 +14849,7 @@ function doUnstake() {
     // (P2PKH to `addr`) + value=0 OP_RETURN. Pass user's hash160 so
     // signAndBroadcast asserts no P2PKH leg redirects to an attacker.
     signAndBroadcast('prepareunstake', [addr, _veldUnitsToAmountString(amountUnits)], keyHex,
-                     null, _veldAddrToHash160Hex(addr), null, null, unstakeOpHex, null, signerGeneration).then(function(r) {
+                     null, _veldAddrToKeyCommitmentHex(addr), null, null, unstakeOpHex, null, signerGeneration).then(function(r) {
       var unstaked = r && r.unstaked_veld != null ? r.unstaked_veld : amount;
       var txid     = r && r.txid ? r.txid : '';
       var link = txid
@@ -14977,7 +15071,7 @@ function govSubmitProposal() {
       // the TX still has a change output back to addr — without this check,
       // a compromised local node could splice an attacker P2PKH leg that
       // drains the change. OP_RETURNs are unrestricted by the helper.
-      _veldAssertAllP2PKHOutputsInAllowed(prep, [_veldAddrToHash160Hex(addr)]);
+      _veldAssertAllP2PKHOutputsInAllowed(prep, [_veldAddrToKeyCommitmentHex(addr)]);
       var payload = _veldGetSingleCanonicalOpReturnPayload(prep);
       var fields = payload.split('|');
       if (!proposalIntent || fields.length !== 10 || fields[0] !== 'VELD_GOV' || fields[1] !== proposalIntent.marker ||
@@ -14992,7 +15086,7 @@ function govSubmitProposal() {
           : proposalTs < proposalIntent.requestedAt - 5 || proposalTs > nowTs + 5))
         throw new Error('Refusing to sign: governance proposal timestamp is not the current local request time.');
       _veldVerifyInputSighashes(prep, [],
-        '76a914' + _veldAddrToHash160Hex(addr).toLowerCase() + '88ac');
+        _veldKeyCommitmentToScriptHex(_veldAddrToKeyCommitmentHex(addr)));
       // async injectSignatures (yields between signs), after exact fee proof.
       return _veldAuthenticatePreparedPrevouts(prep, VELD_MIN_TX_FEE_UNITS)
         .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, keyHex, null, signerGeneration); })
@@ -15255,14 +15349,14 @@ function govVote(id, choice) {
         // TX still has a change output back to addr — without this check,
         // a compromised local node could splice an attacker P2PKH leg that
         // drains the change. OP_RETURNs are unrestricted by the helper.
-        _veldAssertAllP2PKHOutputsInAllowed(prep, [_veldAddrToHash160Hex(addr)]);
+        _veldAssertAllP2PKHOutputsInAllowed(prep, [_veldAddrToKeyCommitmentHex(addr)]);
         var voteCode = choice === 'yes' ? 'y' : (choice === 'no' ? 'n' : 'a');
         _veldAssertOpReturnExact(prep, _veldBuildProtocolOpReturnHex(
           'VELD_GOV|' + voteIntent.marker + '|' + String(id) + '|' + addr + '|' + voteCode + '|' +
           String(extraParam) + '|' + pubHex + '|' + sigHex +
           (voteIntent.identity ? '|' + voteIntent.identity : '')));
         _veldVerifyInputSighashes(prep, [],
-          '76a914' + _veldAddrToHash160Hex(addr).toLowerCase() + '88ac');
+          _veldKeyCommitmentToScriptHex(_veldAddrToKeyCommitmentHex(addr)));
         // async injectSignatures (yields between signs), after exact fee proof.
         return _veldAuthenticatePreparedPrevouts(prep, VELD_MIN_TX_FEE_UNITS)
           .then(function(){ return veldCrypto.injectSignatures(prep.unsigned_tx_hex, prep.inputs, keyHex, null, signerGeneration); })

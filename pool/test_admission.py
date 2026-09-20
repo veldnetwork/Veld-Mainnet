@@ -13,10 +13,25 @@ from pool.coordinator import Coordinator
 from pool.accounting import pplns
 
 class AdmissionTests(unittest.TestCase):
+    def test_wide_address_requires_explicit_active_version_and_object_response(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);journal=Journal(root/'events',root/'anchor/current.json')
+            response=[None]
+            node=SimpleNamespace(check_chain=lambda:None,call=lambda *_:response[0],genesis='a'*64)
+            pool=Coordinator(node,journal,None,'pool','f'*64)
+            for value in [None,[],True,{'isvalid':True},{'isvalid':True,'destination_type':'sha384-v2','active_for_next_block':True},
+                          {'isvalid':True,'destination_type':'sha384-v1','active_for_next_block':False}]:
+                response[0]=value
+                with self.assertRaises(Refused):pool.register('x'*73)
+                self.assertEqual(pool.accounts,{})
+            response[0]={'isvalid':True,'destination_type':'sha384-v1','active_for_next_block':True}
+            self.assertIn(pool.register('x'*73)['account'],pool.accounts)
+            journal.close()
+
     def test_worker_token_cannot_read_private_balance_or_payment_history(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);journal=Journal(root/'events',root/'anchor/current.json')
-            node=SimpleNamespace(check_chain=lambda:None,call=lambda *_:{'isvalid':True})
+            node=SimpleNamespace(check_chain=lambda:None,call=lambda *_:{'isvalid':True},genesis='a'*64)
             pool=Coordinator(node,journal,None,'pool','f'*64)
             account=pool.register('x'*30)
             with self.assertRaises(Refused):pool.account(account['account'],account['worker_token'])

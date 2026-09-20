@@ -11,6 +11,8 @@
 #include <unordered_map>
 
 #include "hash.h"
+#include "destination.h"
+#include "pqc_script.h"
 
 namespace veld {
 
@@ -152,6 +154,7 @@ inline bool CheckTxLockTimes(const Transaction& tx, uint64_t height,
 
 enum class ScriptType {
     P2PKH,
+    SHA384_KEY,
     P2PK,
     MULTISIG,
     OP_RETURN,
@@ -159,6 +162,7 @@ enum class ScriptType {
 };
 
 inline ScriptType DetectScriptType(const std::vector<uint8_t>& script) {
+    if (IsSha384KeyScript(script)) return ScriptType::SHA384_KEY;
     if (script.size() == 25 &&
         script[0] == 0x76 && script[1] == 0xA9 &&
         script[2] == 0x14 && script[23] == 0x88 && script[24] == 0xAC)
@@ -185,6 +189,11 @@ inline std::array<uint8_t, 20> ExtractP2PKHHash(const std::vector<uint8_t>& scri
     return result;
 }
 
+inline bool IsCanonicalKeyScriptAtHeight(const std::vector<uint8_t>& script, uint64_t height) {
+    return DetectScriptType(script) == ScriptType::P2PKH ||
+           (Sha384DestinationsActive(height) && IsSha384KeyScript(script));
+}
+
 using StackItem = std::vector<uint8_t>;
 using ScriptStack = std::stack<StackItem>;
 
@@ -194,12 +203,12 @@ constexpr uint8_t VELD_ADDR_VERSION_TESTNET = 0x6F;
 constexpr uint8_t VELD_P2SH_VERSION_MAINNET = 0x05;
 constexpr uint8_t VELD_P2SH_VERSION_TESTNET = 0xC4;
 
-// Internal: Base58Check decode → returns the full 21-byte payload (1 byte
-// version + 20-byte hash) on success, empty vector on failure (size,
+// Internal: Base58Check decode → returns the full 21- or 49-byte payload (1 byte
+// version + legacy 20-byte or versioned 48-byte commitment), empty on failure (size,
 // non-base58 chars, bad checksum, wrong payload length). Does NOT enforce
 // version byte — that's the caller's job.
 inline std::vector<uint8_t> Base58CheckDecode_(const std::string& address) {
-    if (address.size() < 25 || address.size() > 35) return {};
+    if (address.size() < 25 || address.size() > 75) return {};
 
     static const std::string B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
     std::vector<uint8_t> dec;
@@ -225,12 +234,14 @@ inline std::vector<uint8_t> Base58CheckDecode_(const std::string& address) {
                                    dec[dec.size()-2], dec[dec.size()-1]};
     Hash256 h1 = Hash256d(payload);
     if (h1[0]!=chk[0]||h1[1]!=chk[1]||h1[2]!=chk[2]||h1[3]!=chk[3]) return {};
-    if (payload.size() != 21) return {};
+    if (payload.size() != 21 && payload.size() != 49) return {};
     return payload;
 }
 
 inline bool IsValidVeldAddress(const std::string& address, bool testnet = false) {
     auto payload = Base58CheckDecode_(address);
+    if (payload.size() == 49)
+        return payload[0] == (testnet ? SHA384_DESTINATION_TESTNET : SHA384_DESTINATION_MAINNET);
     if (payload.size() != 21) return false;
     const uint8_t v = payload[0];
     if (v == (testnet ? VELD_ADDR_VERSION_TESTNET : VELD_ADDR_VERSION_MAINNET)) return true;
@@ -244,6 +255,16 @@ inline bool IsValidVeldAddress(const std::string& address, bool testnet = false)
 
 inline std::vector<uint8_t> AddressToScript(const std::string& address) {
     auto payload = Base58CheckDecode_(address);
+    if (payload.size() == 49) {
+        if (payload[0] != SHA384_DESTINATION_MAINNET
+#ifndef VELD_MAINNET_POW
+            && payload[0] != SHA384_DESTINATION_TESTNET
+#endif
+           ) return {};
+        DestinationCommitment384 digest{};
+        std::copy(payload.begin() + 1, payload.end(), digest.begin());
+        return BuildSha384KeyScript(digest);
+    }
     if (payload.size() != 21) return {};
     const uint8_t ver = payload[0];
 
@@ -285,13 +306,15 @@ inline bool IsCanonicalTokenCreditAddress(const std::string& address) {
 }
 
 inline std::string ScriptToAddress(const std::vector<uint8_t>& script, bool testnet = false) {
-    if (script.size() != 25 || script[0] != 0x76 || script[1] != 0xA9 ||
-        script[2] != 0x14 || script[23] != 0x88 || script[24] != 0xAC)
+    const bool wide = IsSha384KeyScript(script);
+    if (!wide && (script.size() != 25 || script[0] != 0x76 || script[1] != 0xA9 ||
+        script[2] != 0x14 || script[23] != 0x88 || script[24] != 0xAC))
         return "";
 
-    uint8_t version = testnet ? 0x6F : 0x46;
+    uint8_t version = wide ? (testnet ? SHA384_DESTINATION_TESTNET : SHA384_DESTINATION_MAINNET)
+                           : (testnet ? 0x6F : 0x46);
     std::vector<uint8_t> data = {version};
-    data.insert(data.end(), script.begin()+3, script.begin()+23);
+    data.insert(data.end(), script.begin()+3, script.begin()+(wide ? 51 : 23));
     Hash256 chk = Hash256d(data);
     data.push_back(chk[0]); data.push_back(chk[1]);
     data.push_back(chk[2]); data.push_back(chk[3]);
@@ -386,6 +409,20 @@ public:
         TransactionScriptHashes local_hashes(tx);
         auto& hashes = shared_hashes ? *shared_hashes : local_hashes;
         if (!hashes.Matches(tx)) return false;
+        // An explicitly versioned destination is not a general script opcode.
+        // Unknown versions never fall back to legacy script execution.
+        if (!script_pubkey.empty() && script_pubkey[0] == SHA384_DESTINATION_OPCODE) {
+            if (!Sha384DestinationsActive(ctx.block_height) || !IsSha384KeyScript(script_pubkey) ||
+                input_index >= tx.inputs.size()) return false;
+            std::vector<uint8_t> signature;
+            std::array<uint8_t, 1952> public_key{};
+            if (!pqc::ParseScriptSig(script_sig, signature, public_key) ||
+                signature.front() != SCHEME_ID_MLDSA65 || signature.back() != 0x01 ||
+                !MatchesSha384Key(script_pubkey, public_key, SHA384_DESTINATION_TEST_NETWORK)) return false;
+            const auto hash = ComputeSighash(tx, input_index, script_pubkey, SCHEME_ID_MLDSA65);
+            return Verify(public_key, hash,
+                std::vector<uint8_t>(signature.begin() + 1, signature.end() - 1));
+        }
         std::vector<StackItem> stack, alt;
 
         // P2SH: scriptPubKey == OP_HASH160 <20> OP_EQUAL (A9 14 .. 87).

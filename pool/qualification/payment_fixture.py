@@ -13,6 +13,8 @@ require_isolated_network()
 parser=argparse.ArgumentParser()
 parser.add_argument('--build-directory',type=pathlib.Path,required=True)
 parser.add_argument('--output',type=pathlib.Path,required=True)
+parser.add_argument('--shared-destination',action='store_true',
+                    help='two independent worker accounts use one disposable recipient wallet')
 args=parser.parse_args();build=args.build_directory;out=args.output
 out.mkdir(parents=True,exist_ok=False)
 state=pathlib.Path(tempfile.mkdtemp(prefix='veld-pool-payment-',dir='/var/tmp'))
@@ -21,6 +23,8 @@ subprocess.run(['ip','link','set','lo','up'],check=True)
 keys=subprocess.run([str(build/'pool-lab-keys'),str(state/'disposable-keys')],capture_output=True,text=True,check=True)
 addresses={line.split()[0]:line.split()[1] for line in keys.stdout.splitlines()}
 scripts={line.split()[0]:line.split()[2] for line in keys.stdout.splitlines()}
+if args.shared_destination:
+ addresses['worker-b']=addresses['worker-a'];scripts['worker-b']=scripts['worker-a']
 (out/'addresses.json').write_text(json.dumps(addresses,indent=2)+'\n')
 with (out/'certificate.log').open('w') as log:
  subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(state/'tls.key'),'-out',str(state/'tls.crt'),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'],stdout=log,stderr=subprocess.STDOUT,check=True)
@@ -47,17 +51,22 @@ def services(generation):
  else:raise RuntimeError('IPC startup timeout')
  gateway=start('gateway-'+str(generation),[sys.executable,'-m','pool.gateway','--config',gateway_config]);time.sleep(.4)
  workers=[]
- for name,count,pause in [('worker-a',4,30),('worker-b',2,120)]:
-  path=config(name,{'endpoint':'https://localhost:32443','ca_file':str(state/'tls.crt'),'genesis':genesis,'payout_address':addresses[name],'native_binary':str(build/'pool-work'),'account_file':str(state/(name+'-account.json')),'nonce_count':count,'pause_ms':pause})
-  workers.append(start(name+'-'+str(generation),[sys.executable,'-m','pool.worker','--config',path]))
+ for name,threads,count,pause in [('worker-a',2,4,30),('worker-b',1,2,120)]:
+  folder=state/name;folder.mkdir(exist_ok=True,mode=0o700)
+  path=config(name,{'endpoint':'https://localhost:32443','ca_file':str(state/'tls.crt'),'genesis':genesis,
+      'payout_address':addresses[name],'state_directory':str(folder),'threads':str(threads),
+      'nonce_count':str(count),'pause_ms':str(pause)})
+  workers.append(start(name+'-'+str(generation),[str(build/'pool-client'),'--config',path]))
  return coordinator,gateway,workers
 def accounts():
  result={}
  for name in ('worker-a','worker-b'):
-  data=json.loads((state/(name+'-account.json')).read_text())
+  data=json.loads((state/name/'pool-account.json').read_text())
   result[name]=client.call('account',{'account':data['account'],'token':data['view_token']})
  return result
-report={'status':'RUNNING','scope':'native worker-to-wallet including restart; intermediate gate','required_gate_complete':False}
+report={'status':'RUNNING','scope':'native worker-to-wallet including restart; intermediate gate',
+        'native_worker_executable':str(build/'pool-client'),'required_gate_complete':False,
+        'shared_destination':args.shared_destination}
 try:
  node=start('node',[str(build/'pool-backend'),str(state/'node'),'32361','32362'],True)
  genesis=bytes.fromhex('ee875e86d25aabad2442451b82f6550b732a1387cbc172c2a3fc02eb216af3d5')[::-1].hex()
@@ -105,6 +114,10 @@ try:
   time.sleep(.15)
  else:raise RuntimeError('maturity timeout')
  for worker in workers:stop(worker)
+ # Keep exact native account capabilities only inside the private disposable
+ # fixture. The payment matrix reuses them; public evidence never includes them.
+ for name in ('worker-a','worker-b'):
+  config(name+'-account',json.loads((state/name/'pool-account.json').read_text()))
  before=accounts();(out/'before-payments.json').write_text(json.dumps(before,indent=2)+'\n')
  assert all(int(a['available_units'])>=100000000 for a in before.values()),'both miners need mature balances'
  for _ in range(240):
@@ -113,7 +126,8 @@ try:
  else:raise RuntimeError('independent fixture validation timeout')
  stop(gateway);stop(coordinator)
  fixture={'settings':settings,'addresses':addresses,'scripts':scripts,'genesis':genesis,
-          'state_directory':str(state),'build_directory':str(build),'before_payments':before}
+          'state_directory':str(state),'build_directory':str(build),'before_payments':before,
+          'shared_destination':args.shared_destination}
  config('fixture',fixture)
  report.update(status='PREPARED',height=height,scope='native mature pool-income fixture before any payout',
                fixture_path=str(state/'fixture.json'))
@@ -123,5 +137,6 @@ except BaseException as error:
 finally:
  for process in reversed(processes):stop(process)
  report['processes_stopped']=all(p.poll() is not None for p in processes)
+ report['worker_sha256']=hashlib.sha256((build/'pool-client').read_bytes()).hexdigest()
  (out/'result.json').write_text(json.dumps(report,indent=2)+'\n')
  for handle in handles:handle.close()

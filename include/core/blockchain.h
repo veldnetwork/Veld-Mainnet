@@ -605,6 +605,19 @@ public:
 
     Block TipCopy() const { return Tip(); }
 
+    // Bounded, coherent header-only view for display statistics. Never hydrate
+    // transaction bodies or take one lock / disk read per sampled block.
+    std::vector<BlockHeader> RecentCanonicalHeaders(uint64_t& tip_height) const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        tip_height = chain_.empty() ? 0 : chain_.size() - 1;
+        std::vector<BlockHeader> result;
+        const size_t count = std::min<size_t>(145, chain_.size());
+        result.reserve(count);
+        for (size_t i = chain_.size() - count; i < chain_.size(); ++i)
+            result.push_back(chain_[i].header);
+        return result;
+    }
+
     bool TryTip(Block& out) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
         if (chain_.empty()) return false;
@@ -3247,9 +3260,7 @@ public:
             // Only canonical P2PKH reaches the immutable-signature cache. Any
             // unfamiliar script shape fails closed and is eligible for a fresh
             // full admission attempt after it leaves the stale mempool.
-            if (script.size() != 25 || script[0] != 0x76 ||
-                script[1] != 0xA9 || script[2] != 0x14 ||
-                script[23] != 0x88 || script[24] != 0xAC)
+            if (!IsCanonicalKeyScriptAtHeight(script, cov_height))
                 return false;
         }
         return true;
@@ -3344,7 +3355,7 @@ public:
                 : MempoolCanonicalInputResult::INVALID;
         }
 
-        return VerifyInputAgainstScript(tx, input_index, script_pubkey)
+        return VerifyInputAgainstScript(tx, input_index, script_pubkey, cov_height)
             ? MempoolCanonicalInputResult::VALID
             : MempoolCanonicalInputResult::INVALID;
     }
@@ -3588,6 +3599,12 @@ public:
                 continue;
             }
 
+            if (IsSha384KeyScript(script_pubkey)) {
+                if (!Sha384DestinationsActive(cov_height)) return false;
+                if (!VerifyInputAgainstScript(tx, static_cast<uint32_t>(i), script_pubkey, cov_height))
+                    return reject_permanently();
+                continue;
+            }
             if (script_pubkey.size() != 25 ||
                 script_pubkey[0]  != 0x76 ||
                 script_pubkey[1]  != 0xA9 ||
@@ -4162,8 +4179,7 @@ public:
                 sum_other += out.value;
                 const auto& s = out.script_pubkey;
                 other_is_canonical_p2pkh = other_is_canonical_p2pkh &&
-                    s.size() == 25 && s[0] == 0x76 && s[1] == 0xA9 &&
-                    s[2] == 0x14 && s[23] == 0x88 && s[24] == 0xAC;
+                    IsCanonicalKeyScriptAtHeight(s, block.height);
             }
         }
 
@@ -5758,9 +5774,16 @@ public:
 
     static bool VerifyInputAgainstScript(const Transaction& tx,
                                           uint32_t input_index,
-                                          const std::vector<uint8_t>& script_pubkey) {
+                                          const std::vector<uint8_t>& script_pubkey,
+                                          uint64_t inclusion_height = 0) {
         if (input_index >= tx.inputs.size()) return false;
         const auto& inp = tx.inputs[input_index];
+        if (IsSha384KeyScript(script_pubkey)) {
+            ScriptContext context;
+            context.block_height = inclusion_height;
+            ScriptInterpreter interpreter;
+            return interpreter.Execute(inp.script_sig, script_pubkey, tx, input_index, context);
+        }
         if (script_pubkey.size() != 25 ||
             script_pubkey[0]  != 0x76 ||
             script_pubkey[1]  != 0xA9 ||
@@ -6765,8 +6788,7 @@ private:
             if (s == vault_script || s == pool_script ||
                 s == endorse_script || s == stake_vault_script ||
                 s == bond_yield_script) continue;
-            if (s.size() != 25 || s[0] != 0x76 || s[1] != 0xA9 ||
-                s[2] != 0x14 || s[23] != 0x88 || s[24] != 0xAC)
+            if (!IsCanonicalKeyScriptAtHeight(s, block.height))
                 continue;
             const auto hex = BytesToHex(s);
             if (counted.insert(hex).second) scripts.push_back(hex);

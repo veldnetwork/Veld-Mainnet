@@ -79,6 +79,8 @@ def main():
             print('Focused tests passed; native qualification remains BLOCKED.',flush=True)
             return
         run('clean-native-build','pool.qualification.build',['--output',out/'build'],7200)
+        run('native-authorization-capacity','pool.qualification.authorization_capacity',
+            ['--build',out/'build/candidate','--output',out/'native-authorization-capacity'])
         run('native-focused-regressions','pool.qualification.native_regressions',
             ['--build-directory',out/'build/candidate','--output',out/'native-focused-regressions'])
         run('native-history-publication','pool.qualification.history_publication',
@@ -118,6 +120,9 @@ def main():
                     '--history-state',history['comining'],'--output',out/variant/'comining-reorganization','--reorganization'])
             run('funded-first-validator','pool.qualification.validator',['--build-directory',out/'build/candidate',
                 '--history-state',history['validator'],'--output',out/'candidate/validator'])
+            run('funded-validator-floor-matrix','pool.qualification.validator_matrix',[
+                '--build-directory',out/'build/candidate','--history-state',history['finality'],
+                '--output',out/'candidate/validator-floor-matrix'])
             run('native-finality-pool-carrier','pool.qualification.finality',['--build-directory',out/'build/candidate',
                 '--lab-signer',out/'build/candidate/pool-lab-sign','--history-state',history['finality'],
                 '--output',out/'candidate/finality'],86400)

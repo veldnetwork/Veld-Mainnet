@@ -1,6 +1,6 @@
 """Naturally funded first-validator admission on a private canonical chain.
 
-The isolated boundary is 9000, matching the candidate's selected height while
+The isolated boundary is 9500, matching the candidate's selected height while
 using a separate disposable chain. The individual 10k bond is unchanged.
 No synthetic UTXOs, altered subsidies, signature bypass or fake node is used.
 """
@@ -11,6 +11,7 @@ from pool.backend import Node
 from pool.protocol import encode,Busy,Refused
 from pool.qualification.isolation import require_isolated_network
 from pool.qualification.control import mine_block
+from pool.qualification.progress import ValidationProgress
 require_isolated_network()
 parser=argparse.ArgumentParser()
 parser.add_argument('--build-directory',type=pathlib.Path,required=True)
@@ -18,7 +19,7 @@ parser.add_argument('--history-state',type=pathlib.Path,required=True)
 parser.add_argument('--output',type=pathlib.Path,required=True)
 parser.add_argument('--public-identities',type=pathlib.Path,help='public identity receipt for an older closed fixture')
 args=parser.parse_args();build=args.build_directory;out=args.output
-H=9000  # disposable network; no live activation is performed by this exercise
+H=9500  # disposable network; no live activation is performed by this exercise
 history=pathlib.Path(args.history_state).resolve()
 assert history.parent==pathlib.Path('/var/tmp') and history.name.startswith('veld-pool-history-')
 for p in pathlib.Path('/proc').iterdir():
@@ -196,11 +197,17 @@ try:
  checked('restart preserves reorganized bond accounting',rpc.call('getbestblockhash')==tip and rpc.call('getstatedigest')==digest and
          canonical_balance()==before-10000*100000000-100000)
  observer,independent=start('observer',state/'observer',32771,32772)
- observer.stdin.write('peer 32761\n');observer.stdin.flush();until=time.monotonic()+1200
- while time.monotonic()<until:
-  if independent.call('getbestblockhash')==tip:break
-  time.sleep(.5)
- else:raise RuntimeError('independent replay deadline')
+ observer.stdin.write('peer 32761\n');observer.stdin.flush()
+ progress=ValidationProgress(independent.call('getblockcount'),rpc.call('getblockcount'),time.monotonic())
+ report['independent_validation_budget_seconds']=progress.budget_seconds
+ report['independent_validation_progress']=[]
+ while independent.call('getbestblockhash')!=tip:
+  now=time.monotonic();height=independent.call('getblockcount')
+  report['independent_validation_progress'].append({'height':height,'seconds':now-progress.started})
+  save('progress.json',report);progress.observe(height,now)
+  assert observer.poll() is None and node.poll() is None,'independent validation node exited'
+  assert rpc.call('getbestblockhash')==tip,'frozen validator target unexpectedly changed'
+  time.sleep(10)
  checked('independent node agrees on replacement bond and removed endorsement state',independent.call('getstatedigest')==digest and
          independent.call('getblockendorsements',str(target))['count']==0)
  report.update(status='PASS',height=rpc.call('getblockcount'),tip=tip,registered_txid=txid,endorsement_txid=end_id,
