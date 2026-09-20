@@ -13,15 +13,27 @@ class ValidationProgressTests(unittest.TestCase):
     def test_stalled_chain_fails_even_inside_overall_budget(self):
         wait = ValidationProgress(1, 10000, 0)
         wait.observe(2, 299)
-        wait.observe(2, 598)
+        wait.observe(2, 1198)
         with self.assertRaisesRegex(TimeoutError, 'no new height progress'):
-            wait.observe(2, 599)
+            wait.observe(2, 1199)
+
+    def test_full_bulk_response_window_can_refill_without_false_failure(self):
+        # Deterministic regression for the test deadline, not a substitute for
+        # the independently validated funded finality/replay exercise.
+        wait = ValidationProgress(50096, 51362, 0)
+        wait.observe(50192, 210)
+        wait.observe(50192, 511)  # The previous five-minute test aborted here.
+        wait.observe(50192, 899)
+        wait.observe(50193, 900)
+        wait.observe(50193, 1799)
+        with self.assertRaisesRegex(TimeoutError, 'no new height progress'):
+            wait.observe(50193, 1800)
 
     def test_regressions_do_not_extend_the_stall_deadline(self):
         wait = ValidationProgress(100, 10000, 0)
-        wait.observe(99, 299)
+        wait.observe(99, 899)
         with self.assertRaisesRegex(TimeoutError, 'no new height progress'):
-            wait.observe(100, 300)
+            wait.observe(100, 900)
 
     def test_continuous_progress_cannot_extend_absolute_deadline(self):
         wait = ValidationProgress(0, 100000, 0)

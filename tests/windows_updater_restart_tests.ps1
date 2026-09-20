@@ -40,13 +40,16 @@ function Start-Process {
     Check ($WorkingDirectory -ceq $InstallDir) 'restart lost the install directory'
     if ($Distribution -eq 'Node') {
         Check ($FilePath -ceq (Join-Path $InstallDir 'Veld Node.exe')) 'node update restart re-entered the interactive launcher'
-        Check ($WindowStyle -ceq 'Hidden') 'automatic restart opened a command window'
+        Check ($WindowStyle -ceq 'Normal') 'automatic restart hid the Node window and its mining controls'
     } else {
         Check ($FilePath -ceq (Join-Path $env:SystemRoot 'System32\cmd.exe')) 'terminal restart did not use the system command interpreter'
         Check ($WindowStyle -ceq 'Normal') 'interactive terminal launcher is hidden'
     }
     $script:launched++
-    $start = @{FilePath=$FilePath; WorkingDirectory=$WorkingDirectory; WindowStyle='Hidden'; PassThru=$true}
+    # The fixture checks launch parameters and exact arguments. The packaged
+    # client's visible window and mining resume require the native GUI gate.
+    $fixtureStyle = if ($Distribution -eq 'Node') { $WindowStyle } else { 'Hidden' }
+    $start = @{FilePath=$FilePath; WorkingDirectory=$WorkingDirectory; WindowStyle=$fixtureStyle; PassThru=$true}
     if ($ArgumentList) { $start.ArgumentList = $ArgumentList }
     $process = Microsoft.PowerShell.Management\Start-Process @start
     if (-not $process.WaitForExit(10000)) { $process.Kill(); throw 'fixture child did not finish' }
@@ -66,7 +69,7 @@ $originalData = $env:VELD_UPDATE_NODE_DATA_DIR
 try {
     $InstallDir = Join-Path $TempRoot 'Veld %PATH% ! & (3.1.10)'
     [IO.Directory]::CreateDirectory($InstallDir) | Out-Null
-    Add-Type -OutputAssembly (Join-Path $InstallDir 'Veld Node.exe') -OutputType ConsoleApplication -TypeDefinition @"
+    Add-Type -OutputAssembly (Join-Path $InstallDir 'Veld Node.exe') -OutputType WindowsApplication -TypeDefinition @"
 using System;
 using System.IO;
 public class RestartFixture {

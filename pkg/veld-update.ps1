@@ -976,7 +976,10 @@ function Relaunch-InstalledClient() {
         $start = @{
             FilePath = (Join-Path $InstallDir 'Veld Node.exe')
             WorkingDirectory = $InstallDir
-            WindowStyle = 'Hidden'
+            # This is the graphical Node executable, not the background
+            # updater. Hiding it also hides the user's mining controls after
+            # restart; the commit helper itself remains hidden below.
+            WindowStyle = 'Normal'
         }
         if (-not [string]::IsNullOrWhiteSpace($env:VELD_UPDATE_NODE_DATA_DIR)) {
             $data = [IO.Path]::GetFullPath($env:VELD_UPDATE_NODE_DATA_DIR)

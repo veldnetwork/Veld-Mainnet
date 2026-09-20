@@ -7,8 +7,12 @@ class ValidationProgress:
     The old 20-minute deadline could not cover 1,867 external PoW checks at
     the node's unchanged 32-per-minute global admission limit. Twelve seconds
     per missing block also allows transport/refill overhead observed in the
-    isolated diagnostic. Six hours is a hard qualification limit, not a
-    promise about production synchronization throughput.
+    isolated diagnostic. Bulk block responses also have an unchanged 600-second
+    per-source byte/work window. A five-minute no-progress deadline could end
+    the test before that legitimate window refilled. Allow one full window and
+    five minutes for transport/validation, without extending the absolute cap.
+    Six hours is a hard qualification limit, not a promise about production
+    synchronization throughput.
     """
 
     def __init__(self, start_height, target_height, now):
@@ -28,5 +32,5 @@ class ValidationProgress:
             self.last_progress = now
         if now - self.started >= self.budget_seconds:
             raise TimeoutError("independent validation exceeded its absolute time budget")
-        if now - self.last_progress >= 300:
-            raise TimeoutError("independent validation made no new height progress for 300 seconds")
+        if now - self.last_progress >= 900:
+            raise TimeoutError("independent validation made no new height progress for 900 seconds")
