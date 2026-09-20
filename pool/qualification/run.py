@@ -20,6 +20,23 @@ REMAINING=[
     'native Windows clean-install GUI, solo-mode interaction, upgrade and rollback on the final build',
     'clean authorized source identity and production-controller artifact qualification']
 
+def validate_receipt(module, receipt):
+    """Fixture preparation is an intermediate state, never payment qualification."""
+    if not isinstance(receipt,dict):raise RuntimeError('native receipt must be an object')
+    if module=='pool.qualification.payment_fixture':
+        if (receipt.get('status')!='PREPARED' or receipt.get('processes_stopped') is not True
+                or receipt.get('required_gate_complete') is not False
+                or type(receipt.get('height')) is not int or receipt['height']<120
+                or not isinstance(receipt.get('fixture_path'),str) or not receipt['fixture_path']):
+            raise RuntimeError('native mature funding fixture is not safely prepared')
+        return
+    allowed={'PASS'}
+    if module=='pool.qualification.validator_lifecycle':allowed.add('PASS_SCOPED_NATIVE_BOND_LIFECYCLE')
+    if receipt.get('status') not in allowed:
+        raise RuntimeError('native exercise exited without a passing receipt')
+    if receipt.get('processes_stopped') is False:
+        raise RuntimeError('native exercise left fixture processes running')
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--service-roles',action='store_true',
@@ -65,10 +82,8 @@ def main():
         if '--output' in arguments:
             path=Path(arguments[arguments.index('--output')+1])/'result.json'
             result_receipt=json.loads(path.read_text())
-            if not str(result_receipt.get('status','')).startswith('PASS'):
-                raise RuntimeError(name+' exited without a passing native receipt')
-            if result_receipt.get('processes_stopped') is False:
-                raise RuntimeError(name+' left fixture processes running')
+            validate_receipt(module,result_receipt)
+            entry['receipt_status']=result_receipt['status']
             entry['receipt']=str(path)
             entry['receipt_sha256']=hashlib.sha256(path.read_bytes()).hexdigest()
             save()
