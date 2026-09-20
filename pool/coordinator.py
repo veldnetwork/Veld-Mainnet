@@ -25,7 +25,12 @@ class Coordinator:
         self.queue_capacity=capacity
         self.unverified_count=0
         self.admission = threading.BoundedSemaphore(capacity)
-        self.accounts={}
+        # Accounts have no expiry: existing credentials and earned liabilities
+        # must survive inactivity. Keep their lookup on disk rather than making
+        # the lifetime number of registrations a permanent admission limit.
+        self.accounts=Records(journal,'accounts')
+        self.registration_tokens=16.0
+        self.registration_updated=time.monotonic()
         self.jobs=Records(journal,'jobs');self.leases=Records(journal,'leases')
         self.highwater=Records(journal,'nonce_highwater');self.receipts=Records(journal,'receipts')
         self.earnings=Records(journal,'earnings')
@@ -92,13 +97,23 @@ class Coordinator:
         require(isinstance(address,str) and 25 <= len(address) <= 75, 'payout address')
         require(address!=self.pool_address, 'pool identity cannot be a worker payout address')
         require(not self.payments or address!=self.payments.fee_address,'operator fee identity cannot be a worker payout address')
+        # The gateway's per-source limit alone cannot bound distributed callers.
+        # Apply one process-wide budget BEFORE private node validation or any
+        # durable write. Depletion is temporary and never revokes an account.
+        with self.lock:
+            now=time.monotonic()
+            elapsed=max(0.0,now-self.registration_updated)
+            self.registration_tokens=min(16.0,self.registration_tokens+elapsed/5.0)
+            self.registration_updated=max(now,self.registration_updated)
+            if self.registration_tokens<1.0:
+                raise Busy('registration capacity; retry')
+            self.registration_tokens-=1.0
         validation=self.node.call('validateaddress',address)
         require(isinstance(validation,dict) and validation.get('isvalid') is True, 'invalid payout address')
         if len(address)>50:
             require(validation.get('destination_type')=='sha384-v1' and validation.get('active_for_next_block') is True,
                     'SHA-384 payout destination is not active on this node')
         with self.lock:
-            require(len(self.accounts)<10000, 'account capacity')
             worker, view = secrets.token_hex(32), secrets.token_hex(32)
             value={'id':secrets.token_hex(16),'address':address,'worker_hash':sha(worker.encode()),'view_hash':sha(view.encode())}
             self.record('account',value)

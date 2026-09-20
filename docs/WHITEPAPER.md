@@ -2,9 +2,9 @@
 
 ## A memory-hard proof-of-work network with native staking, co-mining, validator finality, and Bitcoin utility
 
-**Protocol version:** Veld Core 3.1.7
+**Protocol version:** Veld Core 3.2.1 candidate
 
-**Document version:** 10 September 2026
+**Document version:** 20 September 2026
 
 **Network:** veld-public-mainnet-v2
 
@@ -20,7 +20,7 @@ The target block interval is 180 seconds. ASERT adjusts difficulty after every a
 
 Nodes independently validate proof of work, transactions, monetary accounting, and participation state. Signed snapshots support synchronization, while independent validation from genesis remains mandatory before a snapshot-backed node can mine, endorse, or serve its normal interfaces. Durable progress and verified recovery records allow that validation to continue across restarts.
 
-This paper describes current public-mainnet rules and the Veld 3.1.7 client. The corresponding source, network parameters, and signed release records provide the implementation references.
+This revision describes the Veld 3.2.1 candidate and explicitly distinguishes its future rules from historical validation. Public publication remains pending. A document or signed test package does not activate an upgrade or establish custody readiness. Exact build identities and completed qualification receipts accompany the selected artifact.
 
 ## 1. Network and current mainnet rules
 
@@ -53,7 +53,13 @@ Operators can inspect `getnetworkinfo` and the release identity records to compa
 
 Staking positions retain their chosen lockup conditions. Reaching the unlock height permits an unstake transaction; funds do not withdraw automatically.
 
-### 1.3 Consensus and operating policy
+### 1.3 Candidate activation at block 9,500
+
+Three changes in the 3.2.1 public-mainnet candidate use inclusion height 9,500: removal of the aggregate ordinary-stake validator registration gate, authorization of version-one SHA-384 key destinations, and a flat 0.30% AMM swap fee. Before that boundary, each path preserves its historical rules. A reorganization back across the boundary restores the applicable earlier rule.
+
+The previous unpublished 9,000 candidate is superseded. Software enforcing different activation heights must be replaced through a coordinated upgrade before those rules diverge. This document does not assert that deployed nodes have been upgraded. Governance, validator bonds, finality membership, btcVELD activation and custody permissions remain separate requirements.
+
+### 1.4 Consensus and operating policy
 
 Consensus rules determine whether every validating node accepts a block. Relay policy determines what a node forwards or places in its mempool. Wallet policy governs transaction preparation and user interaction. Snapshot distribution, the hosted wallet, the Explorer, the Portal, and custody services are operational components with their own availability and trust boundaries.
 
@@ -66,6 +72,10 @@ Documentation and dashboards describe those components; they do not override val
 VELD uses an unspent-transaction-output ledger. Inputs must reference spendable outputs, satisfy their authorization or covenant, and conserve value. Validation includes duplicate-spend checks, maturity, signatures, transaction structure, module-specific rules, and the coinbase's permitted issuance and fees.
 
 Native transaction signatures use ML-DSA-65. The same signature family is used for validator messages and signed release artifacts where required. Address hashes, proof of work, Bitcoin custody, and endpoint security have separate assumptions; the use of post-quantum signatures does not remove those dependencies.
+
+At candidate activation, a version-one key destination commits to the complete 1,952-byte ML-DSA-65 public key with SHA-384. The preimage binds the destination version, network and compiled genesis identity. Its authorization script contains the full 48-byte commitment; it does not truncate it to HASH160. The existing signature and full-transaction signing commitment remain required.
+
+Legacy destinations remain valid. Creating a new-format wallet is opt-in and does not move existing funds. This candidate adds a key destination, not a general spending-policy format. Staking, validator, governance, token, AMM and custody identities retain their existing formats, and unsupported operations from a new-format identity are refused. The five system addresses and Bitcoin custody descriptors are not automatically migrated. It would therefore be incorrect to describe every existing address or the entire system as quantum resistant.
 
 | Parameter | Value |
 |---|---:|
@@ -182,7 +192,9 @@ Qualification requires the stake, signature, work, inclusion, uniqueness, and lo
 
 ### 6.1 Validator participation
 
-The validator subsystem requires aggregate ordinary stake of 10,000 VELD. Validator registration requires a 10,000 VELD bond, distinct from ordinary staking and slashable under the validator rules. Registration maturity and the 480-block settlement schedule apply.
+Before the candidate activation at block 9,500, validator registration retains the historical 10,000 VELD aggregate ordinary-stake requirement. At and after that inclusion height, this aggregate prerequisite is removed. An otherwise eligible first validator can register and perform qualifying endorsement work with zero ordinary stake across the network.
+
+Every validator still supplies its own correctly funded and authorized 10,000 VELD custodial bond. This bond is distinct from ordinary stake and remains slashable. Funding, identity, signatures, synchronization, independent validation, applicable maturity and the 480-block settlement schedule remain enforced. Registration alone does not earn endorsement rewards. Removing the aggregate registration gate does not activate governance, create a finality quorum or unlock btcVELD.
 
 The validator pool receives 10% of ordinary block subsidy. Payouts depend on eligible endorsements in the settlement window. A pool allocation is not evidence that a validator has qualified for payment. Where no eligible endorsement recipient exists, the applicable settlement rules determine routing; the allocation must not be interpreted as an unconditional payout to operators.
 
@@ -193,6 +205,8 @@ Validator and governance operations bind their required identity, signature, and
 Ordinary endorsement equivocation and locked-finality equivocation have distinct penalties. For ordinary endorsement double-sign evidence, the settlement allocates 25% to the reporter, 25% to the vault, and 50% back to the offender. A finality-equivocation settlement returns nothing to the offender, pays 25% to the reporter, and sends 75% to a provably unspendable output. The offending key is permanently barred from re-registration under the slashing rules.
 
 Bonded principal participates in vault distributions with a 1.50x lockup weight. Its yield is escrowed and vests over a rolling 43,200-block delay. Slashing confiscates unvested yield in addition to the applicable bond penalty; already released yield is not retroactively reclaimed.
+
+Deregistering stops active participation but does not immediately return the principal. The bond remains held through the complete applicable evidence window, including finality votes, and returns only at its canonical settlement boundary. A pending bond cannot be reused to fund another registration. Durable local signing journals record intent before signing and refuse conflicting claims after restart; their protection depends on preserving and reconciling the journal rather than restoring an old file and immediately resuming signing.
 
 ### 6.3 Qualified validator finality
 
@@ -234,13 +248,23 @@ Assisted wrapping reserves capacity before exposing a Bitcoin deposit address. F
 
 Redemption requests burn or commit the applicable btcVELD through the prescribed transaction flow and require valid Bitcoin payout evidence. The fixed 480-block redemption window is limited to 20% of the 10 BTC absolute cap: 2 BTC per window. A request exceeding remaining window capacity is rejected rather than partially accepted.
 
-Custody depends on its configured Bitcoin signing threshold, correct payout processing, canonical VELD and Bitcoin state, and available funds. The issuer requires a fresh authenticated solvency heartbeat before authorizing new exposure. Nodes independently enforce the on-chain mint, reserve, and redemption rules. Watchtower availability and authenticated status must be distinguished from a complete proof of custody solvency.
+Custody depends on its configured Bitcoin spending policy, correct payout processing, canonical VELD and Bitcoin state, and available funds. The community-custody product target is exactly three-of-five signing by five independent community operators, with no fleet custody keys, recovery shares or emergency signing authority. Candidate enrollment alone cannot grant authority over existing custody funds.
+
+A three-of-five threshold is not, by itself, unique payout authorization: two quorums may overlap in only one malicious signer. Honest signers additionally need one independently verified authoritative payout intent, exact transaction binding and durable commitment-before-signing records. Restart, partial signatures, backup restoration and update rollback must preserve that intent. A timeout cannot revoke a Bitcoin signature that already exists.
+
+The native intent and issuer/witness migration, managed Windows custody worker and independent-operator qualification are separate delivery and activation gates. This paper does not represent them as deployed or comprehensively qualified. The intended client manages its internal signer without a separate participant-administered service; a process wrapper alone does not establish protected custody-key access.
+
+The issuer requires fresh authenticated solvency evidence before authorizing new exposure. Nodes independently enforce on-chain mint, reserve and redemption rules. Watchtower availability, a passing configuration check or several isolated passing tests do not establish funded custody readiness.
 
 ## 8. On-chain liquidity
 
 The VELD/btcVELD AMM is a constant-product pool available after the peg's activation conditions are met. The first successful seed establishes the pool's reference ratio. Later reserve prices move through trading. Seed floors, permanently locked initial liquidity, transaction limits, and the first-seed liveness checks remain part of admission.
 
 Swaps use deterministic integer arithmetic. Fees are charged in the asset received and remain in the pool's reserves. Liquidity-provider shares represent proportional ownership of the reserves, including retained fees. Withdrawal claims that proportion of both assets, subject to the transaction's validation rules.
+
+At and after candidate block 9,500, the swap fee is 30 basis points (0.30%) in either direction, regardless of deviation from the opening ratio. VELD has no target price or stablecoin obligation. Reserve depth and constant-product pricing determine execution and price impact; btcVELD's Bitcoin backing is a separate custody obligation. The flat fee is a provisional policy choice, not a demonstrated economic optimum or a guarantee of profitable liquidity provision.
+
+The following four-band schedule remains the historical rule strictly before activation:
 
 | Trade effect or post-trade deviation from reference | Fee |
 |---|---:|
@@ -295,9 +319,27 @@ Wallet transaction signing occurs locally. Operators must protect encrypted keyf
 
 Use the signed updater or download from `https://veld.network/#download`. Verify the package manifest and detached Veld signature with the expected release authority. GUI and terminal distributions have separate signed feeds. Source tags, source archives, and signed binary manifests identify related but distinct artifacts.
 
-Use Veld 3.1.7 for current mainnet operation. In Veld Node, open Settings, select Check now under Release and updates, and choose Update now when the signed update is offered. Keep wallet backups and existing chain data. The updater preserves saved settings, including worker count and Portal pairing. After updating, verify the daemon's version, profile, synchronization status, peers, selected mining identity, and worker count.
+For the selected 3.2.1 candidate, use the signed package supplied for the authorized test campaign. It is not a public release announcement. After public publication is separately authorized, Veld Node's Release and updates controls can retrieve the signed feed. Retain wallet backups and existing chain data, and verify the manifest against the expected release authority.
+
+Automatic updating is opt-in and checks on an hourly schedule. A verified update preserves configured mining mode, payout identity, CPU settings and Portal pairing. Pool mining does not require custody of the payout wallet key or a wallet passphrase. Solo mining can resume only when its separately protected, authorized resume mechanism is available. A failed signature or invalid package must not be installed. Operators should verify the running daemon identity, profile, synchronization state and mining mode after an update.
 
 For service health, height alone is insufficient. Useful evidence includes a stable process, completed independent verification, fresh distinct outbound peers, matching block hash and complete state digest, and progress observed over time. Fleet counts and public address groups do not reveal the health or ownership of every physical miner.
+
+### 11.1 Shared mining pool
+
+Veld Node supports Solo and Pool modes. Pool mode accepts a TLS endpoint, a miner-owned payout address and CPU settings. Members do not need to buy VELD, stake personal funds, deposit coins, upload a keyfile or reveal private keys. Joining a payout address is not authorization to inspect private account details or alter another account.
+
+The gateway serves versioned jobs with durable, non-overlapping 64-bit nonce assignments. The full node creates complete canonical candidates, including mandatory settlement and finality information. Workers receive neither backend template-authorization credentials nor signing keys. Native VeldHash verifies submissions against the network target and the frozen accounting target; invalid, duplicate, stale and temporarily busy outcomes remain distinct.
+
+Block income uses expected-work-weighted PPLNS with a candidate lookback equal to two network blocks of expected work. Beneficiaries are frozen at the earning event. The winning share is included once. Only the pool's actual miner-category receipt is mining income; the total coinbase, vault, validator and network lottery allocations are not payable pool earnings.
+
+The pool uses one co-mining identity with a separately operator-funded stake of at least 1,000 VELD. A genuine near miss must be signed, included and eligible in the canonical window before it constitutes an entry. Workers do not receive separate on-chain entries. Actual lottery winnings use a separate frozen qualification-window contribution record. Under the owner's candidate terms, ordinary staking yield earned by the pool identity is also shared with contributors under its recorded distribution policy. Operator-contributed principal and fee funds remain separate from miner liabilities.
+
+Candidate settings are a 0% service fee, a 1 VELD automatic payment threshold, daily batching, and at least 120 canonical confirmations plus actual spendability. The threshold applies to the eligible amount at a payout destination across its accounts; separate private account access is retained. Sub-threshold earnings are retained. Daily processing is not a promise of daily earnings. Public fee terms and launch require separate approval.
+
+Pending means attributed income that is not yet payable. Available means matured, reconciled earnings eligible for payment. Paid requires a canonical confirmed payment. Input reservations and durable payment intentions prevent concurrent spending. Exact signed bytes are stored before broadcast; a lost response triggers reconciliation or identical rebroadcast, never an automatic second economic payment. Backup recovery must reconcile the signer journal and independently validated chain before spending resumes. Unexplained income or a deficit is quarantined rather than silently assigned to other miners.
+
+Public monitoring shows pool work, chain progress, rewards, payment history and service health. Private account information and operator settings require separate authenticated access. A mined block or an accepted share alone does not prove a completed payout. The qualification evidence must cover the actual recipient wallet, native Windows client, restart and payment recovery.
 
 ## 12. Security assumptions and protocol limits
 
@@ -311,7 +353,7 @@ The software is subject to implementation and operational failure. Source review
 
 ## 13. Implementation and release references
 
-This revision describes Veld 3.1.7, published source commit `b32e942cdd18c4d0317c5054cc0c22bf6147d5e8` and source tree `98ef04bc35ab33ca6187009000ad61a4cecc81b5`. The signed release identity records the relationship between published source, binary build inputs, and distributed artifacts.
+This document is staged against candidate implementation commit `554f62cdcdf3995c7c13c0a50aaaeae8c43f237c`, tree `0b79bdb520f08502c7749012e2b3fd13a64e8aa7`. The content branch and final package manifest separately identify documentation changes and distributed artifact hashes. No public 3.2.1 tag or release is asserted. The final qualification report must name the exact source and binaries it exercised; older receipts must not be relabeled as fresh results.
 
 | Area | Source reference |
 |---|---|
@@ -323,18 +365,21 @@ This revision describes Veld 3.1.7, published source commit `b32e942cdd18c4d0317
 | Staking and co-mining | `include/consensus/staking.h`, `include/consensus/nms.h` |
 | Validator and governance state | `include/consensus/validators.h`, `include/consensus/governance.h` |
 | Authenticated state transitions | `include/consensus/security_state_migration.h` |
-| btcVELD and the pool | `include/core/onchain_tokens.h`, `include/core/amm_pool.h` |
+| btcVELD and AMM liquidity | `include/core/onchain_tokens.h`, `include/core/amm_pool.h` |
+| Shared mining pool and payments | `pool/`, `include/pool/`, `src/veld-pool-client.cpp` |
+| SHA-384 destination migration | `docs/sha384-destinations.md` |
+| Prospective flat swap fee | `docs/amm-market-fee-candidate.md` |
 | Node lifecycle and recovery | `src/veld-node.cpp`, `include/node/node.h` |
 | Build and package identity | `BUILDING.md`, `docs/source-identity.md` |
 
 Public references:
 
-- Published source: [Veld 3.1.7 source](https://github.com/veldnetwork/Veld-Mainnet/tree/b32e942cdd18c4d0317c5054cc0c22bf6147d5e8)
+- Public source repository: https://github.com/veldnetwork/Veld-Mainnet (the local candidate is not asserted to be published)
 - Signed downloads: https://veld.network/#download
 - Network rules: https://explorer.veld.network/rules
 - How-to library: https://veld.network/how-to/
 - Staking guide: https://veld.network/how-to/stake-veld/
-- Release identity: https://veld.network/downloads/RELEASE-IDENTITY-3.1.7.json
+- Candidate source/build/release identity: consult the manifest supplied with the selected signed package.
 
 ## 14. Glossary
 

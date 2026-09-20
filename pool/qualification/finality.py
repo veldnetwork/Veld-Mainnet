@@ -19,6 +19,7 @@ from ..protocol import encode,Busy,Refused
 from .isolation import require_isolated_network
 from .control import mine_block
 from .progress import ValidationProgress
+from .finality_slash import exercise as exercise_equivocation
 
 def main():
     parser=argparse.ArgumentParser()
@@ -184,6 +185,9 @@ def main():
             time.sleep(10)
         check('independent node validated the same finality and state',independent.call('getstatedigest')==digest and
               independent.call('getfinalitysnapshot')['snapshot']['finalized']==finalized)
+        exercise_equivocation(rpc=rpc,independent=independent,node=node,observer=observer,
+            members=members,snapshot=snapshot,target=target,block=block,state=state,build=build,out=out,
+            mine=mine,sign=sign,check=check,report=report,save=save)
         report.update(status='PASS',finalized=finalized,carrier_height=rpc.call('getblockcount'),consolidations=consolidations,
             worker=json.loads((state/'worker/pool-status.json').read_text()),independent_state_match=True)
     except BaseException as error:

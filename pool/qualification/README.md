@@ -40,7 +40,12 @@ stakes real disposable funds, includes a genuine near miss, observes a draw and
 ordinary staking yield, pays contributors, and tests funded first-validator
 registration, endorsement and activation-boundary reorganization. A separate
 50,000-block funding history supplies seven unchanged 10,000-VELD bonds for
-the native finality quorum and pool-carried certificate exercise. Native
+the native finality quorum and pool-carried certificate exercise. The funded
+validator matrix exercises zero, 9,999, 10,000 and 10,001 aggregate ordinary
+stake. The lifecycle run covers actual slashing, exit, full 43,200-block yield
+vesting, principal return, replay and exact balance reconciliation. Deliberate
+finality equivocation uses disposable keys through real P2P intake and checks
+canonical principal/yield settlement and independent validation. Native
 VeldHash, ML-DSA signatures, block admission,
 settlements, spendability and independent recipient reconciliation are required.
 Only historical construction time is accelerated. The two native worker and
@@ -52,10 +57,14 @@ qualification passes. Commands, raw logs, exact source hashes, build identities,
 failures and independent wallet amounts are emitted under the selected output.
 No copied receipt or manually marked check is accepted as a fresh result.
 
-The runner still returns an explicit `BLOCKED` completion verdict for required
-cases it does not yet exercise, including native Windows GUI, the remaining
-validator lifecycle and reward-reorganization matrices, final production builds
-and native Windows usability. The bounded
+The runner returns `PASS_SCOPED_LINUX` only after every selected complete Linux
+stage passes and all service-role checks run. It retains an explicit separate
+list of native Windows GUI/usability and production-artifact requirements;
+`complete_pool_gate` stays false until those exact-source requirements are
+independently satisfied. `pool.qualification.windows` builds and exercises native
+Windows components; `pool.qualification.production` invokes the clean-source
+production controllers on the host platform. Neither command substitutes for
+the genuine GUI economic exercise or production network operation. The bounded
 load result reports observations for that host; it is not a maximum-throughput
 or public service-capacity guarantee.
 Its completed native cases must not be advertised as complete pool qualification.

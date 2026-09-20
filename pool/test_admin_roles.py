@@ -5,9 +5,10 @@ import http.client,json,os,pathlib,pwd,socket,ssl,subprocess,sys,tempfile,time,u
 from pool.admin import password_record
 from pool.protocol import encode
 from pool.test_install import module,InstallTests
+from pool.qualification.isolation import service_identities_available
 
 
-@unittest.skipUnless(os.name=='posix' and os.geteuid()==0,'requires disposable Linux root to test real separate UIDs')
+@unittest.skipUnless(service_identities_available(),'requires mapped Linux service UIDs, not single-UID namespace root')
 class AdminRoleTests(unittest.TestCase):
     def test_installed_admin_cannot_read_keys_and_gateway_cannot_reach_control_socket(self):
         core,gateway,admin=61241,61242,61243

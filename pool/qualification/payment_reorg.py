@@ -19,6 +19,7 @@ import traceback
 from ..backend import Node
 from ..protocol import encode,decode,Busy,Refused
 from .isolation import require_isolated_network
+from .control import mine_block
 
 def main():
     parser=argparse.ArgumentParser()
@@ -101,14 +102,10 @@ def main():
         if not path.exists():return []
         return [e['payload'] for line in path.read_text().splitlines() if (e:=json.loads(line))['kind']=='payment_signed']
     def mine(p,rpc):
-        height=rpc.call('getblockcount');p.stdin.write('clock '+str(1767225600+(height+1)*180)+'\n');p.stdin.flush()
-        deadline=time.monotonic()+180;again=0
-        while time.monotonic()<deadline:
-            if rpc.call('getblockcount')>height:return
-            if time.monotonic()>=again:
-                p.stdin.write('mine '+fixture['addresses']['fees']+'\n');p.stdin.flush();again=time.monotonic()+15
-            time.sleep(.075)
-        raise RuntimeError('native mining admission deadline')
+        # One acknowledged native command: a slow valid operation must not
+        # enqueue several future blocks and cross the intended test boundary.
+        return mine_block(p,rpc,fixture['addresses']['fees'],out/'node.log')
+
     try:
         node=start('node',[str(build/'pool-backend'),str(state/'node'),'32601','32602'],True)
         rpc=Node('http://127.0.0.1:32602',state/'node/lab-rpc-token',fixture['genesis']);ready(rpc,node)

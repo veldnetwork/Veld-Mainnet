@@ -91,3 +91,30 @@ units under distinct service identities. It verifies accepted native work,
 independent validation, denied gateway access to secrets, an account-preserving
 upgrade, and ordered shutdown. Staging files alone is not qualification; the
 exact final packaged artifacts must pass this exercise again.
+
+Public account registration has a coordinator-wide burst budget of 16 requests,
+refilling one admission every five seconds, in addition to the gateway's per-IP
+limit. Busy admission returns a retryable response before native validation or
+journal writes. Existing accounts keep their credentials, work and liabilities;
+unworked historical accounts cannot consume a permanent registration quota.
+Account lookup uses the journal-backed index rather than loading every account
+into an unbounded process dictionary.
+
+From the clean candidate source, the connected Linux qualification entrypoint is:
+
+```sh
+sudo python3 -B -m pool.qualification.run --service-roles --through complete --output /absolute/new/evidence-directory
+```
+
+It creates disposable state and a private network namespace. The genuine funded
+history and unchanged 43,200-block vesting exercise can take hours. It records
+the command, elapsed time, raw log and receipt hash for each stage. Its Linux
+pass is scoped: native Windows execution and production artifact qualification
+are additional requirements, not inferred from Linux results.
+
+Production artifacts use the ordinary provenance-enforcing controllers through
+`python3 -B -m pool.qualification.production --output /absolute/new/build-output`.
+Run that command natively on Linux for the service bundle and on Windows for the
+node/desktop/GUI bundle (Windows defaults to MSYS2 at `C:/msys64`; override with
+`--toolchain`). This builds and inspects unsigned artifacts only. It neither
+installs nor starts a service, and does not publish or connect to mainnet.

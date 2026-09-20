@@ -19,6 +19,7 @@ from ..backend import Node
 from ..protocol import encode,Busy
 from ..worker import Client
 from .isolation import require_isolated_network
+from .control import mine_block
 
 def main():
     parser=argparse.ArgumentParser()
@@ -75,12 +76,10 @@ def main():
         height=rpc.call('getblockcount');p.stdin.write('clock '+str(1767225600+(height+1)*180)+'\n');p.stdin.flush()
         return height
     def mine(p,rpc):
-        before=clock(p,rpc);until=time.monotonic()+180;again=0
-        while rpc.call('getblockcount')==before:
-            if time.monotonic()>until:raise RuntimeError('canonical competing work deadline')
-            if time.monotonic()>=again:
-                p.stdin.write('mine '+fixture['addresses']['fees']+'\n');p.stdin.flush();again=time.monotonic()+15
-            time.sleep(.1)
+        # One acknowledged native command: a slow valid operation must not
+        # enqueue several future blocks and cross the intended test boundary.
+        return mine_block(p,rpc,fixture['addresses']['fees'],out/'node.log')
+
     def events():
         result=[]
         for line in (state/'coordinator/events.jsonl').read_bytes().splitlines():

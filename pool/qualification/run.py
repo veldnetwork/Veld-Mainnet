@@ -1,8 +1,8 @@
 """One reproducible entrypoint for the connected Linux qualification exercises.
 
-It never converts a missing acceptance boundary into PASS. Native Windows GUI,
-full validator/finality/reorg matrices and production artifact qualification
-remain explicit completion gates until implemented and executed here.
+It never converts a missing acceptance boundary into PASS. This entrypoint
+executes the connected Linux exercises; native Windows GUI and production
+artifact receipts remain separately identified, exact-source requirements.
 """
 import argparse
 import hashlib
@@ -12,17 +12,12 @@ import subprocess
 import sys
 import time
 from .build import hashes
-from .isolation import MARKER,require_isolated_network
+from .isolation import MARKER,require_isolated_network,service_identities_available
 import os
 
 SOURCE=Path(__file__).resolve().parents[2]
 REMAINING=[
     'native Windows clean-install GUI, solo-mode interaction, upgrade and rollback on the final build',
-    'funded validator below/at/above former floor, bond lifecycle and reorganization across activation',
-    'native finality-certificate-bearing block with the unchanged quorum and warm-up',
-    'native income/payment/NMS reorganization and co-mining carryover/failure matrices',
-    'canonical CLI service startup and clean service-user installation/upgrade/shutdown',
-    'measured sustained capacity while ordinary node validation remains healthy',
     'clean authorized source identity and production-controller artifact qualification']
 
 def main():
@@ -32,10 +27,10 @@ def main():
     parser.add_argument('--through',choices=('focused','build','payments','complete'),default='complete',
                         help='development stop point; never grants completed qualification')
     args=parser.parse_args()
-    if args.service_roles and os.geteuid()!=0:
+    if args.service_roles and not service_identities_available():
         raise PermissionError('--service-roles requires root to exercise distinct Linux process credentials')
     if not os.environ.get(MARKER):
-        if args.service_roles:
+        if service_identities_available():
             # Do not remap root into a one-UID user namespace: that would make
             # a claimed separate-UID installation test impossible. Networking
             # remains loopback-only, and all filesystem writes use fresh lab
@@ -55,7 +50,7 @@ def main():
     out.mkdir(parents=True,exist_ok=False);(out/'logs').mkdir()
     before=hashes();report={'status':'RUNNING','complete_pool_gate':False,'source_path':str(SOURCE),
         'source_manifest_sha256':hashlib.sha256(json.dumps(before,sort_keys=True).encode()).hexdigest(),
-        'steps':[],'blocked':list(REMAINING),'not_authorized':['public deployment','mainnet activation',
+            'steps':[],'linux_gate_complete':False,'blocked':list(REMAINING),'not_authorized':['public deployment','mainnet activation',
             'real funding','release signing','push/merge/tag'],'requested_stop':args.through}
     (out/'source-hashes.json').write_text(json.dumps(before,indent=2)+'\n')
     def save():(out/'qualification.json').write_text(json.dumps(report,indent=2)+'\n')
@@ -67,6 +62,16 @@ def main():
             result=subprocess.run(command,cwd=SOURCE,stdout=log,stderr=subprocess.STDOUT,timeout=timeout)
         entry.update(exit_code=result.returncode,seconds=time.monotonic()-start,status='PASS' if result.returncode==0 else 'FAILED');save()
         if result.returncode:raise RuntimeError(name+' failed; see raw log')
+        if '--output' in arguments:
+            path=Path(arguments[arguments.index('--output')+1])/'result.json'
+            result_receipt=json.loads(path.read_text())
+            if not str(result_receipt.get('status','')).startswith('PASS'):
+                raise RuntimeError(name+' exited without a passing native receipt')
+            if result_receipt.get('processes_stopped') is False:
+                raise RuntimeError(name+' left fixture processes running')
+            entry['receipt']=str(path)
+            entry['receipt_sha256']=hashlib.sha256(path.read_bytes()).hexdigest()
+            save()
         print(name+' PASS',flush=True)
     def receipt(path):return json.loads(path.read_text())
     try:
@@ -123,12 +128,16 @@ def main():
             run('funded-validator-floor-matrix','pool.qualification.validator_matrix',[
                 '--build-directory',out/'build/candidate','--history-state',history['finality'],
                 '--output',out/'candidate/validator-floor-matrix'])
+            run('funded-validator-full-lifecycle','pool.qualification.validator_lifecycle',[
+                '--build-directory',out/'build/candidate','--matrix-output',out/'candidate/validator-floor-matrix',
+                '--output',out/'candidate/validator-lifecycle'],86400)
             run('native-finality-pool-carrier','pool.qualification.finality',['--build-directory',out/'build/candidate',
                 '--lab-signer',out/'build/candidate/pool-lab-sign','--history-state',history['finality'],
                 '--output',out/'candidate/finality'],86400)
         report['source_unchanged']=before==hashes()
         if not report['source_unchanged']:raise RuntimeError('source changed during qualification; exact final candidate not qualified')
-        report['status']='BLOCKED'
+        report['linux_gate_complete']=args.through=='complete' and args.service_roles
+        report['status']='PASS_SCOPED_LINUX' if report['linux_gate_complete'] else 'BLOCKED'
         if args.through!='complete':report['blocked'].insert(0,'development stop point selected; later connected stages not executed')
     except BaseException as error:
         report.update(status='FAILED',error=repr(error));raise
@@ -138,6 +147,6 @@ def main():
         report['evidence_hashes']={p.relative_to(out).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
             for p in out.rglob('*') if p.is_file() and p.name!='qualification.json' and 'build' not in p.relative_to(out).parts}
         save()
-    print('Connected exercises finished; completion gates remain explicitly BLOCKED.',flush=True)
+    print('Connected Linux qualification finished; see the exact-source platform and artifact requirements.',flush=True)
 
 if __name__=='__main__':main()

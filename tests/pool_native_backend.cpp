@@ -61,6 +61,22 @@ int main(int argc, char** argv) {
                 // Normal untrusted P2P admission, confined to this namespace.
                 std::cout << (node.ConnectTo("127.0.0.1",static_cast<uint16_t>(port))
                     ? "PEER_CONNECTED" : "PEER_REFUSED") << std::endl;
+            } else if (command.rfind("relayvote ", 0) == 0) {
+                // Adversarial lab peer, not a validator-signing bypass. Relay
+                // these exact bytes over normal P2P so the receiving node must
+                // perform its ordinary bounded admission and authentication.
+                namespace fq = ::veld::finality::qc;
+                const auto hex = command.substr(10);
+                std::vector<uint8_t> wire;
+                if (hex.size() != 2 * fq::SIGNED_VOTE_WIRE_BYTES ||
+                    !fq::FromHexBytes(hex, wire) ||
+                    !fq::DecodeSignedVoteWire(wire))
+                    throw std::runtime_error("lab finality wire schema");
+                auto* server = node.GetTCPServer();
+                if (!server) throw std::runtime_error("lab peer unavailable");
+                server->BroadcastMessage(
+                    server->GetMessageBuilder().BuildFinalityVoteMessage(wire));
+                std::cout << "VOTE_RELAYED" << std::endl;
             } else if (command.rfind("mine ", 0) == 0) {
                 // Native fixture prehistory only. MineBlocks retains its normal
                 // synchronous work admission, complete settlement builder,
