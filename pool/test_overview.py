@@ -3,6 +3,7 @@
 Fixture events, never evidence of mining or funded payments on any network.
 """
 import copy
+import hashlib
 import json
 from fractions import Fraction
 from types import SimpleNamespace
@@ -19,6 +20,14 @@ def income(n=1,state='pending',amount='100000001',category='mining'):
     return dict(id=f'{n:064x}',height=n,amount=amount,category=category,state=state,credits={})
 
 class OverviewTests(unittest.TestCase):
+    def test_production_packaging_includes_attested_metrics_module(self):
+        root=Path(__file__).resolve().parents[1]
+        controller=root/'build/mainnet-v2-pool.sh'
+        self.assertIn(' operator overview payments ',controller.read_text())
+        rows=(root/'vendor/pqc/provenance/PQC_PROVENANCE.tsv').read_text().splitlines()
+        row=next(line.split('\t') for line in rows if line.endswith('\tbuild/mainnet-v2-pool.sh'))
+        self.assertEqual(row[0],hashlib.sha256(controller.read_bytes()).hexdigest())
+
     def test_income_maturity_reorg_reconfirmation_idempotency(self):
         p=IncomeOverview();a=income();p.update(None,a)
         b=dict(a,state='available');p.update(a,b);p.update(b,b)
