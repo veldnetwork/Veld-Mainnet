@@ -5,6 +5,8 @@ are tracked separately; publishing source does not release new binaries.
 
 ## Unreleased
 
+- Keep pool workers waiting through temporary backend peer-readiness changes;
+  require fresh native admission before delivering new work.
 - Retry authenticated temporary pool proxy failures without accepting their
   response as work or relaxing certificate and successful-response validation.
 - Recover pool state from its authenticated journal rather than trusting the

@@ -44,7 +44,7 @@ class BackendHttpTests(unittest.TestCase):
                 stages=('getblocktemplate refused: ','getblocktemplate closed before publication: ',
                         'getblocktemplate authorization refused: ')
                 cases=[stage+reason for stage in stages for reason in
-                       ('sync_incomplete','startup_replay_incomplete','independent_validation_incomplete')]
+                       ('sync_incomplete','startup_replay_incomplete','independent_validation_incomplete','peer_view_unsafe')]
                 cases.append('getblocktemplate authorization refused: binding_mismatch')
                 cases.append('getblocktemplate closed before publication: binding_mismatch')
                 for message in cases:
@@ -56,16 +56,18 @@ class BackendHttpTests(unittest.TestCase):
                     self.assertEqual(node.call('getblocktemplate','public-address-fixture'),{'ready':True})
                 for stage in stages:
                     for reason in ('role_denied','unwired','binding_mismatch','durable_state_unproven',
-                                   'snapshot_state_untrusted','runtime_closed','sync_incomplete extra'):
+                                   'snapshot_state_untrusted','runtime_closed','sync_incomplete extra','peer_view_unsafe extra'):
                         if stage in ('getblocktemplate authorization refused: ','getblocktemplate closed before publication: ') and reason=='binding_mismatch':continue
                         state['error']={'code':-32010,'message':stage+reason}
                         with self.subTest(stage=stage,reason=reason),self.assertRaises(Refused):node.call('getblocktemplate','public-address-fixture')
-                    state['error']={'code':-32010,'message':stage+'sync_incomplete'}
-                    before=state['calls']
-                    with self.assertRaises(Refused):node.call('sendrawtransaction','exact-fixture-bytes')
-                    self.assertEqual(state['calls'],before+1,'writes must not acquire a new retry classification')
-                    state['error']['code']=-32603
-                    with self.assertRaises(Refused):node.call('getblocktemplate','public-address-fixture')
+                    for reason in ('sync_incomplete','peer_view_unsafe'):
+                        state['error']={'code':-32010,'message':stage+reason}
+                        for method in ('sendrawtransaction','submitblock'):
+                            before=state['calls']
+                            with self.assertRaises(Refused):node.call(method,'exact-fixture-bytes')
+                            self.assertEqual(state['calls'],before+1,'writes must not acquire a new retry classification')
+                        state['error']['code']=-32603
+                        with self.assertRaises(Refused):node.call('getblocktemplate','public-address-fixture')
                 for method in ('submitblock','sendrawtransaction','getblockcount'):
                     for stage in ('authorization refused','closed before publication'):
                         state['error']={'code':-32010,'message':'getblocktemplate '+stage+': binding_mismatch'}

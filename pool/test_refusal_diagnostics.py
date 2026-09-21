@@ -9,11 +9,33 @@ import threading
 import unittest
 from unittest.mock import patch
 from .backend import NodeRefused
-from .protocol import encode,decode
+from .protocol import encode,decode,Busy
 if os.name!='posix':raise unittest.SkipTest('Linux coordinator IPC')
 from .service import Server
 
 class RefusalDiagnostics(unittest.TestCase):
+    def test_temporary_readiness_withholds_work_then_recovers_over_ipc(self):
+        class Pool:
+            ready=False
+            def work(self,*args):
+                if not self.ready:raise Busy('node work readiness incomplete; retry when safe')
+                return {'fresh_work_fixture':True}
+        pool=Pool()
+        with tempfile.TemporaryDirectory() as directory:
+            server=Server(str(Path(directory)/'pool.sock'),pool)
+            thread=threading.Thread(target=server.serve_forever);thread.start()
+            def request():
+                with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
+                    connection.connect(server.server_address)
+                    connection.sendall(encode(dict(action='work',payload=dict(account='fixture',token='fixture',count='32')))+b'\n')
+                    return decode(connection.makefile('rb').readline())
+            try:
+                self.assertEqual(request(),dict(ok=False,error='busy',retryable=True))
+                pool.ready=True
+                self.assertEqual(request(),dict(ok=True,result={'fresh_work_fixture':True}))
+            finally:
+                server.shutdown();server.server_close();thread.join(timeout=5)
+
     def test_fixed_diagnostics_never_echo_arbitrary_rpc_values(self):
         for prefix,stage in (('getblocktemplate refused: ','initial'),
                 ('getblocktemplate closed before publication: ','publication'),

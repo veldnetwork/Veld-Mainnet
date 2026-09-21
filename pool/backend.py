@@ -8,15 +8,17 @@ from .private_file import read_private
 
 # The canonical builder checks the same readiness gates before construction,
 # before publication and when issuing the final authorization. A transient
-# loss of readiness at any of those stages supplies no usable work. Keep only
-# the existing three readiness reasons retryable; authority/trust failures and
-# writes retain their existing refusal behavior.
+# loss of readiness at any of those stages supplies no usable work. Replay,
+# independent validation and an unstable or expiring peer view can recover.
+# Workers wait and request fresh fully checked work; authority/trust failures
+# and writes retain their existing refusal behavior.
 WORK_READINESS_REFUSALS=frozenset(
     prefix+reason
     for prefix in ('getblocktemplate refused: ',
                    'getblocktemplate closed before publication: ',
                    'getblocktemplate authorization refused: ')
-    for reason in ('sync_incomplete','startup_replay_incomplete','independent_validation_incomplete'))
+    for reason in ('sync_incomplete','startup_replay_incomplete',
+                   'independent_validation_incomplete','peer_view_unsafe'))
 
 # Fixed operator diagnostics only: never log RPC parameters, credentials, raw
 # responses or arbitrary node-provided text. These codes do not alter admission.
@@ -78,10 +80,10 @@ class Node:
                 require(isinstance(error,dict) and type(error.get('code')) is int and
                         isinstance(error.get('message'),str),'RPC error schema')
                 # Native work admission remains closed until the node is ready.
-                # Tell workers to wait through replay/IBD instead of treating
-                # those exact read-only readiness refusals as fatal policy errors.
+                # Tell workers to wait through replay/IBD and peer-view changes.
+                # This returns no template or token and never opens admission.
                 if method=='getblocktemplate' and error['code']==-32010 and error['message'] in WORK_READINESS_REFUSALS:
-                    raise Busy('node still validating chain history; retry work when ready')
+                    raise Busy('node work readiness incomplete; retry when safe')
                 # A canonical commit closes the admission coordinator with
                 # BindingMismatch while its acquired leases drain. Opening it
                 # for template authorization can therefore refuse a READ even
