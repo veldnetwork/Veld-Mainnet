@@ -22,6 +22,7 @@ SUITES = {
         "tests/portal_unlock_server_tests.py",
         "tests/explorer_public_page_tests.py",
         "tests/topology_advertised_roles_tests.py",
+        "tests/topology_active_peers_tests.py",
         "tests/release_controller_oracle_tests.py",
         "tests/release_version_tests.py",
         "tests/windows_node_gui_scroll_tests.py",

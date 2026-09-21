@@ -56,7 +56,10 @@ class OperatorTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name)
         self.pool,self.operator,self.pj=fixture(self.root,10000)
         self.counter=0
-    def tearDown(self):self.pool.journal.close();self.pj.close();self.tmp.cleanup()
+    def tearDown(self):
+        # Close optional identity journals before removing their files on Windows.
+        self.doCleanups()
+        self.pool.journal.close();self.pj.close();self.tmp.cleanup()
     def payload(self,**settings):
         self.counter+=1
         return dict(request_id=f'{self.counter:032x}',revision=str(self.operator.revision),reason='Fixture operator change',

@@ -225,7 +225,7 @@ public:
                 Require(end!=std::string::npos || response.size()<=8192,"pool HTTP header bound");
                 if (end==std::string::npos) continue;
                 Require(end<=8192 && response.rfind("HTTP/1.1 ",0)==0 && response.size()>12,"pool HTTP status");
-                status=int(Number(response.substr(9,3),599));Require(response[12]==' ',"pool HTTP status framing");
+                status=int(Number(response.substr(9,3),599));Require(status>=100 && response[12]==' ',"pool HTTP status framing");
                 const auto first=response.find("\r\n");Require(first!=std::string::npos,"pool HTTP status line");
                 std::map<std::string,std::string> headers;
                 for (size_t pos=first+2;pos<end;) {
@@ -237,6 +237,15 @@ public:
                     while (!value.empty() && value.front()==' ') value.erase(0,1);
                     Require(headers.emplace(name,value).second,"duplicate pool HTTP header");pos=next+2;
                 }
+                // An authenticated reverse proxy can return its own bounded
+                // HTML/chunked error instead of the gateway's JSON envelope.
+                // Discard it and let the existing bounded backoff retry; never
+                // treat that body as work, change credentials, or follow a
+                // redirect. TLS, header and success-response checks stay strict.
+                if(status==429)throw Retry("pool rate limit; retrying");
+                if(status==408 || status==425 || status==500 || status==502 ||
+                   status==503 || status==504 || (status>=520 && status<=527) || status==530)
+                    throw Retry("pool service temporarily unavailable");
                 Require(!headers.contains("transfer-encoding") && headers.contains("content-length") &&
                         headers["content-type"]=="application/json","pool HTTP response schema");
                 length=size_t(Number(headers["content-length"],16384));Require(length>0,"empty pool response");

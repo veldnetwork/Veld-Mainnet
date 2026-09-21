@@ -4,6 +4,13 @@ The seedless worker stops on certificate, identity, schema and non-retryable
 service failures. Temporary transport/service failures retain the bounded retry
 path. Diagnostic improvements do not authorize bypassing these checks.
 
+Authenticated temporary HTTP errors from reverse proxies also use this retry
+path, even when the proxy returns HTML or chunked content. Their bodies are
+discarded and cannot become jobs, balances or submission acknowledgements.
+Redirects, authentication refusals, malformed framing, invalid certificates and
+invalid successful JSON responses retain their refusal behavior. A submitted
+proof is retried with the same lease and nonce; accounts are not re-registered.
+
 After a fatal runtime error, private `pool-status.json` and the final process
 receipt include `failure_code` and `failure_stage`. The Windows Pool tab renders
 the corresponding fixed message. The first fatal error is retained while other

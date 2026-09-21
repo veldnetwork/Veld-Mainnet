@@ -91,6 +91,7 @@ class Journal:
         self.db.execute('CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY, digest TEXT NOT NULL UNIQUE, body BLOB NOT NULL)')
         self.db.commit()
         self.sequence, self.digest = 0, ZERO
+        self.index_repairs = 0
         if self.anchor.exists():
             with self.anchor.open('rb') as file:
                 marker = decode(file.read(257), 256)
@@ -117,17 +118,26 @@ class Journal:
                 seen_anchor = True
             self._index(event, digest)
         require(seen_anchor, 'journal rollback: current signing/work history required')
-        require(self.db.execute('SELECT COALESCE(MAX(seq),0) FROM events').fetchone()[0] == self.sequence, 'index ahead of journal')
+        indexed = self.db.execute('SELECT COUNT(*),COALESCE(MAX(seq),0) FROM events').fetchone()
+        require(indexed == (self.sequence, self.sequence), 'index ahead of journal')
         self.db.commit()
         atomic(self.anchor, encode({'seq': self.sequence, 'digest': self.digest}))
         self.log.seek(0, os.SEEK_END)
 
     def _index(self, event, digest):
-        prior = self.db.execute('SELECT digest FROM events WHERE seq=?', (event['seq'],)).fetchone()
+        body = encode(event)
+        # A digest column does not authenticate its neighboring cached body.
+        # Bound any cached BLOB read and reconstruct it only from the verified
+        # journal event. SQLite never supplies recovery authority.
+        prior = self.db.execute("SELECT digest, CASE WHEN typeof(body)='blob' AND length(body)<=? THEN body ELSE NULL END "
+                                'FROM events WHERE seq=?', (MAX_EVENT, event['seq'])).fetchone()
         if prior:
             require(prior[0] == digest, 'index identity mismatch')
+            if prior[1] != body:
+                self.db.execute('UPDATE events SET body=? WHERE seq=?', (body, event['seq']))
+                self.index_repairs += 1
         else:
-            self.db.execute('INSERT INTO events VALUES(?,?,?)', (event['seq'], digest, encode(event)))
+            self.db.execute('INSERT INTO events VALUES(?,?,?)', (event['seq'], digest, body))
 
     def append(self, kind, payload):
         with self.lock:
@@ -150,8 +160,32 @@ class Journal:
 
     def events(self):
         with self.lock:
-            for (body,) in self.db.execute('SELECT body FROM events ORDER BY seq'):
-                yield decode(body, MAX_EVENT)
+            # Consumers reconstruct nonce reservations, signing commitments and
+            # balances from the authoritative log, never a mutable SQLite copy.
+            # Use an independent cursor: nested reads or appends made by a caller
+            # must not rewind the durable writer or extend this replay snapshot.
+            count, expected_digest = self.sequence, self.digest
+            original = os.fstat(self.log.fileno())
+            descriptor = os.open(self.directory/'events.jsonl', os.O_RDONLY |
+                                 getattr(os, 'O_NOFOLLOW', 0))
+            with os.fdopen(descriptor, 'rb') as stream:
+                current = os.fstat(stream.fileno())
+                require((current.st_dev, current.st_ino) == (original.st_dev, original.st_ino),
+                        'journal identity changed during replay')
+                previous = ZERO
+                for sequence in range(1, count + 1):
+                    line = stream.readline(MAX_EVENT + 1)
+                    require(len(line) <= MAX_EVENT and line.endswith(b'\n'), 'damaged journal: stop and reconcile')
+                    event = decode(line, MAX_EVENT)
+                    schema(event, ('seq','previous','kind','payload','digest'))
+                    digest = event.pop('digest')
+                    require(type(event['seq']) is int and event['seq'] == sequence and
+                            event['previous'] == previous, 'journal ordering')
+                    require(hashlib.sha256(encode(event)).hexdigest() == digest, 'journal integrity')
+                    previous = digest
+                    yield event
+                require(previous == expected_digest and stream.tell() == original.st_size,
+                        'journal changed during replay')
 
     def close(self):
         for name in ('db', 'log', 'guard'):

@@ -15,6 +15,9 @@ spec.loader.exec_module(collector)
 
 class AdvertisedRolesTests(unittest.TestCase):
     def setUp(self):
+        reference = patch.object(collector, 'reference_tips', return_value={9250: 'a' * 64})
+        reference.start()
+        self.addCleanup(reference.stop)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         salt = Path(self.directory.name) / 'salt'
@@ -26,13 +29,13 @@ class AdvertisedRolesTests(unittest.TestCase):
         known.update({ip: {'id': 100 + i, 'role': 'miner', 'role_index': i}
                       for i, ip in enumerate(self.peers[:4], 1)})
         self.config = {'salt_file': str(salt), 'known': known,
-                       'sources': [{'name': 'fleet-' + str(i), 'address': ip}
+                       'sources': [{'name': 'fleet-' + str(i), 'address': ip, 'local': i == 1}
                                    for i, ip in enumerate(self.fleets, 1)],
                        'key_file': 'unused', 'known_hosts': 'unused'}
 
     def collect(self, metadata=None, extra=None, reverse=False):
         def source(source, *_):
-            rows = [{'ip': ip, 'peer_tip_hash': 'a' * 64, 'peer_tip_age_s': 0,
+            rows = [{'ip': ip, 'peer_tip_hash': 'a' * 64, 'peer_tip_age_s': 0, 'peer_height': 9250,
                      **(metadata or {}).get(ip, {})}
                     for ip in self.fleets + self.peers if ip != source['address']]
             rows.extend(copy.deepcopy(extra or []))
@@ -70,9 +73,10 @@ class AdvertisedRolesTests(unittest.TestCase):
 
     def test_one_current_exporter_overrides_older_missing_reports(self):
         def source(source, *_):
-            return [{'ip': ip, **({'role': 'miner', 'services': 9}
+            return [{'ip': ip, 'peer_tip_hash': 'a' * 64, 'peer_tip_age_s': 0, 'peer_height': 9250,
+                     **({'role': 'miner', 'services': 9}
                                 if source['name'] == 'fleet-3' else {})}
-                    for ip in self.peers]
+                    for ip in self.peers + self.fleets if ip != source['address']]
         with patch.object(collector, 'run_source', source):
             after, failures = collector.collect(self.config)
         self.assertEqual(failures, [])
@@ -112,7 +116,8 @@ class AdvertisedRolesTests(unittest.TestCase):
         def source(source, *_):
             if source['name'] != 'fleet-1':
                 raise RuntimeError('unavailable')
-            return [{'ip': self.peers[4], 'services': 9}]
+            return [{'ip': self.peers[4], 'services': 9, 'peer_tip_hash': 'a' * 64,
+                     'peer_tip_age_s': 0, 'peer_height': 9250}]
         with patch.object(collector, 'run_source', source):
             result, failures = collector.collect(self.config)
         self.assertEqual(len(failures), 2)

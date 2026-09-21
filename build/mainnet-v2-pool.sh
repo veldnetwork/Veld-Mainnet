@@ -38,7 +38,7 @@ cp -r "$src/pool/admin_web" "$output/lib/pool/admin_web"
 cp -r "$src/pkg/pool" "$output/setup"
 cp "$src/docs/operations/pool-candidate.md" "$output/README.md"
 cp -r "$output/backend/third-party" "$output/third-party"
-python3 -m compileall -q "$output/lib"
+python3 "$src/scripts/verify-python-package.py" "$output/lib"
 python3 "$src/scripts/verify-pqc-provenance.py" --root "$src" --release-role node --package-dir "$output/third-party"
 [[ $(git -C "$src" rev-parse HEAD) == "$commit" && $(git -C "$src" rev-parse 'HEAD^{tree}') == "$tree" && -z $(git -C "$src" status --short) ]] || { echo 'source changed during pool build' >&2; exit 1; }
 printf 'source_commit\t%s\nsource_tree\t%s\nprofile\tveld-public-mainnet-v2\n' "$commit" "$tree" >"$output/source-identity.tsv"

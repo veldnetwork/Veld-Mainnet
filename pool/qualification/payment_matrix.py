@@ -4,6 +4,7 @@ The crash/lost-response hooks are explicit. Wallet reconciliation and recovery
 use ordinary native node/RPC and the unmodified payment service after restart.
 """
 import argparse
+from contextlib import closing
 import copy
 import hashlib
 import json
@@ -11,6 +12,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -30,7 +32,8 @@ def main():
     args.output.mkdir(parents=True,exist_ok=False);subprocess.run(['ip','link','set','lo','up'],check=True)
     report={'status':'RUNNING','scope':'native payments with explicit process-fault injection','cases':[]}
     cases=['before_sign','after_native_signature','after_signed_journal','after_broadcast',
-           'after_confirmation_before_journal','after_confirmation_journal','lost_response']
+           'after_confirmation_before_journal','after_confirmation_journal','lost_response',
+           'cached_signed_payload_corruption']
     for fault in cases:
         out=args.output/fault;out.mkdir();state=Path(tempfile.mkdtemp(prefix='veld-pool-payment-case-',dir='/var/tmp'))
         (out/'state-directory.txt').write_text(str(state)+'\n')
@@ -118,7 +121,8 @@ def main():
             verifier_log=(out/'work.log').open('w');logs.append(verifier_log);verifier=Native(build/'pool-work',verifier_log)
             fee_before=sum(u['value_units'] for u in rpc.call('listunspent',fixture['addresses']['fees']))
             marker=state/'fault-fired'
-            service=start('fault-service',[sys.executable,'-m','pool.qualification.payment_fault_service',fault,str(marker),'--config',str(config)])
+            boundary='after_signed_journal' if fault=='cached_signed_payload_corruption' else fault
+            service=start('fault-service',[sys.executable,'-m','pool.qualification.payment_fault_service',boundary,str(marker),'--config',str(config)])
             for _ in range(120):
                 if marker.exists():break
                 if service.poll() is not None:raise RuntimeError('fault service exited before trigger')
@@ -126,6 +130,26 @@ def main():
                 time.sleep(.25)
             else:raise RuntimeError('fault did not reach selected boundary')
             stop(service)
+            retained_signature=None
+            if fault=='cached_signed_payload_corruption':
+                # Damage only a stopped disposable index, after the actual
+                # native signer has durably committed its real transaction.
+                # Keep authoritative signed bytes and rollback anchor intact.
+                authority=state/'payments/events.jsonl'
+                anchor=Path(settings['payments']['rollback_anchor'])
+                original_log=authority.read_bytes();original_anchor=anchor.read_bytes()
+                entries=[json.loads(line) for line in original_log.splitlines()]
+                retained=[e['payload'] for e in entries if e['kind']=='payment_signed']
+                assert len(retained)==1
+                retained_signature=retained[0]
+                with closing(sqlite3.connect(state/'payments/index.sqlite')) as db, db:
+                    sequence,body=db.execute("SELECT seq,body FROM events WHERE json_extract(body,'$.kind')='payment_signed'").fetchone()
+                    altered=json.loads(body)
+                    altered['payload'].update(signed_hex='00',state='reserved')
+                    db.execute('UPDATE events SET body=? WHERE seq=?',(encode(altered),sequence))
+                assert authority.read_bytes()==original_log and anchor.read_bytes()==original_anchor
+                result['cache_corruption']={'authoritative_log_unchanged':True,'anchor_unchanged':True,
+                    'actual_native_signature_retained':True}
             # The killed coordinator leaves its real Unix socket behind. The
             # normal service must recover it while holding the journal lock;
             # qualification must not repair the filesystem for the service.
@@ -151,6 +175,9 @@ def main():
             payment_events=[json.loads(line) for line in (state/'payments/events.jsonl').read_text().splitlines()]
             signed=[e['payload'] for e in payment_events if e['kind']=='payment_signed']
             assert len(signed)==1,'more than one signed economic intent'
+            if retained_signature is not None:
+                assert signed[0]==retained_signature,'recovery changed the retained native signature'
+                result['cache_corruption']['same_exact_signed_transaction_confirmed']=True
             intents=[e['payload'] for e in payment_events if e['kind']=='payment_intent']
             assert len(intents)==1 and {r['address']:int(r['units']) for r in intents[0]['wire']['recipients']}==expected_by_wallet
             assert len(intents[0]['wire']['recipients'])==len(expected_by_wallet)

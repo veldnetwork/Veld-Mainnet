@@ -13,7 +13,7 @@ import stat
 import errno
 import struct
 
-from .backend import Node
+from .backend import Node, NodeRefused
 from .coordinator import Coordinator
 from .journal import Journal
 from .native import Native
@@ -70,8 +70,20 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads=False
     def __init__(self,path,pool,operator_uid=None):
         self.pool=pool;self.operator_uid=operator_uid;self.slots=threading.BoundedSemaphore(16 if operator_uid is None else 4)
+        self.notice_lock=threading.Lock();self.last_refusal_notice=None
         super().__init__(path,Handler)
         os.chmod(path,0o660)
+    def refusal_notice(self,action,error):
+        # One global budget prevents anonymous requests or varying refusal
+        # reasons from growing memory or flooding operator logs. The public
+        # response remains generic and carries no backend authority details.
+        action=action if action in ('health','register','work','submit','account','history') else 'other'
+        reason=error.diagnostic if isinstance(error,NodeRefused) else 'request_validation_failed'
+        with self.notice_lock:
+            now=time.monotonic()
+            if self.last_refusal_notice is not None and now-self.last_refusal_notice<30:return
+            self.last_refusal_notice=now
+        print('pool request refused action='+action+' reason='+reason,file=sys.stderr,flush=True)
     def process_request(self,request,address):
         if not self.slots.acquire(False):request.close();return
         try:super().process_request(request,address)
@@ -83,6 +95,7 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 class Handler(socketserver.StreamRequestHandler):
     def handle(self):
         self.connection.settimeout(15)
+        action=None
         try:
             if self.server.operator_uid is not None:
                 _,uid,_=struct.unpack('3i',self.connection.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
@@ -90,6 +103,7 @@ class Handler(socketserver.StreamRequestHandler):
             raw=self.rfile.readline(16385)
             require(raw.endswith(b'\n'),'IPC framing')
             request=decode(raw)
+            action=request.get('action')
             if self.server.operator_uid is None:result=dispatch(self.server.pool,request)
             else:
                 schema(request,('action','payload','actor'))
@@ -102,6 +116,7 @@ class Handler(socketserver.StreamRequestHandler):
         except Busy:
             response={'ok':False,'error':'busy','retryable':True}
         except (Refused,ValueError) as error:
+            self.server.refusal_notice(action,error)
             response={'ok':False,'error':str(error)[:180] if self.server.operator_uid is not None else 'request refused','retryable':False}
         except (OSError,RuntimeError):
             response={'ok':False,'error':'service temporarily unavailable','retryable':True}

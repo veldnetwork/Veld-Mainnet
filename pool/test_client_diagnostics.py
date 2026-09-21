@@ -49,7 +49,8 @@ def main():
            ('work-shape','response_schema','work'),('work-chain','work_identity','work'),
            ('balance-identity','account_identity','balance'),('certificate','certificate','registration'),
            ('state-write','private_state','state'),('submit-refused','remote_refusal','submission'),
-           ('normal',None,None),('retry-then-normal',None,None)]
+           ('normal',None,None),('retry-then-normal',None,None),
+           ('proxy-retry-then-normal',None,None)]
     if args.expect_legacy:cases=cases[:1]
     with tempfile.TemporaryDirectory(prefix='veld-native-diagnostics-') as temporary:
         root=Path(temporary);protect(root,True)
@@ -93,6 +94,11 @@ def main():
                     else:raise AssertionError('unexpected endpoint')
                     refused=(name=='work-refused' and action=='work') or (name=='registration-refused' and action=='register') or (name=='submit-refused' and action=='submit')
                     retry=name=='retry-then-normal' and action=='work' and work_calls==1
+                    if name=='proxy-retry-then-normal' and action=='work' and work_calls==1:
+                        encoded=private_sentinel.encode()
+                        self.send_response(502);self.send_header('Content-Type','text/html')
+                        self.send_header('Content-Length',str(len(encoded)));self.end_headers()
+                        self.wfile.write(encoded);self.close_connection=True;return
                     response=dict(ok=False,error=private_sentinel,retryable=retry) if refused or retry else dict(ok=True,result=result)
                     encoded=json.dumps(response).encode()
                     self.send_response(200);self.send_header('Content-Type','application/json')
@@ -130,7 +136,8 @@ def main():
                 saved=json.loads((private/'state/pool-account.json').read_text())
                 assert (saved['account'],saved['worker_token'],saved['view_token'])==(account,worker_token,view_token)
             if name=='certificate':assert seen==[], 'credentials sent before verified TLS'
-            if name=='retry-then-normal':assert seen.count('work')==2,seen
+            if name in ('retry-then-normal','proxy-retry-then-normal'):
+                assert seen.count('work')==2 and seen.count('register')==1,seen
             print('PASS',name,'bounded diagnosis, no raw private output')
     print('PASS native diagnostic fixtures; no mining, payment or production-build claim')
 

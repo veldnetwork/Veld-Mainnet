@@ -5,6 +5,13 @@ are tracked separately; publishing source does not release new binaries.
 
 ## Unreleased
 
+- Retry authenticated temporary pool proxy failures without accepting their
+  response as work or relaxing certificate and successful-response validation.
+- Recover pool state from its authenticated journal rather than trusting the
+  rebuildable database cache.
+- Package only checksummed Python source, refusing unmanifested bytecode.
+- Exclude outdated or unconfirmed peer tips from the public active-node graph
+  without blocking their P2P connections or ability to catch up.
 - Use the shared charcoal style for the homepage download button.
 - Organize pool, btcVELD, operator, and activation documentation with module guides.
 - Separate quick-start instructions from release qualification and source identity.

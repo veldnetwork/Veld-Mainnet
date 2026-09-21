@@ -25,6 +25,16 @@ web group uses JavaScript fixtures and DOM substitutes, not a complete browser
 or installed PWA. Mobile layout changes also need rendered narrow-viewport and
 safe-area checks.
 
+`topology_active_peers_tests.py` covers current-tip membership, a two-block
+canonical propagation allowance, outdated-peer exclusion and automatic reentry,
+malformed and stale reports, address-group deduplication, reorganizations, and
+bounded local-reference failure. The collector reads the local node's public
+API on loopback port 8080. Missing canonical history permits exact-tip-only
+membership through the local stats API; failure of both preserves the old
+document, which the Explorer stops displaying after its freshness limit.
+The public graph counts reported address groups, not unique people or mining
+workers. Filtering the graph does not ban, disconnect, or change node validation.
+
 `wallet_outbox_browser_controls.cjs` additionally uses Playwright and a fresh
 browser profile. It serves only a disposable loopback page, blocks external
 page requests, and substitutes inert input scripts and transaction transport.

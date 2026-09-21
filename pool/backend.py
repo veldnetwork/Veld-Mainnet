@@ -18,6 +18,30 @@ WORK_READINESS_REFUSALS=frozenset(
                    'getblocktemplate authorization refused: ')
     for reason in ('sync_incomplete','startup_replay_incomplete','independent_validation_incomplete'))
 
+# Fixed operator diagnostics only: never log RPC parameters, credentials, raw
+# responses or arbitrary node-provided text. These codes do not alter admission.
+_TEMPLATE_REASONS=frozenset(('none','role_denied','node_not_running','unwired',
+    'startup_replay_incomplete','independent_validation_incomplete','sync_incomplete',
+    'snapshot_state_untrusted','durable_state_unproven','datadir_identity_unproven',
+    'checkpoint_anchor_unproven','tip_unknown','runtime_closed','peer_view_unsafe',
+    'subject_not_canonical','binding_missing','binding_mismatch'))
+
+class NodeRefused(Refused):
+    def __init__(self,method,error):
+        super().__init__('node refused '+method+': '+str(error)[:300])
+        self.diagnostic='node_rpc_refused'
+        if method!='getblocktemplate':return
+        message=error['message']
+        for prefix,stage in (('getblocktemplate refused: ','initial'),
+                ('getblocktemplate closed before publication: ','publication'),
+                ('getblocktemplate authorization refused: ','authorization')):
+            if error['code']==-32010 and message.startswith(prefix):
+                reason=message[len(prefix):]
+                if reason in _TEMPLATE_REASONS:self.diagnostic='template_'+stage+'_'+reason
+                return
+        if error['code']==-32603 and message=='getblocktemplate canonical builder binding or preflight failed':
+            self.diagnostic='template_builder_preflight_failed'
+
 class Node:
     """Private, pinned node connection. Never follows redirects or environment proxies."""
     def __init__(self, url, token_path, genesis):
@@ -76,7 +100,7 @@ class Node:
                 if error['code']==-32005 or (error['code']==-32010 and
                     ('local-work-unavailable' in error['message'] or 'capacity' in error['message'])):
                     raise Busy('node temporarily unavailable; retry the same operation')
-                raise Refused('node refused '+method+': '+str(error)[:300])
+                raise NodeRefused(method,error)
             require('result' in result, 'RPC result missing')
             return result['result']
         except http.client.HTTPException as error:

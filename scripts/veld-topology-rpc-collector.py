@@ -12,6 +12,7 @@ import argparse
 import collections
 import hashlib
 import hmac
+import http.client
 import ipaddress
 import json
 import os
@@ -28,7 +29,67 @@ MAX_NODES = 256
 MAX_EDGES = 1024
 VALID_ROLES = {"fleet", "node", "miner", "validator"}
 TIP_STALE_SECONDS = 180
+TIP_GRACE_BLOCKS = 2
 ROLE_PRIORITY = {"node": 0, "miner": 1, "validator": 2}
+
+
+def valid_hash(value: object) -> bool:
+    return (isinstance(value, str) and len(value) == 64 and
+            all(ch in "0123456789abcdefABCDEF" for ch in value) and
+            value != "0" * 64)
+
+
+def local_public_json(path: str) -> dict:
+    """Read only the local node's public API; no RPC token or remote URL."""
+    connection = http.client.HTTPConnection("127.0.0.1", 8080, timeout=3)
+    try:
+        connection.request("GET", path, headers={"Accept-Encoding": "identity"})
+        response = connection.getresponse()
+        body = response.read(MAX_RPC_BYTES + 1)
+        if response.status != 200 or not body or len(body) > MAX_RPC_BYTES:
+            raise ValueError("canonical topology reference unavailable")
+        value = json.loads(body)
+        if not isinstance(value, dict):
+            raise ValueError("canonical topology reference is not an object")
+        return value
+    finally:
+        connection.close()
+
+
+def reference_tips() -> dict[int, str]:
+    """Anchor membership to validated local history, never a peer majority.
+
+    Two canonical ancestors tolerate propagation/reporting delay. They do not
+    admit arbitrary forks at the same height. If the block summary is over its
+    display budget, exact-tip-only membership still works via the stats API.
+    """
+    try:
+        page = local_public_json("/api/v1/blocks/latest/3")
+        height, tip_hash, blocks = page.get("tip_height"), page.get("tip_hash"), page.get("blocks")
+        if (type(height) is not int or not 0 <= height <= 0xffffffff or
+                not valid_hash(tip_hash) or not isinstance(blocks, list) or
+                len(blocks) != min(height + 1, TIP_GRACE_BLOCKS + 1)):
+            raise ValueError("invalid canonical block summary")
+        tips = {}
+        expected_hash = tip_hash.lower()
+        for offset, block in enumerate(blocks):
+            if (not isinstance(block, dict) or type(block.get("height")) is not int or
+                    block["height"] != height - offset or not valid_hash(block.get("hash")) or
+                    block["hash"].lower() != expected_hash):
+                raise ValueError("noncanonical block summary")
+            tips[block["height"]] = expected_hash
+            previous = block.get("prev_hash")
+            if offset + 1 < len(blocks) and not valid_hash(previous):
+                raise ValueError("invalid block summary parent")
+            expected_hash = previous.lower() if isinstance(previous, str) else ""
+        return tips
+    except (OSError, http.client.HTTPException, ValueError):
+        stats = local_public_json("/api/stats")
+        height, tip_hash = stats.get("height"), stats.get("best_block_hash")
+        if (type(height) is not int or not 0 <= height <= 0xffffffff or
+                not valid_hash(tip_hash)):
+            raise ValueError("invalid canonical topology tip")
+        return {height: tip_hash.lower()}
 
 
 def read_json(path: Path, limit: int) -> dict:
@@ -165,11 +226,12 @@ def collect(config: dict) -> tuple[dict, list[str]]:
 
     now = int(time.time())
     nodes: dict[int, dict] = {}
-    tip_reports: dict[int, list[tuple[str, int]]] = collections.defaultdict(list)
+    tip_reports: dict[int, list[tuple[str, int, int]]] = collections.defaultdict(list)
     role_reports: dict[int, set[str]] = collections.defaultdict(set)
     directed_edges: set[tuple[int, int]] = set()
     failures: list[str] = []
     reporting = 0
+    local_ids: set[int] = set()
 
     def note(identity: dict, is_reporting: bool) -> None:
         node_id = identity["id"]
@@ -196,6 +258,8 @@ def collect(config: dict) -> tuple[dict, list[str]]:
             source_identity = known[source_address]
             peers = run_source(source, config["known_hosts"], config["key_file"])
             note(source_identity, True)
+            if source.get("local") is True:
+                local_ids.add(source_identity["id"])
             reporting += 1
             for peer in peers:
                 try:
@@ -218,16 +282,28 @@ def collect(config: dict) -> tuple[dict, list[str]]:
                 directed_edges.add((source_identity["id"], identity["id"]))
                 tip_hash = peer.get("peer_tip_hash")
                 tip_age = peer.get("peer_tip_age_s")
-                if (isinstance(tip_hash, str) and len(tip_hash) == 64 and
-                        all(ch in "0123456789abcdefABCDEF" for ch in tip_hash) and
-                        isinstance(tip_age, int) and not isinstance(tip_age, bool)):
+                tip_height = peer.get("peer_height")
+                if (valid_hash(tip_hash) and type(tip_age) is int and
+                        type(tip_height) is int and 0 <= tip_height <= 0xffffffff):
                     tip_reports[identity["id"]].append(
-                        (tip_hash.lower(), tip_age))
+                        (tip_hash.lower(), tip_age, tip_height))
         except Exception as exc:
             failures.append(f"{name}: {exc}")
 
     if reporting == 0:
         raise RuntimeError("no fleet report was available")
+
+    canonical = reference_tips()
+    reference_height = max(canonical)
+    # The local public reference is independent evidence of this reporter's
+    # tip, including when no other fleet source is reachable.
+    for node_id in local_ids:
+        tip_reports[node_id].append((canonical[reference_height], 0, reference_height))
+    active_tips = {
+        node_id: [height for tip_hash, age, height in reports
+                  if 0 <= age <= TIP_STALE_SECONDS and canonical.get(height) == tip_hash]
+        for node_id, reports in tip_reports.items()
+    }
 
     # Merge sessions and fleet reports before choosing the role. An older
     # exporter with missing metadata must not erase a current miner report.
@@ -238,7 +314,8 @@ def collect(config: dict) -> tuple[dict, list[str]]:
             node["role_index"] = 0
         node["role"] = role
 
-    ordered = sorted(nodes.values(), key=lambda item: (not item["reporting"], item["id"]))
+    ordered = sorted((node for node in nodes.values() if active_tips.get(node["id"])),
+                     key=lambda item: (not item["reporting"], item["id"]))
     ordered = ordered[:MAX_NODES]
     kept = {node["id"] for node in ordered}
     edges = []
@@ -258,33 +335,9 @@ def collect(config: dict) -> tuple[dict, list[str]]:
         if len(edges) >= MAX_EDGES:
             break
 
-    recent_hashes = [tip_hash
-                     for reports in tip_reports.values()
-                     for tip_hash, age in reports
-                     if 0 <= age <= TIP_STALE_SECONDS]
-    network_tip = None
-    if recent_hashes:
-        counts = collections.Counter(recent_hashes).most_common(2)
-        if len(counts) == 1 or counts[0][1] > counts[1][1]:
-            network_tip = counts[0][0]
-
     public_nodes = []
     for node in ordered:
-        reports = tip_reports.get(node["id"], [])
-        recent = [tip_hash for tip_hash, age in reports
-                  if 0 <= age <= TIP_STALE_SECONDS]
-        if not reports:
-            tip_state = "unavailable"
-        elif not recent:
-            tip_state = "stale"
-        elif network_tip is None:
-            tip_state = "unavailable"
-        else:
-            counts = collections.Counter(recent).most_common(2)
-            if len(counts) > 1 and counts[0][1] == counts[1][1]:
-                tip_state = "unavailable"
-            else:
-                tip_state = "exact" if counts[0][0] == network_tip else "differs"
+        tip_state = "exact" if reference_height in active_tips[node["id"]] else "differs"
         public_nodes.append({
             "id": node["id"],
             "role": node["role"],
@@ -297,6 +350,9 @@ def collect(config: dict) -> tuple[dict, list[str]]:
         "generated_at": now,
         "reporting_nodes": reporting,
         "eligible_nodes": len(public_nodes),
+        "not_current_nodes": sum(not active_tips.get(node_id) for node_id in nodes),
+        "membership": "recent-canonical-tip",
+        "reference_height": reference_height,
         "nodes": public_nodes,
         "edges": edges,
     }, failures

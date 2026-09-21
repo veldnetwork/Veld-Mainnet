@@ -9,10 +9,18 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import time
 
 SOURCE = Path(__file__).resolve().parents[2]
+
+def verify_deployment_version(source, value):
+    # Use the release controller's canonical source-to-artifact verifier.
+    # A fixed historical version here rejected correctly built later releases.
+    verify = runpy.run_path(str(source/'scripts/verify-release-version.py'))['verify']
+    return verify((source/'include/core/version.h').read_text(encoding='utf-8'),
+                  json.dumps(value))
 
 
 def main():
@@ -110,7 +118,8 @@ def main():
                       if line.startswith('VELD_DEPLOYMENT_INFO_V1_JSON ')]
             assert len(values) == 1
             value = values[0]
-            assert value['client_version'] == '3.2.1' and value['profile_id'] == 'veld-public-mainnet-v2'
+            verify_deployment_version(SOURCE, value)
+            assert value['profile_id'] == 'veld-public-mainnet-v2'
             assert value['amm_flat_fee_activation_height'] == 9500 and value['amm_flat_fee_bps'] == 30
             if args.component == 'fleet':
                 assert value['fleet_no_mine'] and not value['mining_compiled']

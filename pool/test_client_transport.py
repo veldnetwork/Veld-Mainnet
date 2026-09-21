@@ -33,6 +33,22 @@ def main():
             ('wrong JSON shape','trusted','trusted',normal[:-len(body)]+b'['+b' '*(len(body)-2)+b']',False,True),
         ]
         expected_retries={}
+        # TLS authenticates the endpoint, but a reverse proxy may return HTML
+        # instead of the gateway's JSON during a temporary outage. It must not
+        # be accepted as work, and it must not permanently stop the worker.
+        for status in (408,425,429,500,502,503,504,520,521,522,523,524,525,526,527,530):
+            name=f'proxy transient {status}'
+            response=(f'HTTP/1.1 {status} Temporary failure\r\nContent-Type: text/html\r\nTransfer-Encoding: chunked\r\n\r\n'
+                      '8\r\n<remote>\r\n0\r\n\r\n').encode()
+            cases.append((name,'trusted','trusted',response,False,True))
+            expected_retries[name]='pool rate limit; retrying' if status==429 else 'pool service temporarily unavailable'
+        for status in (200,301,302,400,401,403,404,409,422):
+            response=(f'HTTP/1.1 {status} Refused\r\nContent-Type: text/html\r\nContent-Length: 8\r\n\r\n<remote>').encode()
+            cases.append((f'non-transient HTML {status}','trusted','trusted',response,False,True))
+        proxy=b'HTTP/1.1 503 Unavailable\r\nContent-Type: text/html\r\nContent-Length: 8\r\n\r\n<remote>'
+        cases.append(('untrusted proxy error','trusted','other',proxy,False,False))
+        cases.append(('duplicate proxy headers','trusted','trusted',proxy.replace(b'Content-Length:',b'Content-Length: 8\r\nContent-Length:'),False,True))
+        cases.append(('invalid proxy header framing','trusted','trusted',proxy.replace(b'Content-Type:',b'Content Type:'),False,True))
         for name,status,error,expected in (
             ('bounded work retry',200,'busy','pool work temporarily unavailable'),
             ('bounded rate retry',429,'busy','pool rate limit; retrying'),
@@ -72,6 +88,8 @@ def main():
             assert bool(requests)==sent,(name,'credentials sent before TLS authentication')
             if name in expected_retries:
                 assert result.returncode==2 and result.stdout.strip()=='RETRY '+expected_retries[name],(name,result.stdout)
+            elif not success:
+                assert result.returncode==1,(name,'unsafe response must be refused, not retried',result.stdout)
             print('PASS',name)
         print('PASS native TLS transport fault suite; no mining claim')
 
