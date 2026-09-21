@@ -2567,8 +2567,8 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 <div class="card rule-card">
   <h2>How Veld works</h2>
   <p style="color:var(--muted);font-size:13px;line-height:1.6">
-    Reviewed for Veld 3.1.7 on 10 September 2026. This summarizes the released
-    <a href="https://github.com/veldnetwork/Veld-Mainnet/tree/b32e942cdd18c4d0317c5054cc0c22bf6147d5e8" style="color:var(--em);text-decoration:underline">consensus source</a>.
+    This page describes the network rules and the coordinated changes at block <strong>9,500</strong>.
+    Earlier blocks retain their historical validation rules. Nodes must run the compatible update before activation.
     The <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a> provides background.
     A protocol day is 480 blocks. Durations in days assume the 180-second target; actual elapsed time varies. Staking is active with a <strong>500 VELD minimum</strong>.
   </p>
@@ -2683,7 +2683,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
   <h2 id="endorse">9. Validators &amp; the validator pool</h2>
   <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool collects <strong>10% of ordinary block subsidy</strong> and pays it out every <strong>480 blocks</strong> in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle.</p>
   <ul>
-    <li><strong>System unlock.</strong> The validator subsystem requires aggregate ordinary stake of <strong>10,000 VELD</strong>. Endorsements are accepted only when that participation requirement is met. The validator pool receives its allocation independently of whether any validator qualifies for a payout.</li>
+    <li><strong>Registration.</strong> Before block 9,500, new registrations require aggregate ordinary stake of <strong>10,000 VELD</strong>. From block 9,500, that aggregate requirement is removed. Each validator still needs its own <strong>10,000 VELD bond</strong> and must satisfy the individual eligibility checks. Existing validators can continue eligible work when aggregate stake falls. Finality, governance and btcVELD retain their separate participation requirements.</li>
     <li><strong>Register on-chain.</strong> You submit a <span class="formula">VELD_VALIDATOR|REGISTER</span> transaction binding your ML-DSA-65 public key. A matching <span class="formula">DEREGISTER</span> exits cleanly.</li>
     <li><strong>Bond the minimum.</strong> Registration requires posting the minimum validator bond of <strong>10,000 VELD</strong> (see &sect;10) into the sigless custody vault. The live value is shown on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a>.</li>
     <li><strong>Stay online.</strong> Endorsement share is your count &divide; the network&#39;s count over the last 480 blocks &mdash; consistent uptime is what pays.</li>
@@ -2693,7 +2693,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="valbond">10. Validator bond, slashing &amp; yield escrow</h2>
-  <p>A validator&#39;s registration bond is not just a balance check &mdash; it is real, slashable capital. Custody, slashing, and reporter-bounty rules are enforced by consensus; validator operations require the aggregate-stake threshold in &sect;9.</p>
+  <p>A validator&#39;s registration bond is not just a balance check &mdash; it is real, slashable capital. Custody, slashing, and reporter-bounty rules are enforced by consensus. The registration change in &sect;9 does not remove or unlock the individual bond.</p>
   <h3>The bond (custody)</h3>
   <p>At registration the minimum bond is sent into a <strong>sigless custody vault</strong> &mdash; an address whose key nobody holds, so the principal cannot be moved arbitrarily. It sits there as collateral for as long as you validate. After a clean deregistration it remains slashable through the complete <strong>43,200-block (~90-day) finality-equivocation evidence horizon</strong>, measured from the validator's last counted finality vote when that is later. It is then <strong>returned to you in full</strong> by the mandatory, zero-fee canonical transaction at the first 480-block settlement boundary strictly after that horizon (up to about 91 days after the controlling event).</p>
   <h3>Slashing &mdash; two evidence classes</h3>
@@ -2769,7 +2769,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <li><strong>Finality anchors.</strong> Once validator finality is active, confirmed Bitcoin anchors prevent reorganizations below the retained anchored checkpoint. Anchors spend ordinary Bitcoin network fees.</li>
   </ul>
   <h3>Liquidity</h3>
-  <p>The on-chain VELD/btcVELD pool shares the same 10 BTC aggregate custody cap. The first successful seed establishes the reference ratio. Swap fees remain in the pool for liquidity providers and are separate from the native VELD transaction fee.</p>
+  <p>The on-chain VELD/btcVELD pool shares the same 10 BTC aggregate custody cap. From block <strong>9,500</strong>, swaps use a <strong>flat 0.30% fee</strong> in either direction; price deviation from the initial ratio no longer sets the fee. Swap fees remain in the pool for liquidity providers and are separate from the native VELD transaction fee. Reserve-based pricing and price impact still apply. Before activation, the historical bands below apply.</p>
   <table class="tbl-rules">
     <tr><th>Post-trade deviation from reference</th><th>Swap fee</th></tr>
     <tr><td>Improves the ratio or stays within 5%</td><td>0.30%</td></tr>
@@ -4272,6 +4272,19 @@ html[data-theme="light"] .explorer-install-step-icon{background:#EFEFEF;border-c
 html[data-device-layout="mobile"] body.has-explorer-install .bar{top:auto!important;margin-top:59px}
 html[data-device-layout="mobile"] body.has-explorer-install .wrap{padding-top:18px!important}
 @media(min-width:901px){.explorer-install{left:auto;right:22px;top:18px;width:min(440px,calc(100% - 44px));border-radius:14px}}
+.pool-page{max-width:1120px;margin:0 auto;padding:12px 0 24px}
+.pool-page h2{margin:0 0 8px}.pool-intro{margin:0 0 22px;color:var(--fg2,var(--muted));line-height:1.6}
+.pool-status{padding:18px 20px;margin:0 0 16px;border:1px solid var(--line,var(--border,#343b36));border-radius:12px;background:var(--surf,var(--panel,#111713))}
+.pool-status strong{font-size:14px;font-weight:600}.pool-status p{margin:6px 0 0;color:var(--fg2,var(--muted))}
+.pool-page .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:32px}.pool-page .tile{min-width:0;padding:20px;display:flex;flex-direction:column;gap:12px;border:1px solid var(--line,var(--border,#343b36));border-radius:12px;background:var(--surf,var(--panel,#111713))}
+.pool-page .tile .l{font-size:11px;letter-spacing:1px;text-transform:uppercase;line-height:1.5;margin:0;color:var(--fg2,var(--muted))}.pool-page .tile .v{font-size:clamp(24px,5.8vw,36px);font-weight:700;line-height:1.2;overflow-wrap:anywhere}
+.pool-page .tile .pool-word{font-family:var(--sans,system-ui,sans-serif);font-size:clamp(18px,4.4vw,24px)!important;overflow-wrap:normal;word-break:normal}
+.pool-page h3{margin:28px 0 14px}.pool-page .card,.pool-page .section{padding:22px;border:1px solid var(--line,var(--border,#343b36));background:var(--surf,var(--panel,#111713));border-radius:12px;line-height:1.65}
+.pool-page ol{margin:0;padding-left:1.4em}.pool-page li{padding-left:4px;margin:0 0 10px}.pool-page li:last-child{margin-bottom:0}
+.pool-page p{line-height:1.65}.pool-page .pool-note{color:var(--fg2,var(--muted));font-size:14px;margin:16px 0 0}
+.pool-page code{overflow-wrap:anywhere;font-size:.9em}.pool-page .btn,.pool-page .button{display:inline-flex;align-items:center;justify-content:center;min-height:46px;margin-top:8px;padding:10px 18px;border:1px solid #5b6166;border-radius:10px;background:#34383c;color:#f3f4f5;text-decoration:none;font-weight:600}
+.pool-page .btn:hover,.pool-page .button:hover{background:#41464b}.pool-page .btn:focus-visible,.pool-page .button:focus-visible{outline:2px solid currentColor;outline-offset:3px}
+@media(max-width:480px){.pool-page .tile{padding:16px}.pool-status{padding:16px}.pool-page .card,.pool-page .section{padding:18px}.pool-page .grid2{gap:12px}}
 </style>)VLDCSS";
         return css;
     }
@@ -4445,6 +4458,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
         static constexpr const char* kIconVault = R"SVG(<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 9 9-5 9 5M5 10h14M6 10v7M10 10v7M14 10v7M18 10v7M4 18h16M3 21h18"/></svg>)SVG";
         static constexpr const char* kIconRich = R"SVG(<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4-4 6 9 10 9-10-4-6zM3 10h18M7 4l5 6 5-6M12 10v10"/></svg>)SVG";
         static constexpr const char* kIconLiquidity = R"SVG(<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7c2.5 0 2.5 2 5 2s2.5-2 5-2 2.5 2 5 2 2.5-2 3-2M3 12c2.5 0 2.5 2 5 2s2.5-2 5-2 2.5 2 5 2 2.5-2 3-2M3 17c2.5 0 2.5 2 5 2s2.5-2 5-2 2.5 2 5 2 2.5-2 3-2"/></svg>)SVG";
+        static constexpr const char* kIconPool = R"SVG(<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="18" r="3"/><circle cx="19" cy="18" r="3"/><path d="m10.5 7.5-4 8m7-8 4 8M8 18h8"/></svg>)SVG";
         static constexpr const char* kIconWallet = R"SVG(<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M4 9h17M16 13h5M6 3h12"/></svg>)SVG";
         static constexpr const char* kIconMore = R"SVG(<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle class="nav-icon-dot" cx="8" cy="12" r="1"/><circle class="nav-icon-dot" cx="12" cy="12" r="1"/><circle class="nav-icon-dot" cx="16" cy="12" r="1"/></svg>)SVG";
 
@@ -4498,7 +4512,6 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
         side("blocks",     "Blocks",     kIconBlocks,                       "/blocks");
         side("mempool",    "Mempool",    kIconMempool,                      "/mempool");
         side("mining",     "Mining",     "\xE2\x9B\x8F\xEF\xB8\x8E",  "/mining");
-        side("pool",       "Pool",       kIconLiquidity,                    "/pool");
         side("staking",    "Stake",      "\x25",                       "/staking");
         side("validators", "Validators", kIconValidators,                   "/validators");
         side("vault",      "Vault",      kIconVault,                        "/vault");
@@ -4506,6 +4519,8 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
         side("rules",      "Rules",      "\xC2\xA7",                   "/rules");
         side("liquidity",  "Liquidity",  kIconLiquidity,                    "/liquidity");
         side("wallet",     "Wallet",     kIconWallet,                       "/wallet");
+        side("how-to",     "How To",     "?",                               "https://veld.network/how-to/");
+        side("pool",       "Pool",       kIconPool,                    "/pool");
         out += "  <div class=\"sn-foot\"><span class=\"live\"><span class=\"dot\"></span>Live</span><button class=\"theme-tog\" data-theme-toggle aria-label=\"Toggle theme\">&#9728;</button></div>\n";
         out += "</nav>\n";
 
@@ -4526,7 +4541,6 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
         // but the panel only opens on explicit tap. Auto-opening trapped users
         // who tapped a More item and saw the panel still open on the new page.
         out += "<div class=\"nav-more\" id=\"nav-more\"><div class=\"nm-grid\">\n";
-        more_cell("pool",       "Pool",       kIconLiquidity,                    "/pool");
         more_cell("staking",    "Stake",      "\x25",                          "/staking");
         more_cell("validators", "Validators", kIconValidators,                       "/validators");
         more_cell("vault",      "Vault",      kIconVault,                            "/vault");
@@ -4534,6 +4548,8 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
         more_cell("rules",      "Rules",      "\xC2\xA7",                      "/rules");
         more_cell("liquidity",  "Liquidity",  kIconLiquidity,                        "/liquidity");
         more_cell("wallet",     "Wallet",     kIconWallet,                           "/wallet");
+        more_cell("how-to",     "How To",     "?",                               "https://veld.network/how-to/");
+        more_cell("pool",       "Pool",       kIconPool,                    "/pool");
         out += "</div></div>\n";
 
         // Keep the header, content pane, nav, and menu as direct body children.
@@ -6550,17 +6566,19 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
     HttpResponse ServePoolPage() {
         std::string page = ArcadeHead("Veld · Pool") + ArcadePrimaryTabs("pool");
-        page += R"VLDPOOL(<h2>Veld Pool</h2>
-<div class="note em"><strong>Pool status</strong><p id="pool-public-status" role="status">Connecting to Veld Pool…</p></div>
+        page += R"VLDPOOL(<section class="pool-page"><h2>Veld Pool</h2><p class="pool-intro">Live pool activity, setup and rewards.</p>
+<div class="pool-status"><strong>Pool status</strong><p id="pool-public-status" role="status">Connecting to Veld Pool…</p></div>
 <div class="grid2">
-<div class="tile"><div class="l">Active accounts · last 2 minutes</div><div class="v" id="pool-public-active_accounts">—</div></div>
+<div class="tile"><div class="l">Active accounts · 2 min</div><div class="v" id="pool-public-active_accounts">—</div></div>
 <div class="tile"><div class="l">Verified shares</div><div class="v" id="pool-public-verified_shares">—</div></div>
-<div class="tile"><div class="l">Reconciled height</div><div class="v" id="pool-public-reconciled_height">—</div></div>
-<div class="tile"><div class="l">Payments</div><div class="v" id="pool-public-payments">Unknown</div></div>
-<div class="tile"><div class="l">Co-mining</div><div class="v" id="pool-public-comining">Unknown</div></div>
+<div class="tile"><div class="l">Pool chain height</div><div class="v" id="pool-public-reconciled_height">—</div></div>
+<div class="tile"><div class="l">Payments</div><div class="v pool-word" id="pool-public-payments">Unknown</div></div>
+<div class="tile"><div class="l">Co-mining lottery</div><div class="v pool-word" id="pool-public-comining">Unknown</div></div>
+<div class="tile"><div class="l">Minimum payout</div><div class="v pool-word" id="pool-public-minimum">—</div></div>
 </div>
-<h3>Start pool mining</h3><div class="card"><ol><li>Open Veld Node and select Pool.</li><li>Use <strong>https://pool.veld.network</strong> and enter your own wallet’s payout address.</li><li>Choose your CPU threads, then start mining.</li></ol><p>No deposit, personal stake, or private key is needed. Your PC and laptop can use the same payout address.</p></div>
-<h3>Rewards and payment history</h3><div class="card"><p>Open the pool dashboard with your separate account access to see pending, available and paid balances. A payout address alone does not unlock private history.</p><p><span id="pool-public-policy">Loading payment policy…</span> Earned receipts need at least 120 confirmations and must be spendable. Daily processing does not guarantee daily earnings.</p><a class="btn" href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Open pool dashboard →</a></div>
+<p class="pool-note" id="pool-public-comining-note">The pool needs 1,000 VELD staked to qualify for co-mining. Lottery winnings and staking rewards are shared with contributors.</p>
+<h3>Start pool mining</h3><div class="card"><ol><li>Open Veld Node and select <strong>Pool</strong>.</li><li>Use <code>https://pool.veld.network</code> and enter your own payout address.</li><li>Choose your CPU workers, then select <strong>Start pool mining</strong>.</li></ol><p class="pool-note">No deposit or personal stake required. Multiple machines can use the same payout address. Keep your private keys.</p></div>
+<h3>Your rewards</h3><div class="card"><p>Select <strong>Copy view access</strong> in your node, then open the dashboard to see your balances and payment history.</p><p><span id="pool-public-policy">Loading payment policy…</span> Earned receipts need at least 120 confirmations and must be spendable. Daily processing does not guarantee daily earnings.</p><a class="btn" href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Open pool dashboard →</a></div></section>
 <script nonce="__CSP_NONCE__">// Shared public Pool-tab view, embedded in Explorer and portal by the source generator.
 // No account identifiers, cookies, pairing credentials or private tokens leave the page.
 (function(){
@@ -6573,8 +6591,9 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
       put('pool-public-'+k,!failed&&last&&last[k]!==null?BigInt(last[k]).toLocaleString():'—');
     });
     put('pool-public-payments',failed||!last?'Unknown':last.payments_enabled?'Enabled':'Not enabled');
-    put('pool-public-comining',failed||!last?'Unknown':last.co_mining_enabled?'Enabled':'Not enabled');
+    put('pool-public-comining',failed||!last?'Unknown':last.co_mining_enabled?'Participating':'Not participating yet');
     var p=!failed&&last&&last.payment_policy;
+    put('pool-public-minimum',p?amount(p.minimum_units,8)+' VELD':'—');
     function amount(v,scale){var n=BigInt(v),d=10n**BigInt(scale);return (n/d+'.'+(n%d).toString().padStart(scale,'0')).replace(/\.?0+$/,'');}
     put('pool-public-policy',p?amount(p.fee_ppm,4)+'% service fee · '+amount(p.minimum_units,8)+' VELD minimum · batches every '+(Number(p.batch_seconds)/3600)+' hours.':'Payment policy unavailable. Check the pool dashboard.');
   }
@@ -6586,7 +6605,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
       var r=await fetch('https://pool.veld.network/v1/public',{credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',redirect:'error',signal:stop.signal});
       if(!r.ok||!r.body)throw Error('unavailable');
       var reader=r.body.getReader(),parts=[],size=0;
-      for(;;){var part=await reader.read();if(part.done)break;size+=part.value.length;if(size>4096){await reader.cancel();throw Error('response limit');}parts.push(part.value);}
+      for(;;){var part=await reader.read();if(part.done)break;size+=part.value.length;if(size>32768){await reader.cancel();throw Error('response limit');}parts.push(part.value);}
       var bytes=new Uint8Array(size),offset=0;parts.forEach(function(p){bytes.set(p,offset);offset+=p.length;});
       var j=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),s=j&&j.result;
       if(j.ok!==true||!s||s.chain!=='7be77ab9e820bd9ffb60b269b45ced48288056e5839a1135fafc2f8557000a88')throw Error('network');
@@ -6747,6 +6766,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
     HttpResponse ServeValidatorsPage() {
         bool sys_active = false;
+        bool registration_known = false;
         bool existing_operations_active = false;
         double total_staked = 0.0;
         double min_stake = (double)MIN_VALIDATOR_STAKE / VELD_UNITS;
@@ -6757,6 +6777,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         if (rpc_delegate_) {
             auto resp = rpc_delegate_->Handle(R"({"jsonrpc":"2.0","id":"1","method":"getvalidators","params":[]})");
             if (resp.find("\"system_active\":true") != std::string::npos) sys_active = true;
+            registration_known = sys_active || resp.find("\"system_active\":false") != std::string::npos;
             existing_operations_active = sys_active ||
                 resp.find("\"existing_operations_active\":true") != std::string::npos;
             {   auto p = resp.find("\"total_staked_veld\":");
@@ -6811,6 +6832,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             }
         } else if (validators_) {
             sys_active = validators_->IsValidatorSystemActive(chain_.Height());
+            registration_known = true;
             existing_operations_active = validators_->ExistingValidatorOperationsActive();
             val_count = validators_->GetActiveValidatorCount();
             auto records = validators_->GetValidators();
@@ -6835,14 +6857,16 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << std::fixed << std::setprecision(2);
 
         page << "<div class=\"stat-grid\" style=\"margin-bottom:20px\">";
-        page << "<div class=\"stat\"><div class=\"stat-label\">System Status</div><div class=\"stat-value " << (sys_active ? "em" : "") << "\">"
-             << (existing_operations_active ? "Active" : "Locked") << "</div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Validator Registration</div><div class=\"stat-value " << (sys_active ? "em" : "") << "\">"
+             << (!registration_known ? "Unknown" : sys_active ? "Open" : "Paused") << "</div>";
         if (sys_active) {
-            page << "<div class=\"stat-sub\">Validators are endorsing blocks</div>";
-        } else if (!existing_operations_active) {
+            page << "<div class=\"stat-sub\">Individual bond and eligibility checks apply</div>";
+        } else if (registration_known) {
             page << "<div class=\"stat-sub\">Needs " << std::fixed << std::setprecision(0)
-                 << ((double)VALIDATOR_UNLOCK_STAKED / (double)VELD_UNITS)
-                 << " VELD staked to unlock</div>";
+                 << ((double)ValidatorRegistrationNetworkStakeFloor(chain_.Height()) / (double)VELD_UNITS)
+                 << " VELD in aggregate ordinary stake</div>";
+            if (existing_operations_active)
+                page << "<div class=\"stat-sub\">Existing validators can continue eligible work</div>";
         }
         page << "</div>";
         (void)total_staked;  // Validator Stake box removed (operator-directed) -- irrelevant on the validator page

@@ -62,7 +62,8 @@ def main():
         route = route.rstrip("/") + "/"
         assert guide.canonical == "https://veld.network" + route, path
         guides[route] = guide
-    assert len(guides) == 14, "Expected library and 13 guides"
+    assert len(guides) == 15, "Expected library and 14 guides including pool mining"
+    assert "/how-to/join-mining-pool/" in guides, "Pool mining guide is required"
     checked = 0
     for route, guide in guides.items():
         for href in guide.links:

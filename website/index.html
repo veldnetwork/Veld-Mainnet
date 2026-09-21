@@ -17,7 +17,7 @@
   --em:#32F06E;--em-dim:rgba(50,240,110,.18);--em-bg:rgba(50,240,110,.07);
   --em-bg-strong:rgba(50,240,110,.13);--em-glow:rgba(50,240,110,.35);
   --gold:#FFD84A;--gold-bg:rgba(255,216,74,.08);
-  --button-bg:#292C30;--button-bg-hover:#373B40;--button-border:#555B63;--button-border-hover:#747C86;--button-text:#F5F7F5;
+  --button-bg:#303832;--button-bg-hover:#3A433C;--button-border:#59645B;--button-border-hover:#6B786E;--button-text:#F5F7F5;
   --red:#FF6057;--blue:#4CB8FF;--purple:#B07CFF;
   --font-sans:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
   --font-mono:'JetBrains Mono','SF Mono','Cascadia Code',Consolas,monospace;
@@ -75,10 +75,10 @@ body > *:nth-child(5){animation-delay:240ms}
 .nav-social{justify-self:start;display:inline-flex;align-items:center;white-space:nowrap;color:var(--text)!important;font-size:12px;font-weight:500}
 .nav-social .handle{color:var(--em);margin-left:4px}
 .nav-links a:hover{color:var(--em);text-shadow:0 0 12px rgba(50,240,110,.35)}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:6px;font-size:13px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:background .18s,border-color .18s,transform .18s,box-shadow .18s;border:1px solid var(--button-border);background:linear-gradient(180deg,#303439,var(--button-bg));color:var(--button-text);position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 5px 14px rgba(0,0,0,.2)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:6px;font-size:13px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:background .18s,border-color .18s,transform .18s,box-shadow .18s;border:1px solid var(--button-border);background:linear-gradient(180deg,#343C36,var(--button-bg));color:var(--button-text);position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 5px 14px rgba(0,0,0,.2)}
 .btn:hover{background:var(--button-bg-hover);border-color:var(--button-border-hover);color:#fff;text-decoration:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 7px 18px rgba(0,0,0,.28);transform:translateY(-1px)}
 .btn:not(.ghost)::after{display:none}
-.btn.ghost{background:linear-gradient(180deg,#303439,var(--button-bg));border-color:var(--button-border);color:var(--button-text)}
+.btn.ghost{background:linear-gradient(180deg,#343C36,var(--button-bg));border-color:var(--button-border);color:var(--button-text)}
 .btn.ghost:hover{background:var(--button-bg-hover);border-color:var(--button-border-hover);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 7px 18px rgba(0,0,0,.28)}
 .btn.sm{padding:7px 13px;font-size:12px}
 
@@ -103,12 +103,12 @@ body > *:nth-child(5){animation-delay:240ms}
 .hero-tagline{font-size:clamp(1.15rem,2.6vw,1.5rem);color:var(--text-dim);margin-bottom:52px;font-weight:400;letter-spacing:.02em}
 .hero-ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
 .hero-btn{display:inline-flex;align-items:center;gap:8px;padding:13px 30px;border-radius:8px;font-family:var(--font-mono);font-size:13.5px;font-weight:600;text-decoration:none;transition:all .25s;cursor:pointer;border:1px solid transparent;letter-spacing:.3px;position:relative;overflow:hidden}
-.hero-btn.primary,.hero-btn.outline{background:linear-gradient(180deg,#303439,var(--button-bg));color:var(--button-text);border-color:var(--button-border);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 7px 18px rgba(0,0,0,.24)}
+.hero-btn.primary,.hero-btn.outline{background:linear-gradient(180deg,#343C36,var(--button-bg));color:var(--button-text);border-color:var(--button-border);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 7px 18px rgba(0,0,0,.24)}
 .hero-btn.primary:hover,.hero-btn.outline:hover{background:var(--button-bg-hover);border-color:var(--button-border-hover);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 9px 22px rgba(0,0,0,.32);transform:translateY(-2px);text-decoration:none}
 .hero-btn.primary::after{display:none}
 .hero-btn.gold{background:var(--gold);color:#0A0B0A;box-shadow:0 0 24px rgba(255,216,74,.22)}
 .hero-btn.gold:hover{box-shadow:0 0 40px rgba(255,216,74,.45);transform:translateY(-2px);text-decoration:none}
-.hero-btn.gold::after{display:none;content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.32) 50%,transparent 70%);transform:translateX(-120%) skewX(-18deg);animation:shimmer 4.5s ease 1.5s infinite;pointer-events:none}
+.hero-btn.gold::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.32) 50%,transparent 70%);transform:translateX(-120%) skewX(-18deg);animation:shimmer 4.5s ease 1.5s infinite;pointer-events:none}
 
 /* ── Live stats strip (below hero) ── */
 .livebar{max-width:1080px;margin:64px auto 0;padding:18px 28px;border:1px solid var(--border);border-radius:10px;background:linear-gradient(180deg,var(--surface),rgba(17,19,17,.5));display:flex;gap:28px;flex-wrap:wrap;justify-content:center;align-items:center;font-family:var(--font-mono);font-size:13px;color:var(--text-muted);box-shadow:0 0 36px rgba(50,240,110,.05) inset;position:relative}
@@ -231,7 +231,7 @@ h2 em{font-style:normal;color:var(--em);text-shadow:0 0 22px rgba(50,240,110,.4)
 .dl h3{font-size:24px;font-weight:600;color:#fff;margin-bottom:8px}
 .dl p{color:var(--text-dim);font-size:14px;margin-bottom:0}
 .dl-right{display:flex;flex-direction:column;gap:10px;align-items:flex-end;position:relative;z-index:1;max-width:100%;min-width:0}
-.dl-btn{background:linear-gradient(180deg,#303439,var(--button-bg));color:var(--button-text);padding:14px 24px;border-radius:8px;border:1px solid var(--button-border);font-weight:700;font-size:15px;display:inline-flex;gap:10px;align-items:center;position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 7px 18px rgba(0,0,0,.24);transition:background .18s,border-color .18s,transform .18s,box-shadow .18s}
+.dl-btn{background:linear-gradient(180deg,#343C36,var(--button-bg));color:var(--button-text);padding:14px 24px;border-radius:8px;border:1px solid var(--button-border);font-weight:700;font-size:15px;display:inline-flex;gap:10px;align-items:center;position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 7px 18px rgba(0,0,0,.24);transition:background .18s,border-color .18s,transform .18s,box-shadow .18s}
 .dl-btn:hover{background:var(--button-bg-hover);border-color:var(--button-border-hover);color:#fff;text-decoration:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 9px 22px rgba(0,0,0,.32);transform:translateY(-1px)}
 .dl-btn::after{display:none}
 .dl-meta{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);line-height:1.6;text-align:left;width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:14px 22px;align-items:end;margin-top:18px;padding-top:18px;border-top:1px solid var(--border);position:relative;z-index:1}
@@ -304,8 +304,6 @@ footer .tag{margin-top:10px;color:var(--text-muted);font-family:var(--font-mono)
 /* Normal system cursor (the custom green SVG cursor was removed). */
 a,button,.btn,[role=button],[onclick]{cursor:pointer}
 input,textarea,[contenteditable]{cursor:text}
-
-.hero-btn.primary,.hero-btn.gold,.dl-btn{background:linear-gradient(#353940,#292c31);border-color:#646b76;color:#f2f3f5}.hero-btn.primary:hover,.hero-btn.gold:hover,.dl-btn:hover{background:#3b4048;border-color:#858e9a;color:#f2f3f5}.btn:focus-visible,.hero-btn:focus-visible,.dl-btn:focus-visible{outline:2px solid #646b76;outline-offset:4px}
 </style>
 </head>
 <body>
@@ -321,7 +319,6 @@ input,textarea,[contenteditable]{cursor:text}
       <a href="#participate">Participate</a>
       <a href="#launch">Launch</a>
       <a href="https://explorer.veld.network" target="_blank">Explorer</a>
-      <a href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Pool</a>
       <a href="https://wallet.veld.network" target="_blank">Wallet</a>
       <a href="#whitepaper">Whitepaper</a>
       <a class="btn sm ghost" href="https://wallet.veld.network/">Wallet</a>
@@ -395,7 +392,7 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— 03 VALIDATE</div>
         <h3>Endorse blocks, sign for rewards</h3>
-        <p>Once staking is active and aggregate ordinary stake reaches 10,000 VELD, register your ML-DSA-65 public key with a separate 10,000 VELD validator bond. Your daemon endorses new blocks, and the endorsement pool pays active validators every 480 blocks.</p>
+        <p>Register with your own 10,000 VELD validator bond and the required eligibility checks. The additional network-wide ordinary-stake prerequisite ends at block 9,500. Your daemon endorses new blocks, and the endorsement pool pays active validators every 480 blocks.</p>
         <div class="meta"><span class="k">Endorsement pool:</span> 10% of ordinary block rewards after staking activation</div>
       </div>
       <div class="hc">
@@ -408,7 +405,7 @@ input,textarea,[contenteditable]{cursor:text}
         <div class="n" style="color:var(--gold);text-shadow:0 0 10px rgba(255,216,74,.25)">— 05 PROVIDE</div>
         <h3>Provide pool liquidity</h3>
         <p>After btcVELD completes its one-time seven-validator activation, pool VELD with 1:1 Bitcoin-backed btcVELD and earn the fee retained by each swap. The entire pool fee accrues to liquidity providers; there is no protocol cut. Liquidity removal follows the pool’s reserve, transaction, and activation rules.</p>
-        <div class="meta"><span class="k">Swap fee:</span> 0.30%–1.00% four-band · <span class="k">100%</span> to providers · <span class="k">LP shares</span> track your reserve share</div>
+        <div class="meta"><span class="k">Swap fee:</span> 0.30% flat from block 9,500 (historical bands before activation) · <span class="k">100%</span> to providers · <span class="k">LP shares</span> track your reserve share</div>
       </div>
       <div class="hc" style="border-color:rgba(76,184,255,.2)">
         <div class="n" style="color:var(--blue);text-shadow:0 0 10px rgba(76,184,255,.25)">— 06 VERIFY</div>
@@ -544,7 +541,7 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— STEP 01</div>
         <h3>Download &amp; extract</h3>
-        <p>Grab <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">VeldClient-Windows-x64-3.1.3.zip</code> from below. Extract to a stable local folder. The portable client validates a signed snapshot when eligible, or synchronizes from peers. Windows may request approval for its optional inbound P2P firewall rule.</p>
+        <p>Grab <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">VeldClient-Windows-x64-3.2.1.zip</code> from below. Extract to a stable local folder. The portable client validates a signed snapshot when eligible, or synchronizes from peers. Windows may request approval for its optional inbound P2P firewall rule.</p>
       </div>
       <div class="hc">
         <div class="n">— STEP 02</div>
@@ -620,12 +617,12 @@ input,textarea,[contenteditable]{cursor:text}
 
     <div class="dl hud">
       <div class="dl-left">
-                <h3>Veld Node 3.1.3</h3>
-                <p style="color:var(--em);font-weight:600">Update to 3.1.3 before block 3,840, including if you already installed 3.1.2. ASERT and a 500 VELD ordinary staking minimum activate at that height. The co-mining lottery minimum stays at 1,000 VELD.</p>
+                <h3>Veld Node 3.2.1</h3>
+                <p style="color:var(--em);font-weight:600">Windows 3.2.1 adds integrated pool mining, improved mining recovery and pool controls. Update before block 9,500 for the validator registration, SHA-384 destination and flat 0.30% swap-fee changes. Solo mining remains available. Automatic updates are opt-in and check hourly while the app is open.</p>
         <p>For Windows 10 / 11. Extract the download and double-click <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">Start Veld Node.bat</code>. The app guides you through setup and sync.</p>
       </div>
       <div class="dl-right">
-        <a class="dl-btn" href="https://veld.network/downloads/VeldClient-Windows-x64-3.1.3.zip">↓ &nbsp; Download</a>
+        <a class="dl-btn" href="https://veld.network/downloads/VeldClient-Windows-x64-3.2.1.zip">↓ &nbsp; Download</a>
       </div>
 
       <div class="dl-steps">
@@ -639,13 +636,13 @@ input,textarea,[contenteditable]{cursor:text}
         </div>
         <div class="s">
           <div class="n">3</div>
-          <div class="txt"><strong>Verify</strong> (optional) in PowerShell: <code>Get-FileHash -Algorithm SHA256 .\VeldClient-Windows-x64-3.1.3.zip</code> — match the ZIP SHA256 below.</div>
+          <div class="txt"><strong>Verify</strong> (optional) in PowerShell: <code>Get-FileHash -Algorithm SHA256 .\VeldClient-Windows-x64-3.2.1.zip</code> — match the ZIP SHA256 below.</div>
         </div>
       </div>
       <div class="dl-meta">
-        <div class="hash"><span class="hash-label">ZIP SHA256</span>b7290cd9a3c589c78437d289c3d058f9027db34e0df67e818bb2ae451bad4ca3</div>
-        <div class="hash"><span class="hash-label">EXE SHA256</span>0539440bb732242ed65958f89b52658732a659c7295df5bd4b2d91860cd8432d</div>
-        <div><a href="https://veld.network/downloads/SHA256SUMS.txt" style="color:var(--text-muted);text-decoration:underline">signed manifest</a> · <a href="https://veld.network/downloads/CHANGES.txt" style="color:var(--text-muted);text-decoration:underline">release notes</a> · <a href="https://veld.network/downloads/Veld-3.1.3-source.tar.gz" style="color:var(--text-muted);text-decoration:underline">source code</a></div>
+        <div class="hash"><span class="hash-label">ZIP SHA256</span>5593cf53016edd9cff16e86639aed2ba567769d9a11861267ff80e58d22b7c7c</div>
+        <div class="hash"><span class="hash-label">EXE SHA256</span>a1069f1559762a6b6276f9a70e15545abe5f4222b39395d45014b8679c5a7b62</div>
+        <div><a href="https://veld.network/downloads/SHA256SUMS.txt" style="color:var(--text-muted);text-decoration:underline">signed manifest</a> · <a href="https://veld.network/downloads/CHANGES.txt" style="color:var(--text-muted);text-decoration:underline">release notes</a> · <a href="https://veld.network/downloads/Veld-3.2.1-source.tar.gz" style="color:var(--text-muted);text-decoration:underline">source code</a></div>
       </div>
     </div>
 

@@ -2,9 +2,9 @@
 
 ## A memory-hard proof-of-work network with native staking, co-mining, validator finality, and Bitcoin utility
 
-**Protocol version:** Veld Core 3.2.1 candidate
+**Protocol version:** Veld Core 3.2.1
 
-**Document version:** 20 September 2026
+**Document version:** 21 September 2026
 
 **Network:** veld-public-mainnet-v2
 
@@ -20,7 +20,7 @@ The target block interval is 180 seconds. ASERT adjusts difficulty after every a
 
 Nodes independently validate proof of work, transactions, monetary accounting, and participation state. Signed snapshots support synchronization, while independent validation from genesis remains mandatory before a snapshot-backed node can mine, endorse, or serve its normal interfaces. Durable progress and verified recovery records allow that validation to continue across restarts.
 
-This revision describes the Veld 3.2.1 candidate and explicitly distinguishes its future rules from historical validation. Public publication remains pending. A document or signed test package does not activate an upgrade or establish custody readiness. Exact build identities and completed qualification receipts accompany the selected artifact.
+This revision describes published Veld 3.2.1 and distinguishes the block 9,500 rules from historical validation. Publication does not establish custody readiness or a comprehensive security clearance. Exact binary-build identity and qualification scope are documented separately.
 
 ## 1. Network and current mainnet rules
 
@@ -53,9 +53,9 @@ Operators can inspect `getnetworkinfo` and the release identity records to compa
 
 Staking positions retain their chosen lockup conditions. Reaching the unlock height permits an unstake transaction; funds do not withdraw automatically.
 
-### 1.3 Candidate activation at block 9,500
+### 1.3 Coordinated activation at block 9,500
 
-Three changes in the 3.2.1 public-mainnet candidate use inclusion height 9,500: removal of the aggregate ordinary-stake validator registration gate, authorization of version-one SHA-384 key destinations, and a flat 0.30% AMM swap fee. Before that boundary, each path preserves its historical rules. A reorganization back across the boundary restores the applicable earlier rule.
+Three changes in the 3.2.1 public-mainnet release use inclusion height 9,500: removal of the aggregate ordinary-stake validator registration gate, authorization of version-one SHA-384 key destinations, and a flat 0.30% AMM swap fee. Before that boundary, each path preserves its historical rules. A reorganization back across the boundary restores the applicable earlier rule.
 
 The previous unpublished 9,000 candidate is superseded. Software enforcing different activation heights must be replaced through a coordinated upgrade before those rules diverge. This document does not assert that deployed nodes have been upgraded. Governance, validator bonds, finality membership, btcVELD activation and custody permissions remain separate requirements.
 
@@ -73,9 +73,9 @@ VELD uses an unspent-transaction-output ledger. Inputs must reference spendable 
 
 Native transaction signatures use ML-DSA-65. The same signature family is used for validator messages and signed release artifacts where required. Address hashes, proof of work, Bitcoin custody, and endpoint security have separate assumptions; the use of post-quantum signatures does not remove those dependencies.
 
-At candidate activation, a version-one key destination commits to the complete 1,952-byte ML-DSA-65 public key with SHA-384. The preimage binds the destination version, network and compiled genesis identity. Its authorization script contains the full 48-byte commitment; it does not truncate it to HASH160. The existing signature and full-transaction signing commitment remain required.
+At activation, a version-one key destination commits to the complete 1,952-byte ML-DSA-65 public key with SHA-384. The preimage binds the destination version, network and compiled genesis identity. Its authorization script contains the full 48-byte commitment; it does not truncate it to HASH160. The existing signature and full-transaction signing commitment remain required.
 
-Legacy destinations remain valid. Creating a new-format wallet is opt-in and does not move existing funds. This candidate adds a key destination, not a general spending-policy format. Staking, validator, governance, token, AMM and custody identities retain their existing formats, and unsupported operations from a new-format identity are refused. The five system addresses and Bitcoin custody descriptors are not automatically migrated. It would therefore be incorrect to describe every existing address or the entire system as quantum resistant.
+Legacy destinations remain valid. Creating a new-format wallet is opt-in and does not move existing funds. This release adds a key destination, not a general spending-policy format. Staking, validator, governance, token, AMM and custody identities retain their existing formats, and unsupported operations from a new-format identity are refused. The five system addresses and Bitcoin custody descriptors are not automatically migrated. It would therefore be incorrect to describe every existing address or the entire system as quantum resistant.
 
 | Parameter | Value |
 |---|---:|
@@ -192,7 +192,7 @@ Qualification requires the stake, signature, work, inclusion, uniqueness, and lo
 
 ### 6.1 Validator participation
 
-Before the candidate activation at block 9,500, validator registration retains the historical 10,000 VELD aggregate ordinary-stake requirement. At and after that inclusion height, this aggregate prerequisite is removed. An otherwise eligible first validator can register and perform qualifying endorsement work with zero ordinary stake across the network.
+Before activation at block 9,500, validator registration retains the historical 10,000 VELD aggregate ordinary-stake requirement. At and after that inclusion height, this aggregate prerequisite is removed. An otherwise eligible first validator can register and perform qualifying endorsement work with zero ordinary stake across the network.
 
 Every validator still supplies its own correctly funded and authorized 10,000 VELD custodial bond. This bond is distinct from ordinary stake and remains slashable. Funding, identity, signatures, synchronization, independent validation, applicable maturity and the 480-block settlement schedule remain enforced. Registration alone does not earn endorsement rewards. Removing the aggregate registration gate does not activate governance, create a finality quorum or unlock btcVELD.
 
@@ -262,7 +262,7 @@ The VELD/btcVELD AMM is a constant-product pool available after the peg's activa
 
 Swaps use deterministic integer arithmetic. Fees are charged in the asset received and remain in the pool's reserves. Liquidity-provider shares represent proportional ownership of the reserves, including retained fees. Withdrawal claims that proportion of both assets, subject to the transaction's validation rules.
 
-At and after candidate block 9,500, the swap fee is 30 basis points (0.30%) in either direction, regardless of deviation from the opening ratio. VELD has no target price or stablecoin obligation. Reserve depth and constant-product pricing determine execution and price impact; btcVELD's Bitcoin backing is a separate custody obligation. The flat fee is a provisional policy choice, not a demonstrated economic optimum or a guarantee of profitable liquidity provision.
+At and after block 9,500, the swap fee is 30 basis points (0.30%) in either direction, regardless of deviation from the opening ratio. VELD has no target price or stablecoin obligation. Reserve depth and constant-product pricing determine execution and price impact; btcVELD's Bitcoin backing is a separate custody obligation. The flat fee is a provisional policy choice, not a demonstrated economic optimum or a guarantee of profitable liquidity provision.
 
 The following four-band schedule remains the historical rule strictly before activation:
 
@@ -319,7 +319,7 @@ Wallet transaction signing occurs locally. Operators must protect encrypted keyf
 
 Use the signed updater or download from `https://veld.network/#download`. Verify the package manifest and detached Veld signature with the expected release authority. GUI and terminal distributions have separate signed feeds. Source tags, source archives, and signed binary manifests identify related but distinct artifacts.
 
-For the selected 3.2.1 candidate, use the signed package supplied for the authorized test campaign. It is not a public release announcement. After public publication is separately authorized, Veld Node's Release and updates controls can retrieve the signed feed. Retain wallet backups and existing chain data, and verify the manifest against the expected release authority.
+Veld 3.2.1 is available from the public signed download feed. Update before block 9,500 through Veld Node's Release and updates controls or the official full package. Retain wallet backups and existing chain data, and verify the manifest against the expected release authority.
 
 Automatic updating is opt-in and checks on an hourly schedule. A verified update preserves configured mining mode, payout identity, CPU settings and Portal pairing. Pool mining does not require custody of the payout wallet key or a wallet passphrase. Solo mining can resume only when its separately protected, authorized resume mechanism is available. A failed signature or invalid package must not be installed. Operators should verify the running daemon identity, profile, synchronization state and mining mode after an update.
 
@@ -353,7 +353,7 @@ The software is subject to implementation and operational failure. Source review
 
 ## 13. Implementation and release references
 
-This document is staged against candidate implementation commit `554f62cdcdf3995c7c13c0a50aaaeae8c43f237c`, tree `0b79bdb520f08502c7749012e2b3fd13a64e8aa7`. The content branch and final package manifest separately identify documentation changes and distributed artifact hashes. No public 3.2.1 tag or release is asserted. The final qualification report must name the exact source and binaries it exercised; older receipts must not be relabeled as fresh results.
+The published binaries were built from commit `1c693db24de71e71bc45b26958da03340d847f5c`, tree `9fb5c2ea6824a661c5d36cee2eae8ddbea798426`. The corresponding source archive preserves that exact tree. The public source tag also contains later web and documentation corrections, identified separately from the binary build. See `docs/release-3.2.1-qualification.md` for executed checks and incomplete scope; historical receipts are not fresh results.
 
 | Area | Source reference |
 |---|---|
@@ -374,7 +374,7 @@ This document is staged against candidate implementation commit `554f62cdcdf3995
 
 Public references:
 
-- Public source repository: https://github.com/veldnetwork/Veld-Mainnet (the local candidate is not asserted to be published)
+- Public source repository: https://github.com/veldnetwork/Veld-Mainnet
 - Signed downloads: https://veld.network/#download
 - Network rules: https://explorer.veld.network/rules
 - How-to library: https://veld.network/how-to/

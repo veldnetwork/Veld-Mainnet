@@ -34,7 +34,7 @@ let browser;
  assert.equal(await page.locator('#active').textContent(),'2');assert.equal(await page.locator('#blocks-won').textContent(),'4');
  assert.equal(await page.locator('#total-paid').textContent(),'23.00');assert.equal(await page.locator('#hashrate').textContent(),'1.75 kH/s');
  assert.equal(await page.locator('#minimum').textContent(),'1 VELD');assert.equal(await page.locator('#fee').textContent(),'0%');
- assert.equal(await page.locator('#schedule').textContent(),'Daily');assert.equal(await page.locator('#comining-enabled').textContent(),'Not enabled');
+ assert.equal(await page.locator('#schedule').textContent(),'Daily');assert.equal(await page.locator('#comining-enabled').textContent(),'Not participating yet');
  assert.equal(await page.locator('#public-blocks tr').count(),4);assert.equal(await page.locator('#private').isVisible(),false);
  assert.equal(await page.locator('#public-blocks a').count(),0,'nonmainnet records must not link to mainnet explorer');
  result.checks.push('real public projection rendered exactly','inactive co-mining clearly identified','nonmainnet records do not link to mainnet');

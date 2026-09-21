@@ -138,8 +138,8 @@ async function health(){
     el('status-light').className='status-light '+(v.status==='Service responding'?'online':'offline');
     text('updated','Updated '+new Date().toLocaleTimeString());text('active',count(v.active_accounts));text('height',v.reconciled_height===null?'Starting':count(v.reconciled_height));text('total-shares',count(v.verified_shares));
     text('queue',v.verification_queue?v.verification_queue.waiting+' / '+v.verification_queue.capacity:'Not reported');
-    text('payments-enabled',v.payments_enabled?'Enabled':'Paused / not enabled');text('comining-enabled',v.co_mining_enabled?'Enabled':'Not enabled');
-    text('comining-note',v.co_mining_enabled?'Co-mining is enabled. Only confirmed winnings create earnings.':'Currently not enabled. No lottery earnings are promised.');
+    text('payments-enabled',v.payments_enabled?'Enabled':'Paused / not enabled');text('comining-enabled',v.co_mining_enabled?'Participating':'Not participating yet');
+    text('comining-note',v.co_mining_enabled?'Co-mining is enabled. Only confirmed winnings create earnings.':'The pool needs 1,000 VELD staked to qualify. Lottery winnings and staking rewards are shared with contributors.');
     text('service-details','Service status reflects the pool’s last reconciliation.');text('data-message',v.status==='Service responding'?'':'Reconciliation is paused or starting. Balances and maturity may be delayed.');
     const p=v.payment_policy;
     if(p){const fee=integer(p.fee_ppm),percent=(fee/10000n)+'.'+(fee%10000n).toString().padStart(4,'0'),formatted=percent.replace(/\.?0+$/,'');text('fee',formatted+'%');text('minimum',compactMoney(p.minimum_units));text('schedule',p.batch_seconds==='86400'?'Daily':'Every '+Number(p.batch_seconds)/3600+'h');text('payment-policy',formatted+'% service fee · '+compactMoney(p.minimum_units)+' minimum per payout address · batches every '+Number(p.batch_seconds)/3600+' hours. Machines using the same address qualify together; account balances stay separate.');}

@@ -8,7 +8,8 @@ and public web applications for `veld-public-mainnet-v2`.
 [Website and downloads](https://veld.network/) ·
 [Explorer](https://explorer.veld.network/) ·
 [Wallet](https://wallet.veld.network/) ·
-[Portal](https://portal.veld.network/)
+[Portal](https://portal.veld.network/) ·
+[Pool](https://pool.veld.network/)
 
 ## Getting started
 
@@ -24,32 +25,39 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
-The local **3.2.1 candidate** adds validator-bond admission checks and custody
-service safeguards. It proposes removing the network-wide validator registration
-stake prerequisite at block **6,200**; the individual **10,000 VELD bond** and
-seven-validator btcVELD gate remain unchanged. This candidate is not a published
-release or custody activation. Native reserve payout authorization and safe refund
-retirement still require qualification; incompatible legacy payout services refuse
-to sign.
+**Veld Node 3.2.1 is published. Update before block 9,500.**
 
-**3.2.0** adds optional automatic signed updates and resumes a previously
-running miner with its saved workers, settings, pairing, and chain data.
-Enable Automatic updates in Node Settings or the paired portal and keep the
-app open. Clients on 3.1.10 or earlier need one initial update and sign-in.
-The mining clock guard also recovers after the Windows clock is corrected.
-See the [release notes](docs/release-notes.md),
-[automatic update guide](docs/operations/automatic-updates.md), and
-[signed downloads](https://veld.network/#download).
+The Windows client includes Pool and Solo modes, CPU controls, private pool
+account viewing, improved window/scroll recovery, and signed automatic updates.
+Use [pool.veld.network](https://pool.veld.network/) with your own payout address.
+Pool members never provide private keys or a personal stake.
 
-The stake minimum is **500 VELD**. Co-mining eligibility requires **1,000 VELD**
-staked under the mining address; validator registration uses a separate bond.
-The published 3.2.0 release retains the existing consensus rules and checkpoint
-authority. The candidate registration change above is separate.
+At block **9,500**, the release enables opt-in SHA-384 key destinations, removes
+the aggregate ordinary-stake prerequisite for validator registration, and uses
+a flat **0.30%** AMM swap fee in both directions. Historical validation remains
+unchanged. The validator's own **10,000 VELD bond**, individual eligibility,
+governance, finality, and seven-validator btcVELD requirements remain separate.
 
-The [`v3.2.0` tag](https://github.com/veldnetwork/Veld-Mainnet/tree/v3.2.0)
-identifies the published release source. Signed package manifests identify
-the distributed binaries. `main` may contain later maintenance and documentation updates. [CHANGELOG.md](CHANGELOG.md)
-distinguishes hosted updates from packaged changes.
+Ordinary staking starts at **500 VELD**. Co-mining still requires **1,000 VELD**
+staked by the participating economic identity. The public pool is not yet
+participating in mainnet co-mining; its separately funded identity is required.
+Pool lottery winnings and ordinary staking yield are shared when earned.
+
+Automatic updates are opt-in and check hourly while the app is open. Preserve
+wallet backups, chain data, worker accounts and signing journals. Selected
+testers already using a different signed 3.2.1 package must install the final
+package manually; equal-version manifest conflicts are intentionally refused.
+
+The signed binaries were built from commit
+`1c693db24de71e71bc45b26958da03340d847f5c`, tree
+`9fb5c2ea6824a661c5d36cee2eae8ddbea798426`. The release source tag also includes
+subsequent documented web and documentation corrections. Those changes do not
+alter the signed binaries. See [source identity](docs/source-identity.md),
+[release notes](docs/release-notes.md), and [qualification scope](docs/release-3.2.1-qualification.md).
+
+Publication is not a comprehensive security clearance or btcVELD custody
+activation. Exact qualification results and remaining work are distinguished
+from implemented features.
 
 | Property | Value |
 | --- | --- |

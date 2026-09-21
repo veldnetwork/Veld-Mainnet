@@ -3671,7 +3671,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <div id="val-req-status" style="font-size:12px;padding:8px 4px 0;line-height:1.6"></div>
     </div>
     <div style="font-size:11px;color:var(--muted);line-height:1.6;border-top:1px solid var(--b1);padding-top:10px">
-      Your bond is committed when you click Register below. Drop below the minimum at any point and your validator goes inactive until you restore the bond. Network-wide validator data is on the
+      Registration commits your individual bond to protocol custody. The bond remains locked through exit and the evidence waiting period. Network-wide validator data is on the
       <a href="https://explorer.veld.network/validators" target="_blank" rel="noopener noreferrer" style="color:var(--em);text-decoration:none">Veld Explorer &rarr;</a>
     </div>
   </div>
@@ -3692,8 +3692,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:2px 0 8px" id="val-cta-help">
       Clicking Register sends the required validator bond from your
       wallet to the protocol stake vault and announces you as a validator — all
-      in one transaction. The bond is returned in full when you cleanly
-      deregister. Ordinary endorsement double-signing confiscates 50%;
+      in one transaction. After a clean exit, the bond is returned at a settlement boundary only after the full evidence waiting period. Ordinary endorsement double-signing confiscates 50%;
       locked-finality equivocation confiscates 100% (25% reporter, 75% burn).
     </p>
     <div class="prev-note" style="margin:0 0 12px"><a href="https://explorer.veld.network/rules" target="_blank" rel="noopener noreferrer" style="color:var(--em);text-decoration:none">Full bond, slashing &amp; yield-escrow rules &rarr;</a></div>
@@ -3730,7 +3729,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
 
   <!-- Network stat-grid -->
   <div class="stat-grid" style="margin-top:16px">
-    <div class="stat"><div class="stat-label">System</div><div class="stat-value sm" id="val-sys">&mdash;</div></div>
+    <div class="stat"><div class="stat-label">Registration</div><div class="stat-value sm" id="val-sys">&mdash;</div></div>
     <div class="stat"><div class="stat-label">Active Validators</div><div class="stat-value em" id="val-count">&mdash;</div></div>
     <div class="stat"><div class="stat-label">Validator Pool</div><div class="stat-value gold" id="val-reward">&mdash;</div></div>
     <div class="stat"><div class="stat-label">Reward Distribution</div><div class="stat-value sm" style="color:var(--gold)" id="val-dist-interval">Every &mdash; blocks</div><div class="stat-sub" id="val-dist-interval-sub">&mdash;</div></div>
@@ -3870,7 +3869,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
       <div style="background:var(--s2);border-radius:6px;padding:14px">
         <div style="color:var(--em);font-size:11px;font-weight:600;margin-bottom:6px">1. Stake</div>
-        <div style="color:var(--muted);font-size:12px;line-height:1.55">Lock at least the minimum stake at your mining address. The same stake earns vault rewards too &mdash; no double-lock.</div>
+        <div style="color:var(--muted);font-size:12px;line-height:1.55">Lock at least 1,000 VELD at your mining address. The same stake can earn vault rewards. A 500 VELD stake alone does not qualify for the lottery.</div>
       </div>
       <div style="background:var(--s2);border-radius:6px;padding:14px">
         <div style="color:var(--em);font-size:11px;font-weight:600;margin-bottom:6px">2. Mine</div>
@@ -3878,11 +3877,11 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       </div>
       <div style="background:var(--s2);border-radius:6px;padding:14px">
         <div style="color:var(--em);font-size:11px;font-weight:600;margin-bottom:6px">3. Win</div>
-        <div style="color:var(--muted);font-size:12px;line-height:1.55">Every 100 blocks, the pool is split equally between randomly drawn eligible miners.</div>
+        <div style="color:var(--muted);font-size:12px;line-height:1.55">Every 100 blocks, a draw pays selected eligible miners. Unfilled payout slots carry forward.</div>
       </div>
       <div style="background:var(--s2);border-radius:6px;padding:14px">
         <div style="color:var(--em);font-size:11px;font-weight:600;margin-bottom:6px">4. Repeat</div>
-        <div style="color:var(--muted);font-size:12px;line-height:1.55">No carry-over &mdash; each window starts fresh. Just keep mining and you keep qualifying.</div>
+        <div style="color:var(--muted);font-size:12px;line-height:1.55">Entries reset each window. Keep mining and include a new qualifying near-miss. Undistributed lottery funds carry forward.</div>
       </div>
     </div>
     <div style="margin-top:12px;font-size:11px;color:var(--muted)">

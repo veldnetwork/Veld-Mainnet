@@ -6,7 +6,14 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
-## Unreleased
+## Hosted/source follow-up to 3.2.1
+
+- Give Pool a distinct icon, place it after How To, and use neutral status styling.
+- Separate validator registration availability from existing validator operations.
+- Clarify the 1,000 VELD lottery requirement, carryover, and bond waiting period.
+- Correct public release documentation and preserve exact binary-source attribution.
+
+## 3.2.1 - 2026-09-21
 
 - Rebuild the public pool website with responsive pool statistics, recent block confirmations, distinct reward categories, setup help and private payment history. Add bounded read-only hashrate and journal-derived income/payment summaries without changing accounting or mining policy.
 - Add configurable Windows pool mining, persistent work accounting, shared mining, lottery and ordinary staking rewards, restricted payout signing, and an authenticated operator panel.

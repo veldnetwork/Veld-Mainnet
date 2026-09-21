@@ -1,3 +1,28 @@
+## 3.2.1 - Pool mining and block 9,500 upgrade
+
+Published Windows client and terminal downloads are available at
+https://veld.network/#download. Update before block **9,500**.
+
+- Integrated Pool mode alongside Solo mode, configurable HTTPS endpoint,
+  payout address and CPU controls; no key disclosure or member deposit.
+- Improved pool status, rewards/payment views, window recovery and scrolling.
+- Durable payment recovery and payout eligibility aggregated by destination.
+- At 9,500: opt-in SHA-384 key destinations with ML-DSA-65 signatures;
+  removal of the aggregate validator registration stake prerequisite;
+  flat 0.30% AMM fee in either direction.
+- Individual validator bonds and all other governance, finality, co-mining
+  and custody gates remain unchanged.
+
+Automatic updating remains opt-in, with hourly checks while the app is open.
+Selected miners already on an earlier 3.2.1 candidate need the final package
+installed manually because conflicting equal-version updates are refused.
+
+Pool co-mining has been exercised on an isolated test chain but is not funded
+on mainnet yet. Ongoing qualification is recorded separately; this release
+does not assert general security clearance or authorize custody activation.
+See [exact source and binaries](source-identity.md) and
+[qualification scope](release-3.2.1-qualification.md).
+
 ## 3.2.0 - Automatic updates with mining resume
 
 Mining now re-evaluates the clock guard after local time corrections, without
