@@ -25,6 +25,22 @@ Verify downloaded binaries using the official package manifest and signature.
 Building from source does not grant the official release signature. Different
 toolchains or paths can produce different binary hashes.
 
+## Veld 3.2.2
+
+Binary-build commit: `1f77a67365ff9c3c36dae2a624feb35615446202`.
+Binary-build tree: `97898f972e3a6eb0cce2caf86475afa5e4988bc6`.
+The [corresponding source archive](https://veld.network/downloads/Veld-3.2.2-source.tar.gz)
+preserves that exact build input. The public release tag also contains this
+documentation and hosted presentation follow-up and must not be called the binary-build commit.
+
+Windows GUI ZIP SHA-256:
+`69d050d03c7a3ea9ef5823593b5cb0f8fbc24b59c251427e3f5167dc9ac21ffc`.
+Signed package manifest SHA-256:
+`cdd11c0329b37faf643d5ac19bc000f66104c842756e6c220ac72520c935be89`.
+Verify detached signatures as well as hashes. The signed release identity
+retains its preparation-time state; subsequent runtime checks are documented
+separately in [qualification scope](release-3.2.2-qualification.md).
+
 ## Veld 3.2.1
 
 The signed production binaries use commit `1c693db24de71e71bc45b26958da03340d847f5c`

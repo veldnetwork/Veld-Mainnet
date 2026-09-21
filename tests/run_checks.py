@@ -33,6 +33,7 @@ SUITES = {
     "web": [
         "tests/wallet_co_mining_eligibility_tests.js",
         "tests/wallet_script_syntax_tests.js",
+        "tests/hosted_wallet_presentation_tests.js",
         "tests/wallet_authorization_tests.js",
         "tests/security_state_migration_wallet_tests.js",
         "tests/network_display_refresh_tests.js",

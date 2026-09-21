@@ -1,0 +1,10 @@
+#page-payouts .phead-right { display: none; }
+#page-payouts .earn-sc .val { overflow-wrap: anywhere; }
+#page-payouts .earn-sc .delta { color: var(--rewards-caption, var(--muted2)) !important; -webkit-text-fill-color: var(--rewards-caption, var(--muted2)) !important; }
+#page-payouts .earn-bar-fill { display: block; background: currentColor !important; box-shadow: none !important; }
+#page-payouts .rewards-load-status { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+#page-payouts .rewards-load-status:has(p[hidden]):has(button[hidden]) { display: none; }
+#page-payouts .rewards-load-status p { margin: 0 0 10px; }
+#page-payouts .rewards-load-status [hidden] { display: none !important; }
+#page-payouts #earn-recent-body td:first-child { padding-left: 20px; }
+#page-payouts #earn-recent-body td { white-space: nowrap; }

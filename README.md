@@ -25,39 +25,41 @@ and public web applications for `veld-public-mainnet-v2`.
 
 ## Releases and network identity
 
-**Veld Node 3.2.1 is published. Update before block 9,500.**
+**Veld Node 3.2.2 is published. Update before block 9,500.**
 
-The Windows client includes Pool and Solo modes, CPU controls, private pool
-account viewing, improved window/scroll recovery, and signed automatic updates.
-Use [pool.veld.network](https://pool.veld.network/) with your own payout address.
-Pool members never provide private keys or a personal stake.
+This maintenance release improves native Pool-page scrolling, uses charcoal
+controls, preserves per-device reward accounts, and reports current pool mining
+through the portal. Work requests use bounded 256-nonce batches; transient
+template-publication races request a fresh, fully validated candidate.
 
-At block **9,500**, the release enables opt-in SHA-384 key destinations, removes
-the aggregate ordinary-stake prerequisite for validator registration, and uses
-a flat **0.30%** AMM swap fee in both directions. Historical validation remains
-unchanged. The validator's own **10,000 VELD bond**, individual eligibility,
-governance, finality, and seven-validator btcVELD requirements remain separate.
+Pool and Solo modes remain available. Pool members use their own payout address
+without providing a private key or personal stake. See
+[pool.veld.network](https://pool.veld.network/) for setup and private account views.
 
-Ordinary staking starts at **500 VELD**. Co-mining still requires **1,000 VELD**
-staked by the participating economic identity. The public pool is not yet
-participating in mainnet co-mining; its separately funded identity is required.
-Pool lottery winnings and ordinary staking yield are shared when earned.
+The block **9,500** upgrade remains unchanged: opt-in SHA-384 key destinations
+with ML-DSA-65 signatures, removal of the aggregate ordinary-stake validator
+registration prerequisite, and a flat **0.30%** AMM swap fee in both directions.
+The validator's individual **10,000 VELD bond**, eligibility, governance,
+finality, and seven-validator btcVELD requirements remain separate.
+Ordinary staking starts at **500 VELD**; co-mining eligibility remains
+**1,000 VELD** for the participating economic identity. Mainnet pool co-mining
+is not yet operator-funded. Pool lottery winnings and ordinary staking yield
+are shared when earned; operator-contributed principal remains separate.
 
-Automatic updates are opt-in and check hourly while the app is open. Preserve
-wallet backups, chain data, worker accounts and signing journals. Selected
-testers already using a different signed 3.2.1 package must install the final
-package manually; equal-version manifest conflicts are intentionally refused.
+Automatic updates are opt-in and check hourly while the app is open. An actual
+public 3.2.1-to-3.2.2 automatic update resumed pool mining without another
+passphrase and preserved the saved account. That check triggered the normal
+startup check by re-enabling the preference; it did not measure a full elapsed
+hour. The earlier 3.2.0-to-3.2.1 solo-resume result is recorded separately.
 
-The signed binaries were built from commit
-`1c693db24de71e71bc45b26958da03340d847f5c`, tree
-`9fb5c2ea6824a661c5d36cee2eae8ddbea798426`. The release source tag also includes
-subsequent documented web and documentation corrections. Those changes do not
-alter the signed binaries. See [source identity](docs/source-identity.md),
-[release notes](docs/release-notes.md), and [qualification scope](docs/release-3.2.1-qualification.md).
+The signed binaries use commit `1f77a67365ff9c3c36dae2a624feb35615446202`,
+tree `97898f972e3a6eb0cce2caf86475afa5e4988bc6`. This public-source follow-up
+adds documentation and hosted presentation assets; it does not change the signed package. See
+[source identity](docs/source-identity.md), [release notes](docs/release-notes.md),
+and [qualification scope](docs/release-3.2.2-qualification.md).
 
 Publication is not a comprehensive security clearance or btcVELD custody
-activation. Exact qualification results and remaining work are distinguished
-from implemented features.
+activation. Full economic and custody qualification remain separately tracked.
 
 | Property | Value |
 | --- | --- |

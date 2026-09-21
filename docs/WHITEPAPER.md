@@ -2,7 +2,7 @@
 
 ## A memory-hard proof-of-work network with native staking, co-mining, validator finality, and Bitcoin utility
 
-**Protocol version:** Veld Core 3.2.1
+**Protocol version:** Veld Core 3.2.2 (3.2.1 consensus schedule unchanged)
 
 **Document version:** 21 September 2026
 
@@ -319,7 +319,7 @@ Wallet transaction signing occurs locally. Operators must protect encrypted keyf
 
 Use the signed updater or download from `https://veld.network/#download`. Verify the package manifest and detached Veld signature with the expected release authority. GUI and terminal distributions have separate signed feeds. Source tags, source archives, and signed binary manifests identify related but distinct artifacts.
 
-Veld 3.2.1 is available from the public signed download feed. Update before block 9,500 through Veld Node's Release and updates controls or the official full package. Retain wallet backups and existing chain data, and verify the manifest against the expected release authority.
+Veld 3.2.2 is available from the public signed download feed. Update before block 9,500 through Veld Node's Release and updates controls or the official full package. Retain wallet backups and existing chain data, and verify the manifest against the expected release authority.
 
 Automatic updating is opt-in and checks on an hourly schedule. A verified update preserves configured mining mode, payout identity, CPU settings and Portal pairing. Pool mining does not require custody of the payout wallet key or a wallet passphrase. Solo mining can resume only when its separately protected, authorized resume mechanism is available. A failed signature or invalid package must not be installed. Operators should verify the running daemon identity, profile, synchronization state and mining mode after an update.
 
@@ -353,7 +353,7 @@ The software is subject to implementation and operational failure. Source review
 
 ## 13. Implementation and release references
 
-The published binaries were built from commit `1c693db24de71e71bc45b26958da03340d847f5c`, tree `9fb5c2ea6824a661c5d36cee2eae8ddbea798426`. The corresponding source archive preserves that exact tree. The public source tag also contains later web and documentation corrections, identified separately from the binary build. See `docs/release-3.2.1-qualification.md` for executed checks and incomplete scope; historical receipts are not fresh results.
+The 3.2.2 published binaries were built from commit `1f77a67365ff9c3c36dae2a624feb35615446202`, tree `97898f972e3a6eb0cce2caf86475afa5e4988bc6`. The corresponding source archive preserves that exact tree. The public source tag also contains later web and documentation corrections, identified separately from the binary build. See `docs/release-3.2.2-qualification.md` for executed checks and incomplete scope; historical receipts are not fresh results.
 
 | Area | Source reference |
 |---|---|

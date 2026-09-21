@@ -1,3 +1,18 @@
+## 3.2.2 - Pool client and portal maintenance
+
+- Buffered Pool-page scrolling, charcoal scrollbar and controls, green Paid accent.
+- Clear distinction between configured CPU workers and workers currently hashing.
+- Bounded 256-nonce work batches and retry of transient template-publication races.
+- Current pool worker telemetry, stable Pool page rendering, restored Pool icon,
+  and removal of How To from the portal only.
+- Preserve deployed remote-update controls and ownership/capability checks.
+- Correct native CI dependencies and mandatory-settlement test assumptions.
+
+No consensus, supply, reward, custody, fee or activation-height change from 3.2.1.
+The scheduled block 9,500 upgrade remains in place. Signed package identity and
+executed checks are recorded in [source identity](source-identity.md) and
+[qualification scope](release-3.2.2-qualification.md).
+
 ## 3.2.1 - Pool mining and block 9,500 upgrade
 
 Published Windows client and terminal downloads are available at
