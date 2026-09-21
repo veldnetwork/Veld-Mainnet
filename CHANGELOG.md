@@ -5,6 +5,7 @@ are tracked separately; publishing source does not release new binaries.
 
 ## Unreleased
 
+- Use the shared charcoal style for the homepage download button.
 - Organize pool, btcVELD, operator, and activation documentation with module guides.
 - Separate quick-start instructions from release qualification and source identity.
 
