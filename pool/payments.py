@@ -12,6 +12,7 @@ from fractions import Fraction
 
 from .protocol import encode, require, units, hex64, Refused, Busy
 from .accounting import floor_total
+from .overview import PaymentOverview
 
 class Payments:
     def __init__(self,pool,journal,binary,pool_seed,fee_seed,pool_script,fee_script,fee_address,fee_units,dust_units):
@@ -22,13 +23,18 @@ class Payments:
         self.fee=units(str(fee_units));self.dust=units(str(dust_units))
         require(0<self.dust<100000000,'native dust policy')
         self.lock=threading.RLock();self.intents={};self.batches={}
+        self.public_overview=PaymentOverview()
         for event in journal.events():self.apply(event['kind'],event['payload'],event['seq'])
 
     def apply(self,kind,value,sequence=0):
+        prior=self.intents.get(value.get('id'))
+        old=dict(prior) if prior else None
         if kind=='payment_batch':self.batches[value['id']]=value
         elif kind=='payment_intent':self.intents[value['id']]=dict(value,history_sequence=sequence)
         elif kind=='payment_signed':self.intents[value['id']].update(value)
         elif kind in ('payment_state','payment_notice'):self.intents[value['id']].update(value)
+        if kind in ('payment_intent','payment_signed','payment_state','payment_notice'):
+            self.public_overview.update(old,self.intents[value['id']])
 
     def record(self,kind,value):
         sequence=self.journal.append(kind,value);self.apply(kind,value,sequence)
@@ -47,6 +53,9 @@ class Payments:
                 if intent['state']=='confirmed':paid+=amount
                 else:reserved+=amount
             return {'reserved_units':str(reserved),'paid_units':str(paid)}
+
+    def public_summary(self):
+        with self.lock:return self.public_overview.snapshot()
 
     def history(self,account,before=0):
         # Several native-size transactions can belong to one daily batch. The

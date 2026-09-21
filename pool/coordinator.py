@@ -8,6 +8,7 @@ from fractions import Fraction
 from .protocol import VERSION, Busy, Refused, require, hex64, nonce, units
 from .accounting import pplns, allocate_policy, text, floor_total
 from .records import Records
+from .overview import IncomeOverview, WorkOverview
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
@@ -45,7 +46,10 @@ class Coordinator:
         self.verified_counts = {}
         self.last_healthy = 0
         self.active_accounts = {} # authenticated activity; never a hashrate estimate
+        self.public_income=IncomeOverview();self.public_work=WorkOverview();self.replaying=True
         for event in journal.events(): self.apply(event['kind'], event['payload'], event['seq'])
+        self.replaying=False
+        self.public_work=WorkOverview()
         for receipt in self.receipts.select(status='pending'):
             self.record('verification', {'identity':receipt['identity'],'status':'deferred'})
         self.node.check_chain()
@@ -69,6 +73,7 @@ class Coordinator:
             waiting=('pending','deferred')
             self.unverified_count+=int(value['status'] in waiting)-int(receipt['status'] in waiting)
             self.verified_counts[account]=self.verified_counts.get(account,0)+change
+            if change==1 and not self.replaying:self.public_work.add(receipt['target'])
             receipt.update(value)
             self.receipts[value['identity']]=receipt
         elif kind == 'earned':
@@ -78,12 +83,14 @@ class Coordinator:
                 solution['status']='accounted';self.solutions[value['block']]=solution
         elif kind == 'solution': self.solutions[value['block']] = value
         elif kind == 'income':
+            self.public_income.update(self.incomes.get(value['id']),value)
             self.incomes[value['id']] = value
             if value.get('category')=='mining' and value['id'] in self.earnings:
                 earned=self.earnings[value['id']];earned['status']='accounted';self.earnings[value['id']]=earned
         elif kind == 'income_state':
-            income=self.incomes[value['id']];income['state']=value['state']
+            income=self.incomes[value['id']];old=dict(income);income['state']=value['state']
             if value['state']=='available':income['available_once']=True
+            self.public_income.update(old,income)
             self.incomes[value['id']]=income
 
     def record(self, kind, value):
@@ -203,6 +210,10 @@ class Coordinator:
                     'co_mining_enabled':self.identity is not None and not (self.operator and self.operator.settings['comining_paused']),
                     'payment_policy':self.operator.policy() if self.operator else {'minimum_units':'100000000','batch_seconds':'86400','fee_ppm':'0','revision':'0'},
                     'verification_queue':{'waiting':self.unverified_count,'capacity':self.queue_capacity},
+                    'overview':{'version':1,**self.public_income.snapshot(tip[0] if tip else 0),
+                        'work':self.public_work.snapshot(),
+                        'payments':self.payments.public_summary() if self.payments else
+                            {'paid_units':'0','confirmed_transactions':'0'}},
                     'retrying':getattr(self,'deferred_phases',[])}
 
     def history(self,account,credential,before=0):

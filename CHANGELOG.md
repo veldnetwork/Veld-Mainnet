@@ -8,6 +8,7 @@ are tracked separately; publishing source does not release new binaries.
 
 ## Unreleased
 
+- Rebuild the public pool website with responsive pool statistics, recent block confirmations, distinct reward categories, setup help and private payment history. Add bounded read-only hashrate and journal-derived income/payment summaries without changing accounting or mining policy.
 - Add configurable Windows pool mining, persistent work accounting, shared mining, lottery and ordinary staking rewards, restricted payout signing, and an authenticated operator panel.
 - Combine a wallet's balances across its worker accounts when checking the payout minimum; preserve each account's exact entitlement and payment recovery records.
 - Bind pool workers to the Windows app's lifetime so closing or losing the app cannot leave hidden miners running.
