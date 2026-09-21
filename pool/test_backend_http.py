@@ -45,6 +45,7 @@ class BackendHttpTests(unittest.TestCase):
                         'getblocktemplate authorization refused: ')
                 cases=[stage+reason for stage in stages for reason in
                        ('sync_incomplete','startup_replay_incomplete','independent_validation_incomplete')]
+                cases.append('getblocktemplate authorization refused: binding_mismatch')
                 for message in cases:
                     state['error']={'code':-32010,'message':message}
                     before=state['calls']
@@ -55,6 +56,7 @@ class BackendHttpTests(unittest.TestCase):
                 for stage in stages:
                     for reason in ('role_denied','unwired','binding_mismatch','durable_state_unproven',
                                    'snapshot_state_untrusted','runtime_closed','sync_incomplete extra'):
+                        if stage=='getblocktemplate authorization refused: ' and reason=='binding_mismatch':continue
                         state['error']={'code':-32010,'message':stage+reason}
                         with self.subTest(stage=stage,reason=reason),self.assertRaises(Refused):node.call('getblocktemplate','public-address-fixture')
                     state['error']={'code':-32010,'message':stage+'sync_incomplete'}
@@ -63,6 +65,16 @@ class BackendHttpTests(unittest.TestCase):
                     self.assertEqual(state['calls'],before+1,'writes must not acquire a new retry classification')
                     state['error']['code']=-32603
                     with self.assertRaises(Refused):node.call('getblocktemplate','public-address-fixture')
+                for method in ('submitblock','sendrawtransaction','getblockcount'):
+                    state['error']={'code':-32010,'message':'getblocktemplate authorization refused: binding_mismatch'}
+                    before=state['calls']
+                    with self.subTest(method=method),self.assertRaises(Refused):node.call(method,'exact-fixture-bytes')
+                    self.assertEqual(state['calls'],before+1)
+                for code,message in ((-32603,'getblocktemplate authorization refused: binding_mismatch'),
+                        (-32010,'getblocktemplate authorization binding mismatch'),
+                        (-32010,'getblocktemplate authorization refused: binding_mismatch extra')):
+                    state['error']={'code':code,'message':message}
+                    with self.subTest(code=code,message=message),self.assertRaises(Refused):node.call('getblocktemplate','public-address-fixture')
                 # Capacity is explicit. Do not make generic runtime closure,
                 # token entropy failure or policy refusal silently retryable.
                 state['error']={'code':-32005,'message':'getblocktemplate authorization capacity; retry shortly'}

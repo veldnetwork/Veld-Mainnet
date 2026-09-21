@@ -9,8 +9,8 @@ from .private_file import read_private
 # The canonical builder checks the same readiness gates before construction,
 # before publication and when issuing the final authorization. A transient
 # loss of readiness at any of those stages supplies no usable work. Keep only
-# the existing three readiness reasons retryable; authority/trust/binding
-# failures and writes retain their existing refusal behavior.
+# the existing three readiness reasons retryable; authority/trust failures and
+# writes retain their existing refusal behavior.
 WORK_READINESS_REFUSALS=frozenset(
     prefix+reason
     for prefix in ('getblocktemplate refused: ',
@@ -58,6 +58,16 @@ class Node:
                 # those exact read-only readiness refusals as fatal policy errors.
                 if method=='getblocktemplate' and error['code']==-32010 and error['message'] in WORK_READINESS_REFUSALS:
                     raise Busy('node still validating chain history; retry work when ready')
+                # A canonical commit closes the admission coordinator with
+                # BindingMismatch while its acquired leases drain. Opening it
+                # for template authorization can therefore refuse a READ even
+                # though no caller-supplied binding is involved. Discard that
+                # response and let the bounded worker backoff request fresh
+                # fully checked authority. Other stages, malformed bindings,
+                # submitblock and transaction writes remain hard refusals.
+                if (method=='getblocktemplate' and error['code']==-32010 and
+                        error['message']=='getblocktemplate authorization refused: binding_mismatch'):
+                    raise Busy('node canonical work transition; request fresh work')
                 if error['code']==-32005 or (error['code']==-32010 and
                     ('local-work-unavailable' in error['message'] or 'capacity' in error['message'])):
                     raise Busy('node temporarily unavailable; retry the same operation')

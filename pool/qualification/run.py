@@ -101,6 +101,8 @@ def main():
         run('clean-native-build','pool.qualification.build',['--output',out/'build'],7200)
         run('native-authorization-capacity','pool.qualification.authorization_capacity',
             ['--build',out/'build/candidate','--output',out/'native-authorization-capacity'])
+        run('native-template-transition','pool.qualification.template_transition',
+            ['--build',out/'build/candidate','--output',out/'native-template-transition'])
         run('native-focused-regressions','pool.qualification.native_regressions',
             ['--build-directory',out/'build/candidate','--output',out/'native-focused-regressions'])
         run('native-history-publication','pool.qualification.history_publication',
