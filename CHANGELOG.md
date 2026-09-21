@@ -1,10 +1,12 @@
 # Changelog
 
-- Fix pool-page scrolling leaving stale button and status strips on laptop displays.
-- Keep minimized Node windows on the taskbar and bring the running instance forward when reopened.
-
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
+
+## Unreleased
+
+- Organize pool, btcVELD, operator, and activation documentation with module guides.
+- Separate quick-start instructions from release qualification and source identity.
 
 ## 3.2.2 - Pool client and portal maintenance
 
@@ -30,6 +32,7 @@ executed checks are recorded in [source identity](docs/source-identity.md) and
 
 ## 3.2.1 - 2026-09-21
 
+- Keep minimized Node windows on the taskbar and bring the running instance forward when reopened.
 - Rebuild the public pool website with responsive pool statistics, recent block confirmations, distinct reward categories, setup help and private payment history. Add bounded read-only hashrate and journal-derived income/payment summaries without changing accounting or mining policy.
 - Add configurable Windows pool mining, persistent work accounting, shared mining, lottery and ordinary staking rewards, restricted payout signing, and an authenticated operator panel.
 - Combine a wallet's balances across its worker accounts when checking the payout minimum; preserve each account's exact entitlement and payment recovery records.

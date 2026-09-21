@@ -1,8 +1,11 @@
-# Isolated pool candidate
+# Pool service architecture and recovery
 
-This is unfinished development source, not a launch-qualified package. No public
-pool endpoint is configured. Production keys, real funds, and public-chain writes
-are outside this candidate's qualification scope.
+This guide describes the pool implementation and its isolated qualification
+boundary. The public client includes Pool mode; the service's complete economic
+qualification remains in progress. Configuration examples and qualification
+commands do not select production credentials or authorize live transactions.
+See the [release qualification record](../release-3.2.2-qualification.md) for
+artifact-specific results, and the [mining guide](pool-mining.md) for client setup.
 
 ## Connected development path
 
@@ -64,8 +67,7 @@ View credentials are distinct from mining credentials. The dashboard keeps them
 in memory, clears them on page exit, and sends no credentials in URLs. Browser
 usability and client-to-dashboard access setup still need integrated qualification.
 
-The owner's additional instruction overrides the earlier draft's yield policy:
-ordinary yield from the operator's pool stake is to be shared with contributors.
+Ordinary yield from the operator's pool stake is shared with contributors.
 Operator-contributed stake principal and fee/operating funds remain separate.
 A native isolated exercise has verified a funded 1,000 VELD stake, genuine NMS
 inclusion, a lottery win, an ordinary yield distribution, and payments of both
@@ -126,7 +128,7 @@ Run the connected Linux exercises with:
 sudo python3 -m pool.qualification.run --service-roles --output /absolute/new/evidence-directory
 ```
 
-See `pool/qualification/README.md` for dependencies, isolated profiles and exact
+See the [qualification guide](../../pool/qualification/README.md) for dependencies, isolated profiles and exact
 coverage limits. This runner emits an explicit incomplete verdict for missing
 required cases, even when its implemented exercises pass.
 
@@ -139,4 +141,5 @@ Windows installation and solo-mode interaction, the remaining co-mining and
 validator failure cases, native finality certificates, and a clean combined run
 on the exact final candidate.
 Passing primitive benchmarks or a worker-to-wallet probe cannot replace it.
-Public deployment, mainnet activation, signing, and publication are not authorized.
+Qualification commands do not authorize public deployment, mainnet activation,
+signing, or publication; those require separate operational approval.

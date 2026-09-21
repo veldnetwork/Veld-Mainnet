@@ -1,5 +1,12 @@
 # btcVELD Peg — 51%-Attack Defense & Cap-Growth Design
 
+> Historical design record from July 2026, before the current mainnet launch.
+> Implementation status, pilot-chain observations, and activation proposals below
+> describe that review period. They are not current deployment instructions or
+> a security clearance. Use the [current whitepaper](WHITEPAPER.md),
+> [custody security model](btcVELD-custody-security.md), and
+> [release qualification](release-3.2.2-qualification.md) for current scope.
+
 Status: **DESIGN — for sign-off.** Only the staged static cap (§3.1) has code; nothing else here is implemented.
 Date: 2026-07-04
 
@@ -253,4 +260,7 @@ External audit of the pilot returned **AMBER** — the live custodial path is de
 
 Full-node compile passes with both fixes. The **package-integrity finding (F-CRIT, the stale README)** is resolved at the root: the cover-letter source is deleted and the bundle cutter permanently bans any `README_AUDIT.md` — audit bundles now ship code + current design docs only.
 
-Related: [btcVELD-AMM-design.md](btcVELD-AMM-design.md), [btcVELD-redeem-path-design.md](btcVELD-redeem-path-design.md), [validator-slashing-design.md](validator-slashing-design.md), [ECONOMIC_DESIGN_2026-04-20.md](ECONOMIC_DESIGN_2026-04-20.md).
+Current references: [AMM design](btcVELD-AMM-design.md),
+[redemption design](btcVELD-redeem-path-design.md),
+[validator lifecycle implementation](../include/consensus/validators.h), and
+[protocol economics](WHITEPAPER.md).

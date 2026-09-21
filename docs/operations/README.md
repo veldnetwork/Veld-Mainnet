@@ -18,6 +18,18 @@ The terminal launchers have separate behavior:
 Keep encrypted wallet backups and the client data directory when updating.
 Use the signed update path; retain all files in the package together.
 
+## Pool mining
+
+The Windows client's **Pool** tab accepts a pool HTTPS endpoint, your own payout
+address, and a CPU worker count. Pool participation does not require a deposit,
+personal stake, or private-key disclosure. Follow the
+[pool mining guide](pool-mining.md) for setup, viewing access, and balances.
+
+For service operators, use the [pool architecture and recovery guide](pool-candidate.md),
+[installation instructions](../../pkg/pool/README.md), and
+[operator controls](../../pkg/pool/ADMIN.md). Keep pool credentials and journals
+separate from node administration and btcVELD custody authority.
+
 ## Linux and source builds
 
 Follow [BUILDING.md](../../BUILDING.md) to select a role. The fleet role
