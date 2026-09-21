@@ -341,6 +341,8 @@ public:
                 CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Consolas");
         }
         const int rows[]={0,28,80,108,160,188,240,268,324,324,440,528,796,382,382,188};
+        // Do not copy pixels or synchronously paint each intermediate child
+        // position during a scroll. Repaint the completed layout below.
         for(size_t i=0;i<controls_.size();++i) {
             const auto control=controls_[i];
             const int button=(i==8?0:i==9?1:i==13?2:i==14?3:-1);
@@ -348,10 +350,14 @@ public:
             const int x=left+(i==15?width-px(120):button>=0?(button%2)*(button_width+px(12)):0);
             const int w=(i==7||i==15?px(120):i==5?width-px(132):button>=0?button_width:width);
             const int h=i==11?px(248):i==12?px(112):(i==1||i==3||i==5||i==7||i==15)?px(38):button>=0?px(44):i<=6?px(24):px(80);
-            if(relayout)MoveWindow(control,x,top+px(rows[i]),w,h,TRUE);
+            if(relayout) {
+                SetWindowPos(control,nullptr,x,top+px(rows[i]),w,h,
+                    SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
+            }
             if(refont)SendMessageW(control,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);
             if(visibility)ShowWindow(control,show?SW_SHOWNA:SW_HIDE);
         }
+        if(relayout || visibility)RedrawWindow(parent_,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);
         layout_ready_=true;last_left_=left;last_top_=top;last_width_=width;
         last_scale_=scale;last_font_=font;last_show_=show;
         const bool running=Running();
@@ -372,7 +378,8 @@ public:
                 const auto count=[&](const char* name){const auto* value=state.Get(name);return value?Wide(pool::Text(*value)):L"0";};
                 std::wstring status=Wide(pool::Text(pool::Field(state,"status")));
                 if(state.Get("accepted"))status+=L"\r\nAccepted this session: "+count("accepted")+L" · verified total: "+count("verified_shares")+
-                    L"\r\nActive CPU workers: "+count("active_workers")+L" · hashes: "+count("hashes");
+                    L"\r\nCPU workers: "+Wide(Get(threads_))+L" configured · "+count("active_workers")+L" on work"+
+                    L"\r\nHashes: "+count("hashes");
                 const auto* failure=state.Get("failure_code");
                 const auto* stage=state.Get("failure_stage");
                 if(failure && stage)status=Wide(pool::FailureSummary(pool::Text(*failure),pool::Text(*stage)));

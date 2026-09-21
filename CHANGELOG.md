@@ -1,5 +1,8 @@
 # Changelog
 
+- Fix pool-page scrolling leaving stale button and status strips on laptop displays.
+- Keep minimized Node windows on the taskbar and bring the running instance forward when reopened.
+
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 

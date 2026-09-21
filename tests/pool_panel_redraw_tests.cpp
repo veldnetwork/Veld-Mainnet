@@ -54,7 +54,7 @@ int main() try {
         counts={};panel.Show(true,250,160,840,96,font);
         Check(counts.position==0 && counts.font==0,"resized layout becomes stable");
         const auto path=dir/"pool-status.json";
-        const std::string state=R"({"status":"Mining","accepted":"2","pending_units":"0","available_units":"0","reserved_units":"0","paid_units":"0"})";
+        const std::string state=R"({"status":"Mining","accepted":"2","active_workers":"1","pending_units":"0","available_units":"0","reserved_units":"0","paid_units":"0"})";
         Check(veld::channel::secure_file::AtomicWriteText(path.string(),state,&error,true),"write actual private status file");
         panel.Tick();counts={};panel.Tick();
         Check(counts.text==0,"identical status and balance do not repaint");

@@ -38,6 +38,7 @@
 #include "../include/gui/update_resume.h"
 #include "../include/gui/portal_unlock.h"
 #include "../include/gui/pool_panel.h"
+#include "../include/gui/window_restore.h"
 #include "../include/node/client_exit_policy.h"
 #include "../include/network/chainparams.h"
 #include "../include/wallet/passphrase_policy.h"
@@ -2022,7 +2023,7 @@ public:
         if (!wc.hIcon) wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
         wc.hIconSm = wc.hIcon;
         wc.hbrBackground = nullptr;
-        wc.lpszClassName = L"VeldNodeGuiWindow";
+        wc.lpszClassName = veld::node_gui::WindowClassName();
         if (!RegisterClassExW(&wc)) return 2;
 
         RECT desired{0, 0, 1440, 900};
@@ -2576,10 +2577,9 @@ private:
                 }
                 return DefWindowProcW(hwnd_, msg, wp, lp);
             case WM_SIZE:
-                if (wp == SIZE_MINIMIZED) {
-                    ShowWindow(hwnd_, SW_HIDE);
-                    return 0;
-                }
+                // Keep minimized windows on the taskbar. The tray remains an
+                // additional way to reopen the app, not its only entry point.
+                if (wp != SIZE_MINIMIZED) InvalidateRect(hwnd_, nullptr, FALSE);
                 return 0;
             case WM_EXITSIZEMOVE:
                 SaveWindowPlacement();
@@ -2941,13 +2941,18 @@ private:
     }
 
     void Paint() {
-        PAINTSTRUCT ps{};
-        HDC target = BeginPaint(hwnd_, &ps);
         RECT client{};
         GetClientRect(hwnd_, &client);
         UpdatePageScrollBar(client);
         GetClientRect(hwnd_, &client);
         const int page_scroll = CurrentPageScroll(client);
+        // Finish child movement and visibility changes before acquiring the
+        // WS_CLIPCHILDREN paint DC. Its clip and update region must correspond
+        // to the final layout, rather than intermediate scrolling positions.
+        if(pool_panel_)pool_panel_->Show(page_==Page::Pool,S(292),S(145)-page_scroll,
+            std::max(S(340),static_cast<int>(client.right)-S(332)),dpi_,font_body_);
+        PAINTSTRUCT ps{};
+        HDC target = BeginPaint(hwnd_, &ps);
         RECT page_client = client;
         page_client.bottom = PageContentHeight(client);
         HDC dc = CreateCompatibleDC(target);
@@ -2990,8 +2995,6 @@ private:
         network_topology_rects_.clear();
         network_topology_indices_.clear();
         DrawSidebar(dc, client, live);
-        if(pool_panel_)pool_panel_->Show(page_==Page::Pool,S(292),S(145)-page_scroll,
-            std::max(S(340),static_cast<int>(client.right)-S(332)),dpi_,font_body_);
         const POINT raw_hover = hover_point_;
         hover_point_ = ContentPoint(raw_hover);
         const int saved_dc = SaveDC(dc);
@@ -7984,8 +7987,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     HANDLE singleton = CreateMutexW(nullptr, FALSE, L"Local\\VeldNodeGuiSingleton");
 #endif
     if (!singleton || GetLastError() == ERROR_ALREADY_EXISTS) {
-        MessageBoxW(nullptr, L"Veld Node is already open.", L"Veld Node",
-                    MB_OK | MB_ICONINFORMATION);
+        if (!singleton || !veld::node_gui::RestoreExistingWindow())
+            MessageBoxW(nullptr, L"Veld Node is starting or is not responding. "
+                        L"Try opening it again in a moment.", L"Veld Node",
+                        MB_OK | MB_ICONINFORMATION);
         if (singleton) CloseHandle(singleton);
         return 0;
     }

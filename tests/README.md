@@ -156,6 +156,13 @@ operator's data directory or public infrastructure.
 
 ## Reporting results
 
+`windows_node_gui_scroll_tests.py` checks the actual GUI layout/paint ordering
+and minimized-window recovery contract. `pool_scroll_paint_tests.cpp` exercises
+the real panel in a native Windows clipping fixture at 96/120/144/192 DPI and
+checks exposed background pixels and minimized/legacy-hidden restoration.
+It creates only a disposable profile and never starts a mining worker. Keep
+interactive production GUI scrolling and screenshot verification separate.
+
 Validator signing safety has a reproducible native gate:
 
 ```sh
