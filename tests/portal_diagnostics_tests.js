@@ -4,8 +4,8 @@ const source=fs.readFileSync(require('node:path').join(__dirname,'../src/veld-mi
 const script=source.split('PORTAL_HTML = r"""')[1].split('"""')[0].match(/<script\b[^>]*>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 const {extractFunction}=require('./javascript_function_source.js');
-const context=vm.createContext({});
-for(const name of ['esc','n','metric','spark','overview','mining','workers']) {
+const context=vm.createContext({updateJobs:new Map()});
+for(const name of ['esc','n','metric','spark','updateNotice','poolMachine','overview','mining','workers']) {
     const needle='function '+name+'(',start=script.indexOf(needle);
     assert(start>=0 && start===script.lastIndexOf(needle));
     vm.runInContext(extractFunction(script.slice(start),name),context);
@@ -22,4 +22,10 @@ assert.match(overview,/GUI version/);assert.match(overview,/Daemon version/);ass
 assert.doesNotMatch(overview,/100.0%|<b>Validated<\/b>/);
 assert.match(context.mining(d,s),/Unknown/);
 const workers=context.workers(d,s);assert.match(workers,/Unknown/);assert.doesNotMatch(workers,/Paused|Waiting|0 H\/s/);
+const pool={current:true,running:true,state:'hashing',configured_workers:14,active_workers:8,hashrate:777};
+assert.equal(context.poolMachine({...d,online:true},{pool}).status,'Pool mining');
+assert.match(context.overview({...d,online:true},{...s,pool}),/Pool mining/);
+assert.match(context.poolMachine({...d,online:true},{pool:{...pool,current:false}}).status,/current pool report/);
+assert.equal(context.poolMachine({...d,online:false},{pool}).status,'Machine offline');
+assert.match(context.poolMachine({...d,online:true},{}).status,/client 3.2.2/);
 console.log('PASS portal diagnostics rendering: unknown, zero, separated versions, interrupted history');

@@ -41,7 +41,7 @@ int main(int argc,char** argv) try {
     wc.lpszClassName=veld::node_gui::WindowClassName();
     Check(RegisterClassW(&wc)!=0,"register isolated QA window class");
     Check(!veld::node_gui::RestoreExistingWindow(1),"absent window returns without starting a replacement");
-    HWND window=CreateWindowExW(0,wc.lpszClassName,L"Veld repaint regression",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,
+    HWND window=CreateWindowExW(WS_EX_COMPOSITED,wc.lpszClassName,L"Veld repaint regression",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,
         40,40,760,700,nullptr,nullptr,wc.hInstance,nullptr);
     Check(window!=nullptr,"native clipped parent");
     ShowWindow(window,SW_SHOWNOACTIVATE);Pump();

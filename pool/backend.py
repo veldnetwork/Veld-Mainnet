@@ -63,10 +63,15 @@ class Node:
                 # for template authorization can therefore refuse a READ even
                 # though no caller-supplied binding is involved. Discard that
                 # response and let the bounded worker backoff request fresh
-                # fully checked authority. Other stages, malformed bindings,
+                # fully checked authority. The final publication check also
+                # compares an INTERNAL prior binding with fresh validation
+                # generation; a generation change there needs a fresh read.
+                # No caller-supplied binding is accepted by either path.
                 # submitblock and transaction writes remain hard refusals.
                 if (method=='getblocktemplate' and error['code']==-32010 and
-                        error['message']=='getblocktemplate authorization refused: binding_mismatch'):
+                        error['message'] in {
+                            'getblocktemplate authorization refused: binding_mismatch',
+                            'getblocktemplate closed before publication: binding_mismatch'}):
                     raise Busy('node canonical work transition; request fresh work')
                 if error['code']==-32005 or (error['code']==-32010 and
                     ('local-work-unavailable' in error['message'] or 'capacity' in error['message'])):

@@ -12,6 +12,8 @@ parser=argparse.ArgumentParser()
 parser.add_argument('--build-directory',type=pathlib.Path,required=True)
 parser.add_argument('--fixture',type=pathlib.Path,required=True)
 parser.add_argument('--output',type=pathlib.Path,required=True)
+parser.add_argument('--nonce-count',type=int,choices=range(1,257),default=8,
+                    help='bounded native worker lease size; use 256 to qualify the GUI default')
 args=parser.parse_args();build=args.build_directory.resolve()
 fixture=json.loads(args.fixture.read_text())
 old=pathlib.Path(fixture['state_directory']);state=pathlib.Path(tempfile.mkdtemp(prefix='veld-pool-capacity-',dir='/var/tmp'))
@@ -23,7 +25,7 @@ settings['native_binary']=str(build/'pool-work')
 processes=[];logs=[];workers=[];rpc=None;node=None
 report={'status':'RUNNING','scope':'300 seconds of two native TLS workers under concurrent native validation',
         'production_capacity_claim':False,'profile':'isolated ASERT full VeldHash, historical clock, unchanged monetary rules',
-        'complete_pool_gate':False,'samples':[]}
+        'complete_pool_gate':False,'nonce_count':args.nonce_count,'samples':[]}
 def save():(out/'result.json').write_text(json.dumps(report,indent=2)+'\n')
 def config(name,data):
  p=state/(name+'.json');p.write_bytes(encode(data));p.chmod(0o600);return str(p)
@@ -64,7 +66,7 @@ try:
  client=Client('https://localhost:32443',str(state/'tls.crt'),fixture['genesis']);time.sleep(.5)
  first=rpc.call('getblockcount');node.stdin.write('clock '+str(1767225600+(first+1)*180)+'\n');node.stdin.flush()
  for name,threads,pause in [('worker-a','2','0'),('worker-b','1','100')]:
-  worker=start(name,[str(build/'pool-client'),'--config',config(name,{'endpoint':'https://localhost:32443','ca_file':str(state/'tls.crt'),'genesis':fixture['genesis'],'payout_address':fixture['addresses'][name],'state_directory':str(state/name),'threads':threads,'nonce_count':'8','pause_ms':pause})]);workers.append((name,worker))
+  worker=start(name,[str(build/'pool-client'),'--config',config(name,{'endpoint':'https://localhost:32443','ca_file':str(state/'tls.crt'),'genesis':fixture['genesis'],'payout_address':fixture['addresses'][name],'state_directory':str(state/name),'threads':threads,'nonce_count':str(args.nonce_count),'pause_ms':pause})]);workers.append((name,worker))
  start_time=time.monotonic();next_sample=start_time;latencies=[];peak=0;max_queue=0;faults=0;previous=first
  while time.monotonic()-start_time<300:
   assert all(p.poll() is None for p in processes),'process exited during load'

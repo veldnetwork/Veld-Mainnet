@@ -271,6 +271,7 @@ int main(int argc,char** argv) {
                     next_balance=std::chrono::steady_clock::now()+std::chrono::seconds(15);
                 }
                 main_stage=ClientStage::State;
+                snapshot["updated_at"]=std::to_string(std::time(nullptr));
                 Write(directory/"pool-status.json",snapshot);
                 if(stopping)std::this_thread::sleep_for(std::chrono::milliseconds(200));else Pause(1000);
             }
@@ -290,6 +291,7 @@ int main(int argc,char** argv) {
             {"failure_code",fatal?failure.code:""},{"failure_stage",fatal?StageName(failure_stage):""}});
         // Emit the bounded cause even if the final private status write fails.
         std::cout<<receipt<<std::endl;
+        snapshot["updated_at"]=std::to_string(std::time(nullptr));
         Write(directory/"pool-status.json",snapshot);
         return fatal?1:0;
     } catch(const std::exception& error) {

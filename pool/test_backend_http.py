@@ -46,6 +46,7 @@ class BackendHttpTests(unittest.TestCase):
                 cases=[stage+reason for stage in stages for reason in
                        ('sync_incomplete','startup_replay_incomplete','independent_validation_incomplete')]
                 cases.append('getblocktemplate authorization refused: binding_mismatch')
+                cases.append('getblocktemplate closed before publication: binding_mismatch')
                 for message in cases:
                     state['error']={'code':-32010,'message':message}
                     before=state['calls']
@@ -56,7 +57,7 @@ class BackendHttpTests(unittest.TestCase):
                 for stage in stages:
                     for reason in ('role_denied','unwired','binding_mismatch','durable_state_unproven',
                                    'snapshot_state_untrusted','runtime_closed','sync_incomplete extra'):
-                        if stage=='getblocktemplate authorization refused: ' and reason=='binding_mismatch':continue
+                        if stage in ('getblocktemplate authorization refused: ','getblocktemplate closed before publication: ') and reason=='binding_mismatch':continue
                         state['error']={'code':-32010,'message':stage+reason}
                         with self.subTest(stage=stage,reason=reason),self.assertRaises(Refused):node.call('getblocktemplate','public-address-fixture')
                     state['error']={'code':-32010,'message':stage+'sync_incomplete'}
@@ -66,10 +67,11 @@ class BackendHttpTests(unittest.TestCase):
                     state['error']['code']=-32603
                     with self.assertRaises(Refused):node.call('getblocktemplate','public-address-fixture')
                 for method in ('submitblock','sendrawtransaction','getblockcount'):
-                    state['error']={'code':-32010,'message':'getblocktemplate authorization refused: binding_mismatch'}
-                    before=state['calls']
-                    with self.subTest(method=method),self.assertRaises(Refused):node.call(method,'exact-fixture-bytes')
-                    self.assertEqual(state['calls'],before+1)
+                    for stage in ('authorization refused','closed before publication'):
+                        state['error']={'code':-32010,'message':'getblocktemplate '+stage+': binding_mismatch'}
+                        before=state['calls']
+                        with self.subTest(method=method,stage=stage),self.assertRaises(Refused):node.call(method,'exact-fixture-bytes')
+                        self.assertEqual(state['calls'],before+1)
                 for code,message in ((-32603,'getblocktemplate authorization refused: binding_mismatch'),
                         (-32010,'getblocktemplate authorization binding mismatch'),
                         (-32010,'getblocktemplate authorization refused: binding_mismatch extra')):

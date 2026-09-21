@@ -57,12 +57,42 @@ class RemoteUnlock(unittest.TestCase):
     def test_automatic_updates_command_and_capability(self):
         self.assertIs(self.report['snapshot']['automatic_updates'], False)
         command = self.command(action='updates.automatic')
+        with self.assertRaisesRegex(ValueError,'3.2.0 or later'):
+            self.store.queue_command(self.account, command)
+        self.report['version']='3.2.2'
+        self.store.report(self.token,self.report)
         self.store.queue_command(self.account, command)
         reply = self.store.report(self.token, self.report)
         self.assertEqual(reply['command']['action'], 'updates.automatic')
         self.assertEqual(reply['command']['payload'], {'enabled': True})
         with self.assertRaises(ValueError):
             portal.validate_command(dict(command, payload={'enabled': 'true'}))
+
+    def test_automatic_update_capability_missing_and_rollback(self):
+        self.report['version']='3.2.2'
+        self.report['snapshot'].pop('automatic_updates')
+        self.store.report(self.token,self.report)
+        with self.assertRaisesRegex(ValueError,'3.2.0 or later'):
+            self.store.queue_command(self.account,self.command(action='updates.automatic'))
+        self.report['snapshot']['automatic_updates']=False
+        self.store.report(self.token,self.report)
+        identity=self.store.queue_command(self.account,self.command(action='updates.automatic'))
+        self.report['version']='3.1.10'
+        self.assertIsNone(self.store.report(self.token,self.report)['command'])
+        self.assertEqual(self.store.command_status(self.account,self.device,identity)['state'],'failed')
+        self.assertNotIn('automatic_updates',portal.validate_snapshot({}))
+
+    def test_command_status_is_owned_and_contains_no_payload_or_authority(self):
+        identity=self.store.queue_command(self.account,self.command())
+        status=self.store.command_status(self.account,self.device,identity)
+        self.assertEqual(status['state'],'queued')
+        self.assertTrue({'payload','payload_json','signature','command_key_x','command_key_y'}.isdisjoint(status))
+        self.assertIsNone(self.store.command_status(self.account+1,self.device,identity))
+        self.assertIsNone(self.store.command_status(self.account,self.device+1,identity))
+        self.assertIsNone(self.store.command_status(self.account,self.device,identity+1))
+        with self.store.database() as db:
+            db.execute('UPDATE commands SET expires_at=? WHERE id=?',(int(time.time())-1,identity))
+        self.assertEqual(self.store.command_status(self.account,self.device,identity)['state'],'expired')
 
     def test_signed_relay_acknowledgement_and_ciphertext_cleanup(self):
         self.assertTrue(self.report['snapshot']['pairing_control'])

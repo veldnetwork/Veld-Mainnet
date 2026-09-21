@@ -38,6 +38,7 @@
 #include "../include/gui/update_resume.h"
 #include "../include/gui/portal_unlock.h"
 #include "../include/gui/pool_panel.h"
+#include "../include/gui/page_scrollbar.h"
 #include "../include/gui/window_restore.h"
 #include "../include/node/client_exit_policy.h"
 #include "../include/network/chainparams.h"
@@ -1951,6 +1952,9 @@ public:
         node_path_=module.parent_path()/L"unconfigured-lab-node.exe";
         page_=Page::Pool;
         reference_display_enabled_=false;
+        // Exercise overflow at an ordinary laptop viewport without loading
+        // any real user's saved window placement or GUI settings.
+        window_x_=0;window_y_=0;window_width_=1050;window_height_=700;
         return;
 #endif
         std::error_code state_error;
@@ -2029,13 +2033,14 @@ public:
         RECT desired{0, 0, 1440, 900};
         AdjustWindowRectEx(&desired, WS_OVERLAPPEDWINDOW, FALSE, 0);
         hwnd_ = CreateWindowExW(
-            0, wc.lpszClassName, L"Veld Node",
-            WS_OVERLAPPEDWINDOW | WS_VSCROLL | WS_CLIPCHILDREN,
+            WS_EX_COMPOSITED, wc.lpszClassName, L"Veld Node",
+            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
             window_x_, window_y_, window_width_ > 0 ? window_width_ :
                 desired.right - desired.left,
             window_height_ > 0 ? window_height_ : desired.bottom - desired.top,
             nullptr, nullptr, instance_, this);
         if (!hwnd_) return 2;
+        if (!page_scrollbar_.Create(hwnd_)) return 2;
         const auto module=ModulePath();
         auto pool_binary=module.parent_path()/L"bin"/L"veld-pool-client.exe";
         if(!std::filesystem::is_regular_file(pool_binary))pool_binary=module.parent_path()/L"veld-pool-client.exe";
@@ -2074,6 +2079,9 @@ private:
     Page page_{Page::Overview};
     std::array<int, 9> page_scroll_offsets_{};
     std::unique_ptr<veld::node_gui::PoolPanel> pool_panel_;
+    std::mutex pool_monitor_mutex_;
+    std::string pool_monitor_json_="null";
+    veld::node_gui::PageScrollBar page_scrollbar_;
     RECT pool_nav_{};
     std::filesystem::path node_path_;
     std::filesystem::path wallet_path_;
@@ -2245,22 +2253,14 @@ private:
     void SetPageScroll(int requested) {
         RECT client{};
         GetClientRect(hwnd_, &client);
-        page_scroll_offsets_[PageIndex()] =
-            std::clamp(requested, 0, MaxPageScroll(client));
+        const int next=std::clamp(requested, 0, MaxPageScroll(client));
+        if(next==page_scroll_offsets_[PageIndex()])return;
+        page_scroll_offsets_[PageIndex()] = next;
         InvalidateRect(hwnd_, nullptr, FALSE);
     }
 
     void UpdatePageScrollBar(const RECT& client) {
-        const int offset = CurrentPageScroll(client);
-        SCROLLINFO info{};
-        info.cbSize = sizeof(info);
-        info.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
-        info.nMin = 0;
-        info.nMax = PageContentHeight(client) - 1;
-        info.nPage = static_cast<UINT>(std::max<LONG>(1, client.bottom));
-        info.nPos = offset;
-        SetScrollInfo(hwnd_, SB_VERT, &info, TRUE);
-        ShowScrollBar(hwnd_, SB_VERT, MaxPageScroll(client) > 0);
+        page_scrollbar_.Update(client,PageContentHeight(client),CurrentPageScroll(client),dpi_);
     }
 
     size_t NetworkHoverTarget(POINT point) const {
@@ -2513,11 +2513,7 @@ private:
                     case SB_PAGEDOWN: requested += std::max(1L, client.bottom); break;
                     case SB_THUMBPOSITION:
                     case SB_THUMBTRACK: {
-                        SCROLLINFO info{};
-                        info.cbSize = sizeof(info);
-                        info.fMask = SIF_TRACKPOS;
-                        if (GetScrollInfo(hwnd_, SB_VERT, &info))
-                            requested = info.nTrackPos;
+                        requested = page_scrollbar_.TrackPosition();
                         break;
                     }
                     case SB_TOP: requested = 0; break;
@@ -2633,7 +2629,11 @@ private:
                 return 0;
             case WM_TIMER:
             case WM_NODE_REFRESH:
-                if(pool_panel_)pool_panel_->Tick();
+                if(pool_panel_) {
+                    pool_panel_->Tick();
+                    std::lock_guard<std::mutex> lock(pool_monitor_mutex_);
+                    pool_monitor_json_=pool_panel_->MonitoringJson();
+                }
 #ifndef VELD_POOL_GUI_QUALIFICATION
                 ObserveOwnedNodeExit();
                 TickAutomaticUpdates();
@@ -2765,7 +2765,7 @@ private:
                                        window_y_)) {}
                     else if (parse_int("window_width", 1050, 7680,
                                        window_width_)) {}
-                    else if (parse_int("window_height", 760, 4320,
+                    else if (parse_int("window_height", 640, 4320,
                                        window_height_)) {}
                     else if (line == "window_maximized=1")
                         window_maximized_ = true;
@@ -7300,6 +7300,8 @@ private:
 
     std::string BuildMonitoringReport(const LiveState& live,
                                       uint64_t& included_ack) {
+        std::string pool_monitor_json;
+        {std::lock_guard<std::mutex> lock(pool_monitor_mutex_);pool_monitor_json=pool_monitor_json_;}
         const uint64_t height = live.local_online ? live.local.height : 0;
         const uint64_t reference_height = live.reference_online
             ? live.reference.height : height;
@@ -7395,6 +7397,7 @@ private:
              << ",\"mining_state\":\"" << state
              << "\",\"warning\":\"" << JsonEscape(warning) << "\""
              << ",\"snapshot\":{\"remote_control\":" << (control_ready ? "true" : "false")
+             << ",\"pool\":" << pool_monitor_json
              << ",\"pairing_control\":true"
              << ",\"automatic_updates\":" << (auto_update_enabled_.load() ? "true" : "false")
              << ",\"identity_unlocked\":" << (HasSessionUnlock() ? "true" : "false")

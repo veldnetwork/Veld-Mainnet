@@ -18,6 +18,7 @@ SUITES = {
         "tests/portal_mobile_nav_tests.py",
         "tests/portal_worker_limit_tests.py",
         "tests/portal_diagnostics_tests.py",
+        "tests/portal_pool_status_tests.py",
         "tests/portal_unlock_server_tests.py",
         "tests/explorer_public_page_tests.py",
         "tests/topology_advertised_roles_tests.py",

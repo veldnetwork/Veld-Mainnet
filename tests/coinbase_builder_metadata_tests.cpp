@@ -47,11 +47,7 @@ struct RpcContext {
         btc_buy::StrictJsonParser parser(response,4*1024*1024,true);
         Check(parser.Parse(parsed,error),"RPC response malformed");
         const auto* e=parsed.Get("error");Check(e!=nullptr,"RPC missing error field");
-        if(e->kind!=btc_buy::JsonValue::Kind::Null) {
-            Check(IsProtocolSettlementHeight(node.GetChain().Height()+1) &&
-                response.find("mandatory protocol settlement")!=std::string::npos,"unexpected template refusal: "+response);
-            return std::nullopt;
-        }
+        Check(e->kind==btc_buy::JsonValue::Kind::Null,"canonical template refused: "+response);
         const auto* result=parsed.Get("result");Check(result!=nullptr,"RPC missing result");
         const auto* wire=result->Get("block_hex");Check(wire!=nullptr,"RPC missing block bytes");
         const auto bytes=HexToBytes(wire->text);Block block;
@@ -140,10 +136,14 @@ int main(int argc,char** argv) {
         auto owner=GenerateKeyPair(true);auto normal=Fresh(root/"normal");std::vector<Block> prefix{CreateGenesisBlock()};
         for(uint64_t h=1;h<=3399;++h){auto b=Build(*normal,owner,h);Admit(*normal,b);prefix.push_back(b);}
         RpcContext normal_rpc(*normal);
-        Check(!normal_rpc.Template(owner),"external settlement template unexpectedly emitted");
+        auto settlement=normal_rpc.Template(owner);
+        Check(settlement.has_value(),"canonical settlement template absent");
+        Check(settlement->Serialize()==Build(*normal,owner,0).Serialize(),
+              "external settlement template differs from the complete canonical builder");
         auto refused=MineAndCommit(normal->GetChainMut(),normal->GetMempoolMut(),owner);
         Check(!refused.success && refused.error.find("settlement height")!=std::string::npos && refused.hashes_tried==0,"standalone settlement refusal");
-        Admit(*normal,Build(*normal,owner,959999));
+        settlement->header.nonce=959999;
+        Admit(*normal,*settlement);
         Fee(*normal,owner,30*BLOCK_REWARD_UNITS+1);
         auto emitted=normal_rpc.Template(owner);Check(emitted.has_value(),"ordinary template absent");
         auto expected=Build(*normal,owner,960000);
@@ -152,7 +152,7 @@ int main(int argc,char** argv) {
         Check(mined.success && mined.hashes_tried>0,"MineAndCommit failed: "+mined.error);
         Check(mined.block.transactions[0].Serialize()==emitted->transactions[0].Serialize(),"standalone and RPC coinbase differ");
         Coherent(*normal,normal->GetChain().TotalSupplyUnits());
-        std::cout<<"PASS RPC template and standalone mining callers, including settlement refusal"<<std::endl;
+        std::cout<<"PASS complete RPC settlement template admission; incomplete standalone builder still refuses"<<std::endl;
         CertificateParent certificates(members);
         const auto parent=[&](const char* name){auto n=Fresh(root/name);for(size_t h=1;h<prefix.size();++h)Admit(*n,prefix[h]);Seed(*n,0);certificates.Install(*n);return n;};
         if(legacy_control) {

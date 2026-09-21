@@ -1,5 +1,6 @@
 #pragma once
 #include "../pool/client_diagnostics.h"
+#include "pool_monitor.h"
 
 #include "../pool/client_transport.h"
 #include "../wallet/secure_channel_file.h"
@@ -30,6 +31,8 @@ class PoolPanel {
     bool layout_ready_=false,enabled_ready_=false,last_running_=false,last_show_=false;
     int last_left_=0,last_top_=0,last_width_=0,last_scale_=0;
     HFONT last_font_{};
+    PoolMonitor monitor_;
+    std::string monitor_json_="null";
     static void SetTextIfChanged(HWND control,const std::wstring& text) {
         const int length=GetWindowTextLengthW(control);
         if(length==int(text.size())) {
@@ -89,7 +92,7 @@ class PoolPanel {
         auto genesis=HexToBytes(GENESIS_HASH);std::reverse(genesis.begin(),genesis.end());
         const std::map<std::string,std::string> values={{"endpoint",endpoint},{"ca_file",Get(ca_)},{"genesis",BytesToHex(genesis)},
             {"payout_address",Get(address_)},{"state_directory",account_directory_.string()},{"threads",std::to_string(worker_count)},
-            {"nonce_count","64"},{"pause_ms","0"}};
+            {"nonce_count","256"},{"pause_ms","0"}};
         std::string out="{";
         for(const auto& [key,value]:values){if(out.size()>1)out+=',';out+='"'+key+"\":\""+json::EscapeStringBytes(value)+'"';}
         return out+'}';
@@ -207,7 +210,7 @@ public:
         stop_=Make(L"BUTTON",L"Stop pool mining",WS_TABSTOP|BS_OWNERDRAW,kStop);
         status_=Make(L"STATIC",L"Enter your payout address to join Veld Pool, or choose another pool endpoint. No wallet passphrase is needed.",SS_LEFT);
         balance_=Make(L"STATIC",L"Balances will appear after connecting.",SS_OWNERDRAW,kBalances);
-        Make(L"STATIC",L"Earnings stay with your account when disconnected. Start enables pool resume; Stop turns it off. For reward details and payment history, open the dashboard and paste your viewing access. Solo mining stays on the Mining tab.",SS_LEFT);
+        Make(L"STATIC",L"Balances belong to this device's saved pool account. Payments go to your payout wallet. Earnings remain when disconnected. Start enables pool resume; Stop turns it off. Open the dashboard with your viewing access for reward and payment history. Solo mining stays on the Mining tab.",SS_LEFT);
         Make(L"BUTTON",L"Open dashboard",WS_TABSTOP|BS_OWNERDRAW,kDashboard);
         Make(L"BUTTON",L"Copy view access",WS_TABSTOP|BS_OWNERDRAW,kCopyAccess);
         Make(L"BUTTON",L"Choose file…",WS_TABSTOP|BS_OWNERDRAW,kCertificate);
@@ -265,7 +268,7 @@ public:
             const std::wstring values(text);
             const wchar_t* labels[]={L"Pending",L"Available",L"In payment",L"Paid"};
             const wchar_t* captions[]={L"Awaiting maturity",L"Ready for a payout batch",L"Reserved for payment",L"Confirmed payments"};
-            const COLORREF accents[]={RGB(232,175,72),RGB(194,199,205),RGB(155,168,208),RGB(127,184,176)};
+            const COLORREF accents[]={RGB(232,175,72),RGB(194,199,205),RGB(155,168,208),RGB(126,217,73)};
             const int scale=last_scale_?last_scale_:96;
             const auto px=[scale](int n){return MulDiv(n,scale,96);};
             const int gap=px(12),width=(item.rcItem.right-item.rcItem.left-gap)/2;
@@ -341,8 +344,9 @@ public:
                 CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Consolas");
         }
         const int rows[]={0,28,80,108,160,188,240,268,324,324,440,528,796,382,382,188};
-        // Do not copy pixels or synchronously paint each intermediate child
-        // position during a scroll. Repaint the completed layout below.
+        // Suppress invalidation during child movement. The parent and all
+        // controls are invalidated once after every position is final; the
+        // composited parent presents the complete frame together.
         for(size_t i=0;i<controls_.size();++i) {
             const auto control=controls_[i];
             const int button=(i==8?0:i==9?1:i==13?2:i==14?3:-1);
@@ -352,7 +356,7 @@ public:
             const int h=i==11?px(248):i==12?px(112):(i==1||i==3||i==5||i==7||i==15)?px(38):button>=0?px(44):i<=6?px(24):px(80);
             if(relayout) {
                 SetWindowPos(control,nullptr,x,top+px(rows[i]),w,h,
-                    SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
+                    SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS|SWP_NOREDRAW);
             }
             if(refont)SendMessageW(control,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);
             if(visibility)ShowWindow(control,show?SW_SHOWNA:SW_HIDE);
@@ -371,10 +375,17 @@ public:
         DWORD exit=STILL_ACTIVE;
         const bool exited=process_ && GetExitCodeProcess(process_,&exit) && exit!=STILL_ACTIVE;
         if(exited){CloseHandle(process_);process_=nullptr;failed_=exit!=0;stopping_=false;}
+        const auto now=uint64_t(std::time(nullptr));
+        const auto monotonic=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        uint64_t configured=1;
+        try {configured=pool::Number(Get(threads_),64);if(!configured)configured=1;}catch(...){}
+        bool observed=false;
         try {
             std::vector<uint8_t> bytes;std::string error;
             if(channel::secure_file::Read((account_directory_/"pool-status.json").string(),bytes,&error,16384,true)==channel::secure_file::ReadResult::Ok) {
                 const auto state=pool::Parse(std::string(bytes.begin(),bytes.end()));
+                monitor_json_=monitor_.Report(Running(),configured,&state,now,monotonic);
+                observed=true;
                 const auto count=[&](const char* name){const auto* value=state.Get(name);return value?Wide(pool::Text(*value)):L"0";};
                 std::wstring status=Wide(pool::Text(pool::Field(state,"status")));
                 if(state.Get("accepted"))status+=L"\r\nAccepted this session: "+count("accepted")+L" · verified total: "+count("verified_shares")+
@@ -394,6 +405,9 @@ public:
                 }
             } else if(exited && exit!=0)Error("Pool worker could not connect. Check the endpoint, certificate and account settings.");
         } catch(const std::exception&){Error("Pool status unavailable; account records were preserved.");}
+        if(!observed)monitor_json_=monitor_.Report(Running(),configured,nullptr,now,monotonic);
     }
+    // Called only by the GUI thread, which copies it into its locked report cache.
+    const std::string& MonitoringJson() const{return monitor_json_;}
 };
 } // namespace veld::node_gui

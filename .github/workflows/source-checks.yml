@@ -31,7 +31,9 @@ jobs:
           msystem: CLANG64
           update: true
           path-type: inherit
-          install: mingw-w64-clang-x86_64-clang
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-openssl
       - name: Verify browser encryption and native command authorization
         shell: msys2 {0}
         run: |
@@ -40,7 +42,7 @@ jobs:
           for name in portal_unlock_windows_tests portal_command_windows_tests; do
             clang++ -std=c++20 -O1 -D_WIN32_WINNT=0x0A00 -Iinclude "tests/$name.cpp" \
               -lbcrypt -lcrypt32 -ladvapi32 -lws2_32 -lwinhttp -lshell32 \
-              -lcomdlg32 -ldwmapi -lgdi32 -luser32 -o "$output/$name.exe"
+              -lcomdlg32 -ldwmapi -lgdi32 -luser32 -lcomctl32 -lssl -lcrypto -o "$output/$name.exe"
           done
           node tests/portal_unlock_interop_tests.js \
             "$(cygpath -w "$output/portal_unlock_windows_tests.exe")" \
@@ -73,6 +75,12 @@ jobs:
             standalone: true
           - fixture: reliability_gui_state_tests
           - fixture: windows_auto_update_tests
+          - fixture: pool_monitor_tests
+            standalone: true
+          - fixture: page_scrollbar_tests
+            standalone: true
+          - fixture: pool_scroll_paint_tests
+            standalone: true
           - fixture: stake_fragmentation_tests
           - fixture: wallet_pending_spend_tests
           - fixture: nms_mempool_lifecycle_tests
@@ -235,7 +243,7 @@ jobs:
           done < vendor/pqc/provenance/release-c-sources.txt
           for test in mining_search_tests mining_solution_tests; do
             c++ -std=c++20 -O2 -pthread -Iinclude -Ivendor/pqc "tests/$test.cpp" "${objects[@]}" \
-              -o "$RUNNER_TEMP/$test"
+              -lcrypto -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"
           done
           for test in co_mining_stake_floor_tests nms_mempool_lifecycle_tests nms_template_refresh_tests coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests; do

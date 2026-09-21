@@ -13,7 +13,8 @@ def require(fragment: str, label: str) -> None:
         raise AssertionError(label)
 
 
-require("WS_OVERLAPPEDWINDOW | WS_VSCROLL", "window exposes a vertical scrollbar")
+require("page_scrollbar_.Create(hwnd_)", "window exposes an accessible native scrollbar")
+require("WS_EX_COMPOSITED, wc.lpszClassName", "parent and child controls share a composited frame")
 require("case WM_MOUSEWHEEL:", "mouse wheel scrolling is handled")
 require("case WM_VSCROLL:", "scrollbar input is handled")
 require("wp == VK_PRIOR", "keyboard page scrolling is handled")
@@ -27,6 +28,8 @@ require("SetViewportOrgEx(dc, 0, -page_scroll, nullptr)",
 require("DrawSidebar(dc, client, live);", "sidebar remains separately rendered")
 require("info->ptMinTrackSize.y = S(640)",
         "the app can fit on ordinary laptop displays")
+require('parse_int("window_height", 640, 4320,',
+        "laptop-sized windows remain the same size when reopened")
 
 sidebar = GUI.index("DrawSidebar(dc, client, live);")
 viewport = GUI.index("SetViewportOrgEx(dc, 0, -page_scroll, nullptr)")
