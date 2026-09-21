@@ -13,6 +13,11 @@ Signed binary source: `1f77a67365ff9c3c36dae2a624feb35615446202`, tree
   Linux mining and mandatory-settlement template regressions.
 - The public-source follow-up passed 43 portable checks, including byte-level
   preservation of the native wallet scripts through the hosted presentation layer.
+- Fresh GitHub CI exposed an old 3.2.1 version assertion and a browser fixture
+  requesting the now-disabled snapshot command. The test-only corrections passed
+  both compiled public activation profiles and native Windows encryption/control
+  interoperability. The browser's rejection and the legacy native confirmation
+  boundary are tested separately; no production control was relaxed.
 - Existing four-block SSE2 ChaCha20 implementation: 10,240 reference comparisons.
   Its isolated stream benchmark was about 2.2 times scalar throughput on the
   tested desktop. No equivalent whole-miner performance claim is made.

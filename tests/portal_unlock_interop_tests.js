@@ -41,8 +41,19 @@ vm.runInContext(['encryptNodePassphrase','canonicalPayload','commandEnvelope','n
   }
   for (const mode of ['full','snapshot']) {
     const sync = {...command,action:'sync.mode',payload:{mode},nonce:b64url(webcrypto.getRandomValues(new Uint8Array(16)))};
-    assert.equal(context.canonicalPayload(sync.action,sync.payload),JSON.stringify({mode}));
-    const signature = await webcrypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,new TextEncoder().encode(context.commandEnvelope(sync)));
+    let envelope;
+    if (mode === 'full') {
+      assert.equal(context.canonicalPayload(sync.action,sync.payload),JSON.stringify({mode}));
+      envelope = context.commandEnvelope(sync);
+    } else {
+      // The current hosted portal refuses snapshot requests. Retain a separately
+      // labeled legacy wire fixture to exercise the native parser's confirmation
+      // boundary; do not relax the shipping browser to generate this command.
+      assert.throws(()=>context.canonicalPayload(sync.action,sync.payload),/Unsupported command/);
+      assert.throws(()=>context.commandEnvelope(sync),/Unsupported command/);
+      envelope = `VELD_PORTAL_COMMAND_V3\n${sync.id}\n${sync.sequence}\n${sync.issued_at}\n${sync.expires_at}\n${sync.nonce}\nsync.mode\n{"mode":"snapshot"}`;
+    }
+    const signature = await webcrypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,new TextEncoder().encode(envelope));
     sync.signature = b64url(context.normalizeEcdsaSignature(signature));
     fs.writeFileSync(path.join(root,'sync.mode-'+mode+'.json'),JSON.stringify({portal_protocol:4,device_id:17,paired:true,pair_code:null,pair_expires:0,report_interval:5,command_key:commandKey,command:{...sync,id:1}}));
   }
@@ -56,6 +67,6 @@ vm.runInContext(['encryptNodePassphrase','canonicalPayload','commandEnvelope','n
     await assert.rejects(context.encryptNodePassphrase(value, publicKey, 17, nonce), /valid node passphrase/);
   }
   console.log(output.trim());
-  console.log('PASS: shipping browser encryptor and native decryptor agree; invalid input rejected; full and snapshot browser commands signed');
+  console.log('PASS: shipping browser encryptor and native decryptor agree; invalid input rejected; full sync signed; snapshot refused by browser; legacy snapshot native confirmation fixture retained');
   if (process.argv[4]) console.log(execFileSync(path.resolve(process.argv[4]),[root],{encoding:'utf8',timeout:30000}).trim());
 })().catch(error=>{console.error(error);process.exitCode=1;});
