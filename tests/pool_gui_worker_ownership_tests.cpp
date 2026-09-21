@@ -71,8 +71,8 @@ int wmain(int argc,wchar_t** argv)try{
         HANDLE child=Child(proc.dwProcessId,worker);
         if(!std::filesystem::exists(profile/"ready")||!child){TerminateProcess(proc.hProcess,9);CloseHandle(proc.hProcess);throw std::runtime_error("worker readiness");}
         const auto config=Read(profile/"client.json");
-        Check(config.find(L"\"nonce_count\":\"256\"")!=std::wstring::npos,
-            "GUI requests a bounded 256-nonce lease, reducing repeated TLS waits");
+        Check(config.find(L"\"nonce_count\":\"1024\"")!=std::wstring::npos,
+            "GUI requests a bounded 1024-nonce lease, reducing repeated TLS waits");
         if(crash)Check(TerminateProcess(proc.hProcess,9),"inject parent crash");
         else {std::ofstream finish(profile/"finish");finish<<"finish\n";}
         const bool parent_stopped=WaitForSingleObject(proc.hProcess,30000)==WAIT_OBJECT_0;

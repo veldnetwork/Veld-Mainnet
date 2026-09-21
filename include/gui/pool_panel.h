@@ -92,7 +92,7 @@ class PoolPanel {
         auto genesis=HexToBytes(GENESIS_HASH);std::reverse(genesis.begin(),genesis.end());
         const std::map<std::string,std::string> values={{"endpoint",endpoint},{"ca_file",Get(ca_)},{"genesis",BytesToHex(genesis)},
             {"payout_address",Get(address_)},{"state_directory",account_directory_.string()},{"threads",std::to_string(worker_count)},
-            {"nonce_count","256"},{"pause_ms","0"}};
+            {"nonce_count","1024"},{"pause_ms","0"}};
         std::string out="{";
         for(const auto& [key,value]:values){if(out.size()>1)out+=',';out+='"'+key+"\":\""+json::EscapeStringBytes(value)+'"';}
         return out+'}';

@@ -17,8 +17,10 @@
 #include <atomic>
 #include <charconv>
 #include <chrono>
+#include <condition_variable>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
 
@@ -136,10 +138,41 @@ struct Connection {
     Connection& operator=(const Connection&)=delete;
 };
 
+// Bound a client's connection bursts independently of its CPU count. Work
+// requests leave one slot for a found proof or account request. Waiting shares
+// the transport deadline; it never extends the lifetime of a leased job.
+class RequestBudget {
+    std::mutex mutex_;
+    std::condition_variable changed_;
+    unsigned active_{}, work_{};
+public:
+    class Permit {
+        RequestBudget& owner_;
+        const bool work_;
+    public:
+        Permit(RequestBudget& owner,bool work,std::chrono::steady_clock::time_point deadline)
+            :owner_(owner),work_(work) {
+            std::unique_lock lock(owner_.mutex_);
+            if(!owner_.changed_.wait_until(lock,deadline,[&] {
+                return owner_.active_<4 && (!work_ || owner_.work_<3);
+            }) || std::chrono::steady_clock::now()>=deadline)
+                throw Retry("pool request capacity temporarily busy");
+            ++owner_.active_;if(work_)++owner_.work_;
+        }
+        ~Permit() {
+            {std::lock_guard lock(owner_.mutex_);--owner_.active_;if(work_)--owner_.work_;}
+            owner_.changed_.notify_all();
+        }
+        Permit(const Permit&)=delete;
+        Permit& operator=(const Permit&)=delete;
+    };
+};
+
 class TlsClient {
     Endpoint endpoint_;
     std::unique_ptr<SSL_CTX,decltype(&SSL_CTX_free)> context_{nullptr,SSL_CTX_free};
     mutable std::atomic<int> preferred_family_{AF_UNSPEC};
+    mutable RequestBudget requests_;
 public:
     TlsClient(const std::string& endpoint,const std::string& ca):endpoint_(endpoint) {
         context_.reset(SSL_CTX_new(TLS_client_method()));Require(bool(context_),"TLS initialization failed");
@@ -175,6 +208,7 @@ public:
         Require(action=="register" || action=="work" || action=="submit" || action=="account", "pool action");
         Require(payload.size()<=16384,"pool request bound");
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+        RequestBudget::Permit permit(requests_,action=="work",deadline);
         Connection connection(endpoint_,deadline,preferred_family_.load());
         std::unique_ptr<SSL,decltype(&SSL_free)> session(SSL_new(context_.get()),SSL_free);
         auto ssl=session.get();Require(ssl!=nullptr,"TLS session unavailable");

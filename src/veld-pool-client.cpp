@@ -121,7 +121,7 @@ int main(int argc,char** argv) {
         Require(payout_script.size()==25 || IsSha384KeyScript(payout_script),"pool payout address is invalid");
         const auto threads=Number(Text(Field(cfg,"threads")),mining::MAX_MINING_WORKERS);
         Require(threads>0,"pool worker count must be positive");
-        const auto count=Number(Text(Field(cfg,"nonce_count")),256);
+        const auto count=Number(Text(Field(cfg,"nonce_count")),4096);
         Require(count>0,"pool nonce count must be positive");
         const auto pause=Number(Text(Field(cfg,"pause_ms")),60000);
         const auto directory=std::filesystem::absolute(Text(Field(cfg,"state_directory")));
@@ -184,6 +184,7 @@ int main(int argc,char** argv) {
                 uint64_t completed=0,retries=0;
                 ClientStage stage=ClientStage::Work;
                 try {
+                    std::optional<mining::VeldHashVM> workspace;
                     while(!stopping && (!rounds || completed<rounds)) {
                         try {
                             const auto start_time=std::chrono::steady_clock::now();
@@ -208,7 +209,9 @@ int main(int argc,char** argv) {
                             for(uint64_t offset=0;offset<amount && !stopping && std::chrono::steady_clock::now()<expires;++offset) {
                                 header.nonce=first+offset;
                                 stage=ClientStage::Hashing;
-                                const auto proof=mining::VeldHash(header.Serialize(),height,network);
+                                if(!workspace)workspace.emplace();
+                                const auto proof=mining::VeldHashWithDataset<mining::VELD_DEFAULT_LIGHT_DATASET>(
+                                    header.Serialize(),height,network,&*workspace);
                                 if(!mining::g_veldhash_last_dataset_ok()) throw Retry("local hashing resources unavailable");
                                 ++counters.hashes;
                                 if(proof<target || proof<network.bytes || IsNmsProofInRange(proof,network)) {

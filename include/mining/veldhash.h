@@ -1387,7 +1387,8 @@ inline Hash256 ComputeEpochSeed(const Hash256& prev_hash, uint64_t height,
 template <bool LightDataset>
 inline Hash256 VeldHashWithDataset(const std::vector<uint8_t>& header_bytes,
                                    uint64_t block_height,
-                                   const CanonicalPowTarget& expected_target) {
+                                   const CanonicalPowTarget& expected_target,
+                                   VeldHashVMImpl<LightDataset>* workspace = nullptr) {
 #ifdef VELD_MAINNET_POW
     if (header_bytes.size() != 88) {
         throw std::invalid_argument("VeldHash: header_bytes must be exactly 88 bytes");
@@ -1406,7 +1407,18 @@ inline Hash256 VeldHashWithDataset(const std::vector<uint8_t>& header_bytes,
     h.update(header_bytes.data(), header_bytes.size());
     Hash256 seed = h.digest();
 
-    VeldHashVMImpl<LightDataset> vm;
+    // A mining worker may retain its own scratch allocation. Initialize fills
+    // every scratch word, register and instruction for each nonce; no work or
+    // result is reused. Other callers retain the isolated per-call VM path.
+    // Workspaces belong to one sequential caller and must never be shared.
+    std::optional<VeldHashVMImpl<LightDataset>> local;
+    if (!workspace) local.emplace();
+    auto& vm = workspace ? *workspace : *local;
+    vm.SetDataset(nullptr);
+    struct ClearDataset {
+        VeldHashVMImpl<LightDataset>& vm;
+        ~ClearDataset() { vm.SetDataset(nullptr); }
+    } clear_dataset{vm};
     vm.Initialize(seed);
 
 #ifdef VELD_MAINNET_POW
