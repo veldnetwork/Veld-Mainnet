@@ -3,7 +3,20 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
-## Unreleased
+## 3.2.3 - Pool performance and recovery
+
+- Reuse each pool mining thread's VeldHash scratch allocation, preserving exact
+  consensus hash results and per-nonce initialization.
+- Use larger work batches and bounded concurrent requests, leaving capacity for
+  submitting proofs while new work is requested.
+- Reduce gateway connection and authenticated journal replay overhead without
+  weakening authorization, durable writes or integrity checks.
+- Retain pool accounts, endpoint, payout address, CPU settings and explicit
+  mining resume preference through signed updates.
+
+No consensus, supply, reward allocation, fee or activation-height changes.
+Custody migration qualification remains a separate development effort and is
+not cleared or activated by this maintenance release.
 
 - Keep pool workers waiting through temporary backend peer-readiness changes;
   require fresh native admission before delivering new work.
