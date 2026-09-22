@@ -101,28 +101,42 @@ class Journal:
         else:
             marker = {'seq': 0, 'digest': ZERO}
         seen_anchor = marker == {'seq': 0, 'digest': ZERO}
-        self.log.seek(0)
-        # Bound the read itself: checking len() after an unbounded readline
-        # allows a damaged/restored file to exhaust memory before rejection.
-        for line in iter(lambda: self.log.readline(MAX_EVENT + 1), b''):
-            require(len(line) <= MAX_EVENT and line.endswith(b'\n'), 'damaged journal: stop and reconcile')
-            event = decode(line, MAX_EVENT)
-            require(set(event) == {'seq','previous','kind','payload','digest'}, 'journal schema')
-            digest = event.pop('digest')
-            require(type(event['seq']) is int and event['seq'] == self.sequence + 1 and
-                    event['previous'] == self.digest, 'journal ordering')
-            require(hashlib.sha256(encode(event)).hexdigest() == digest, 'journal integrity')
-            self.sequence, self.digest = event['seq'], digest
-            if self.sequence == marker['seq']:
-                require(digest == marker['digest'], 'rollback anchor mismatch')
-                seen_anchor = True
-            self._index(event, digest)
+        # Recovery uses a bounded buffered reader on the same inode. Calling
+        # readline on the unbuffered durable writer incurs one syscall per byte.
+        # Keep the append handle unbuffered so write/fsync ordering is unchanged.
+        with self._reader() as stream:
+            for line in iter(lambda: stream.readline(MAX_EVENT + 1), b''):
+                require(len(line) <= MAX_EVENT and line.endswith(b'\n'), 'damaged journal: stop and reconcile')
+                event = decode(line, MAX_EVENT)
+                require(set(event) == {'seq','previous','kind','payload','digest'}, 'journal schema')
+                digest = event.pop('digest')
+                require(type(event['seq']) is int and event['seq'] == self.sequence + 1 and
+                        event['previous'] == self.digest, 'journal ordering')
+                require(hashlib.sha256(encode(event)).hexdigest() == digest, 'journal integrity')
+                self.sequence, self.digest = event['seq'], digest
+                if self.sequence == marker['seq']:
+                    require(digest == marker['digest'], 'rollback anchor mismatch')
+                    seen_anchor = True
+                self._index(event, digest)
         require(seen_anchor, 'journal rollback: current signing/work history required')
         indexed = self.db.execute('SELECT COUNT(*),COALESCE(MAX(seq),0) FROM events').fetchone()
         require(indexed == (self.sequence, self.sequence), 'index ahead of journal')
         self.db.commit()
         atomic(self.anchor, encode({'seq': self.sequence, 'digest': self.digest}))
         self.log.seek(0, os.SEEK_END)
+
+    def _reader(self):
+        original = os.fstat(self.log.fileno())
+        descriptor = os.open(self.directory/'events.jsonl', os.O_RDONLY |
+                             getattr(os, 'O_NOFOLLOW', 0))
+        try:
+            current = os.fstat(descriptor)
+            require((current.st_dev, current.st_ino) == (original.st_dev, original.st_ino),
+                    'journal identity changed during replay')
+            return os.fdopen(descriptor, 'rb', buffering=65536)
+        except BaseException:
+            os.close(descriptor)
+            raise
 
     def _index(self, event, digest):
         body = encode(event)
@@ -166,12 +180,7 @@ class Journal:
             # must not rewind the durable writer or extend this replay snapshot.
             count, expected_digest = self.sequence, self.digest
             original = os.fstat(self.log.fileno())
-            descriptor = os.open(self.directory/'events.jsonl', os.O_RDONLY |
-                                 getattr(os, 'O_NOFOLLOW', 0))
-            with os.fdopen(descriptor, 'rb') as stream:
-                current = os.fstat(stream.fileno())
-                require((current.st_dev, current.st_ino) == (original.st_dev, original.st_ino),
-                        'journal identity changed during replay')
+            with self._reader() as stream:
                 previous = ZERO
                 for sequence in range(1, count + 1):
                     line = stream.readline(MAX_EVENT + 1)

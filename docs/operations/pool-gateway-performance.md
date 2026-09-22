@@ -73,3 +73,16 @@ submission errors, verification backlog and latency; do not infer a hashrate
 increase directly from a transport latency reduction.
 
 Reference: [nginx upstream keepalive documentation](https://nginx.org/en/docs/http/ngx_http_upstream_module.html#keepalive).
+# Recovery read performance
+
+Journal recovery uses a separate 64 KiB buffered reader whose device/inode must
+match the durable append handle. Every bounded record, hash-chain link, rollback
+anchor and cached index identity is still checked. The append handle remains
+unbuffered and its write/fsync ordering is unchanged. SQLite projections remain
+rebuildable, never authoritative. This does not prune or checkpoint away history.
+
+A disposable 1 MiB regression reproduced 1,050,249 byte reads through the old
+durable writer; the repaired recovery never reads that writer. Windows and Linux
+recovery tests include cache tampering, oversized/truncated records, old backups,
+nested replay, retained signatures and append after reopen. This measures recovery
+behavior, not mining hashrate or whole-service restart time.
