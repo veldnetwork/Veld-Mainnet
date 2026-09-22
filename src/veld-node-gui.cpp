@@ -899,6 +899,8 @@ bool ParseMonitoringReply(const std::string& body, MonitoringReply& out) {
             parsed.command.mode = mode->text;
         } else if (parsed.command.action != "node.start" &&
                    parsed.command.action != "node.stop" &&
+                   parsed.command.action != "pool.start" &&
+                   parsed.command.action != "pool.stop" &&
                    parsed.command.action != "updates.check" &&
                    parsed.command.action != "updates.install") {
             return false;
@@ -917,6 +919,7 @@ std::string CanonicalPortalCommandPayload(
         const MonitoringReply::Command& command) {
     if (command.action == "node.signin") return command.unlock.Canonical();
     if (command.action == "node.start" || command.action == "node.stop" ||
+        command.action == "pool.start" || command.action == "pool.stop" ||
         command.action == "updates.check" ||
         command.action == "updates.install") return "{}";
     if (command.action == "mining.enabled" ||
@@ -2047,12 +2050,12 @@ public:
         pool_panel_=std::make_unique<veld::node_gui::PoolPanel>(hwnd_,state_dir_/L"pool-client",pool_binary,
             mining_thread_count_,[this] {
                 if(SnapshotState().process_running || FindNodeProcess(node_path_)) {
-                    MessageBoxW(hwnd_,L"Stop solo mining before starting pool mining.",L"Veld Pool",MB_OK|MB_ICONINFORMATION);return false;
+                    throw std::runtime_error("Stop solo mining before starting pool mining.");
                 }
 #ifdef VELD_PUBLIC_RELEASE
                 std::wstring error;
                 if(!VerifySignedPackage(ModulePath(),error)) {
-                    MessageBoxW(hwnd_,error.c_str(),L"Pool package blocked",MB_OK|MB_ICONERROR);return false;
+                    throw std::runtime_error("Signed pool package verification failed. Reinstall the verified client package.");
                 }
 #endif
                 return true;
@@ -2548,20 +2551,32 @@ private:
                                   ContentPoint(next_hover)))) {
                         if (prior_network_target != next_network_target)
                             InvalidateRect(hwnd_, &network_graph_rect_, FALSE);
+                    } else if (page_ == Page::Pool) {
+                        if (prior_hover.x < S(252) || next_hover.x < S(252)) {
+                            RECT sidebar{0,0,S(252),0};
+                            RECT client{};GetClientRect(hwnd_,&client);sidebar.bottom=client.bottom;
+                            InvalidateRect(hwnd_, &sidebar, FALSE);
+                        }
                     } else {
                         InvalidateRect(hwnd_, nullptr, FALSE);
                     }
                 }
                 return 0;
             }
-            case WM_MOUSELEAVE:
+            case WM_MOUSELEAVE: {
                 tracking_mouse_leave_ = false;
+                const POINT prior_hover=hover_point_;
                 hover_point_ = POINT{-1, -1};
                 if (page_ == Page::Network)
                     InvalidateRect(hwnd_, &network_graph_rect_, FALSE);
-                else
-                    InvalidateRect(hwnd_, nullptr, FALSE);
+                else if(page_ == Page::Pool) {
+                    if(prior_hover.x < S(252)) {
+                        RECT client{};GetClientRect(hwnd_,&client);client.right=S(252);
+                        InvalidateRect(hwnd_,&client,FALSE);
+                    }
+                } else InvalidateRect(hwnd_, nullptr, FALSE);
                 return 0;
+            }
             case WM_SETCURSOR:
                 if (LOWORD(lp) == HTCLIENT) {
                     POINT cursor{};
@@ -2638,7 +2653,10 @@ private:
                 ObserveOwnedNodeExit();
                 TickAutomaticUpdates();
 #endif
-                InvalidateRect(hwnd_, nullptr, FALSE);
+                if(page_ == Page::Pool) {
+                    RECT client{};GetClientRect(hwnd_,&client);client.right=S(252);
+                    InvalidateRect(hwnd_,&client,FALSE);
+                } else InvalidateRect(hwnd_, nullptr, FALSE);
                 return 0;
             case WM_TOR_SETUP_COMPLETE:
                 OnTorSetupComplete(static_cast<DWORD>(wp));
@@ -6010,6 +6028,7 @@ private:
 
     static bool UnattendedPortalAction(const std::string& action) {
         return action == "node.start" || action == "node.stop" || action == "node.signin" ||
+            action == "pool.start" || action == "pool.stop" ||
             action == "updates.check" || action == "updates.install" || action == "updates.automatic";
     }
 
@@ -7152,8 +7171,25 @@ private:
             AcknowledgeRemoteCommand(command.id, "completed", message);
         };
 
-        if (command.action == "node.start" || command.action == "node.signin") {
-            if (live.process_running) {
+        if (command.action == "pool.start" || command.action == "pool.stop") {
+            if (!pool_panel_) reject("Pool controls are unavailable in this client");
+            else if (tor_preparing_.load() || update_operation_.load() != UpdateOperation::None)
+                reject("Wait for the current setup or update to finish");
+            else {
+                std::string failure;
+                const bool starting=command.action=="pool.start";
+                if (starting ? pool_panel_->RemoteStart(failure) : pool_panel_->Stop(true,&failure))
+                    complete(starting ? "Pool worker start accepted; awaiting current work status" :
+                        "Pool stop requested; automatic pool resume disabled");
+                else reject(failure.empty()?"Pool command could not be completed":failure);
+                pool_panel_->Tick();
+                std::lock_guard<std::mutex> lock(pool_monitor_mutex_);
+                pool_monitor_json_=pool_panel_->MonitoringJson();
+            }
+        } else if (command.action == "node.start" || command.action == "node.signin") {
+            if (pool_panel_ && pool_panel_->Running()) {
+                reject("Stop pool mining before starting the solo node");
+            } else if (live.process_running) {
                 complete("Node is already running");
             } else if (tor_preparing_.load() || update_operation_.load() != UpdateOperation::None) {
                 reject("Wait for the current setup or update to finish");
@@ -7397,6 +7433,7 @@ private:
              << ",\"mining_state\":\"" << state
              << "\",\"warning\":\"" << JsonEscape(warning) << "\""
              << ",\"snapshot\":{\"remote_control\":" << (control_ready ? "true" : "false")
+             << ",\"pool_remote_control\":true"
              << ",\"pool\":" << pool_monitor_json
              << ",\"pairing_control\":true"
              << ",\"automatic_updates\":" << (auto_update_enabled_.load() ? "true" : "false")

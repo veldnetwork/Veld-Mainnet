@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 LOGGER = logging.getLogger(__name__)
 
-VELD_OPERATOR_VERSION = "3.2.3"
+VELD_OPERATOR_VERSION = "3.2.4"
 VELD_OPERATOR_PROFILE = "veld-public-mainnet-v2"
 
 MAX_MINING_WORKERS = 64
@@ -58,6 +58,8 @@ COMMAND_KEY_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 NO_PAYLOAD_ACTIONS = {
     "node.start",
     "node.stop",
+    "pool.start",
+    "pool.stop",
     "updates.check",
     "updates.install",
 }
@@ -255,7 +257,7 @@ PORTAL_MANIFEST = {
     ],
 }
 PORTAL_OFFLINE_HTML = b"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a09"><title>Veld Portal offline</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#080a09;color:#f2f5f2;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(430px,100%);padding:25px;border:1px solid #343a36;border-radius:10px;background:#101311}h1{margin:0 0 8px;font:700 24px ui-monospace,Consolas,monospace}p{margin:0;color:#c5cbc7}</style><main class="card"><h1>Portal offline</h1><p>Reconnect to the internet, then reopen or refresh the app. Your node continues running independently.</p></main></html>"""
-PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v22';
+PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v23';
 const ASSETS=['/manifest.webmanifest','/icon.png?v=6','/offline'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
@@ -298,7 +300,7 @@ PORTAL_HTML = r"""<!doctype html>
     @media(max-width:900px){
       :root{--portal-nav-row:56px;--portal-nav-safe:min(8px,env(safe-area-inset-bottom,0px));--portal-nav-total:calc(var(--portal-nav-row) + var(--portal-nav-safe) + 1px)}
       html{background:#0d100e!important}
-      html,body{width:100%;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important;overflow-x:hidden!important;overscroll-behavior-y:none}
+      html,body{width:100%;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important;position:static!important;overscroll-behavior-y:none}
       body,.app,.main{background:var(--bg)!important}
       .app{display:block;min-height:100vh;min-height:100dvh}
       .side{display:none!important}
@@ -436,7 +438,7 @@ function hex(bytes){return Array.from(bytes,byte=>byte.toString(16).padStart(2,"
 function openCommandDb(){return new Promise((resolve,reject)=>{const request=indexedDB.open(commandDbName,1);request.onupgradeneeded=()=>request.result.createObjectStore(commandStore);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(new Error("Secure command storage is unavailable"))})}
 async function commandKey(){if(commandKeyPromise)return commandKeyPromise;commandKeyPromise=(async()=>{if(!window.isSecureContext||!crypto?.subtle||!window.indexedDB)throw new Error("Secure command signing is unavailable in this browser");const db=await openCommandDb();let pair=await new Promise((resolve,reject)=>{const request=db.transaction(commandStore,"readonly").objectStore(commandStore).get(commandKeyName);request.onsuccess=()=>resolve(request.result||null);request.onerror=()=>reject(new Error("Secure command key could not be read"))});if(!pair){pair=await crypto.subtle.generateKey({name:"ECDSA",namedCurve:"P-256"},false,["sign","verify"]);await new Promise((resolve,reject)=>{const transaction=db.transaction(commandStore,"readwrite");transaction.objectStore(commandStore).put(pair,commandKeyName);transaction.oncomplete=resolve;transaction.onerror=()=>reject(new Error("Secure command key could not be saved"));transaction.onabort=transaction.onerror})}if(!pair.privateKey||pair.privateKey.extractable||!pair.privateKey.usages.includes("sign"))throw new Error("Secure command key is invalid");const jwk=await crypto.subtle.exportKey("jwk",pair.publicKey);if(jwk.kty!=="EC"||jwk.crv!=="P-256"||!jwk.x||!jwk.y)throw new Error("Secure command public key is invalid");const key={kty:"EC",crv:"P-256",x:jwk.x,y:jwk.y};const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(`VELD_PORTAL_KEY_V1\n${key.x}\n${key.y}`));return {pair,key,id:hex(new Uint8Array(digest))}})().catch(error=>{commandKeyPromise=null;throw error});return commandKeyPromise}
 function normalizeEcdsaSignature(buffer){const bytes=new Uint8Array(buffer);if(bytes.length===64)return bytes;if(bytes.length<8||bytes[0]!==0x30||bytes[1]!==bytes.length-2)throw new Error("Browser returned an invalid command signature");let offset=2;const integer=()=>{if(bytes[offset++]!==0x02)throw new Error("Browser returned an invalid command signature");const length=bytes[offset++];if(!length||offset+length>bytes.length)throw new Error("Browser returned an invalid command signature");let value=bytes.slice(offset,offset+length);offset+=length;while(value.length>32&&value[0]===0)value=value.slice(1);if(value.length>32)throw new Error("Browser returned an invalid command signature");const out=new Uint8Array(32);out.set(value,32-value.length);return out};const r=integer(),s=integer();if(offset!==bytes.length)throw new Error("Browser returned an invalid command signature");const out=new Uint8Array(64);out.set(r);out.set(s,32);return out}
-function canonicalPayload(action,payload){if(action==="node.signin"){const fields=["ciphertext","identity","iv","key_id","wrapped_key"];if(Object.keys(payload).length!==5||fields.some(key=>typeof payload[key]!=="string")||!/^[a-f0-9]{64}$/.test(payload.identity)||!/^[a-f0-9]{64}$/.test(payload.key_id)||!/^[A-Za-z0-9_-]{16}$/.test(payload.iv)||!/^[A-Za-z0-9_-]{342}$/.test(payload.wrapped_key)||!/^[A-Za-z0-9_-]{23,1387}$/.test(payload.ciphertext))throw new Error("Invalid encrypted sign-in");return JSON.stringify(Object.fromEntries(fields.map(key=>[key,payload[key]])))}if(["node.start","node.stop","updates.check","updates.install"].includes(action)){if(Object.keys(payload).length)throw new Error("Invalid command payload");return "{}"}if(["mining.enabled","privacy.tor","network.reachable","display.reference","updates.automatic"].includes(action)){if(Object.keys(payload).length!==1||typeof payload.enabled!=="boolean")throw new Error("Invalid command payload");return JSON.stringify({enabled:payload.enabled})}if(action==="mining.workers"){const workers=Number(payload.workers);if(Object.keys(payload).length!==1||!Number.isInteger(workers)||workers<1||workers>64)throw new Error("Invalid command payload");return JSON.stringify({workers})}if(action==="sync.mode"&&Object.keys(payload).length===1&&payload.mode==="full")return JSON.stringify({mode:"full"});throw new Error("Unsupported command")}
+function canonicalPayload(action,payload){if(action==="node.signin"){const fields=["ciphertext","identity","iv","key_id","wrapped_key"];if(Object.keys(payload).length!==5||fields.some(key=>typeof payload[key]!=="string")||!/^[a-f0-9]{64}$/.test(payload.identity)||!/^[a-f0-9]{64}$/.test(payload.key_id)||!/^[A-Za-z0-9_-]{16}$/.test(payload.iv)||!/^[A-Za-z0-9_-]{342}$/.test(payload.wrapped_key)||!/^[A-Za-z0-9_-]{23,1387}$/.test(payload.ciphertext))throw new Error("Invalid encrypted sign-in");return JSON.stringify(Object.fromEntries(fields.map(key=>[key,payload[key]])))}if(["node.start","node.stop","pool.start","pool.stop","updates.check","updates.install"].includes(action)){if(Object.keys(payload).length)throw new Error("Invalid command payload");return "{}"}if(["mining.enabled","privacy.tor","network.reachable","display.reference","updates.automatic"].includes(action)){if(Object.keys(payload).length!==1||typeof payload.enabled!=="boolean")throw new Error("Invalid command payload");return JSON.stringify({enabled:payload.enabled})}if(action==="mining.workers"){const workers=Number(payload.workers);if(Object.keys(payload).length!==1||!Number.isInteger(workers)||workers<1||workers>64)throw new Error("Invalid command payload");return JSON.stringify({workers})}if(action==="sync.mode"&&Object.keys(payload).length===1&&payload.mode==="full")return JSON.stringify({mode:"full"});throw new Error("Unsupported command")}
 function commandEnvelope(command){return `VELD_PORTAL_COMMAND_V3\n${command.id}\n${command.sequence}\n${command.issued_at}\n${command.expires_at}\n${command.nonce}\n${command.action}\n${canonicalPayload(command.action,command.payload)}`}
 async function ensureDeviceCommandKey(device,keyInfo){if(device.command_key_id&&device.command_key_id!==keyInfo.id)throw new Error("This browser does not hold the command key trusted by this machine. Remove and pair the machine again locally.");if(!device.command_key_id){await api("/api/v1/devices/trust-key","POST",{id:device.id,command_key:keyInfo.key});device.command_key_id=keyInfo.id;device.command_sequence=0}}
 function portalControlStatus(d){const s=snap(d);return s.remote_control?"Remote start, stop, sign-in, and updates are enabled.":s.pairing_control?"Pairing is finishing. Commands will run when the node reconnects.":"This client needs one update on the PC to enable unattended portal control."}
@@ -454,7 +456,7 @@ async function signedAction(name,payload={},preparePayload=null,targetDevice=nul
   command.signature=b64url(normalizeEcdsaSignature(signature));
   const reply=await api("/api/v1/devices/command","POST",command);
   device.command_sequence=command.sequence;
-  if(!quiet)toast(["node.start","node.stop","node.signin","updates.check","updates.install","updates.automatic"].includes(name)?
+  if(!quiet)toast(["node.start","node.stop","pool.start","pool.stop","node.signin","updates.check","updates.install","updates.automatic"].includes(name)?
     (snap(device).remote_control?"Signed command sent to the node":portalControlStatus(device)):
     "Approve this settings change on the paired PC");
   await refresh();
@@ -722,6 +724,7 @@ function topologyGraph(t){
   return `<div class="topology"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Sanitized Veld peer topology"><defs><radialGradient id="topology-center" cx="34%" cy="28%"><stop offset="0" stop-color="#26372e"/><stop offset="1" stop-color="#121a16"/></radialGradient><radialGradient id="topology-fleet" cx="34%" cy="28%"><stop offset="0" stop-color="#385363"/><stop offset="1" stop-color="#172832"/></radialGradient><radialGradient id="topology-node" cx="34%" cy="28%"><stop offset="0" stop-color="#2c4b3d"/><stop offset="1" stop-color="#14271f"/></radialGradient><radialGradient id="topology-miner" cx="34%" cy="28%"><stop offset="0" stop-color="#355925"/><stop offset="1" stop-color="#182d14"/></radialGradient><radialGradient id="topology-validator" cx="34%" cy="28%"><stop offset="0" stop-color="#493861"/><stop offset="1" stop-color="#251d31"/></radialGradient></defs>${orbits}${edges}<g aria-hidden="true"><circle class="center-ring" cx="${cx}" cy="${cy}" r="36"/><circle class="center-ring" cx="${cx}" cy="${cy}" r="31"/><circle class="center-ring" cx="${cx}" cy="${cy}" r="27"/><circle class="center-core" cx="${cx}" cy="${cy}" r="23"/><text class="center-label" x="${cx}" y="${cy-2}" text-anchor="middle">VELD</text><text class="center-sub" x="${cx}" y="${cy+11}" text-anchor="middle">NETWORK</text></g>${marks}</svg></div><div class="topology-legend" aria-label="Peer role colors"><span><i class="legend-dot node"></i>Node</span><span><i class="legend-dot fleet"></i>Fleet</span><span><i class="legend-dot miner"></i>Miner</span><span><i class="legend-dot validator"></i>Validator</span></div><div class="topology-legend" aria-label="Link and status legend"><span><i class="legend-line"></i>Seen by both</span><span><i class="legend-line one"></i>One-sided</span><span><i class="legend-dot differs"></i>Tip differs</span><span><i class="legend-dot unavailable"></i>No recent tip report</span></div>`
 }
 function action(name,payload={}){
+  if(name==="pool.start"||name==="pool.stop")return runPoolAction(name);
   if(name==="updates.check"||name==="updates.install")
     return runRemoteUpdate(name==="updates.install").catch(error=>toast(error.message,true));
   const device=current();
@@ -751,10 +754,62 @@ function poolMachine(d,s){const p=s.pool,live=d.online===true&&p&&p.current===tr
     detail:!d.online?'Showing the last machine report.':!p?'This client reports solo-node status only. Online means the app is reachable.':
       live?(n(p.configured_workers)+' configured workers · '+n(p.active_workers)+' on work · '+n(p.hashrate,1)+' H/s'):'Waiting for a fresh report from the pool worker.'};
 }
-function updatePoolMachine(d,s){const m=poolMachine(d,s);for(const [id,value] of [['pool-machine-name',d.name],['pool-machine-status',m.status],['pool-machine-detail',m.detail]]){const el=$(id);if(el&&el.textContent!==String(value))el.textContent=String(value)}}
+const poolJobs=new Map();
+function poolControlReason(d,s){return !d.online?"Machine offline. Veld must be open and connected for remote control.":s.pool_remote_control!==true?"Update this machine to a client with remote pool controls. Its current client only supports remote solo-node controls.":s.remote_control!==true?"Waiting for this machine to finish remote-control pairing.":""}
+function updatePoolMachine(d,s){
+  const m=poolMachine(d,s),job=poolJobs.get(d.id),reason=poolControlReason(d,s),busy=!!job?.busy||!!updateJobs.get(d.id)?.busy;
+  const last=d.last_command,receipt=!job&&last&&["pool.start","pool.stop"].includes(last.action)?last.action+" · "+last.state+(last.result?" · "+last.result:""):"";
+  for(const [id,value] of [['pool-machine-name',d.name],['pool-machine-status',m.status],['pool-machine-detail',m.detail],['pool-control-note',reason||'Start uses the pool endpoint, payout address and CPU settings already saved on this machine. Stop also turns off automatic pool resume.'],['pool-command-status',job?.message||receipt]]){
+    const el=$(id);if(el&&el.textContent!==String(value))el.textContent=String(value);
+  }
+  const start=$('pool-start'),stop=$('pool-stop');
+  if(start)start.disabled=!!reason||busy||s.pool?.running===true||s.process_running===true;
+  if(stop)stop.disabled=!!reason||busy;
+  if(start)start.title=s.process_running?'Stop the solo node before starting pool mining.':'';
+}
+async function runPoolAction(name){
+  const selectedDevice=current();if(!selectedDevice)return;
+  const id=selectedDevice.id;if(poolJobs.get(id)?.busy||updateJobs.get(id)?.busy)return;
+  const job={busy:true,message:'Sending signed pool command…'};poolJobs.set(id,job);render();
+  try{
+    const pending=actionQueue.then(async()=>{
+      await refresh();const device=devices.find(d=>d.id===id);
+      if(!device)throw new Error('This machine is no longer paired.');
+      const reason=poolControlReason(device,snap(device));if(reason)throw new Error(reason);
+      return signedAction(name,{},null,device,true);
+    });
+    actionQueue=pending.catch(()=>{});const receipt=await pending;
+    if(!Number.isSafeInteger(receipt.id)||receipt.id<1)throw new Error('Missing pool command receipt. Check the machine status before retrying.');
+    const deadline=Date.now()+190000;let acknowledged=false,ackSeenAt=0;
+    while(Date.now()<deadline){
+      if(poolJobs.get(id)!==job)throw new Error('Pool command monitoring ended. Check the machine status before retrying.');
+      const reply=await api('/api/v1/devices/command-status','POST',{id,command_id:receipt.id}),c=reply.command;
+      if(!c||c.id!==receipt.id||c.device_id!==id||c.action!==name||c.sequence!==receipt.sequence)
+        throw new Error('Pool command receipt mismatch. Refresh before retrying.');
+      if(['failed','expired','superseded','local_confirmation'].includes(c.state))throw new Error(c.result||'Pool command '+c.state+'.');
+      if(!['queued','delivered','completed'].includes(c.state))throw new Error('Unknown pool command state.');
+      await refresh();const device=devices.find(d=>d.id===id);if(!device)throw new Error('This machine is no longer paired.');
+      if(c.state==='completed'&&!acknowledged){acknowledged=true;ackSeenAt=device.last_seen;}
+      const p=snap(device).pool;
+      // Require a later device report as well as the exact command's receipt.
+      // A process launch alone is never reported as successful mining.
+      if(acknowledged&&device.online&&device.last_seen>ackSeenAt&&p){
+        if(name==='pool.stop'&&p.running===false){job.message='Pool mining stopped. Automatic pool resume is off.';return;}
+        if(name==='pool.start'&&p.running&&p.current&&p.state==='hashing'){job.message='Pool mining resumed. This machine is processing pool work.';return;}
+        if(name==='pool.start'&&!p.running)throw new Error('The pool worker stopped after the start request. Check its connection and saved pool settings.');
+      }
+      job.message=acknowledged?(name==='pool.start'?'Start accepted. Waiting for the machine to report pool work…':'Stop accepted. Waiting for the worker to exit…'):'Waiting for the machine to acknowledge the signed command…';render();
+      await updatePause(2500);
+    }
+    throw new Error('Pool operation was not confirmed in time. Check the current status before retrying.');
+  }catch(error){job.message=error.message;toast(error.message,true);}
+  finally{job.busy=false;render();}
+}
 let refreshPoolView=()=>{};
 function pool(){return `<section class="pool-page"><h2>Veld Pool</h2><p class="pool-intro">Live pool activity, setup and rewards.</p>
-<div class="card pool-machine"><strong id="pool-machine-name"></strong><p id="pool-machine-status" role="status"></p><p class="pool-note" id="pool-machine-detail"></p></div>
+<div class="card pool-machine"><strong id="pool-machine-name"></strong><p id="pool-machine-status" role="status"></p><p class="pool-note" id="pool-machine-detail"></p>
+<div class="controls" style="margin-top:16px"><button id="pool-start" class="button" data-command="pool.start" disabled>Start pool mining</button><button id="pool-stop" class="button" data-command="pool.stop" disabled>Stop pool mining</button></div>
+<p class="pool-note" id="pool-control-note"></p><p id="pool-command-status" role="status" aria-live="polite"></p></div>
 <div class="pool-status"><strong>Pool status</strong><p id="pool-public-status" role="status">Connecting to Veld Pool…</p></div>
 <div class="grid2">
 <div class="tile"><div class="l">Active accounts · 2 min</div><div class="v" id="pool-public-active_accounts">—</div></div>
@@ -871,7 +926,7 @@ async function claimMachine(event){
   }
 }
 async function renameDevice(){const d=current(),name=prompt("Machine name",d.name);if(name){await api("/api/v1/devices/rename","POST",{id:d.id,name});refresh()}}async function removeDevice(){const d=current();if(confirm("Remove this machine from your portal?")){await api("/api/v1/devices/revoke","POST",{id:d.id});selected=0;refresh()}}
-function showAuth(){closePortalMore();updateJobs.clear();csrf="";$("auth-view").classList.remove("hidden");$("app-view").classList.add("hidden");$("mobile-nav").hidden=true}function showApp(){$("auth-view").classList.add("hidden");$("app-view").classList.remove("hidden");$("mobile-nav").hidden=true;refresh()}async function auth(mode){$("auth-error").textContent="";try{const j=await api("/api/v1/"+mode,"POST",{account:$("account").value,password:$("password").value});csrf=j.csrf;$("password").value="";showApp()}catch(e){$("auth-error").textContent=e.message}}
+function showAuth(){closePortalMore();updateJobs.clear();poolJobs.clear();csrf="";$("auth-view").classList.remove("hidden");$("app-view").classList.add("hidden");$("mobile-nav").hidden=true}function showApp(){$("auth-view").classList.add("hidden");$("app-view").classList.remove("hidden");$("mobile-nav").hidden=true;refresh()}async function auth(mode){$("auth-error").textContent="";try{const j=await api("/api/v1/"+mode,"POST",{account:$("account").value,password:$("password").value});csrf=j.csrf;$("password").value="";showApp()}catch(e){$("auth-error").textContent=e.message}}
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event});
 window.addEventListener('appinstalled',()=>{installPrompt=null;if(page==='more')render()});
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).catch(()=>{}));
@@ -1439,6 +1494,13 @@ class PortalStore:
                 "UPDATE commands SET state='expired',completed_at=? WHERE device_id=? AND expires_at<? AND state IN ('queued','delivered')",
                 (now, device_id, now),
             )
+            if report["snapshot"].get("pool_remote_control") is not True:
+                db.execute(
+                    """UPDATE commands SET state='failed',completed_at=?,result=?
+                       WHERE device_id=? AND action IN ('pool.start','pool.stop')
+                         AND state IN ('queued','delivered')""",
+                    (now, "This client does not support remote pool controls. Update the client first.", device_id),
+                )
             if not supports_automatic_updates(report["version"], report["snapshot"]):
                 # A legacy client cannot acknowledge an unsupported action.
                 # Retire it before selecting the next signed command.
@@ -1650,7 +1712,7 @@ class PortalStore:
         device_id = command["id"]
         with self.lock, self.database() as db:
             owned = db.execute(
-                """SELECT command_key_x,command_key_y,snapshot_json,version,
+                """SELECT command_key_x,command_key_y,snapshot_json,version,last_seen,
                           command_key_id,command_sequence FROM devices
                    WHERE id=? AND account_id=?""",
                 (device_id, account_id),
@@ -1674,6 +1736,14 @@ class PortalStore:
                 raise ValueError("Command signature is invalid")
             if command["sequence"] != int(owned["command_sequence"]) + 1:
                 raise ValueError("Refresh the portal before sending another command")
+            if command["action"] in {"pool.start", "pool.stop"}:
+                snapshot = json.loads(owned["snapshot_json"])
+                if snapshot.get("pool_remote_control") is not True:
+                    raise ValueError("Update this machine to a client with remote pool controls first.")
+                if snapshot.get("remote_control") is not True:
+                    raise ValueError("Remote control pairing is not ready on this machine.")
+                if now - int(owned["last_seen"]) > ONLINE_SECONDS:
+                    raise ValueError("This machine is offline. Pool controls need the Veld app online.")
             if command["action"] == "updates.automatic" and not supports_automatic_updates(
                 owned["version"], json.loads(owned["snapshot_json"])
             ):
@@ -1920,6 +1990,7 @@ def validate_snapshot(value: Any) -> dict[str, Any]:
         "port_mapped",
         "remote_control",
         "pairing_control",
+        "pool_remote_control",
         "automatic_updates",
         "identity_unlocked",
     }

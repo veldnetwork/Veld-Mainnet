@@ -8,3 +8,6 @@
 #page-payouts .rewards-load-status [hidden] { display: none !important; }
 #page-payouts #earn-recent-body td:first-child { padding-left: 20px; }
 #page-payouts #earn-recent-body td { white-space: nowrap; }
+/* History pagination follows the results and uses the standard charcoal action. */
+.history-footer{display:flex;justify-content:center;margin-top:16px}
+html body #page-history #h-load-older{appearance:none!important;-webkit-appearance:none!important;background:#34383c!important;color:#f3f4f5!important;border:1px solid #646b76!important;box-shadow:none!important}

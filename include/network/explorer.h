@@ -3907,12 +3907,12 @@ html:not([data-theme="light"]) .veld-mark stop{stop-color:#7ED949!important}
 /* Match the wallet mobile shell. The document scrolls normally while the
    navigation remains a direct, fixed child of body. */
 @media (max-width:900px), (hover:none) and (pointer:coarse){
-  html,body{width:100%;height:auto!important;min-height:100vh!important;min-height:100dvh!important;overflow-x:hidden!important;overflow-y:visible!important;overscroll-behavior-y:none}
+  html,body{width:100%;height:auto!important;min-height:100vh!important;min-height:100dvh!important;overflow:visible!important;position:static!important;overscroll-behavior-y:none}
   html,body{background:#0A0B0A!important}
   html[data-theme="light"],html[data-theme="light"] body{background:#EFEFEF!important}
   .bar{position:sticky!important;top:0!important;width:100%}
-  .nav-bar,.nav-bar.is-sticky{display:flex!important;position:fixed!important;left:0!important;right:0!important;bottom:0!important;top:auto!important;inset:auto 0 0 0!important;z-index:500!important;width:100%!important;max-width:none!important;height:var(--mobile-nav-height)!important;min-height:var(--mobile-nav-height)!important;max-height:var(--mobile-nav-height)!important;margin:0!important;padding:0!important;overflow:hidden!important;transform:translateZ(0)!important;-webkit-transform:translateZ(0)!important;will-change:transform;background:#0A0B0A!important;border-top:1px solid var(--line)!important;box-sizing:border-box!important;box-shadow:0 96px 0 96px #0A0B0A,0 -8px 32px rgba(0,0,0,.35)!important}
-  html[data-theme="light"] .nav-bar,html[data-theme="light"] .nav-bar.is-sticky{background:#EFEFEF!important;box-shadow:0 96px 0 96px #EFEFEF,0 -6px 20px rgba(18,21,20,.06)!important}
+  .nav-bar,.nav-bar.is-sticky{display:flex!important;position:fixed!important;left:0!important;right:0!important;bottom:0!important;top:auto!important;inset:auto 0 0 0!important;z-index:500!important;width:100%!important;max-width:none!important;height:var(--mobile-nav-height)!important;min-height:var(--mobile-nav-height)!important;max-height:var(--mobile-nav-height)!important;margin:0!important;padding:0!important;overflow:hidden!important;transform:translateZ(0)!important;-webkit-transform:translateZ(0)!important;will-change:transform;background:#0A0B0A!important;border-top:1px solid var(--line)!important;box-sizing:border-box!important;box-shadow:0 -8px 32px rgba(0,0,0,.35)!important}
+  html[data-theme="light"] .nav-bar,html[data-theme="light"] .nav-bar.is-sticky{background:#EFEFEF!important;box-shadow:0 -6px 20px rgba(18,21,20,.06)!important}
   .wrap,.liquidity-wrap{width:100%;min-height:calc(100vh - 68px);min-height:calc(100dvh - 68px);margin:0 auto!important;padding:18px clamp(12px,2.6vw,22px) calc(110px + env(safe-area-inset-bottom,0px))!important;overflow:visible!important;background:var(--bg)!important}
   .wrap{max-width:780px}
   .liquidity-wrap{max-width:1120px}

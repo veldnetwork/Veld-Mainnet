@@ -465,6 +465,8 @@ body.gyro-active .prism-sub{animation:none}
 /* explicit toggle — JS-created <details> doesn't always get the UA closed-hiding.
    Open body is an absolutely-positioned popover just BELOW the inline "?" so it never
    shoves surrounding layout and the "?" stays at the end of the text it annotates. */
+.history-footer{display:flex;justify-content:center;margin-top:16px}
+html body #page-history #h-load-older{appearance:none;-webkit-appearance:none;background:#34383c!important;color:#f3f4f5!important;border:1px solid #646b76!important;box-shadow:none!important}
 .help-tip:not([open])>.help-body{display:none}
 .help-tip[open]>.help-body{display:block;position:absolute;left:0;top:calc(100% + 6px);z-index:30;width:240px;max-width:72vw;padding:9px 11px;background:var(--s2,#161616);border:1px solid var(--b1,#2a2a2a);border-radius:9px;font-size:11.5px;font-weight:400;color:var(--muted);line-height:1.5;text-align:left;box-shadow:0 8px 24px rgba(0,0,0,.45);animation:fadeInUp .2s ease both}
 /* Login button in the mobile status bar — a clear filled accent button so it's
@@ -3249,7 +3251,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <div id="bv-validator-track" class="bv-launch-track" role="progressbar" aria-label="Active validators toward btcVELD activation" aria-valuemin="0" aria-valuemax="7"><span id="bv-validator-fill" class="bv-launch-fill"></span></div>
       <div id="bv-validator-remaining" class="bv-launch-remaining">Checking active validators…</div>
     </div>
-    <div id="bv-inactive-copy" style="color:var(--muted);font-size:13px;max-width:480px;margin:0 auto;line-height:1.65">Once seven qualified validators complete the required finality warm-up, btcVELD activates. This is a one-time launch threshold; a later validator-count drop does not switch the peg off.</div>
+
   </div>
 
   <div id="bv-peg" style="display:none">
@@ -3461,9 +3463,9 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <div class="tab-btn" data-act-click="hhist_btcveld">btcVELD</div>
     </div>
     <div id="h-load-status" role="status" style="display:none;margin-bottom:10px;font-size:12px;color:var(--muted)"></div>
-    <button id="h-load-older" class="btn btn-sm" style="display:none;margin-bottom:12px" data-act-click="hhistory_older">Load older activity</button>
     <div id="h-summary" style="display:none;margin-bottom:10px;font-size:11px;color:var(--muted)"></div>
     <div id="h-list"><div style="color:var(--muted);text-align:center;padding:24px;font-size:12px">Enter an address to load history</div></div>
+    <div class="history-footer"><button id="h-load-older" class="btn btn-em btn-sm" style="display:none" data-act-click="hhistory_older">Load older activity</button></div>
   </div>
 </div>
 
@@ -6693,7 +6695,7 @@ function loadBtcveldPage(){
     if(fill)fill.style.width='0%';
     if(track){track.setAttribute('aria-valuenow','0');track.removeAttribute('aria-valuetext');}
     if(remaining)remaining.textContent=statusUnavailable?'Validator status is temporarily unavailable.':'Checking active validators…';
-    if(copy)copy.textContent='Once seven qualified validators complete the required finality warm-up, btcVELD activates. This is a one-time launch threshold; a later validator-count drop does not switch the peg off.';
+    if(copy)copy.remove();
     if(statusUnavailable)return;
     rpc('getvalidators',[]).then(function(v){
       var raw=Number(v&&v.validator_count);

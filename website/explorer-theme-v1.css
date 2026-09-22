@@ -454,8 +454,7 @@ html[data-theme="light"] body #multiplier~table.tbl-rules .diamond-prismatic{bac
     height:auto!important;
     min-height:100vh!important;
     min-height:100dvh!important;
-    overflow-x:clip!important;
-    overflow-y:visible!important;
+    overflow:visible!important;
     overscroll-behavior-y:none!important;
     transform:none!important;
     -webkit-transform:none!important;
@@ -470,7 +469,7 @@ html[data-theme="light"] body #multiplier~table.tbl-rules .diamond-prismatic{bac
     display:block!important;
     margin:0!important;
     padding:0!important;
-    position:relative!important;
+    position:static!important;
   }
   html:root body .side-nav { display:none!important; }
   html:root body .bar {
@@ -509,9 +508,9 @@ html[data-theme="light"] body #multiplier~table.tbl-rules .diamond-prismatic{bac
     background:#0A0B0A!important;
     border-top:1px solid var(--line)!important;
     box-shadow:0 -2px 0 2px #0A0B0A,0 -8px 32px rgba(0,0,0,.35)!important;
-    transform:none!important;
-    -webkit-transform:none!important;
-    will-change:auto!important;
+    transform:translateZ(0)!important;
+    -webkit-transform:translateZ(0)!important;
+    will-change:transform!important;
     transition:none!important;
   }
   html:root[data-theme="light"] body .nav-bar {

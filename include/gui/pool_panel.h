@@ -131,10 +131,12 @@ class PoolPanel {
             Error("Viewing access copied. Paste it into this pool's dashboard.");
         } catch(const std::exception& error){Error(error.what());}
     }
-    void Start() {
-        if(Running() || !permitted_())return;
-        if(process_){CloseHandle(process_);process_=nullptr;}
+    bool Start(std::string* failure=nullptr) {
         try {
+            pool::Require(!stopping_,"Wait for the pool worker to stop before restarting.");
+            if(Running())return true;
+            pool::Require(permitted_(),"Pool mining is unavailable while another operation is active.");
+            if(process_){CloseHandle(process_);process_=nullptr;}
             pool::Require(std::filesystem::is_regular_file(binary_),"The packaged pool worker is missing.");
             std::string error;
             pool::Require(channel::secure_file::EnsurePrivateDirectory(directory_.string(),&error),"Private pool account folder unavailable.");
@@ -173,7 +175,8 @@ class PoolPanel {
                 throw std::runtime_error("Pool worker ownership failed; no worker was allowed to run.");
             }
             CloseHandle(child.hThread);process_=child.hProcess;stopping_=false;failed_=false;Error("Connecting securely to the pool…");
-        } catch(const std::exception& error){Error(error.what());}
+            return true;
+        } catch(const std::exception& error){if(failure)*failure=error.what();Error(error.what());return false;}
     }
     void BrowseCertificate() {
         if (Running()) return;
@@ -238,20 +241,39 @@ public:
     bool Running() {
         return process_ && WaitForSingleObject(process_,0)==WAIT_TIMEOUT;
     }
-    void Stop(bool clear_resume=true) {
+    // A remote request can only use the locally saved identity and endpoint.
+    // Unsaved edits require an explicit local Start; they are never adopted by
+    // a remote command. No viewing token, payout address or key is in its payload.
+    bool RemoteStart(std::string& error) {
+        if(Running()&&!stopping_)return true;
+        try {
+            std::vector<uint8_t> bytes;
+            pool::Require(channel::secure_file::Read((directory_/"client.json").string(),bytes,nullptr,16384,true)==channel::secure_file::ReadResult::Ok,
+                          "Configure and start pool mining once in this client's Pool tab first.");
+            const auto saved=pool::Parse(std::string(bytes.begin(),bytes.end()));
+            for(const auto& [control,key]:std::vector<std::pair<HWND,const char*>>{{endpoint_,"endpoint"},{address_,"payout_address"},{ca_,"ca_file"},{threads_,"threads"}})
+                pool::Require(Get(control)==pool::Text(pool::Field(saved,key)),"Pool settings have unsaved local changes. Save them on this machine first.");
+            return Start(&error);
+        } catch(const std::exception& failure){error=failure.what();Error(error.c_str());return false;}
+    }
+    bool Stop(bool clear_resume=true,std::string* failure=nullptr) {
+        bool saved=true;
         resume_pending_=false;
         if(clear_resume) {
             std::string error;
             if(!channel::secure_file::AtomicWriteText((directory_/"resume.request").string(),"stopped\n",&error,true)) {
+                saved=false;
+                if(failure)*failure="Could not save stopped state. Check the private pool folder before restarting the app.";
                 Error("Could not save stopped state. Check the private pool folder before restarting the app.");
             }
         }
-        if(!Running())return;
+        if(!Running())return saved;
         std::string error;
         if(!channel::secure_file::AtomicWriteText((account_directory_/"stop.request").string(),"stop\n",&error,true)) {
-            Error("Could not request a clean stop. Close the app to stop its pool worker.");return;
+            if(failure)*failure="Could not request a clean stop. Close the app to stop its pool worker.";
+            Error("Could not request a clean stop. Close the app to stop its pool worker.");return false;
         }
-        stopping_=true;Error("Stopping pool mining…");
+        stopping_=true;Error("Stopping pool mining…");return saved;
     }
     bool Command(WPARAM command) {
         if(HIWORD(command)!=BN_CLICKED)return false;

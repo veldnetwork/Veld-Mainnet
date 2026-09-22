@@ -165,6 +165,18 @@
 
   function initialize() {
     removeProjectedYield();
+    var inactiveCopy = btcElement('bv-inactive-copy');
+    if (inactiveCopy) inactiveCopy.remove();
+    var older = btcElement('h-load-older');
+    var history = btcElement('h-list');
+    if (older && history) {
+      var footer = document.createElement('div');
+      footer.className = 'history-footer';
+      history.insertAdjacentElement('afterend', footer);
+      footer.appendChild(older);
+      older.classList.add('btn-em');
+      older.style.marginBottom = '0';
+    }
     ensureBtcLoadingCard();
     installBtcRefreshGate();
   }
