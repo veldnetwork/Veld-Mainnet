@@ -3,11 +3,18 @@
 
 import importlib.util
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+version_header = (ROOT / "include/core/version.h").read_text(encoding="utf-8")
+activation_fixture = (ROOT / "tests/release_activation_tests.cpp").read_text(encoding="utf-8")
+runtime_version = re.search(r'CLIENT_VERSION\s*=\s*"([^"]+)"', version_header)
+fixture_version = re.search(r'std::string_view\(CLIENT_VERSION\)\s*==\s*"([^"]+)"', activation_fixture)
+assert runtime_version and fixture_version, "release version assertions must be explicit"
+assert runtime_version.group(1) == fixture_version.group(1), "release activation fixture has a stale client version"
 path = ROOT / "scripts/verify-release-version.py"
 spec = importlib.util.spec_from_file_location("release_version", path)
 module = importlib.util.module_from_spec(spec)
