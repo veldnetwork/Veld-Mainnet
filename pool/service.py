@@ -68,7 +68,12 @@ def dispatch(pool, request):
 
 class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads=False
+    # Match the gateway's bounded connection burst. The kernel queue must not
+    # reject otherwise admissible requests merely because accept is scheduling
+    # a handler. Active handlers remain separately capped at 16 (operator: 4).
+    request_queue_size=32
     def __init__(self,path,pool,operator_uid=None):
+        if operator_uid is not None:self.request_queue_size=4
         self.pool=pool;self.operator_uid=operator_uid;self.slots=threading.BoundedSemaphore(16 if operator_uid is None else 4)
         self.notice_lock=threading.Lock();self.last_refusal_notice=None
         super().__init__(path,Handler)

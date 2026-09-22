@@ -26,6 +26,9 @@ class Gateway(http.server.ThreadingHTTPServer):
     def process_request_thread(self,request,address):
         try:
             request.settimeout(10)
+            # Small authenticated responses must not wait for a delayed TCP
+            # acknowledgement before their final TLS record can be delivered.
+            request.setsockopt(socket.IPPROTO_TCP,socket.TCP_NODELAY,1)
             request=self.context.wrap_socket(request,server_side=True)
             super().process_request_thread(request,address)
         except (OSError,ssl.SSLError):request.close()
@@ -44,7 +47,14 @@ class Gateway(http.server.ThreadingHTTPServer):
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version='HTTP/1.1'
+    # Coalesce bounded JSON headers/body into one TLS write. The standard HTTP
+    # handler flushes at request completion; connections still close after it.
+    # At most 32 handlers exist, so these buffers consume at most 2 MiB.
+    wbufsize=64*1024
     server_version='VeldPool/1';sys_version=''
+    def setup(self):
+        super().setup()
+        self.requests_remaining=16
     def log_message(self,*args):pass # never log tokens, request bodies or private addresses
     def security_headers(self):
         self.send_header('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
@@ -74,6 +84,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header('Connection','close');self.end_headers();self.wfile.write(body);self.close_connection=True
     def reply(self,code,value):
         body=encode(value)
+        self.requests_remaining-=1
+        # Only a successful, independently authenticated account operation can
+        # retain a connection. Authentication is repeated for every request;
+        # never carry an account identity or token between requests. Anonymous
+        # routes, malformed requests, refusals and overload always close.
+        reuse=(code==200 and value.get('ok') is True and self.command=='POST'
+               and self.path in ('/v1/work','/v1/submit','/v1/account','/v1/history')
+               and self.headers.get('Connection','').lower()=='keep-alive'
+               and self.requests_remaining>0)
         self.send_response(code)
         self.security_headers()
         origin=self.headers.get('Origin')
@@ -84,8 +103,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin',origin)
             self.send_header('Vary','Origin')
         for key,value in {'Content-Type':'application/json','Content-Length':str(len(body)),
-                          'Connection':'close'}.items():self.send_header(key,value)
-        self.end_headers();self.wfile.write(body);self.close_connection=True
+                          'Connection':'keep-alive' if reuse else 'close'}.items():self.send_header(key,value)
+        self.end_headers();self.wfile.write(body);self.wfile.flush();self.close_connection=not reuse
+        if reuse:self.connection.settimeout(2)
     def coordinator_request(self,action,payload):
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
             connection.settimeout(15);connection.connect(self.server.ipc)
@@ -93,6 +113,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with connection.makefile('rb') as file:return decode(file.readline(16385))
     def do_POST(self):
         try:
+            self.connection.settimeout(10)
             require(self.path in ('/v1/register','/v1/work','/v1/submit','/v1/account','/v1/history','/v1/health'),'endpoint')
             require(len(self.headers.get_all('Content-Length',[]))==1 and not self.headers.get_all('Transfer-Encoding'),'HTTP framing')
             length=self.headers['Content-Length']
