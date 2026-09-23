@@ -35,6 +35,12 @@ int main(int argc,char** argv) {
     using namespace veld;
     if(pool::PrintBuildIdentity(argc,argv,"pool-verifier",false))return 0;
     if(argc!=1)return 2;
+    // Requests are sequential in this bounded subprocess. Retain only private
+    // scratch allocations; Initialize replaces the complete state for each
+    // proof. Verification still uses the light path and cannot evict a miner's
+    // dataset. Allocate lazily after schema and target validation.
+    std::optional<mining::VeldHashVMImpl<true>> verification_workspace;
+    std::optional<mining::VeldHashVM> scan_workspace;
     char frame[514];
     while (std::cin.getline(frame, sizeof(frame))) {
         const std::string line(frame);
@@ -51,7 +57,9 @@ int main(int argc,char** argv) {
             if (!DecodeCanonicalVeldTarget(header.bits, network)) throw std::runtime_error("network target");
             if (command == "hash" || command == "inspect") {
                 if (input >> extra) throw std::runtime_error("schema");
-                const auto proof = mining::VeldHashForVerification(bytes, height, network);
+                if (!verification_workspace) verification_workspace.emplace();
+                const auto proof = mining::VeldHashWithDataset<true>(
+                    bytes, height, network, &*verification_workspace);
                 if (!mining::g_veldhash_last_dataset_ok()) throw std::runtime_error("resource unavailable");
                 std::cout << "OK " << HashToHex(proof) << ' '
                           << HashToHex(header.GetTemplateWorkIdentity());
@@ -69,10 +77,12 @@ int main(int argc,char** argv) {
                 const uint64_t start = Number(start_text, 16), count = Number(count_text, 10);
                 if (count == 0 || count > 4096 || count - 1 > UINT64_MAX - start)
                     throw std::runtime_error("nonce range");
+                if (!scan_workspace) scan_workspace.emplace();
                 // Accounting target never replaces the network target in VeldHash.
                 for (uint64_t offset = 0; offset < count; ++offset) {
                     header.nonce = start + offset;
-                    const auto proof = mining::VeldHash(header.Serialize(), height, network);
+                    const auto proof = mining::VeldHashWithDataset<mining::VELD_DEFAULT_LIGHT_DATASET>(
+                        header.Serialize(), height, network, &*scan_workspace);
                     if (!mining::g_veldhash_last_dataset_ok()) throw std::runtime_error("resource unavailable");
                     // Preserve full solutions and genuine NMS proofs even
                     // when they do not meet the frozen accounting target.

@@ -141,11 +141,18 @@ int main() {
             random ^= random << 17;
             return random;
         };
-        for (unsigned i = 0; i < 50000; ++i) {
+        for (unsigned i = 0; i < 250000; ++i) {
             const uint64_t high = next();
             const uint64_t low = next();
             const U128 value = (U128(high) << 64) | low;
             CheckSqrt(value >> (i % 128));
+            // Exact square neighborhoods catch Newton termination/rounding
+            // errors, including UINT64_MAX roots and 128-bit intermediate sums.
+            const U128 square = U128(low) * low;
+            if (square) CheckSqrt(square - 1);
+            CheckSqrt(square);
+            CheckSqrt(square + 1);
+            CheckSqrt(U128(high & INT64_MAX) << veld::mining::VELD_FIXED_FRAC_BITS);
         }
         veld::mining::VeldIntegerDeterminismCheck();
         veld::mining::VeldDatasetLightKat();

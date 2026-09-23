@@ -3,6 +3,30 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## 3.2.5 - Mining computation efficiency
+
+- Use an eight-block ChaCha20 path when the CPU and operating system support
+  AVX2, retaining the existing SSE2 and scalar fallbacks.
+- Reduce integer square-root work with exact integer Newton iteration. Results
+  remain identical to the previous implementation, including rounding boundaries.
+- Use bounded native integer division on supported x86-64 compilers and inline
+  the VM instruction dispatch to reduce repeated computation overhead.
+- Reuse private scratch allocations in the sequential pool verifier and scan
+  helper, preserving full initialization, light verification and request bounds.
+- Apply the shared computation improvements to solo and pool mining and native
+  verification. No consensus, nonce allocation, reward or fee rules change.
+
+Offline performance results do not promise a particular live hashrate or block
+frequency. Release artifacts retain exact source and signed package identities.
+
+## 3.2.4 - Pool controls and interface stability
+
+- Add signed portal controls for pool start and stop using each device's saved settings.
+- Reduce Pool-tab hover flicker and align mobile navigation layouts.
+- Preserve mining mode, pool accounts and wallet state through signed updates.
+
+No consensus or economic rule changes.
+
 ## 3.2.3 - Pool performance and recovery
 
 - Reuse each pool mining thread's VeldHash scratch allocation, preserving exact
@@ -238,7 +262,7 @@ remain compatible.
 
 - Detect Windows physical cores within process affinity for worker defaults and
   presets, with a conservative fallback when topology is unavailable.
-- Apply the miner's 1–64 worker limit consistently in the CLI, Windows settings
+- Apply the miner's 1â€“64 worker limit consistently in the CLI, Windows settings
   and portal. Show and adjust the saved next-start count separately from live
   worker telemetry.
 - Test separate-process nonce searches and worker policies for SMT, non-SMT,

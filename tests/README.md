@@ -59,6 +59,26 @@ production release-build process.
 
 ## Native tests
 
+Mining optimization checks use the unchanged production parameters. Build
+`mining_chacha_bulk_tests.cpp` normally, with `VELD_MINING_DISABLE_AVX2`, and
+with `VELD_MINING_SCALAR_CHACHA` to cover runtime dispatch and both fallbacks.
+It compares against the preserved scalar stream across counter wrap, unaligned
+buffers, vector/tail boundaries and simultaneous first dispatch. A forced
+fallback build is not a test on physically older CPU hardware.
+
+`mining_primitive_tests.cpp` additionally compares integer square roots against
+the preserved restoring algorithm over the full 128-bit input domain samples,
+perfect-square neighbors and the actual Q24 input range. `mining_hash_vectors.cpp`
+checks the 28 frozen released full-size VeldHash vectors. Keep all three public
+profile definitions and never shrink the dataset to measure production performance.
+
+`mining_benchmark.cpp --path vm` exercises the retained VM loop used by solo
+workers; `--path pool` uses the pool's workspace-aware canonical hash entry point;
+`--path fresh` uses a new workspace for each hash. Compare alternating baseline
+and candidate runs with identical nonce sequences and checksum equality. Record
+background load and compiler identity. These offline paths neither acquire
+public pool leases nor submit shares, transactions or blocks.
+
 Use a C++20 compiler, the dependencies in [BUILDING.md](../BUILDING.md), and
 an output directory outside the checkout. For example:
 
@@ -192,3 +212,17 @@ Distinguish source checks, native execution, browser rendering, and release
 build validation. A skipped platform or unavailable dependency is an unrun
 check, not a passing result. See [CONTRIBUTING.md](../CONTRIBUTING.md) for
 consensus-boundary and compatibility expectations.
+## Mining performance follow-up
+
+Compile `mining_primitive_tests.cpp` and `mining_hash_vectors.cpp` with
+`VELD_MINING_PORTABLE_DIVISION` to exercise the portable integer-division path
+alongside the default guarded native path. Both must retain identical results.
+The native division guard requires a 64-bit divisor greater than the high word
+of its 128-bit dividend; larger roots or quotients use portable arithmetic.
+
+`python tests/pool_verifier_reuse_tests.py --binary PATH` tests repeated frozen
+hash vectors, inspection, rejected requests and recovery against the native
+`veld-pool-work` helper. `pool_verifier_scan_tests.py` additionally interleaves
+full-size scans and light verification in the same process, including maximum
+nonces. These checks use real hashing and private stdin/stdout. They do not
+contact a pool, earn rewards or establish mining/payment end-to-end operation.

@@ -13,11 +13,16 @@ int main(int argc, char** argv) {
     unsigned hashes = 128;
     unsigned trials = 1;
     bool profile = false;
+    std::string path = "vm";
     try {
         for (int i = 1; i < argc; ++i) {
             const std::string option = argv[i];
             if (option == "--profile") {
                 profile = true;
+            } else if (option == "--path" && i + 1 < argc) {
+                path = argv[++i];
+                if (path != "vm" && path != "pool" && path != "fresh")
+                    throw std::invalid_argument("invalid hash path");
             } else if ((option == "--workers" || option == "--hashes" || option == "--trials") &&
                        i + 1 < argc) {
                 const std::string value = argv[++i];
@@ -40,7 +45,7 @@ int main(int argc, char** argv) {
     } catch (const std::exception& error) {
         std::cerr << error.what()
                   << "\nusage: mining_benchmark [--workers 1..64] [--hashes 1..4096] "
-                     "[--trials 1..20] [--profile]\n";
+                     "[--trials 1..20] [--profile] [--path vm|pool|fresh]\n";
         return 2;
     }
 #if !defined(VELD_MAINNET_POW) || defined(VELD_LIGHT_VERIFY) || defined(VELD_TEST_DATASET_BYTES)
@@ -91,8 +96,22 @@ int main(int argc, char** argv) {
                     };
                     write(68, 1'788'134'400ULL, 8);
                     write(76, bits, 4);
+                    CanonicalPowTarget target;
+                    if (!DecodeCanonicalVeldTarget(bits, target)) {
+                        sample.ok = false;
+                        return;
+                    }
                     for (unsigned n = 0; n < hashes; ++n) {
                         write(80, 0xfedcba9876540000ULL + worker + uint64_t(n) * workers, 8);
+                        if (path != "vm") {
+                            sample.outputs[n] = VeldHashWithDataset<false>(
+                                header, height, target, path == "pool" ? &vm : nullptr);
+                            if (!g_veldhash_last_dataset_ok()) {
+                                sample.ok = false;
+                                return;
+                            }
+                            continue;
+                        }
                         SHA256 sha;
                         sha.update(header.data(), header.size());
                         const auto seed = sha.digest();
@@ -144,7 +163,7 @@ int main(int argc, char** argv) {
             finalize_ms += sample.finalize_ms;
         }
         std::cout << std::fixed << std::setprecision(3) << "{\"trial\":" << trial
-                  << ",\"workers\":" << workers << ",\"hashes\":" << uint64_t(workers) * hashes
+                  << ",\"path\":\"" << path << "\",\"workers\":" << workers << ",\"hashes\":" << uint64_t(workers) * hashes
                   << ",\"seconds\":" << seconds
                   << ",\"hashes_per_second\":" << (uint64_t(workers) * hashes / seconds)
                   << ",\"dataset_build_ms\":" << dataset_ms << ",\"dataset_bytes\":" << DATASET_SIZE

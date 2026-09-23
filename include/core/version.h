@@ -27,8 +27,8 @@ namespace veld {
 // Canonical runtime/package release identity. The signed package-manifest
 // generator reads CLIENT_VERSION directly from this header, and the release
 // gate requires every launcher/RPC/P2P identity to agree with it.
-inline constexpr const char* CLIENT_VERSION = "3.2.4";
-inline constexpr const char* CLIENT_USER_AGENT = "/Veld:3.2.4/";
+inline constexpr const char* CLIENT_VERSION = "3.2.5";
+inline constexpr const char* CLIENT_USER_AGENT = "/Veld:3.2.5/";
 
 // Deployment-role identity is deliberately separate from consensus identity.
 // VELD_PUBLIC_TESTNET preserves the July genesis, address encoding, and
@@ -38,7 +38,7 @@ inline constexpr const char* CLIENT_USER_AGENT = "/Veld:3.2.4/";
 // role-bound datadir. Transport/storage identity and user-facing labels are
 // separate as well.
 inline constexpr const char* PUBLIC_TESTNET_WARNING =
-    "PUBLIC TESTNET — DISPOSABLE — NO VALUE — NO BALANCE/KEY MIGRATION";
+    "PUBLIC TESTNET â€” DISPOSABLE â€” NO VALUE â€” NO BALANCE/KEY MIGRATION";
 
 #if defined(VELD_PUBLIC_TESTNET)
 inline constexpr const char* DEPLOYMENT_ROLE = "public-testnet";

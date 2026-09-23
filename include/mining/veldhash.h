@@ -403,7 +403,7 @@ inline ExpensivePowBudget& GlobalExpensivePowBudget() {
 //   * multiplication divides the signed 128-bit product by 2^24, truncating
 //     toward zero (the C++17 signed-division rule);
 //   * square root is the floor of sqrt(raw_q24 * 2^24), computed by a
-//     bit-by-bit unsigned 128-bit algorithm;
+//     exact unsigned integer algorithm;
 //   * register serialization is the exact two's-complement 64-bit object
 //     representation, guarded by static assertions.
 //
@@ -459,23 +459,38 @@ inline int64_t VeldFixedMul(int64_t a, int64_t b) {
 
 inline uint64_t VeldIntegerSqrt128(unsigned __int128 value) {
     if (value == 0) return 0;
-    unsigned __int128 result = 0;
     const uint64_t high = static_cast<uint64_t>(value >> 64);
     const unsigned top_bit = high != 0
         ? 127u - static_cast<unsigned>(std::countl_zero(high))
         : 63u - static_cast<unsigned>(std::countl_zero(static_cast<uint64_t>(value)));
-    // Start at the same highest power of four without shifting through leading zeros.
-    unsigned __int128 bit = static_cast<unsigned __int128>(1) << (top_bit & ~1u);
-    while (bit != 0) {
-        if (value >= result + bit) {
-            value -= result + bit;
-            result = (result >> 1) + bit;
-        } else {
-            result >>= 1;
+    // Integer Newton iteration starts strictly above sqrt(value) and decreases
+    // to its floor. Stop at the first non-decrease (which also avoids the
+    // floor/ceil cycle immediately below a perfect square). All arithmetic is
+    // unsigned integer; no host floating-point behavior enters consensus.
+    // The initial estimate can be 2^64, so retain 128 bits until returning.
+    unsigned __int128 root = static_cast<unsigned __int128>(1) << ((top_bit + 2) / 2);
+    for (;;) {
+        unsigned __int128 quotient;
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__)) && \
+    !defined(VELD_MINING_PORTABLE_DIVISION)
+        const uint64_t divisor = static_cast<uint64_t>(root);
+        // x86's 128/64 divide is exact only when the quotient fits in 64 bits.
+        // high < divisor proves both that bound and a nonzero divisor. Retain
+        // the portable operation for the initial 2^64 root and wide quotients.
+        if ((root >> 64) == 0 && high < divisor) {
+            uint64_t q, remainder;
+            __asm__("div{q %4| %4}" : "=a"(q), "=d"(remainder)
+                    : "a"(static_cast<uint64_t>(value)), "d"(high), "r"(divisor) : "cc");
+            quotient = q;
+        } else
+#endif
+        {
+            quotient = value / root;
         }
-        bit >>= 2;
+        const unsigned __int128 next = (root + quotient) >> 1;
+        if (next >= root) return static_cast<uint64_t>(root);
+        root = next;
     }
-    return static_cast<uint64_t>(result);
 }
 
 inline int64_t VeldFixedAbs(int64_t value) {
@@ -1166,7 +1181,10 @@ private:
         return (size_t)((addr_base >> 3) & mask) & (SCRATCHPAD_WORDS - 1);
     }
 
-    void ExecuteInstruction(const VeldInstruction& instr, uint32_t& pc) {
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((always_inline))
+#endif
+    inline void ExecuteInstruction(const VeldInstruction& instr, uint32_t& pc) {
         uint64_t& dst = regs_[instr.dst & (REGISTER_COUNT - 1)];
         uint64_t  src = regs_[instr.src & (REGISTER_COUNT - 1)];
         size_t    addr = MemAddr(dst ^ src, instr.mem_mask);
