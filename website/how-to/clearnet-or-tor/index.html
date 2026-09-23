@@ -12,14 +12,14 @@
   <header class="guide-hero">
     <div class="breadcrumb"><a href="/how-to/">How-to</a> / Network</div><h1>Choose Clearnet or Tor-only networking</h1>
     <p class="lede">Understand what each transport changes, choose whether to attempt inbound reachability, and verify the mode after the next node start.</p>
-    <div class="guide-actions"><span class="guide-meta">Privacy guide · About 6 minutes</span></div>
+    <div class="guide-actions"><span class="guide-meta">Privacy guide Â· About 6 minutes</span></div>
     <nav class="guide-progress" aria-label="Guide progress"><a class="progress-item" href="#compare"><span class="progress-index">01</span><span class="progress-label">Compare</span></a><a class="progress-item" href="#choose"><span class="progress-index">02</span><span class="progress-label">Choose</span></a><a class="progress-item" href="#verify"><span class="progress-index">03</span><span class="progress-label">Verify</span></a></nav>
   </header>
   <div class="shell"><article class="article">
     <section class="content-section" id="compare">
       <p class="stage-label">01 / Compare</p><h2>Decide which tradeoff fits</h2>
       <dl class="compare">
-        <div class="compare-row"><dt>Clearnet</dt><dd>The default. Veld connects directly to peers, so those peers can see the node’s public IP. It normally connects faster and can accept inbound P2P traffic when the network permits it.</dd></div>
+        <div class="compare-row"><dt>Clearnet</dt><dd>The default. Veld connects directly to peers, so those peers can see the nodeâ€™s public IP. It normally connects faster and can accept inbound P2P traffic when the network permits it.</dd></div>
         <div class="compare-row"><dt>Tor-only</dt><dd>Routes Veld peer traffic through Tor to reduce direct IP exposure. Inbound clearnet mapping is disabled while this mode is selected.</dd></div>
         <div class="compare-row"><dt>Clearnet outbound only</dt><dd>Uses direct outbound connections without requesting a router mapping. The node can validate, relay, and mine with outbound peers.</dd></div>
       </dl>
@@ -42,19 +42,19 @@
       <p>Open the <strong>Network</strong> page and read the Transport field after peers connect.</p>
       <div class="status-list">
         <div class="status-row"><strong>Tor only</strong><p>Peer traffic is using the Tor transport.</p></div>
-        <div class="status-row"><strong>Clearnet · automatic mapping</strong><p>The router mapping request succeeded.</p></div>
-        <div class="status-row"><strong>Clearnet · inbound verified</strong><p>An inbound clearnet peer has confirmed reachability.</p></div>
-        <div class="status-row"><strong>Clearnet · awaiting inbound</strong><p>Reachability was requested, but no inbound peer has confirmed it yet.</p></div>
-        <div class="status-row"><strong>Clearnet · outbound only</strong><p>The node is operating with outbound peers and no verified inbound path.</p></div>
+        <div class="status-row"><strong>Clearnet Â· automatic mapping</strong><p>The router mapping request succeeded.</p></div>
+        <div class="status-row"><strong>Clearnet Â· inbound verified</strong><p>An inbound clearnet peer has confirmed reachability.</p></div>
+        <div class="status-row"><strong>Clearnet Â· awaiting inbound</strong><p>Reachability was requested, but no inbound peer has confirmed it yet.</p></div>
+        <div class="status-row"><strong>Clearnet Â· outbound only</strong><p>The node is operating with outbound peers and no verified inbound path.</p></div>
       </div>
       <ul class="checklist"><li>Direct peer count is nonzero.</li><li>The displayed transport matches the saved preference.</li><li>Chain height begins advancing or remains at the exact tip.</li><li>Mining work admission sees connected peers if mining is enabled.</li></ul>
     </section>
 
-    <section class="content-section"><h2>Common questions</h2><div class="trouble"><details><summary>Do I need inbound peers to mine?</summary><p>No. A node with healthy outbound peers can validate and mine. Inbound reachability improves network connectivity but is not required for normal operation.</p></details><details><summary>Why can’t I change Tor while the node runs?</summary><p>The app binds transport configuration to an app-managed process start so peer sockets cannot silently change underneath a running node.</p></details><details><summary>Tor preparation failed</summary><p>Review the local app log. You can stop the node, select Clearnet, and start again while investigating Tor setup.</p></details></div></section>
+    <section class="content-section"><h2>Common questions</h2><div class="trouble"><details><summary>Do I need inbound peers to mine?</summary><p>No. A node with healthy outbound peers can validate and mine. Inbound reachability improves network connectivity but is not required for normal operation.</p></details><details><summary>Why canâ€™t I change Tor while the node runs?</summary><p>The app binds transport configuration to an app-managed process start so peer sockets cannot silently change underneath a running node.</p></details><details><summary>Tor preparation failed</summary><p>Review the local app log. You can stop the node, select Clearnet, and start again while investigating Tor setup.</p></details></div></section>
     <nav class="guide-nav" aria-label="Guide navigation"><a href="/how-to/start-cpu-mining/"><span>Previous guide</span><strong>Start CPU mining</strong></a><a class="next-guide" href="/how-to/no-peers-or-mining/"><span>Next guide</span><strong>Fix no peers or mining waiting</strong></a></nav>
-    <p class="article-foot">Source-reviewed <time datetime="2026-09-13">13 September 2026</time> for Veld Mainnet and Windows 3.2.4. Checked against the current source for the transport, inbound mapping, firewall, and Network-page states in Veld Node.</p>
+    <p class="article-foot">Source-reviewed <time datetime="2026-09-13">13 September 2026</time> for Veld Mainnet and Windows 3.2.5. Checked against the current source for the transport, inbound mapping, firewall, and Network-page states in Veld Node.</p>
   </article></div>
 </main>
-<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+<footer><div class="footer-inner"><div>Veld Â· Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
 </body>
 </html>
