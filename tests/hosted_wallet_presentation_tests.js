@@ -6,10 +6,11 @@ const native=source.split('R"HTMLEOF(')[1].split(')HTMLEOF"')[0];
 const overlay=fs.readFileSync(path.join(dir,'presentation.conf'),'utf8');
 let rendered=native,count=0;
 for(const match of overlay.matchAll(/^sub_filter '([^']*)' '([^']*)';$/gm)){
- assert(['</head>','</body>','<span>Earnings</span>'].includes(match[1]),'Only static insertion/label rules are permitted');
+ assert(['</head>','</body>','<span>Earnings</span>','<meta name="theme-color" content="#EFEFEF">'].includes(match[1]),'Only static insertion/label/theme metadata rules are permitted');
  rendered=rendered.split(match[1]).join(match[2]);count++;
 }
-assert.equal(count,3);
+assert.equal(count,4);
+assert(overlay.includes('content="#070B08"><meta name="color-scheme" content="dark light">'), 'Legacy wallet chrome starts dark before scripts load');
 const scripts=html=>[...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(m=>m[1]).filter(Boolean);
 assert.deepEqual(scripts(rendered),scripts(native),'Hosted overlay must never rewrite native JavaScript');
 for(const text of scripts(rendered))new vm.Script(text);

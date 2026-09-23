@@ -383,6 +383,7 @@ PORTAL_HTML = r"""<!doctype html>
 
 .portal-more .pool-how-to{display:flex;align-items:center;justify-content:center;gap:6px;color:var(--text);text-decoration:none;border:1px solid var(--line);border-radius:10px;min-height:48px}
 .pool-nav-icon{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;margin-right:9px}.pool-machine{margin-bottom:16px}.pool-machine p{margin:8px 0 0}
+.portal-more .pool-nav-icon{margin:0}.portal-more [data-more-page="pool"] span{display:block;align-self:center}
 </style>
 </head>
 <body>

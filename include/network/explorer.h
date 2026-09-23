@@ -17,6 +17,7 @@
 #include "../network/chainparams.h"
 #include "../network/trusted_proxy.h"
 #include "explorer_icons.h"
+#include "ui_pool_overview.h"
 #include "explorer_prevouts.h"
 #include "explorer_history_budget.h"
 #include "recent_lookup_progress.h"
@@ -6623,6 +6624,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
   setInterval(refresh,1000);refresh();
 })();
 </script>)VLDPOOL";
+        page += std::string("<style>") + VELD_POOL_OVERVIEW_CSS + "</style><script nonce=\"__CSP_NONCE__\">" + VELD_POOL_OVERVIEW_JS + "</script>";
         return HttpResponse::HTML(page + ArcadeFoot());
     }
 

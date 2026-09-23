@@ -164,6 +164,27 @@
   }
 
   function initialize() {
+    var activity = document.getElementById('page-history');
+    if (activity) {
+      var load = activity.querySelector('[data-act-click="hd40f00e8"]');
+      if (load) load.remove();
+      var address = document.getElementById('h-addr');
+      if (address) {
+        address.setAttribute('aria-label', 'Activity address');
+        if (!address.hasAttribute('data-act-input')) {
+          var addressTimer = null;
+          address.addEventListener('input', function () {
+            clearTimeout(addressTimer);
+            addressTimer = setTimeout(function () {
+              var value = address.value.trim();
+              if (!value || /^[1-9A-HJ-NP-Za-km-z]{26,120}$/.test(value)) {
+                address.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+              }
+            }, 550);
+          });
+        }
+      }
+    }
     removeProjectedYield();
     var inactiveCopy = btcElement('bv-inactive-copy');
     if (inactiveCopy) inactiveCopy.remove();

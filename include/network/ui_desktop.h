@@ -9,7 +9,9 @@ static const char* DESKTOP_HTML = R"HTMLEOF(<!DOCTYPE html>
  colors from the system theme instead of the application's current
  theme, so veldSyncThemeColor() updates this tag with the wallet's
  active light/dark setting. -->
-<meta name="theme-color" content="#EFEFEF">
+<meta name="theme-color" content="#070B08">
+<meta name="color-scheme" content="dark light">
+<style>html{color-scheme:dark;background:#070B08}html[data-theme="light"]{color-scheme:light;background:#EFEFEF}</style>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <!-- `black-translucent` is the only style that gives a
  LIVE-updating status bar on iOS PWA. With `default`, iOS reads the
@@ -3450,9 +3452,8 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
   </div>
   <div class="card">
     <div class="filter-bar">
-      <input class="form-input" id="h-addr" placeholder="VELD address..." style="flex:1 1 180px;min-width:0" data-act-keydown="h318a56dd">
+      <input class="form-input" id="h-addr" aria-label="Activity address" placeholder="VELD address..." style="flex:1 1 180px;min-width:0" data-act-keydown="h318a56dd" data-act-input="hhistory_address">
       <input class="form-input" id="h-search" placeholder="Search TXID..." style="flex:1 1 140px;min-width:0" data-act-input="he46036ec">
-      <button class="btn btn-em btn-sm" data-act-click="hd40f00e8">Load</button>
     </div>
     <div class="tab-bar" id="h-filter-tabs" style="display:none">
       <div class="tab-btn active" data-act-click="h9289dcaa">All</div>
@@ -12849,6 +12850,14 @@ function loadOlderHistory() {
   }).then(function() { finishHistoryLoad(state); });
   return state.promise;
 }
+var historyAddressTimer = null;
+function queueHistoryAddress() {
+  clearTimeout(historyAddressTimer);
+  historyAddressTimer = setTimeout(function() {
+    var value = document.getElementById('h-addr').value.trim();
+    if (!value || isValidVeldAddr(value)) loadHistory();
+  }, 550);
+}
 function loadHistory(autoRefresh) {
   var addr = document.getElementById('h-addr').value.trim();
   var prior = historyLoadState;
@@ -12856,7 +12865,7 @@ function loadHistory(autoRefresh) {
   if (prior && prior.address === addr && historyLoadIsCurrent(prior)) {
     if (prior.busy) return prior.promise;
     // Do not interrupt browsing a partial history with the periodic refresh.
-    // Manual Load always starts a fresh read, including after an error.
+    // Address entry or Enter starts a fresh read, including after an error.
     if (autoRefresh && (prior.hasMore || Date.now() - prior.started < 30000)) return;
   }
   var state = {address:addr, entries:[], cursor:'', cursors:new Set(), txids:new Set(), pages:0,
@@ -17080,7 +17089,6 @@ if ('serviceWorker' in navigator) {
       h4d8b441b: function(event){ clearSend() },
       ha921b10f: function(event){ sUtxoPage(-1) },
       hc61c436b: function(event){ sUtxoPage(1) },
-      hd40f00e8: function(event){ loadHistory() },
       hhistory_older: function(event){ loadOlderHistory() },
       hreb27cast: function(event){ doRebroadcastTx.call(this, event) },
       hconsolidate: function(event){ doConsolidateUtxos() },
@@ -17152,6 +17160,7 @@ if ('serviceWorker' in navigator) {
       h9edc4567: function(event){ window.location='/' },
     },
     input: {
+      hhistory_address: function(event){ queueHistoryAddress() },
       hbv_amt: function(event){ try { bvCompute(); } catch(_){} },
       hbv_lp_amt: function(event){ try { bvLpCompute(); } catch(_){} },
       hbv_seed_compute: function(event){ try { bvSeedCompute(); } catch(_){ } },
