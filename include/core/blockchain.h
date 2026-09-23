@@ -4926,11 +4926,6 @@ public:
 
         mining::ExpensivePowCharge forward_source_charge;
         mining::ExpensivePowCharge forward_global_charge;
-        const auto credit_forward_pow = [&]() {
-            if (!extends_current_tip || known_side_retry) return;
-            forward_global_charge.CreditValidatedForwardBlock(derived_height);
-            forward_source_charge.CreditValidatedForwardBlock(derived_height);
-        };
         if (!skip_pow && !skip_pow_hash_only && !known_side_retry) {
             std::optional<mining::ExpensivePowLease> source_pow_lease;
             if (pow_admission.source_budget) {
@@ -5303,6 +5298,11 @@ public:
         const bool extends_current_tip = chain_.empty()
             ? HashIsZero(blk.header.prev_block_hash)
             : (blk.header.prev_block_hash == chain_.back().GetHash());
+        const auto credit_forward_pow = [&]() {
+            if (!extends_current_tip || known_side_retry) return;
+            forward_global_charge.CreditValidatedForwardBlock(derived_height);
+            forward_source_charge.CreditValidatedForwardBlock(derived_height);
+        };
         if (extends_current_tip && module_precommit_validator_) {
             admission_test_phase("module_preflight_start");
             uint64_t projected_supply = total_supply_units_.load();
