@@ -3,6 +3,22 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## 3.2.6 - Initial block download efficiency
+
+- Let fully validated and committed forward blocks restore only their own
+  peer proof-validation allowance. Invalid, deferred and side-chain work retain
+  bounded admission; validation and verification concurrency remain unchanged.
+- Request the next complete block batch after verified progress without waiting
+  for the stall timeout. Late duplicates cannot erase the download cursor.
+- Retain a bounded solicited block batch during initial download, avoiding
+  unnecessary drops while preserving per-peer byte and global queue limits.
+- Preserve full historical validation, mining admission, signed snapshot
+  quarantine and all consensus and economic rules.
+
+The Windows production-profile candidate completed a fresh mainnet full download
+with snapshots disabled. Timing depends on hardware, peers and network conditions;
+the release qualification records exact binaries and observed results.
+
 ## 3.2.5 - Mining computation efficiency
 
 - Use an eight-block ChaCha20 path when the CPU and operating system support
