@@ -71,15 +71,24 @@ int main() {
         Check(First(original) == chain.TipCopy().GetHash(), "fresh connection starts with canonical tip");
         Hash256 unknown{}; unknown[0] = 12;
         server.TestRememberValidatedDownload(connection, unknown);
+        Check(connection.ValidatedDownloadCount() == 0,
+              "unknown body cannot grant continuation credit");
         Check(server.TestDownloadLocator(connection).payload == original.payload, "unknown cursor rejected");
         // A 92-block fork's exponential locator first matches at h192. Its
         // first 32-body response ends at h224, entirely shared history.
         const auto common = chain.GetBlock(224).GetHash();
         server.TestRememberValidatedDownload(connection, common);
+        Check(connection.ValidatedDownloadCount() == 1,
+              "locally validated body grants one continuation receipt");
+        server.TestRememberValidatedDownload(connection, common);
+        Check(connection.ValidatedDownloadCount() == 1,
+              "exact duplicate cannot multiply continuation receipts");
         Check(First(server.TestDownloadLocator(connection)) == common,
               "validated shared-history batch must advance download locator");
         const auto late = chain.GetBlock(223).GetHash();
         server.TestRememberValidatedDownload(connection, late);
+        Check(connection.ValidatedDownloadCount() == 1,
+              "lower history cannot multiply continuation receipts");
         const auto continued = server.TestDownloadLocator(connection);
         Check(First(continued) == common,
               "late near-tip duplicate cannot rewind validated download progress");
@@ -92,6 +101,8 @@ int main() {
         // payment reorganization exercises, not synthetic PoW-free branches.
         const auto higher = chain.GetBlock(227).GetHash();
         server.TestRememberValidatedDownload(connection,higher);
+        Check(connection.ValidatedDownloadCount() == 2,
+              "height jump counts one actual body rather than missing heights");
         Check(First(server.TestDownloadLocator(connection))==higher,
               "higher validated progress replaces lower shared-history cursor");
         server.TestRememberValidatedDownload(connection,common);
@@ -106,6 +117,8 @@ int main() {
               "download cursor never grants trusted peer-height evidence");
         const auto next_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         net::Connection replacement(next_fd, "127.0.0.1", 1);
+        Check(replacement.ValidatedDownloadCount() == 0,
+              "reconnection cannot inherit continuation receipts");
         Check(First(server.TestDownloadLocator(replacement)) == chain.TipCopy().GetHash(),
               "reconnection owns a fresh cursor");
         std::cout << "PASS bounded validated download continuation; synthetic headers, no network/PoW claim\n";

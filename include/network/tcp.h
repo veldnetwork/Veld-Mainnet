@@ -104,6 +104,7 @@ public:
     void RememberValidatedDownload(const Hash256& hash, uint64_t height) {
         std::lock_guard<std::mutex> lock(download_cursor_mutex_);
         if (!download_cursor_ || height > download_cursor_height_) {
+            ++validated_download_count_;
             download_cursor_ = hash;
             download_cursor_height_ = height;
             download_fallback_cursor_.reset();
@@ -118,6 +119,11 @@ public:
     std::array<std::optional<Hash256>, 2> ValidatedDownloadCursors() const {
         std::lock_guard<std::mutex> lock(download_cursor_mutex_);
         return {download_cursor_, download_fallback_cursor_};
+    }
+
+    uint64_t ValidatedDownloadCount() const {
+        std::lock_guard<std::mutex> lock(download_cursor_mutex_);
+        return validated_download_count_;
     }
 
     using CloseReason = connection_diagnostics::Reason;
@@ -870,6 +876,7 @@ private:
     std::optional<Hash256> download_cursor_;
     std::optional<Hash256> download_fallback_cursor_;
     uint64_t download_cursor_height_{0};
+    uint64_t validated_download_count_{0};
 
     static uint64_t NextIdentity_() {
         static std::atomic<uint64_t> next{1};
@@ -6847,11 +6854,13 @@ private:
             }
 
             if (just_became_ready) {
+                const auto downloaded = conn.ValidatedDownloadCount();
                 if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                     const auto now = std::chrono::steady_clock::now();
                     ps.last_getblocks = now;
                     ps.last_ibd_progress = now;
                     ps.ibd_observed_height = chain_.Height();
+                    ps.ibd_requested_download_count = downloaded;
                 }
                 conn.TrySend(P2PMessage(magic_, MessageType::MEMPOOL));
             }
@@ -6945,11 +6954,13 @@ private:
             }
 
             if (just_became_ready) {
+                const auto downloaded = conn.ValidatedDownloadCount();
                 if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                     const auto now = std::chrono::steady_clock::now();
                     ps.last_getblocks = now;
                     ps.last_ibd_progress = now;
                     ps.ibd_observed_height = chain_.Height();
+                    ps.ibd_requested_download_count = downloaded;
                 }
                 P2PMessage mempool_req(magic_, MessageType::MEMPOOL);
                 conn.TrySend(mempool_req);
@@ -8893,17 +8904,20 @@ private:
         }
         if (ps.handshake_done) {
             bool in_ibd = !ibd_complete_flag_.load();
+            const auto downloaded = conn.ValidatedDownloadCount();
             auto ms_since_gb = std::chrono::duration_cast<std::chrono::milliseconds>(now - ps.last_getblocks).count();
             bool should_request = false;
             if (in_ibd) {
                 should_request = IbdGetBlocksRetryDue(
-                    ps, chain_.Height(), now);
+                    ps, chain_.Height(), now) ||
+                    IbdGetBlocksContinuationDue(ps, downloaded, now);
             } else {
                 if (ms_since_gb >= 5000) should_request = true;
             }
             if (should_request) {
                 if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                     ps.last_getblocks = now;
+                    ps.ibd_requested_download_count = downloaded;
                 }
             }
         }

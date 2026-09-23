@@ -72,6 +72,7 @@ struct PeerState {
     tp_t last_ibd_progress    = clock_t::now();
     tp_t last_mempool_req     = clock_t::now();
     uint64_t ibd_observed_height = 0;
+    uint64_t ibd_requested_download_count = 0;
     // Inbound MEMPOOL inventory requests are substantially more expensive than
     // their empty wire payload suggests: they revalidate stateful roots and can
     // walk a large fee index.  Zero means this peer has not yet been served.
@@ -94,6 +95,19 @@ inline bool IbdGetBlocksRetryDue(PeerState& state,
     }
     return now - state.last_getblocks >= IBD_GETBLOCKS_RETRY_IDLE &&
            now - state.last_ibd_progress >= IBD_GETBLOCKS_RETRY_IDLE;
+}
+
+// Continue only after a complete batch of distinct, increasing, locally
+// validated bodies from this connection. Wire claims, queue admission and
+// another peer's chain progress cannot trigger prefetch. Keep a bounded send
+// cadence even when old, byte-exact known bodies validate cheaply.
+inline bool IbdGetBlocksContinuationDue(const PeerState& state,
+                                        uint64_t validated_count,
+                                        PeerState::tp_t now) {
+    return validated_count >= state.ibd_requested_download_count &&
+           validated_count - state.ibd_requested_download_count >=
+               IBD_GETBLOCKS_BATCH_BLOCKS &&
+           now - state.last_getblocks >= std::chrono::seconds(1);
 }
 
 using PeerStatePtr = std::shared_ptr<PeerState>;

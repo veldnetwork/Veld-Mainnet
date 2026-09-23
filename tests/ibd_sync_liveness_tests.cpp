@@ -58,6 +58,22 @@ int main() {
     Check(IbdGetBlocksRetryDue(peer, 88, final_progress + 10s),
           "sync resumes after a genuine height stall");
 
+    peer.last_getblocks = start;
+    peer.ibd_requested_download_count = 100;
+    using veld::net::IbdGetBlocksContinuationDue;
+    Check(!IbdGetBlocksContinuationDue(peer, 131, start + 2s),
+          "partial verified batch cannot amplify requests");
+    Check(!IbdGetBlocksContinuationDue(peer, 132, start + 999ms),
+          "cheap known-body processing still has a bounded request cadence");
+    Check(IbdGetBlocksContinuationDue(peer, 132, start + 1s),
+          "fully verified batch continues before the ten-second stall timer");
+    peer.ibd_requested_download_count = 132;
+    peer.last_getblocks = start + 1s;
+    Check(!IbdGetBlocksContinuationDue(peer, 132, start + 5s),
+          "one completed batch cannot request multiple suffixes");
+    Check(!IbdGetBlocksContinuationDue(peer, 99, start + 5s),
+          "counter rollback cannot underflow into continuation credit");
+
     std::cout << "IBD_SYNC_LIVENESS: PASS (" << checks << " checks)\n";
     return 0;
 }

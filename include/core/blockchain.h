@@ -4924,6 +4924,13 @@ public:
             }
         }
 
+        mining::ExpensivePowCharge forward_source_charge;
+        mining::ExpensivePowCharge forward_global_charge;
+        const auto credit_forward_pow = [&]() {
+            if (!extends_current_tip || known_side_retry) return;
+            forward_global_charge.CreditValidatedForwardBlock(derived_height);
+            forward_source_charge.CreditValidatedForwardBlock(derived_height);
+        };
         if (!skip_pow && !skip_pow_hash_only && !known_side_retry) {
             std::optional<mining::ExpensivePowLease> source_pow_lease;
             if (pow_admission.source_budget) {
@@ -4953,6 +4960,11 @@ public:
                     return defer("pow_dataset_unavailable");
                 return reject("pow_verify_failed");
             }
+            // Keep rate charges through scripts, module preflight and durable
+            // publication, but release verifier slots before nested NMS work.
+            if (source_pow_lease)
+                forward_source_charge = source_pow_lease->TakeForwardCharge();
+            forward_global_charge = global_pow_lease->TakeForwardCharge();
         }
 
         //  Hardening. Intra-block
@@ -5408,7 +5420,10 @@ public:
                     success = false;
                 }
             }
-            if (success) UpdateNmsTallyAfterCommit_(blk);
+            if (success) {
+                UpdateNmsTallyAfterCommit_(blk);
+                credit_forward_pow();
+            }
             if (success && pow_admission.RequiresLocalWorkAdmission())
                 local_handoff_reset.retain = true;
             return success;
@@ -5701,6 +5716,7 @@ public:
                 if (!from_reorg_path) {
                     for (const auto& cb_block : blocks_to_persist)
                         UpdateNmsTallyAfterCommit_(cb_block);
+                    if (success) credit_forward_pow();
                 } else if (!reorg_publication_uncertain()) {
                     finalize_successful_reorg();
                 }
@@ -5767,6 +5783,7 @@ public:
                 finalize_successful_reorg();
             }
         }
+        if (success && !from_reorg_path) credit_forward_pow();
         if (success && pow_admission.RequiresLocalWorkAdmission())
             local_handoff_reset.retain = true;
         return success;

@@ -57,20 +57,28 @@ struct ExpensivePowBudgetStats {
 };
 
 class ExpensivePowBudget;
+class ExpensivePowCharge;
 
 class ExpensivePowLease {
 public:
     ExpensivePowLease() = default;
-    explicit ExpensivePowLease(ExpensivePowBudget* owner) : owner_(owner) {}
+    explicit ExpensivePowLease(ExpensivePowBudget* owner,
+            std::optional<std::chrono::steady_clock::time_point> charge = {})
+        : owner_(owner), forward_charge_(charge) {}
     ExpensivePowLease(const ExpensivePowLease&) = delete;
     ExpensivePowLease& operator=(const ExpensivePowLease&) = delete;
     ExpensivePowLease(ExpensivePowLease&& other) noexcept
-        : owner_(other.owner_) { other.owner_ = nullptr; }
+        : owner_(other.owner_), forward_charge_(other.forward_charge_) {
+        other.owner_ = nullptr;
+        other.forward_charge_.reset();
+    }
     ExpensivePowLease& operator=(ExpensivePowLease&& other) noexcept;
     ~ExpensivePowLease();
     explicit operator bool() const noexcept { return owner_ != nullptr; }
+    ExpensivePowCharge TakeForwardCharge() noexcept;
 private:
     ExpensivePowBudget* owner_{nullptr};
+    std::optional<std::chrono::steady_clock::time_point> forward_charge_;
 };
 
 class ExpensivePowBudget {
@@ -95,7 +103,8 @@ public:
                     observed, observed + 1,
                     std::memory_order_acq_rel,
                     std::memory_order_relaxed)) {
-                if (!ReserveExternalStart_(use)) {
+                std::optional<std::chrono::steady_clock::time_point> charge;
+                if (!ReserveExternalStart_(use, charge)) {
                     in_flight_.fetch_sub(1, std::memory_order_acq_rel);
                     refused_.fetch_add(1, std::memory_order_relaxed);
                     return std::nullopt;
@@ -107,7 +116,7 @@ public:
                            peak, observed + 1,
                            std::memory_order_relaxed,
                            std::memory_order_relaxed)) {}
-                return ExpensivePowLease(this);
+                return ExpensivePowLease(this, charge);
             }
         }
         refused_.fetch_add(1, std::memory_order_relaxed);
@@ -124,10 +133,12 @@ public:
 
 private:
     friend class ExpensivePowLease;
+    friend class ExpensivePowCharge;
     void Release() noexcept {
         in_flight_.fetch_sub(1, std::memory_order_acq_rel);
     }
-    bool ReserveExternalStart_(ExpensivePowUse use) noexcept {
+    bool ReserveExternalStart_(ExpensivePowUse use,
+            std::optional<std::chrono::steady_clock::time_point>& charge) noexcept {
         const bool external = use == ExpensivePowUse::PeerBlock ||
             use == ExpensivePowUse::PeerNms ||
             use == ExpensivePowUse::RpcSubmit ||
@@ -142,6 +153,20 @@ private:
         }
         if (external_starts_ >= max_external_starts_) return false;
         ++external_starts_;
+        if (use == ExpensivePowUse::PeerBlock)
+            charge = external_window_started_;
+        return true;
+    }
+    bool CreditForwardProgress_(std::chrono::steady_clock::time_point window,
+                                uint64_t height) noexcept {
+        std::lock_guard<std::mutex> lock(external_work_mutex_);
+        // Reorgs, old history and repeated heights cannot replenish the work
+        // envelope. An old charge must never refund work in a newer window.
+        if (height <= credited_forward_height_) return false;
+        credited_forward_height_ = height;
+        if (window != external_window_started_ || external_starts_ == 0)
+            return false;
+        --external_starts_;
         return true;
     }
     const uint32_t maximum_;
@@ -150,6 +175,7 @@ private:
     std::mutex external_work_mutex_;
     std::chrono::steady_clock::time_point external_window_started_;
     uint32_t external_starts_{0};
+    uint64_t credited_forward_height_{0};
     std::atomic<uint32_t> in_flight_{0};
     std::atomic<uint32_t> peak_{0};
     std::atomic<uint64_t> attempts_{0};
@@ -157,12 +183,52 @@ private:
     std::atomic<uint64_t> refused_{0};
 };
 
+// A move-only receipt for one charged PeerBlock proof. Releasing the verifier
+// slot does not return its rate charge. Only a fully validated, durably
+// committed forward block may redeem this receipt, once. NMS, RPC, side-branch
+// replay, failures and deferred work do not obtain this privilege.
+class ExpensivePowCharge {
+public:
+    ExpensivePowCharge() = default;
+    ExpensivePowCharge(const ExpensivePowCharge&) = delete;
+    ExpensivePowCharge& operator=(const ExpensivePowCharge&) = delete;
+    ExpensivePowCharge(ExpensivePowCharge&& other) noexcept
+        : owner_(std::exchange(other.owner_, nullptr)), window_(other.window_) {}
+    ExpensivePowCharge& operator=(ExpensivePowCharge&& other) noexcept {
+        if (this != &other) {
+            owner_ = std::exchange(other.owner_, nullptr);
+            window_ = other.window_;
+        }
+        return *this;
+    }
+    bool CreditValidatedForwardBlock(uint64_t height) noexcept {
+        auto* owner = std::exchange(owner_, nullptr);
+        return owner && owner->CreditForwardProgress_(window_, height);
+    }
+private:
+    friend class ExpensivePowLease;
+    ExpensivePowCharge(ExpensivePowBudget* owner,
+                       std::chrono::steady_clock::time_point window)
+        : owner_(owner), window_(window) {}
+    ExpensivePowBudget* owner_{nullptr};
+    std::chrono::steady_clock::time_point window_{};
+};
+
+inline ExpensivePowCharge ExpensivePowLease::TakeForwardCharge() noexcept {
+    if (!owner_ || !forward_charge_) return {};
+    ExpensivePowCharge charge(owner_, *forward_charge_);
+    forward_charge_.reset();
+    return charge;
+}
+
 inline ExpensivePowLease& ExpensivePowLease::operator=(
         ExpensivePowLease&& other) noexcept {
     if (this != &other) {
         if (owner_) owner_->Release();
         owner_ = other.owner_;
+        forward_charge_ = other.forward_charge_;
         other.owner_ = nullptr;
+        other.forward_charge_.reset();
     }
     return *this;
 }
@@ -386,7 +452,10 @@ inline ExpensivePowBudget& GlobalExpensivePowBudget() {
     // rejection happens before acquisition, so aliases consume neither.
     // External callers also share a bounded replenishing work envelope.  The
     // semaphore alone only caps concurrency and would still permit an
-    // unbounded sequential NMS/block hashing stream.
+    // unbounded sequential NMS/invalid-block hashing stream. One charged
+    // PeerBlock proof may be credited after complete forward publication;
+    // valid history advances at validation speed rather than eight blocks
+    // per source per minute. Concurrency and all non-progress limits remain.
     static ExpensivePowBudget budget(2, 32, std::chrono::minutes(1));
     return budget;
 }
