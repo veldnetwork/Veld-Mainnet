@@ -126,6 +126,24 @@ public:
         return validated_download_count_;
     }
 
+    void NoteIbdGetBlocksRequest() {
+        std::lock_guard<std::mutex> lock(download_cursor_mutex_);
+        ibd_download_window_until_ = std::chrono::steady_clock::now() +
+                                    std::chrono::seconds(30);
+    }
+
+    bool HasIbdDownloadWindow() const {
+        if (IsInbound() || !HandshakeReady()) return false;
+        std::lock_guard<std::mutex> lock(download_cursor_mutex_);
+        return std::chrono::steady_clock::now() < ibd_download_window_until_;
+    }
+#ifdef VELD_TEST_HOOKS
+    void TestExpireIbdDownloadWindow() {
+        std::lock_guard<std::mutex> lock(download_cursor_mutex_);
+        ibd_download_window_until_ = {};
+    }
+#endif
+
     using CloseReason = connection_diagnostics::Reason;
     static constexpr size_t RECV_BUFFER_SIZE = 1024 * 1024;
     static constexpr size_t MAX_MESSAGE_SIZE = 32 * 1024 * 1024;
@@ -877,6 +895,7 @@ private:
     std::optional<Hash256> download_fallback_cursor_;
     uint64_t download_cursor_height_{0};
     uint64_t validated_download_count_{0};
+    std::chrono::steady_clock::time_point ibd_download_window_until_{};
 
     static uint64_t NextIdentity_() {
         static std::atomic<uint64_t> next{1};
@@ -6861,6 +6880,7 @@ private:
                     ps.last_ibd_progress = now;
                     ps.ibd_observed_height = chain_.Height();
                     ps.ibd_requested_download_count = downloaded;
+                    if (!ibd_complete_flag_.load()) conn.NoteIbdGetBlocksRequest();
                 }
                 conn.TrySend(P2PMessage(magic_, MessageType::MEMPOOL));
             }
@@ -6961,6 +6981,7 @@ private:
                     ps.last_ibd_progress = now;
                     ps.ibd_observed_height = chain_.Height();
                     ps.ibd_requested_download_count = downloaded;
+                    if (!ibd_complete_flag_.load()) conn.NoteIbdGetBlocksRequest();
                 }
                 P2PMessage mempool_req(magic_, MessageType::MEMPOOL);
                 conn.TrySend(mempool_req);
@@ -8918,6 +8939,7 @@ private:
                 if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                     ps.last_getblocks = now;
                     ps.ibd_requested_download_count = downloaded;
+                    if (in_ibd) conn.NoteIbdGetBlocksRequest();
                 }
             }
         }
@@ -9874,9 +9896,20 @@ private:
             ? 0 : found->second.pending_jobs;
         const size_t source_bytes = found == lane.sources.end()
             ? 0 : found->second.pending_bytes;
+        size_t source_cap = LAYER_C_BLOCK_INGEST_PER_SOURCE_CAP;
+        if (&lane == &ingest_normal_lane_ && !ibd_complete_flag_.load()) {
+            if (auto peer = job.sender_conn.lock();
+                peer && peer->HasIbdDownloadWindow()) {
+                // Retain one requested 32-body batch instead of dropping it
+                // behind the two-item unsolicited queue. All byte ceilings,
+                // global/lane capacities, fair scheduling and proof budgets
+                // are unchanged. Reconnects share the same source accounting.
+                source_cap = IBD_GETBLOCKS_BATCH_BLOCKS;
+            }
+        }
         if (lane.pending_jobs >= lane_cap ||
             lane.pending_bytes > lane_max_bytes - job.wire_bytes ||
-            source_jobs >= LAYER_C_BLOCK_INGEST_PER_SOURCE_CAP ||
+            source_jobs >= source_cap ||
             source_bytes > per_source_max_bytes - job.wire_bytes ||
             PendingBlockCountLocked_(ingest_protected_lane_,
                                      ingest_normal_lane_) >=
