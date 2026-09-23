@@ -10,7 +10,7 @@ static unsigned checks=0;
 static void Check(bool ok,const char* label) {
     ++checks;if(!ok)throw std::runtime_error(label);
 }
-static std::shared_ptr<net::Connection> Peer(const char* ip, bool inbound=false) {
+static std::shared_ptr<net::Connection> MakeInertPeer(const char* ip, bool inbound=false) {
     auto fd=::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
     Check(compat::IsValidSocket(fd),"inert local socket");
     return std::make_shared<net::Connection>(fd,ip,32001,inbound);
@@ -31,17 +31,17 @@ int main() {
         Check(enqueue(peer)==Result::Queued,"second ordinary slot");
         Check(enqueue(peer)==Result::Full,"ordinary source remains bounded to two");
     };
-    auto outbound=Peer("192.0.2.50");outbound->MarkHandshakeReady();
+    auto outbound=MakeInertPeer("192.0.2.50");outbound->MarkHandshakeReady();
     two_only(outbound);
-    auto inbound=Peer("192.0.2.51",true);
+    auto inbound=MakeInertPeer("192.0.2.51",true);
     inbound->MarkHandshakeReady();inbound->NoteIbdGetBlocksRequest();two_only(inbound);
-    auto incomplete=Peer("192.0.2.52");incomplete->NoteIbdGetBlocksRequest();two_only(incomplete);
+    auto incomplete=MakeInertPeer("192.0.2.52");incomplete->NoteIbdGetBlocksRequest();two_only(incomplete);
     outbound->NoteIbdGetBlocksRequest();outbound->TestExpireIbdDownloadWindow();two_only(outbound);
 
     server.TestClearPendingBlockIngest();outbound->NoteIbdGetBlocksRequest();
     for(unsigned i=0;i<32;++i)Check(enqueue(outbound)==Result::Queued,"one requested IBD batch is retained");
     Check(enqueue(outbound)==Result::Full,"second unsolicited batch cannot expand the source queue");
-    auto alias=Peer("192.0.2.50");alias->MarkHandshakeReady();alias->NoteIbdGetBlocksRequest();
+    auto alias=MakeInertPeer("192.0.2.50");alias->MarkHandshakeReady();alias->NoteIbdGetBlocksRequest();
     Check(enqueue(alias)==Result::Full,"reconnection cannot multiply per-IP queue capacity");
     server.TestClearPendingBlockIngest();
     Check(enqueue(outbound,MAX_BLOCK_SIZE)==Result::Queued,"first maximum-size body");
@@ -54,7 +54,7 @@ int main() {
     std::vector<std::shared_ptr<net::Connection>> peers;
     size_t queued=0;
     for(unsigned ip=60;ip<68;++ip) {
-        auto peer=Peer(("192.0.2."+std::to_string(ip)).c_str());
+        auto peer=MakeInertPeer(("192.0.2."+std::to_string(ip)).c_str());
         peer->MarkHandshakeReady();peer->NoteIbdGetBlocksRequest();peers.push_back(peer);
         for(unsigned i=0;i<32;++i)if(enqueue(peer)==Result::Queued)++queued;
     }
