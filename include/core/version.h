@@ -38,7 +38,7 @@ inline constexpr const char* CLIENT_USER_AGENT = "/Veld:3.2.5/";
 // role-bound datadir. Transport/storage identity and user-facing labels are
 // separate as well.
 inline constexpr const char* PUBLIC_TESTNET_WARNING =
-    "PUBLIC TESTNET â€” DISPOSABLE â€” NO VALUE â€” NO BALANCE/KEY MIGRATION";
+    "PUBLIC TESTNET — DISPOSABLE — NO VALUE — NO BALANCE/KEY MIGRATION";
 
 #if defined(VELD_PUBLIC_TESTNET)
 inline constexpr const char* DEPLOYMENT_ROLE = "public-testnet";

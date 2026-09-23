@@ -262,7 +262,7 @@ remain compatible.
 
 - Detect Windows physical cores within process affinity for worker defaults and
   presets, with a conservative fallback when topology is unavailable.
-- Apply the miner's 1â€“64 worker limit consistently in the CLI, Windows settings
+- Apply the miner's 1–64 worker limit consistently in the CLI, Windows settings
   and portal. Show and adjust the saved next-start count separately from live
   worker telemetry.
 - Test separate-process nonce searches and worker policies for SMT, non-SMT,

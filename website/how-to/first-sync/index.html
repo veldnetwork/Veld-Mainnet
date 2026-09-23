@@ -11,8 +11,8 @@
 <main id="guide">
   <header class="guide-hero">
     <div class="breadcrumb"><a href="/how-to/">How-to</a> / Veld Node</div><h1>Understand your first synchronization</h1>
-    <p class="lede">Follow the local validation state, understand full IBD and eligible recovery, and wait for the nodeâ€”not a public websiteâ€”to declare synchronization complete.</p>
-    <div class="guide-actions"><span class="guide-meta">Node guide Â· About 6 minutes</span></div>
+    <p class="lede">Follow the local validation state, understand full IBD and eligible recovery, and wait for the node—not a public website—to declare synchronization complete.</p>
+    <div class="guide-actions"><span class="guide-meta">Node guide · About 6 minutes</span></div>
     <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress"><a class="progress-item" href="#start"><span class="progress-index">01</span><span class="progress-label">Start</span></a><a class="progress-item" href="#read"><span class="progress-index">02</span><span class="progress-label">Read</span></a><a class="progress-item" href="#choose"><span class="progress-index">03</span><span class="progress-label">Choose</span></a><a class="progress-item" href="#complete"><span class="progress-index">04</span><span class="progress-label">Complete</span></a></nav>
   </header>
   <div class="shell"><article class="article">
@@ -35,9 +35,9 @@
         <div class="path-row"><dt>Network reference</dt><dd>A public estimate used only to draw visual progress. It is never a consensus or security input.</dd></div>
         <div class="path-row"><dt>Remaining</dt><dd>The estimated block difference between local validation and the displayed reference.</dd></div>
         <div class="path-row"><dt>Peer sources</dt><dd>Direct peers currently available to provide and confirm chain data.</dd></div>
-        <div class="path-row"><dt>Local data</dt><dd>The verified chain data stored in the clientâ€™s <code>veld-data</code> directory.</dd></div>
+        <div class="path-row"><dt>Local data</dt><dd>The verified chain data stored in the client’s <code>veld-data</code> directory.</dd></div>
       </dl>
-      <p>The progress estimate may change as the public reference advances. The nodeâ€™s own validated state remains authoritative.</p>
+      <p>The progress estimate may change as the public reference advances. The node’s own validated state remains authoritative.</p>
     </section>
 
     <section class="content-section" id="choose">
@@ -47,7 +47,7 @@
         <div class="compare-row"><dt>Signed snapshot</dt><dd>Automatic snapshot import is limited to a fresh mainnet data directory. The client preserves existing chain storage and verification progress during updates and later starts. A fresh installation imports only an official, authenticated, compatible snapshot. Imported state is replayed and remains quarantined until a separate genesis IBD matches the exact tip and state digest.</dd></div>
       </dl>
       <ul class="checklist"><li>Select <strong>Full IBD</strong> or <strong>Signed snapshot</strong> on the Blockchain page. A selection made while running applies on the next start.</li><li><strong>Selected</strong> is a preference, not proof that a snapshot was imported or validated. Check Logs and the node-reported state.</li><li>A missing, invalid, incompatible, or unnecessary snapshot falls back to ordinary peer synchronization. Never bypass a validation failure.</li><li>Tor-only disables HTTPS snapshot downloads and synchronizes through Tor peers.</li><li>An update alone does not erase the same mainnet installation's chain, identity, or valid receipts. Preserve the data folder. A mandatory migration or validation requirement still takes precedence.</li><li>Never download and install an unofficial chain-state folder.</li></ul>
-      <div class="note"><strong>A snapshot does not bypass validation.</strong> The nodeâ€™s RPC, inbound peers, mining, validator signing, and local explorer remain locked until independent genesis verification succeeds. The public wallet website is a separate service. After a new snapshot is verified, the client records the result and restarts once to enable services. A receipt-backed restart can reuse verified work; normal peer synchronization must still complete.</div>
+      <div class="note"><strong>A snapshot does not bypass validation.</strong> The node’s RPC, inbound peers, mining, validator signing, and local explorer remain locked until independent genesis verification succeeds. The public wallet website is a separate service. After a new snapshot is verified, the client records the result and restarts once to enable services. A receipt-backed restart can reuse verified work; normal peer synchronization must still complete.</div>
     </section>
 
     <section class="content-section" id="complete">
@@ -62,6 +62,6 @@
     <p class="article-foot">Source-reviewed <time datetime="2026-09-13">13 September 2026</time> for Veld Mainnet and Windows 3.2.5. Checked against the current source for the Blockchain page, full-IBD receipt, recovery eligibility, and mining admission flow.</p>
   </article></div>
 </main>
-<footer><div class="footer-inner"><div>Veld Â· Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
 </body>
 </html>
