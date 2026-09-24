@@ -36,6 +36,8 @@
 #include "../include/gui/node_log_display.h"
 #include "../include/gui/state_file.h"
 #include "../include/gui/update_resume.h"
+#include "../include/gui/windows_startup.h"
+#include "../include/mining/address_only.h"
 #include "../include/gui/portal_unlock.h"
 #include "../include/gui/pool_panel.h"
 #include "../include/gui/page_scrollbar.h"
@@ -1493,6 +1495,7 @@ struct PassphrasePrompt {
     bool missing_value{false};
     bool revealed{false};
     bool field_focused{false};
+    bool secret{true};
 };
 
 INT_PTR CALLBACK PassphraseDialogProc(HWND dialog, UINT message,
@@ -1561,6 +1564,17 @@ INT_PTR CALLBACK PassphraseDialogProc(HWND dialog, UINT message,
         SendDlgItemMessageW(dialog, IDC_VELD_PASSPHRASE,
                             EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
                             MAKELPARAM(11, 54));
+        if (!prompt->secret) {
+            SendDlgItemMessageW(dialog, IDC_VELD_PASSPHRASE, EM_SETPASSWORDCHAR, 0, 0);
+            SendDlgItemMessageW(dialog, IDC_VELD_PASSPHRASE, EM_SETLIMITTEXT, 96, 0);
+            SendDlgItemMessageW(dialog, IDC_VELD_PASSPHRASE, EM_SETCUEBANNER, FALSE,
+                               reinterpret_cast<LPARAM>(L"Paste payout address"));
+            SendDlgItemMessageW(dialog, IDC_VELD_PASSPHRASE, EM_SETMARGINS,
+                               EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(11, 11));
+            SetDlgItemTextW(dialog, IDC_VELD_PASSPHRASE_LABEL, L"PAYOUT ADDRESS");
+            SetDlgItemTextW(dialog, IDC_VELD_PASSPHRASE, prompt->value.c_str());
+            ShowWindow(GetDlgItem(dialog, IDC_VELD_PASSPHRASE_REVEAL), SW_HIDE);
+        }
         HWND edit = GetDlgItem(dialog, IDC_VELD_PASSPHRASE);
         GetWindowRect(edit, &prompt->field_outline);
         MapWindowPoints(HWND_DESKTOP, dialog,
@@ -1735,7 +1749,7 @@ INT_PTR CALLBACK PassphraseDialogProc(HWND dialog, UINT message,
             if (prompt) {
                 prompt->missing_value = true;
                 SetDlgItemTextW(dialog, IDC_VELD_PASSPHRASE_LABEL,
-                                L"PASSPHRASE REQUIRED");
+                                prompt->secret ? L"PASSPHRASE REQUIRED" : L"PAYOUT ADDRESS REQUIRED");
                 RedrawWindow(dialog, nullptr, nullptr,
                              RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
             }
@@ -1757,7 +1771,7 @@ INT_PTR CALLBACK PassphraseDialogProc(HWND dialog, UINT message,
         }
         if (HIWORD(wp) == EN_CHANGE && prompt->missing_value) {
             prompt->missing_value = false;
-            SetDlgItemTextW(dialog, IDC_VELD_PASSPHRASE_LABEL, L"PASSPHRASE");
+            SetDlgItemTextW(dialog, IDC_VELD_PASSPHRASE_LABEL, prompt->secret ? L"PASSPHRASE" : L"PAYOUT ADDRESS");
             RedrawWindow(dialog, nullptr, nullptr,
                          RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
             return TRUE;
@@ -1964,7 +1978,7 @@ public:
         std::filesystem::create_directories(state_dir_, state_error);
         LoadRemoteTrust();
         LoadSettings();
-        LoadUpdateResume();
+        if (!windows_startup_invocation_) LoadUpdateResume();
         const auto prior_update_failure = ReadLastUpdateFailure(InstallRoot());
         if (!prior_update_failure.empty()) {
             update_status_ = L"Previous update failed · " +
@@ -2060,6 +2074,7 @@ public:
 #endif
                 return true;
             });
+        if (windows_startup_invocation_) pool_panel_->SuppressAutomaticResume();
         ShowWindow(hwnd_, window_maximized_ ? SW_SHOWMAXIMIZED : show);
         UpdateWindow(hwnd_);
 #ifndef VELD_POOL_GUI_QUALIFICATION
@@ -2149,6 +2164,15 @@ private:
     int window_height_{0};
     bool window_maximized_{false};
     bool tray_added_{false};
+    bool minimize_to_tray_{false};
+    bool startup_enabled_{false};
+    bool startup_unlock_enabled_{false};
+    bool windows_startup_invocation_{false};
+    bool startup_handled_{false};
+    veld::node_gui::StartupMode startup_mode_{veld::node_gui::StartupMode::App};
+    UINT taskbar_created_message_{RegisterWindowMessageW(L"TaskbarCreated")};
+    RECT startup_toggle_{}, startup_unlock_toggle_{}, tray_toggle_{};
+    std::array<RECT,4> startup_mode_buttons_{};
     bool tracking_mouse_leave_{false};
     POINT hover_point_{-1, -1};
     std::chrono::steady_clock::time_point diagnostics_copied_until_{};
@@ -2189,6 +2213,28 @@ private:
     RECT copy_monitor_code_button_{};
     RECT reset_monitor_pairing_button_{};
     RECT mining_mode_toggle_{};
+    RECT address_mode_toggle_{};
+    RECT address_edit_button_{};
+    RECT address_settings_button_{};
+    std::atomic<bool> address_only_{false};
+    mutable std::mutex address_payout_mutex_;
+    std::string address_payout_;
+    std::string AddressPayout() const {
+        std::lock_guard<std::mutex> lock(address_payout_mutex_);
+        return address_payout_;
+    }
+    void SetAddressPayout(const std::string& address) {
+        std::lock_guard<std::mutex> lock(address_payout_mutex_);
+        address_payout_ = address;
+    }
+    static bool ValidSoloAddress(const std::string& address) {
+#ifdef VELD_PUBLIC_TESTNET
+        return veld::mining::ValidAddressOnlyDestination(address, true);
+#else
+        return veld::mining::ValidAddressOnlyDestination(address, false);
+#endif
+    }
+
     RECT open_data_button_{};
     RECT import_key_button_{};
     RECT create_key_button_{};
@@ -2230,7 +2276,7 @@ private:
     }
 
     int PageContentHeight(const RECT& client) const {
-        const int minimum = page_ == Page::Settings ? S(1030) :
+        const int minimum = page_ == Page::Settings ? S(1502) :
                             page_ == Page::Pool ? S(1080) : S(900);
         return std::max(static_cast<int>(client.bottom), minimum);
     }
@@ -2318,6 +2364,7 @@ private:
         } else if (page_ == Page::Blockchain) {
             if (inside_any({&full_ibd_card_, &snapshot_card_})) return true;
         } else if (page_ == Page::Mining) {
+            if (PtInRect(&address_settings_button_, point)) return true;
             for (const RECT& button : rate_range_buttons_)
                 if (PtInRect(&button, point)) return true;
         } else if (page_ == Page::Explorer) {
@@ -2327,7 +2374,10 @@ private:
             if (inside_any({&copy_diagnostics_button_, &open_log_button_}))
                 return true;
         } else if (page_ == Page::Settings) {
-            if (inside_any({&reachable_toggle_, &tor_toggle_,
+            if (inside_any({&address_mode_toggle_, &address_edit_button_, &startup_toggle_, &startup_unlock_toggle_, &tray_toggle_,
+                    &startup_mode_buttons_[0], &startup_mode_buttons_[1],
+                    &startup_mode_buttons_[2], &startup_mode_buttons_[3],
+                    &reachable_toggle_, &tor_toggle_,
                     &reference_toggle_, &remote_monitor_toggle_,
                     &open_monitor_portal_button_,
                     &copy_monitor_code_button_, &mining_mode_toggle_,
@@ -2466,6 +2516,13 @@ private:
     }
 
     LRESULT WndProc(UINT msg, WPARAM wp, LPARAM lp) {
+        if (taskbar_created_message_ && msg == taskbar_created_message_) {
+            tray_added_ = false;
+            AddTrayIcon();
+            // A shell restart must never strand a window which was hidden.
+            if (!tray_added_ && !IsWindowVisible(hwnd_)) ShowWindow(hwnd_, SW_SHOWMINIMIZED);
+            return 0;
+        }
         switch (msg) {
             case WM_CREATE:
                 dpi_ = GetDpiForWindow(hwnd_);
@@ -2588,8 +2645,8 @@ private:
                 }
                 return DefWindowProcW(hwnd_, msg, wp, lp);
             case WM_SIZE:
-                // Keep minimized windows on the taskbar. The tray remains an
-                // additional way to reopen the app, not its only entry point.
+                if (veld::node_gui::ShouldHideInTray(minimize_to_tray_, tray_added_, wp))
+                    ShowWindow(hwnd_, SW_HIDE);
                 if (wp != SIZE_MINIMIZED) InvalidateRect(hwnd_, nullptr, FALSE);
                 return 0;
             case WM_EXITSIZEMOVE:
@@ -2644,6 +2701,9 @@ private:
                 return 0;
             case WM_TIMER:
             case WM_NODE_REFRESH:
+#ifndef VELD_POOL_GUI_QUALIFICATION
+                TickWindowsStartup();
+#endif
                 if(pool_panel_) {
                     pool_panel_->Tick();
                     std::lock_guard<std::mutex> lock(pool_monitor_mutex_);
@@ -2707,6 +2767,8 @@ private:
                 node_path_ = argv[++i];
             else if (arg == L"--clearnet")
                 force_clearnet_ = true;
+            else if (arg == L"--windows-startup")
+                windows_startup_invocation_ = true;
         }
         LocalFree(argv);
     }
@@ -2721,12 +2783,26 @@ private:
         std::string line;
         while (std::getline(input, line)) {
             veld::node_gui::NormalizeSettingsLine(line);
-            if (line == "auto_update=1") auto_update_enabled_ = true;
+            if (line == "startup=1") startup_enabled_ = true;
+            else if (line == "startup=0") startup_enabled_ = false;
+            else if (line == "startup_unlock=1") startup_unlock_enabled_ = true;
+            else if (line == "startup_unlock=0") startup_unlock_enabled_ = false;
+            else if (line == "minimize_to_tray=1") minimize_to_tray_ = true;
+            else if (line == "minimize_to_tray=0") minimize_to_tray_ = false;
+            else if (line.rfind("startup_mode=", 0) == 0)
+                startup_mode_ = veld::node_gui::ParseStartupMode(line.substr(13));
+            else if (line == "auto_update=1") auto_update_enabled_ = true;
             else if (line == "auto_update=0") auto_update_enabled_ = false;
             else if (line == "reachable=0") reachable_choice_ = false;
             else if (line == "reachable=1") reachable_choice_ = true;
             else if (line == "tor=0") tor_choice_ = false;
             else if (line == "tor=1") tor_choice_ = true;
+            else if (line == "address_only=1") address_only_ = true;
+            else if (line == "address_only=0") address_only_ = false;
+            else if (line.rfind("solo_payout=", 0) == 0) {
+                const auto address = line.substr(12);
+                SetAddressPayout(ValidSoloAddress(address) ? address : std::string{});
+            }
             else if (line == "mining=0") mining_enabled_ = false;
             else if (line == "mining=1") mining_enabled_ = true;
             else if (line == "mining_preset=eco") mining_preset_ = 0;
@@ -2807,9 +2883,15 @@ private:
         const auto path = state_dir_ / L"node-gui.conf";
         std::string error;
         std::ostringstream output;
-            output << "auto_update=" << (auto_update_enabled_ ? 1 : 0) << "\n"
+            output << "startup=" << (startup_enabled_ ? 1 : 0) << "\n"
+                   << "startup_mode=" << veld::node_gui::StartupModeName(startup_mode_) << "\n"
+                   << "startup_unlock=" << (startup_unlock_enabled_ ? 1 : 0) << "\n"
+                   << "minimize_to_tray=" << (minimize_to_tray_ ? 1 : 0) << "\n"
+                   << "auto_update=" << (auto_update_enabled_ ? 1 : 0) << "\n"
                    << "reachable=" << (reachable_choice_ ? 1 : 0) << "\n"
                    << "tor=" << (tor_choice_ ? 1 : 0) << "\n"
+                   << "address_only=" << (address_only_ ? 1 : 0) << "\n"
+                   << "solo_payout=" << AddressPayout() << "\n"
                    << "mining=" << (mining_enabled_ ? 1 : 0) << "\n"
                    << "sync=" << (full_ibd_choice_ ? "full" : "snapshot")
                    << "\n"
@@ -2989,6 +3071,7 @@ private:
         tor_toggle_ = {};
         reference_toggle_ = {};
         mining_mode_toggle_ = {};
+        address_mode_toggle_ = {}; address_edit_button_ = {}; address_settings_button_ = {};
         open_data_button_ = {};
         import_key_button_ = {};
         create_key_button_ = {};
@@ -3732,7 +3815,10 @@ private:
 
     void DrawMining(HDC dc, const RECT& client, const LiveState& live) {
         DrawPageHeader(dc, client, L"Mining",
-                       L"VeldHash performance and work admission.", live);
+                       address_only_ ? L"Solo mining to your payout address. No wallet unlock needed."
+                                     : L"Solo mining with your local wallet identity.", live);
+        address_settings_button_ = {client.right-S(240), S(82), client.right-S(34), S(116)};
+        DrawButton(dc, address_settings_button_, L"Payout settings", true);
         const int left = S(292);
         const int right = client.right - S(34);
         const int gap = S(16);
@@ -3814,7 +3900,7 @@ private:
                       C_SUBTEXT);
         DrawStripItem(dc, {safety.left + 3 * col, safety.top + S(48),
                            safety.right, safety.bottom},
-                      L"Validator", L"Auto when registered", C_SUBTEXT);
+                      L"Validator", address_only_ ? L"Off: address only" : L"Auto when registered", C_SUBTEXT);
     }
 
     void DrawWorkers(HDC dc, const RECT& client, const LiveState& live) {
@@ -5590,7 +5676,49 @@ private:
                        L"Local app preferences and paths.", live);
         const int left = S(292);
         const int right = client.right - S(34);
-        const int top = S(132);
+        const int start = S(132);
+        RECT startup{left,start,right,start+S(132)};
+        FillRound(dc,startup,C_PANEL,C_BORDER);
+        RECT title{left+S(22),start+S(12),right-S(100),start+S(43)};
+        DrawTextAt(dc,L"Open at Windows sign-in",title,font_heading_,C_TEXT);
+        RECT detail{left+S(22),start+S(43),right-S(100),start+S(70)};
+        DrawTextAt(dc,L"Choose what Veld starts after you sign in to Windows.",detail,font_small_,C_SUBTEXT);
+        startup_toggle_={right-S(78),start+S(22),right-S(22),start+S(50)};
+        DrawToggle(dc,startup_toggle_,startup_enabled_,true);
+        const wchar_t* modes[]={L"Open app only",L"Solo mining",L"Pool mining",L"Node only"};
+        const int width=(right-left-S(44)-S(21))/4;
+        for(int i=0;i<4;++i) {
+            startup_mode_buttons_[i]={left+S(22)+i*(width+S(7)),start+S(83),
+                left+S(22)+i*(width+S(7))+width,start+S(118)};
+            DrawPresetButton(dc,startup_mode_buttons_[i],modes[i],static_cast<int>(startup_mode_)==i);
+        }
+        const bool unlock_mode=!address_only_ && startup_enabled_ && (startup_mode_==veld::node_gui::StartupMode::Solo ||
+            startup_mode_==veld::node_gui::StartupMode::Node);
+        DrawSettingRow(dc,{left,start+S(140),right,start+S(218)},L"Remember startup unlock",
+            L"Optional: Windows protects the unlock for this account. Otherwise sign in when Veld opens.",
+            startup_unlock_enabled_,unlock_mode || startup_unlock_enabled_,startup_unlock_toggle_);
+        DrawSettingRow(dc,{left,start+S(226),right,start+S(304)},L"Minimize to system tray",
+            L"Off keeps Veld on the taskbar. On hides it beside the clock. Closing Veld still exits.",
+            minimize_to_tray_,true,tray_toggle_);
+        const int address_top = start+S(312);
+        RECT address_card{left,address_top,right,address_top+S(144)};
+        FillRound(dc,address_card,C_PANEL,C_BORDER);
+        const bool can_change = !live.process_running && !tor_preparing_.load() &&
+            update_operation_.load()==UpdateOperation::None && !(pool_panel_ && pool_panel_->Running());
+        RECT address_title{left+S(22),address_top+S(10),right-S(100),address_top+S(42)};
+        DrawTextAt(dc,L"Address-only solo mining",address_title,font_heading_,C_TEXT);
+        RECT address_detail{left+S(22),address_top+S(44),right-S(22),address_top+S(69)};
+        DrawTextAt(dc,L"Mine to a payout address without a local wallet. Your wallet stays elsewhere; validator signing is off.",
+                   address_detail,font_small_,C_SUBTEXT);
+        address_mode_toggle_={right-S(78),address_top+S(18),right-S(22),address_top+S(46)};
+        DrawToggle(dc,address_mode_toggle_,address_only_,can_change);
+        RECT address_value{left+S(22),address_top+S(83),right-S(182),address_top+S(127)};
+        const auto address=AddressPayout();
+        DrawTextAt(dc,address.empty()?L"No payout address saved":Utf8ToWide(address),address_value,font_small_,C_TEXT,
+                   DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX|DT_END_ELLIPSIS);
+        address_edit_button_={right-S(168),address_top+S(86),right-S(22),address_top+S(125)};
+        DrawButton(dc,address_edit_button_,L"Set address",can_change);
+        const int top = start+S(464);
         const int gap = S(8);
         const int row_h = S(78);
         const int mining_row_h = S(112);
@@ -5735,14 +5863,14 @@ private:
                               paths.right - 2 * button_w - S(34),
                               paths.top + S(105)};
         DrawButton(dc, create_key_button_, L"Create identity",
-                   !live.process_running && !tor_preparing_.load()
+                   !address_only_ && !live.process_running && !tor_preparing_.load()
                        && !std::filesystem::exists(data_dir_ / L"miner.key"));
         import_key_button_ = {paths.right - 2 * button_w - S(26),
                               paths.top + S(61),
                               paths.right - button_w - S(18),
                               paths.top + S(105)};
         DrawButton(dc, import_key_button_, L"Import keyfile",
-                   !live.process_running && !tor_preparing_.load());
+                   !address_only_ && !live.process_running && !tor_preparing_.load());
         open_data_button_ = {paths.right - button_w - S(10), paths.top + S(61),
                              paths.right - S(10), paths.top + S(105)};
         DrawButton(dc, open_data_button_, L"Open data folder",
@@ -5858,6 +5986,34 @@ private:
         } else if (page_ == Page::Explorer &&
                    PtInRect(&open_wallet_button_, p)) {
             OpenTrustedWallet();
+        } else if (page_ == Page::Mining && PtInRect(&address_settings_button_, p)) {
+            page_ = Page::Settings;
+        } else if (page_ == Page::Settings &&
+                   (PtInRect(&address_mode_toggle_, p) || PtInRect(&address_edit_button_, p))) {
+            const auto live = SnapshotState();
+            if (!live.process_running && !FindNodeProcess(node_path_) && !tor_preparing_.load() &&
+                update_operation_.load()==UpdateOperation::None && !(pool_panel_ && pool_panel_->Running())) {
+                if (PtInRect(&address_edit_button_, p) || (!address_only_ && !ValidSoloAddress(AddressPayout())))
+                    ChangeSoloAddress();
+                else {
+                    const bool previous=address_only_.load(); address_only_=!previous;
+                    if (!SaveSettings()) address_only_=previous;
+                    else { ClearSessionPassphrase(); session_unlock_confirmed_=false; }
+                }
+            }
+        } else if (page_ == Page::Settings && PtInRect(&startup_toggle_, p)) {
+            ChangeWindowsStartup();
+        } else if (page_ == Page::Settings && PtInRect(&startup_unlock_toggle_, p)) {
+            if (!address_only_ || startup_unlock_enabled_) ChangeStartupUnlock();
+        } else if (page_ == Page::Settings && PtInRect(&tray_toggle_, p)) {
+            minimize_to_tray_ = !minimize_to_tray_;
+            if (!SaveSettings()) minimize_to_tray_ = !minimize_to_tray_;
+        } else if (page_ == Page::Settings &&
+                  (PtInRect(&startup_mode_buttons_[0],p)||PtInRect(&startup_mode_buttons_[1],p)||
+                   PtInRect(&startup_mode_buttons_[2],p)||PtInRect(&startup_mode_buttons_[3],p))) {
+            const auto old=startup_mode_;
+            for(int i=0;i<4;++i)if(PtInRect(&startup_mode_buttons_[i],p))startup_mode_=static_cast<veld::node_gui::StartupMode>(i);
+            if(!SaveSettings())startup_mode_=old;
         } else if (page_ == Page::Settings &&
                    PtInRect(&mining_mode_toggle_, p)) {
             mining_enabled_ = !mining_enabled_;
@@ -5987,16 +6143,36 @@ private:
         } else if (page_ == Page::Settings &&
                    PtInRect(&import_key_button_, p)) {
             const auto live = SnapshotState();
-            if (!live.process_running && !tor_preparing_.load())
+            if (!address_only_ && !live.process_running && !tor_preparing_.load())
                 ImportKeyfile();
         } else if (page_ == Page::Settings &&
                    PtInRect(&create_key_button_, p)) {
             const auto live = SnapshotState();
-            if (!live.process_running && !tor_preparing_.load()
+            if (!address_only_ && !live.process_running && !tor_preparing_.load()
                 && !std::filesystem::exists(data_dir_ / L"miner.key"))
                 CreateIdentity();
         }
         InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+
+    void ChangeSoloAddress() {
+        PassphrasePrompt request{L"Solo payout address",
+            L"Paste the address that should receive your solo mining rewards.",Utf8ToWide(AddressPayout())};
+        request.secret=false;
+        if (DialogBoxParamW(instance_,MAKEINTRESOURCEW(IDD_VELD_PASSPHRASE),hwnd_,
+                PassphraseDialogProc,reinterpret_cast<LPARAM>(&request)) != IDOK) return;
+        const auto address=WideToUtf8(request.value);
+        if (!ValidSoloAddress(address)) {
+            MessageBoxW(hwnd_,L"Enter a valid Veld payout address for this network.",L"Invalid payout address",MB_OK|MB_ICONWARNING);
+            return;
+        }
+        const auto confirmation=L"Send solo mining rewards to:\n\n"+request.value+
+            L"\n\nMake sure you control this address. The private key stays in your wallet.\nThis computer will not hold your wallet key or sign validator votes.";
+        if (MessageBoxW(hwnd_,confirmation.c_str(),L"Confirm payout address",MB_OKCANCEL|MB_ICONINFORMATION)!=IDOK) return;
+        const auto previous=AddressPayout();const bool old_mode=address_only_.load();
+        SetAddressPayout(address);address_only_=true;
+        if (!SaveSettings()) { SetAddressPayout(previous);address_only_=old_mode;return; }
+        ClearSessionPassphrase();session_unlock_confirmed_=false;
     }
 
     bool AskPassphrase(const std::wstring& title,
@@ -6022,6 +6198,10 @@ private:
     }
 
     std::string RemoteIdentityFingerprint() const {
+        if (address_only_) {
+            const auto address=AddressPayout();
+            return ValidSoloAddress(address) ? veld::node_gui::PortalDigest("address-only|"+address) : std::string{};
+        }
         const std::string bytes = ReadTextBounded(data_dir_ / L"miner.key", 65536);
         return bytes.empty() ? std::string{} : veld::node_gui::PortalDigest(bytes);
     }
@@ -6271,12 +6451,84 @@ private:
         const std::filesystem::path restored(resume.data_directory);
         if (explicit_data_directory_ && std::filesystem::weakly_canonical(data_dir_, ec) != restored) return;
         if (ec) return;
-        const auto identity = ReadTextBounded(restored / L"miner.key", 65536);
+        const auto identity = address_only_
+            ? (ValidSoloAddress(AddressPayout()) ? "address-only|"+AddressPayout() : std::string{})
+            : ReadTextBounded(restored / L"miner.key", 65536);
         if (identity.empty() || Utf8ToWide(veld::node_gui::PortalDigest(identity)) != resume.identity) return;
         if (!StoreSessionPassphrase(resume.passphrase)) return;
         data_dir_ = restored;
         update_resume_pending_ = true;
         update_status_ = L"Signed update verified · resuming node";
+    }
+
+    std::wstring StartupCredentialTarget() const {
+        std::error_code error;
+        auto data=std::filesystem::weakly_canonical(data_dir_,error).wstring();
+        const auto install=veld::node_gui::UpdateInstallContext(InstallRoot());
+        if(error||data.empty()||install.empty())return {};
+        CharLowerBuffW(data.data(),static_cast<DWORD>(data.size()));
+        return L"Veld/StartupUnlock/v1/"+Utf8ToWide(veld::node_gui::PortalDigest(WideToUtf8(install+L"|"+data)));
+    }
+
+    void ChangeWindowsStartup() {
+        std::wstring previous;
+        const auto command=veld::node_gui::StartupCommand(ModulePath(),data_dir_);
+        if(!veld::node_gui::ReadStartupCommand(previous)||command.empty()||
+           !veld::node_gui::WriteStartupCommand(startup_enabled_?L"":command)) {
+            MessageBoxW(hwnd_,L"Windows startup could not be saved. Check installation permissions and path length.",
+                L"Windows startup",MB_OK|MB_ICONERROR);return;
+        }
+        startup_enabled_=!startup_enabled_;
+        if(!SaveSettings()) {
+            startup_enabled_=!startup_enabled_;
+            if(!veld::node_gui::WriteStartupCommand(previous))
+                MessageBoxW(hwnd_,L"Windows startup needs attention. Review Veld in Windows Startup apps.",L"Windows startup",MB_OK|MB_ICONERROR);
+        }
+    }
+
+    void ChangeStartupUnlock() {
+        if(startup_unlock_enabled_) {
+            if(!veld::node_gui::RemoveStartupUnlock(StartupCredentialTarget())) {
+                MessageBoxW(hwnd_,L"Windows could not remove the saved startup unlock. Please try again.",L"Startup unlock",MB_OK|MB_ICONERROR);return;
+            }
+            startup_unlock_enabled_=false;SaveSettings();return;
+        }
+        if(address_only_ || !startup_enabled_ || (startup_mode_!=veld::node_gui::StartupMode::Solo && startup_mode_!=veld::node_gui::StartupMode::Node))return;
+        veld::node_gui::UpdateResume secret; // Uses the existing wiping destructor only.
+        if(!session_unlock_confirmed_.load() || !LoadSessionPassphrase(secret.passphrase)) {
+            MessageBoxW(hwnd_,L"Start your node and unlock it once, then enable this option. Pool mining does not need a saved unlock.",L"Startup unlock",MB_OK|MB_ICONINFORMATION);return;
+        }
+        if(MessageBoxW(hwnd_,L"Save this node's unlock in Windows Credential Manager for automatic startup? Programs running as your Windows account can use this saved unlock. Turning this option off removes it.",
+            L"Remember startup unlock",MB_YESNO|MB_DEFBUTTON2|MB_ICONQUESTION)!=IDYES)return;
+        if(!veld::node_gui::SaveStartupUnlock(StartupCredentialTarget(),Utf8ToWide(RemoteIdentityFingerprint()),secret.passphrase)) {
+            MessageBoxW(hwnd_,L"Windows could not save the startup unlock. Veld will ask you to sign in at startup.",L"Startup unlock",MB_OK|MB_ICONERROR);return;
+        }
+        startup_unlock_enabled_=true;
+        if(!SaveSettings()) { startup_unlock_enabled_=false;veld::node_gui::RemoveStartupUnlock(StartupCredentialTarget()); }
+    }
+
+    void TickWindowsStartup() {
+        if(startup_handled_ || !pool_panel_)return;
+        startup_handled_=true;
+        if(!windows_startup_invocation_ || !startup_enabled_ || settings_load_failed_)return;
+        std::wstring registered;
+        const auto expected=veld::node_gui::StartupCommand(ModulePath(),data_dir_);
+        if(expected.empty() || !veld::node_gui::ReadStartupCommand(registered) || registered!=expected)return;
+        if(startup_mode_==veld::node_gui::StartupMode::App)return;
+        if(startup_mode_==veld::node_gui::StartupMode::Pool) {
+            page_=Page::Pool;std::string error;
+            if(!pool_panel_->RemoteStart(error))MessageBoxW(hwnd_,Utf8ToWide(error).c_str(),L"Pool startup",MB_OK|MB_ICONINFORMATION);
+            return;
+        }
+        if(SnapshotState().process_running || FindNodeProcess(node_path_))return;
+        const bool previous=mining_enabled_.load();mining_enabled_=startup_mode_==veld::node_gui::StartupMode::Solo;
+        if(!SaveSettings()) {mining_enabled_=previous;return;}
+        if(startup_unlock_enabled_ && !address_only_) {
+            veld::node_gui::UpdateResume secret;
+            if(veld::node_gui::ReadStartupUnlock(StartupCredentialTarget(),Utf8ToWide(RemoteIdentityFingerprint()),secret.passphrase))
+                StoreSessionPassphrase(secret.passphrase);
+        }
+        StartNode(); // Normal package checks, key funding rules and unlock dialog still apply.
     }
 
     void TickAutomaticUpdates(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now()) {
@@ -6809,7 +7061,13 @@ private:
         recovery_restarts_ = 0;
         recovery_restart_window_ = {};
         stopping_node_.store(false);
-        if (!std::filesystem::is_regular_file(data_dir_ / L"miner.key")) {
+        if (address_only_ && !ValidSoloAddress(AddressPayout())) {
+            page_ = Page::Settings;
+            MessageBoxW(hwnd_, L"Set a valid payout address in Settings before starting address-only mining.",
+                        L"Payout address needed", MB_OK | MB_ICONINFORMATION);
+            return;
+        }
+        if (!address_only_ && !std::filesystem::is_regular_file(data_dir_ / L"miner.key")) {
             page_ = Page::Settings;
             MessageBoxW(hwnd_,
                 L"Create a node identity or import a Veld .veld-keys file in Settings before starting the node.",
@@ -6872,6 +7130,20 @@ private:
         worker_cv_.notify_all();
     }
 
+    std::wstring NodeStartCommand() const {
+        std::wstring command=L"\""+node_path_.wstring()+L"\" ";
+        if (address_only_) {
+            command += (mining_enabled_ ? L"--mine" : L"--nomine");
+            command += L" --address-only --miner "+Utf8ToWide(AddressPayout());
+        } else command += (mining_enabled_ ? L"--mine" : L"--endorse");
+        command += L" --no-prompt --datadir "+veld::node_gui::StartupQuote(data_dir_.wstring());
+        if (mining_enabled_) command += L" --threads "+std::to_wstring(mining_thread_count_);
+        if (tor_choice_) command += L" --tor-only";
+        else if (reachable_choice_) command += L" --reachable";
+        command += full_ibd_choice_ ? L" --full-ibd" : L" --snapshot-bootstrap";
+        return command;
+    }
+
     void StartNodeEngine() {
         if (!std::filesystem::is_regular_file(node_path_)) {
             const std::wstring message = L"The signed node binary was not found beside this app:\n\n" +
@@ -6894,20 +7166,27 @@ private:
                         L"Veld Node", MB_OK | MB_ICONERROR);
             return;
         }
-        std::wstring command = L"\"" + node_path_.wstring() + L"\" " +
-            (mining_enabled_ ? L"--mine" : L"--endorse") +
-            L" --no-prompt --datadir \"" + data_dir_.wstring() + L"\"";
-        if (mining_enabled_)
-            command += L" --threads " + std::to_wstring(mining_thread_count_);
-        if (tor_choice_) command += L" --tor-only";
-        else if (reachable_choice_) command += L" --reachable";
-        command += full_ibd_choice_
-            ? L" --full-ibd" : L" --snapshot-bootstrap";
+        const std::wstring command = NodeStartCommand();
         std::vector<wchar_t> mutable_command(command.begin(), command.end());
         mutable_command.push_back(L'\0');
 
         std::wstring passphrase;
-        const bool reused_session_unlock = LoadSessionPassphrase(passphrase);
+        bool reused_session_unlock = LoadSessionPassphrase(passphrase);
+        if (address_only_) {
+            std::string local_secret, error;
+            if (!veld::mining::AddressOnlyRpcSecret(data_dir_, local_secret, &error)) {
+                CloseHandle(log); CloseHandle(nul);
+                MessageBoxW(hwnd_,Utf8ToWide(error).c_str(),L"Local node access",MB_OK|MB_ICONERROR);
+                return;
+            }
+            if (!passphrase.empty()) SecureZeroMemory(passphrase.data(),passphrase.size()*sizeof(wchar_t));
+            passphrase=Utf8ToWide(local_secret); veld::WipeString(local_secret);
+            if (!StoreSessionPassphrase(passphrase)) {
+                SecureZeroMemory(passphrase.data(),passphrase.size()*sizeof(wchar_t));
+                CloseHandle(log); CloseHandle(nul); return;
+            }
+            reused_session_unlock=true;
+        }
         if (!reused_session_unlock &&
             !AskPassphrase(L"Unlock node identity",
                 L"Enter the passphrase for this identity.", passphrase)) {
@@ -7196,8 +7475,8 @@ private:
             } else if (RemoteIdentityFingerprint().empty()) {
                 reject("Create or import a node identity on this machine first");
             } else {
-                bool ready = HasSessionUnlock();
-                if (command.action == "node.signin") {
+                bool ready = address_only_ || HasSessionUnlock();
+                if (command.action == "node.signin" && !address_only_) {
                     std::wstring passphrase;
                     ready = remote_unlock_key_.Decrypt(command.unlock, command.device_id,
                         command.nonce, RemoteIdentityFingerprint(), passphrase) && StoreSessionPassphrase(passphrase);
@@ -7295,7 +7574,9 @@ private:
                 else reject("Inbound reachability preference could not be saved");
             }
         } else if (command.action == "sync.mode") {
-            if (live.process_running)
+            if (address_only_ && command.mode != "full")
+                reject("Address-only mining requires full validation");
+            else if (live.process_running)
                 reject("Stop the node before changing synchronization mode");
             else {
                 full_ibd_choice_ = command.mode == "full";
@@ -7407,7 +7688,7 @@ private:
 
         std::string unlock_json = "null";
         const std::string identity = RemoteIdentityFingerprint();
-        if (!identity.empty() && remote_unlock_key_.Ensure(state_dir_ / L"remote-unlock.dat"))
+        if (!address_only_ && !identity.empty() && remote_unlock_key_.Ensure(state_dir_ / L"remote-unlock.dat"))
             unlock_json = remote_unlock_key_.PublicJson(identity);
         bool control_ready = false;
         {
@@ -7437,7 +7718,7 @@ private:
              << ",\"pool\":" << pool_monitor_json
              << ",\"pairing_control\":true"
              << ",\"automatic_updates\":" << (auto_update_enabled_.load() ? "true" : "false")
-             << ",\"identity_unlocked\":" << (HasSessionUnlock() ? "true" : "false")
+             << ",\"identity_unlocked\":" << (!address_only_ && HasSessionUnlock() ? "true" : "false")
              << ",\"unlock_key\":" << unlock_json
              << ",\"diagnostics\":{\"schema\":1"
              << ",\"local_status_valid\":" << (live.local_online ? "true" : "false")

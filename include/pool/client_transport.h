@@ -204,7 +204,8 @@ public:
 #endif
         }
     }
-    Json Call(const std::string& action,const std::string& payload) const {
+    Json Call(const std::string& action,const std::string& payload,
+              std::chrono::steady_clock::time_point* request_sent=nullptr) const {
         Require(action=="register" || action=="work" || action=="submit" || action=="account", "pool action");
         Require(payload.size()<=16384,"pool request bound");
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
@@ -244,6 +245,10 @@ public:
         const std::string request="POST /v1/"+action+" HTTP/1.1\r\nHost: "+endpoint_.authority+
             "\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "+
             std::to_string(payload.size())+"\r\n\r\n"+payload;
+        // A work lease does not exist during local queueing, DNS or TLS setup.
+        // This time precedes sending any request byte, so adding the server's
+        // remaining TTL remains conservative without charging that local wait.
+        if(request_sent)*request_sent=std::chrono::steady_clock::now();
         for (size_t offset=0;offset<request.size();) {
             ERR_clear_error();const auto written=SSL_write(ssl,request.data()+offset,int(request.size()-offset));
             if (written>0) offset+=size_t(written);else again(written);

@@ -4,6 +4,44 @@ Tests are named for the behavior they cover. Native unit tests, process
 fixtures, browser-script checks, and platform-specific checks share this
 directory; fixture data is under [fixtures/](fixtures/).
 
+## Address-only mining
+
+`windows_address_mining_tests.cpp` uses the isolated GUI test constructor and a
+fresh explicit state directory. It checks payout validation/persistence, wallet
+mode defaults, launch arguments, update identity binding, real Windows DPAPI
+storage, corrupt-credential refusal, unchanged wallet bytes, credential removal,
+active-node change refusal and a native Settings render. It never starts a
+production GUI, miner or wallet.
+
+`address_only_node_tests.cpp` reuses the bounded private peer/admission fixture
+from `local_work_path_equivalence_tests.cpp`. With `VELD_TEST_HOOKS` and that
+fixture's isolated compile profile, it exercises actual native block production
+and checks the selected coinbase payout, absence of signing files, invalid-key
+refusal in ordinary wallet mode and switching back to validated wallet mining.
+Run in a private network namespace with a fresh owner-only Linux directory and
+umask 077. Do not define `VELD_ASERT_TESTCHAIN`: this fixture deliberately uses
+a small private dataset and the incompatible-profile interlock must remain on.
+Neither test is signed-package or live mainnet payout qualification.
+
+## Windows startup and update handoff
+
+`windows_startup_settings_tests.cpp` includes the actual GUI implementation in
+the existing isolated GUI qualification profile. It checks settings persistence,
+Unicode command quoting, bounded Run registration in a disposable registry key,
+Windows Credential Manager storage/revocation with a disposable credential,
+identity/context refusal and real native window hide/restore behavior. Its
+rendered Settings bitmap is layout evidence, not a Windows reboot test. It must
+not be combined with a public release or the owner's live GUI profile.
+
+The handoff regression scripts accept an explicit updater path and evidence
+directory. `windows_updater_handoff_timeout_tests.ps1` reproduces the old
+cleanup/lock race against retained released source.
+`windows_updater_handoff_ready_tests.ps1` exercises a native helper and named
+event, including delayed cleanup, child exit and timeout.
+`windows_updater_install_handoff_tests.ps1` exercises the exact Install handoff
+tail and complete Commit entry with a fixture parent. It does not claim a real
+GUI or mining restart. Retain both failing baseline and corrected receipts.
+
 ## Portable source and web checks
 
 Install Python 3.10 or later and Node.js 22 or later. In a Python virtual

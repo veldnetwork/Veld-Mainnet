@@ -14,6 +14,13 @@ transport deadline. Neither queueing nor a retry extends a job's expiry.
 Certificate verification, bounded responses, exact-proof retries and server
 admission limits remain unchanged.
 
+Work expiry is the server's remaining TTL added to the instant immediately
+before the first authenticated request byte is sent. Local permit queueing,
+DNS and TLS establishment therefore do not consume a lease which has not yet
+been assigned. Request transmission, server work and the response trip are
+still conservatively charged against that TTL. Starting the TTL at response
+receipt would extend server lifetime and is deliberately not used.
+
 New GUI configurations request 1,024 nonces per lease. Existing configurations
 with smaller batches remain valid; the native client accepts up to the server's
 existing 4,096-nonce limit. Job TTL remains capped at ten seconds. Unused nonces
@@ -34,6 +41,12 @@ the dataset size for a production-parameter benchmark.
   an offline single-thread benchmark, not pool throughput or mining E2E.
 - `tests/pool_request_budget_tests.cpp`: request bounds, reserved proof
   capacity, queue deadlines, exception cleanup and concurrent admission.
+- `tests/pool_work_clock_tests.cpp` with `python -m pool.test_work_clock`:
+  twelve concurrent native requests over loopback TLS and a synthetic short
+  TTL. Local queue time is excluded while send/response time still consumes
+  the lease. `VELD_TEST_LEGACY_JOB_CLOCK` is a test-program-only comparison of
+  the old caller timing; it is not an alternate production mining profile.
+  This establishes timing behavior, not a live hashrate gain.
 - `python -m pool.test_client_scheduling --binary PATH --openssl PATH`: native
   workers over private loopback TLS, 14/64 threads, legacy/new/maximum batch
   sizes and rejection of an oversized job. Zero-TTL jobs are explicitly

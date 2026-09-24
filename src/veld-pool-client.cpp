@@ -187,9 +187,9 @@ int main(int argc,char** argv) {
                     std::optional<mining::VeldHashVM> workspace;
                     while(!stopping && (!rounds || completed<rounds)) {
                         try {
-                            const auto start_time=std::chrono::steady_clock::now();
+                            std::chrono::steady_clock::time_point request_sent;
                             stage=ClientStage::Work;
-                            const auto job=client.Call("work",Object({{"account",account},{"token",worker_token},{"count",std::to_string(count)}}));
+                            const auto job=client.Call("work",Object({{"account",account},{"token",worker_token},{"count",std::to_string(count)}}),&request_sent);
                             Require(Text(Field(job,"version"))=="veld-pool/1" && Hex(Field(job,"chain"),64)==genesis,
                                     "pool job network or version mismatch");
                             const auto lease=Hex(Field(job,"lease"),32),encoded=Hex(Field(job,"header"),176);
@@ -201,7 +201,7 @@ int main(int argc,char** argv) {
                             const uint64_t amount=Number(Text(Field(job,"count")),count);
                             Require(amount>0 && amount-1<=UINT64_MAX-first,"pool nonce range overflow");
                             const auto ttl=Number(Text(Field(job,"ttl_ms")),10000);
-                            const auto expires=start_time+std::chrono::milliseconds(ttl);
+                            const auto expires=request_sent+std::chrono::milliseconds(ttl);
                             BlockHeader header;Require(header.Deserialize(HexToBytes(encoded)) && header.nonce==0,"pool header encoding");
                             CanonicalPowTarget network;Require(DecodeCanonicalVeldTarget(header.bits,network),"pool network target");
                             retries=0;status("Mining");++counters.active;

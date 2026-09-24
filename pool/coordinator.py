@@ -4,6 +4,7 @@ import secrets
 import threading
 import time
 from fractions import Fraction
+from collections import OrderedDict
 
 from .protocol import VERSION, Busy, Refused, require, hex64, nonce, units
 from .accounting import pplns, allocate_policy, text, floor_total
@@ -36,6 +37,9 @@ class Coordinator:
         self.highwater=Records(journal,'nonce_highwater');self.receipts=Records(journal,'receipts')
         self.earnings=Records(journal,'earnings')
         self.active = None
+        # Only already durable, account-bound leases are cached. Unused ranges
+        # are deliberately abandoned at template changes/restart, never reused.
+        self.lease_reserve = OrderedDict()
         self.incomes = Records(journal,'incomes')
         self.payments = None
         self.rewards = None
@@ -94,7 +98,13 @@ class Coordinator:
             self.incomes[value['id']]=income
 
     def record(self, kind, value):
-        seq=self.journal.append(kind,value); self.apply(kind,value,seq); return seq
+        seq=self.journal.append(kind,value)
+        try:self.apply(kind,value,seq)
+        except BaseException:
+            # The log is already durable. Never serve from a partially updated
+            # nonce/accounting projection; reconstruct it from the log first.
+            self.journal.close();raise
+        return seq
 
     def unresolved(self,cutoff):
         return any(next(self.receipts.select(status=status,cutoff=cutoff),None) is not None
@@ -136,8 +146,10 @@ class Coordinator:
         self.authenticate(account,credential)
         require(type(count) is int and 1<=count<=4096, 'lease size')
         with self.lock:
+            self.journal.ensure_open()
             # Cache only an issuing-node token which still has ample lifetime.
             if self.active is None or self.active[1] < time.monotonic()+2:
+                self.lease_reserve.clear()
                 started=time.monotonic()
                 if self.rewards:
                     seal_height=self.node.call('getblockcount')+1
@@ -159,11 +171,28 @@ class Coordinator:
                 self.record('job',job)
                 self.active=(job['id'],started+template['work_ttl_ms']/1000)
             job=self.jobs[self.active[0]]
-            start=int(self.highwater.get(job['template'],{'end':'0'})['end'])
-            require(start+count <= 1<<64, 'template nonce space exhausted')
-            lease={'id':secrets.token_hex(16),'account':account,'job':job['id'],
-                   'template':job['template'],'start':str(start),'end':str(start+count)}
-            self.record('lease',lease) # durable BEFORE delivery, including alias/restart
+            key=(job['id'],account,count)
+            reserve=self.lease_reserve.pop(key,[])
+            if not reserve:
+                start=int(self.highwater.get(job['template'],{'end':'0'})['end'])
+                require(start+count <= 1<<64, 'template nonce space exhausted')
+                batch=min(8,((1<<64)-start)//count)
+                reserve=[{'id':secrets.token_hex(16),'account':account,'job':job['id'],
+                          'template':job['template'],'start':str(start+i*count),
+                          'end':str(start+(i+1)*count)} for i in range(batch)]
+                # Exact individual ranges, credentials and response schema stay
+                # unchanged. One sync group replaces up to eight sync groups.
+                sequences=self.journal.append_many([('lease',lease) for lease in reserve])
+                try:
+                    for lease,sequence in zip(reserve,sequences):self.apply('lease',lease,sequence)
+                except BaseException:self.journal.close();raise
+            lease=reserve.pop(0)
+            start=int(lease['start'])
+            if reserve:
+                self.lease_reserve[key]=reserve
+                if len(self.lease_reserve)>64:self.lease_reserve.popitem(last=False)
+            # An expensive durable write must not publish already expired work.
+            if self.active[1] <= time.monotonic():raise Busy('work expired during durable reservation; retry')
             self.active_accounts[account] = time.monotonic()
             return {'version':VERSION,'lease':lease['id'],'chain':self.node.genesis,'height':str(job['height']),
                     'header':job['node']['block_hex'][:176], 'target':job['target'],

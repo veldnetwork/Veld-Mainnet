@@ -55,6 +55,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def setup(self):
         super().setup()
         self.requests_remaining=16
+    def finish(self):
+        try:super().finish()
+        except (BrokenPipeError,ConnectionResetError,TimeoutError):pass
     def log_message(self,*args):pass # never log tokens, request bodies or private addresses
     def security_headers(self):
         self.send_header('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
@@ -104,7 +107,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header('Vary','Origin')
         for key,value in {'Content-Type':'application/json','Content-Length':str(len(body)),
                           'Connection':'keep-alive' if reuse else 'close'}.items():self.send_header(key,value)
-        self.end_headers();self.wfile.write(body);self.wfile.flush();self.close_connection=not reuse
+        self.end_headers()
+        try:self.wfile.write(body);self.wfile.flush()
+        except (BrokenPipeError,ConnectionResetError,TimeoutError):
+            # A disconnected client cannot receive an error response. Avoid a
+            # second write and repeated tracebacks for the same lost socket.
+            self.close_connection=True;return
+        self.close_connection=not reuse
         if reuse:self.connection.settimeout(2)
     def coordinator_request(self,action,payload):
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:

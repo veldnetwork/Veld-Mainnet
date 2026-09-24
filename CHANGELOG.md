@@ -3,6 +3,29 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## Unreleased - Address-only mining, Windows startup and update recovery
+
+- Add address-only solo mining: save a payout address without creating or
+  unlocking a wallet on the mining computer. Preserve ordinary proof-of-work
+  admission, require full validation and keep wallet/validator signing off.
+  Protect local RPC separately and bind managed update resume to the selected
+  payout. Pool mining continues to use its existing address-only setup.
+
+- Add opt-in Windows sign-in startup with separate app-only, solo mining,
+  saved pool mining and node-only choices. An optional confirmed node unlock
+  can be protected by Windows Credential Manager for unattended local startup.
+- Add an explicit minimize-to-tray preference, off by default. Keep the
+  taskbar entry when no tray icon is available and restore the tray icon after
+  Windows Explorer restarts. Closing the window still exits the app.
+- Require the detached update helper to own both installation locks and signal
+  readiness before the client closes. Finish download cleanup before handing
+  over, and keep the client open if the helper fails or times out.
+- Include a read-only Windows diagnostic collector limited to updater outcomes,
+  package hashes and application/power event summaries; it uploads nothing.
+- Measure pool job lifetime from the authenticated request send time, avoiding
+  lost work time from local connection queues and TLS setup. Server expiry,
+  nonce reservations and the bounded transport deadline remain unchanged.
+
 ## 3.2.6 - Initial block download efficiency
 
 - Let fully validated and committed forward blocks restore only their own

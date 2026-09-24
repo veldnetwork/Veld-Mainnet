@@ -1755,6 +1755,7 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
         const bool mining_flag =
+            arg == "--address-only" || arg.rfind("--address-only=", 0) == 0 ||
             arg == "--mine" || arg.rfind("--mine=", 0) == 0 ||
             arg == "--miner" || arg.rfind("--miner=", 0) == 0 ||
             arg == "--threads" || arg.rfind("--threads=", 0) == 0;
@@ -1773,6 +1774,19 @@ int main(int argc, char* argv[]) {
          std::string(argv[1]) == "-V")) {
         std::cout << "Veld Node " << CLIENT_VERSION << "\n";
         return 0;
+    }
+    bool requested_address_only = false;
+    for (int i=1; i<argc; ++i) if (std::string_view(argv[i]) == "--address-only") requested_address_only = true;
+    if (requested_address_only) {
+        for (int i=1; i<argc; ++i) {
+            const std::string_view flag(argv[i]);
+            if (flag == "--wallet" || flag == "--setup" || flag == "--endorse" ||
+                flag == "--create-miner-key" || flag == "--import-miner-key" ||
+                flag == "--allow-plaintext-miner-key") {
+                std::cerr << "veld-node: --address-only cannot be combined with wallet/signing operations\n";
+                return 2;
+            }
+        }
     }
     veld::compat::InitNetwork();
 
@@ -1980,6 +1994,7 @@ int main(int argc, char* argv[]) {
     bool       opt_mine     = false;
     bool       opt_nomine   = false;
     bool       opt_endorse  = false;
+    bool       opt_address_only = false;
     bool       opt_reachable = false;
     bool       opt_tor      = false;
     bool       opt_tor_only = false;
@@ -2078,6 +2093,7 @@ int main(int argc, char* argv[]) {
             opt_mine = true;
 #endif
         }
+        else if (arg == "--address-only") { opt_address_only = true; }
         else if (arg == "--endorse") { opt_endorse = true; }
         else if (arg == "--reachable") { opt_reachable = true; }
         else if (arg == "--tor")       { opt_tor = true; }
@@ -2267,6 +2283,7 @@ int main(int argc, char* argv[]) {
 #ifdef VELD_FLEET_NO_MINE
                       << "  --no-prompt, --auto  Skip the validator identity wizard (automation only; needs miner.key to exist)\n\n";
 #else
+                      << "  --address-only --miner <address>  Use payout-only mining without a wallet; full validation, no signing\n"
                       << "  --no-prompt, --auto  Skip the login wizard (automation only; needs miner.key to exist)\n\n";
 #endif
 #if !defined(VELD_PUBLIC_RELEASE) && !defined(VELD_FLEET_NO_MINE)
@@ -2423,6 +2440,19 @@ int main(int argc, char* argv[]) {
 #endif
     }
 
+    if (opt_address_only) {
+        if (!mining::ValidAddressOnlyDestination(opt_miner_addr, config.IsTestNetwork()) ||
+            opt_endorse || opt_setup || opt_create_miner_key || !opt_import_miner_key.empty()) {
+            std::cerr << "veld-node: --address-only requires --miner with a valid payout address for this network\n";
+            return 2;
+        }
+        // Address-only receipts use a separate encrypted local validation
+        // identity. Never reuse a miner wallet or fleet receipt.
+#if !defined(VELD_PUBLIC_MAINNET) || !defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+        opt_full_ibd = true;
+        opt_snapshot_bootstrap = false;
+#endif
+    }
     if (opt_datadir.empty()) {
         opt_datadir = DefaultDataDirForNetwork(config.kind);
     }
@@ -2453,6 +2483,14 @@ int main(int argc, char* argv[]) {
 #endif
 
 #ifndef VELD_PUBLIC_TESTNET
+    if (opt_address_only) {
+        std::string auth_error;
+        if (!mining::AddressOnlyRpcSecret(opt_datadir, g_passphrase, &auth_error,
+                                         !opt_print_rpc_token)) {
+            std::cerr << "veld-node: " << auth_error << "\n";
+            return 2;
+        }
+    }
     if (opt_create_miner_key && !opt_import_miner_key.empty()) {
         std::cerr << "veld-node: --create-miner-key and --import-miner-key are mutually exclusive\n";
         return 2;
@@ -2577,8 +2615,8 @@ int main(int argc, char* argv[]) {
         // consumes this datadir's restart authorization before reading/output.
         if (!admit_testnet_lease()) return 78;
 #endif
-        std::string pass = _wiz_ask_passphrase();
-        std::string tf_path = opt_datadir + "/rpc.token";
+        std::string pass = opt_address_only ? g_passphrase : _wiz_ask_passphrase();
+        std::string tf_path = opt_datadir + (opt_address_only ? "/address-only-rpc.token" : "/rpc.token");
         std::string tok;
         (void)_wiz_load_rpc_token(tf_path, pass, tok);
         if (tok.empty()) {
@@ -2909,12 +2947,31 @@ int main(int argc, char* argv[]) {
 #endif
     RealKeyPair miner_kp;
     bool miner_key_ready = false;
+#if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
+    RealKeyPair address_validation_kp;
+    struct AddressValidationKeyWipe {
+        RealKeyPair& key;
+        ~AddressValidationKeyWipe() {
+            compat::SecureZero(key.private_key.data(), key.private_key.size());
+        }
+    } address_validation_key_wipe{address_validation_kp};
+    bool address_validation_key_ready = false;
+#endif
 #if defined(VELD_FLEET_NO_MINE) && defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     RealKeyPair fleet_validation_kp;
     bool fleet_validation_key_ready = false;
 #endif
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     const auto persist_current_receipt = [&](std::string* error) {
+        if (opt_address_only) {
+            if (!address_validation_key_ready) {
+                if (error) *error = "address-only validation identity is unavailable";
+                return false;
+            }
+            return node.PersistAddressOnlyIbdReceiptAtTip(
+                address_validation_kp, opt_miner_addr,
+                full_ibd_receipt, error);
+        }
 #ifdef VELD_FLEET_NO_MINE
         if (!fleet_validation_key_ready) {
             if (error) *error = "fleet identity is unavailable";
@@ -2939,6 +2996,49 @@ int main(int argc, char* argv[]) {
     // must not turn every ordinary restart into another historical PoW pass.
     if (!opt_regtest) {
         std::string receipt_error;
+        if (opt_address_only) {
+            const std::string key_file =
+                snapshot_bootstrap::AddressKeyPath(opt_datadir);
+            if (std::filesystem::exists(key_file)) {
+                address_validation_key_ready = _wiz_load_key_encrypted(
+                    key_file, g_passphrase, address_validation_kp,
+                    config.IsTestNetwork());
+                if (!address_validation_key_ready) {
+                    std::cerr << "  [snapshot] cannot decrypt the address-only "
+                                 "validation key; refusing recovery.\n";
+                    return 1;
+                }
+            } else {
+                address_validation_kp = GenerateKeyPair(config.IsTestNetwork());
+                address_validation_key_ready = _wiz_save_key_encrypted(
+                    key_file, address_validation_kp.private_key,
+                    g_passphrase, config.IsTestNetwork());
+                if (!address_validation_key_ready) {
+                    std::cerr << "  [snapshot] cannot create the encrypted "
+                                 "address-only validation key.\n";
+                    return 1;
+                }
+            }
+            const bool receipt_present = std::filesystem::exists(
+                snapshot_bootstrap::AddressReceiptPath(opt_datadir));
+            if (receipt_present) {
+                full_ibd_receipt_valid =
+                    snapshot_bootstrap::VerifyAddressIbdReceipt(
+                        opt_datadir, address_validation_kp.public_key,
+                        opt_miner_addr, full_ibd_receipt, &receipt_error,
+                        false, config.IsTestNetwork());
+                if (!full_ibd_receipt_valid) {
+                    std::cerr << "  [snapshot] invalid address-only full-IBD "
+                                 "receipt: " << receipt_error
+                              << "; fast restart remains locked.\n";
+                }
+            }
+            if (full_ibd_receipt_valid) {
+                std::cout << "  [snapshot] address-only history verified "
+                             "through h=" << full_ibd_receipt.height
+                          << " for this payout and local validation identity.\n";
+            }
+        } else {
 #if defined(VELD_FLEET_NO_MINE) && \
     defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         const std::string fleet_key_file =
@@ -3008,6 +3108,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "  [snapshot] invalid full-IBD receipt: "
                       << receipt_error
                       << "; snapshot fast-start remains locked.\n";
+        }
         }
     }
 #endif
@@ -3320,7 +3421,7 @@ int main(int argc, char* argv[]) {
         std::string& value;
         ~RpcTokenWiper() { veld::WipeString(value); }
     } wipe_rpc_token{rpc_token};
-    std::string token_file = opt_datadir + "/rpc.token";
+    std::string token_file = opt_datadir + (opt_address_only ? "/address-only-rpc.token" : "/rpc.token");
     {
         if (g_passphrase.empty()) {
             std::string env_pass = _wiz_ask_passphrase();
@@ -3333,6 +3434,8 @@ int main(int argc, char* argv[]) {
 #endif
         if (rpc_token.empty() && std::filesystem::exists(token_file))
             (void)_wiz_load_rpc_token(token_file, g_passphrase, rpc_token);
+        if (opt_address_only && std::filesystem::exists(token_file) && rpc_token.size() != 64)
+            throw std::runtime_error("address-only RPC credential cannot decrypt the existing token; refusing replacement");
         if (rpc_token.size() != 64) {
             veld::WipeString(rpc_token);
             static const char* hex = "0123456789abcdef";
@@ -3492,7 +3595,7 @@ int main(int argc, char* argv[]) {
     // user's machine — only infrastructure operators manually deploy
     // Pool keys are operator-provisioned and never generated or embedded by
     // the node. A missing key leaves pool-flush authority disabled locally.
-    {
+    if (!opt_address_only) {
         std::string pool_kp_file = opt_datadir + "/pool.key";
         if (std::filesystem::exists(pool_kp_file)) {
             RealKeyPair pool_kp;
@@ -3534,7 +3637,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    {
+    if (!opt_address_only) {
         std::string ep_kp_file = opt_datadir + "/endorsement_pool.key";
         std::string pool_kp_file = opt_datadir + "/pool.key";
         bool is_infra_node = std::filesystem::exists(pool_kp_file);
@@ -3613,8 +3716,14 @@ int main(int argc, char* argv[]) {
     bind_node_validation_identity = !opt_regtest;
 #endif
 #endif
-    if (opt_mine || opt_endorse ||
+    if (opt_address_only || opt_mine || opt_endorse ||
         bind_existing_regtest_generation_identity || bind_node_validation_identity) {
+        if (opt_address_only) {
+            miner_kp.private_key.fill(0); miner_kp.public_key.fill(0);
+            miner_kp.address = opt_miner_addr; miner_kp.testnet = config.IsTestNetwork();
+            miner_kp.script_override = AddressToScript(opt_miner_addr);
+            std::cout << "  Address-only mode: payout only; wallet and validator signing disabled.\n";
+        } else {
         if (std::filesystem::exists(kp_file)) {
             if (_wiz_is_encrypted(kp_file)) {
                 if (!miner_key_ready) {
@@ -3753,6 +3862,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        } // wallet identity mode
         std::cout << "\n";
 
         veld::net::g_suppress_sync.store(false);
@@ -3760,8 +3870,9 @@ int main(int argc, char* argv[]) {
 #ifndef VELD_FLEET_NO_MINE
         if (opt_regtest) {
             std::string generation_identity_error;
-            if (!node.BindGenerationIdentity(
-                    miner_kp, &generation_identity_error)) {
+            if (!(opt_address_only
+                    ? node.BindAddressGenerationIdentity(opt_miner_addr, &generation_identity_error)
+                    : node.BindGenerationIdentity(miner_kp, &generation_identity_error))) {
                 std::cerr << RED
                           << "  FATAL: could not bind the validated regtest "
                              "generation identity: "
@@ -3797,7 +3908,13 @@ int main(int argc, char* argv[]) {
 #else
             constexpr uint32_t mining_bits = 0;
 #endif
-            node.StartMining(miner_kp, mining_bits);
+            if (opt_address_only) {
+                std::string mining_error;
+                if (!node.StartAddressMining(opt_miner_addr, mining_bits, &mining_error)) {
+                    std::cerr << "  Address-only mining refused: " << mining_error << "\n";
+                    return 1;
+                }
+            } else node.StartMining(miner_kp, mining_bits);
         } else if (opt_endorse) {
             // --endorse without --mine: validator endorse-only. Endorses
             // recent blocks as fee-paying mempool TXs (see the endorse loop
@@ -4295,7 +4412,8 @@ int main(int argc, char* argv[]) {
                 if (node.IsIBDComplete()) {
                     node.TryBackfillFlushes();
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
-                    bool receipt_role_ready = miner_key_ready;
+                    bool receipt_role_ready = opt_address_only
+                        ? address_validation_key_ready : miner_key_ready;
 #ifdef VELD_FLEET_NO_MINE
                     receipt_role_ready = fleet_validation_key_ready;
 #endif
@@ -4361,7 +4479,8 @@ int main(int argc, char* argv[]) {
         // small recent suffix, while the full-IBD anchor remains exact and
         // owner-bound. Any write failure leaves the older valid receipt intact.
         constexpr uint64_t FULL_IBD_RECEIPT_REFRESH_BLOCKS = 16;
-        bool receipt_refresh_role_ready = miner_key_ready;
+        bool receipt_refresh_role_ready = opt_address_only
+            ? address_validation_key_ready : miner_key_ready;
 #ifdef VELD_FLEET_NO_MINE
         receipt_refresh_role_ready = fleet_validation_key_ready;
 #endif
@@ -4449,9 +4568,9 @@ int main(int argc, char* argv[]) {
             if (deep_fork_secs >= DEEP_FORK_GRACE_SECS) {
 #if defined(VELD_PUBLIC_TESTNET) || defined(VELD_PUBLIC_RELEASE) || \
     !defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
-                // Public profiles are compiled full-IBD-only and have no snapshot
-                // namespace. Never persist a snapshot-recovery request that
-                // the next startup is required to reject. Treat even a
+                // Public profiles handle deep-fork recovery through bounded
+                // ordinary peer IBD here. Never persist a snapshot-recovery
+                // request that the next startup may reject. Treat even a
                 // quorum height claim as untrusted availability input: close
                 // mining/admission, clear volatile catch-up state, and ask
                 // connected peers for canonical blocks again. Repeated false
@@ -4714,7 +4833,7 @@ int main(int argc, char* argv[]) {
         static uint64_t last_endorsed_height = 0;
         static std::vector<std::pair<Secp256k1PrivKey, std::string>> endorser_keys;
         static bool endorser_keys_loaded = false;
-        if (!endorser_keys_loaded) {
+        if (!opt_address_only && !endorser_keys_loaded) {
             endorser_keys_loaded = true;
             {
                 std::string pk_hex;
@@ -4789,7 +4908,7 @@ int main(int argc, char* argv[]) {
                 std::cout.flush();
             }
         }
-        if ((opt_mine || opt_endorse) &&
+        if (!opt_address_only && (opt_mine || opt_endorse) &&
             cur_height > last_endorsed_height + 1 && cur_height > 2 &&
             node.IsIBDComplete() && node.ChainFullyValidated()) {
             static uint64_t last_diag_height = 0;

@@ -76,6 +76,7 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
         if operator_uid is not None:self.request_queue_size=4
         self.pool=pool;self.operator_uid=operator_uid;self.slots=threading.BoundedSemaphore(16 if operator_uid is None else 4)
         self.notice_lock=threading.Lock();self.last_refusal_notice=None
+        self.last_capacity_notice=None
         super().__init__(path,Handler)
         os.chmod(path,0o660)
     def refusal_notice(self,action,error):
@@ -90,7 +91,17 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
             self.last_refusal_notice=now
         print('pool request refused action='+action+' reason='+reason,file=sys.stderr,flush=True)
     def process_request(self,request,address):
-        if not self.slots.acquire(False):request.close();return
+        # Briefly drain a burst into the existing bounded kernel backlog. Keep
+        # the same 16 worker / 4 operator handlers; do not spawn waiting threads
+        # or create an unbounded queue. Slow clients still hit their deadlines.
+        if not self.slots.acquire(timeout=.25 if self.operator_uid is None else 0):
+            request.close()
+            with self.notice_lock:
+                now=time.monotonic()
+                if self.last_capacity_notice is None or now-self.last_capacity_notice>=30:
+                    self.last_capacity_notice=now
+                    print('pool IPC capacity saturated; request closed',file=sys.stderr,flush=True)
+            return
         try:super().process_request(request,address)
         except BaseException:self.slots.release();raise
     def process_request_thread(self,request,address):
@@ -222,19 +233,29 @@ def main():
             require(not any(e['kind'].startswith('operator_') for e in journal.events()),
                     'recorded operator policy requires the operator service configuration')
         stop=threading.Event()
+        maintenance_failure=[]
         def maintain():
-            while not stop.wait(1):
-                maintain_once(pool,node,stop)
-        maintenance=threading.Thread(target=maintain,daemon=True);maintenance.start()
+            try:
+                while not stop.wait(1):
+                    maintain_once(pool,node,stop)
+            except BaseException as error:
+                # Expected retryable failures are handled inside maintain_once.
+                # An unexpected database/programming failure must stop the
+                # serving process, not leave a dead maintenance thread hidden
+                # behind a healthy PID. Preserve all journals for supervision.
+                maintenance_failure.append(error);stop.set();server.shutdown()
+        maintenance=threading.Thread(target=maintain,daemon=True)
         try:
             with Server(config['socket'],pool) as server:
                 def shutdown(*_):
                     threading.Thread(target=server.shutdown,daemon=True).start()
                 signal.signal(signal.SIGTERM,shutdown)
                 signal.signal(signal.SIGINT,shutdown)
+                maintenance.start()
                 server.serve_forever(poll_interval=.25)
         finally:
-            stop.set();maintenance.join()
+            stop.set()
+            if maintenance.ident is not None:maintenance.join()
             if operator_server:
                 operator_server.shutdown();operator_thread.join();operator_server.server_close()
                 Path(config['operator']['socket']).unlink(missing_ok=True)
@@ -242,5 +263,7 @@ def main():
             if payment_journal:payment_journal.close()
             if identity_journal:identity_journal.close()
             Path(config['socket']).unlink(missing_ok=True)
+        if maintenance_failure:
+            raise RuntimeError('pool maintenance failed; intact journal recovery required') from maintenance_failure[0]
 
 if __name__=='__main__':main()
