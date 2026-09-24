@@ -2,10 +2,6 @@
 
 ## A memory-hard proof-of-work network with native staking, co-mining, validator finality, and Bitcoin utility
 
-**Protocol version:** Veld Core 3.2.2 (3.2.1 consensus schedule unchanged)
-
-**Document version:** 21 September 2026
-
 **Network:** veld-public-mainnet-v2
 
 **Ordinary staking minimum:** 500 VELD
@@ -19,8 +15,6 @@ VELD is a proof-of-work network with a maximum native supply of 21,000,000 VELD 
 The target block interval is 180 seconds. ASERT adjusts difficulty after every accepted block using a 2,700-second half-life. Ordinary staking is active with a minimum of 500 VELD and a maximum of 10,000 VELD per address. Co-mining requires 1,000 VELD of ordinary stake at the mining address. Validator registration requires a separate 10,000 VELD bond.
 
 Nodes independently validate proof of work, transactions, monetary accounting, and participation state. Signed snapshots support synchronization, while independent validation from genesis remains mandatory before a snapshot-backed node can mine, endorse, or serve its normal interfaces. Durable progress and verified recovery records allow that validation to continue across restarts.
-
-This revision describes published Veld 3.2.1 and distinguishes the block 9,500 rules from historical validation. Publication does not establish custody readiness or a comprehensive security clearance. Exact binary-build identity and qualification scope are documented separately.
 
 ## 1. Network and current mainnet rules
 
@@ -53,13 +47,7 @@ Operators can inspect `getnetworkinfo` and the release identity records to compa
 
 Staking positions retain their chosen lockup conditions. Reaching the unlock height permits an unstake transaction; funds do not withdraw automatically.
 
-### 1.3 Coordinated activation at block 9,500
-
-Three changes in the 3.2.1 public-mainnet release use inclusion height 9,500: removal of the aggregate ordinary-stake validator registration gate, authorization of version-one SHA-384 key destinations, and a flat 0.30% AMM swap fee. Before that boundary, each path preserves its historical rules. A reorganization back across the boundary restores the applicable earlier rule.
-
-The previous unpublished 9,000 candidate is superseded. Software enforcing different activation heights must be replaced through a coordinated upgrade before those rules diverge. This document does not assert that deployed nodes have been upgraded. Governance, validator bonds, finality membership, btcVELD activation and custody permissions remain separate requirements.
-
-### 1.4 Consensus and operating policy
+### 1.3 Consensus and operating policy
 
 Consensus rules determine whether every validating node accepts a block. Relay policy determines what a node forwards or places in its mempool. Wallet policy governs transaction preparation and user interaction. Snapshot distribution, the hosted wallet, the Explorer, the Portal, and custody services are operational components with their own availability and trust boundaries.
 
@@ -192,9 +180,7 @@ Qualification requires the stake, signature, work, inclusion, uniqueness, and lo
 
 ### 6.1 Validator participation
 
-Before activation at block 9,500, validator registration retains the historical 10,000 VELD aggregate ordinary-stake requirement. At and after that inclusion height, this aggregate prerequisite is removed. An otherwise eligible first validator can register and perform qualifying endorsement work with zero ordinary stake across the network.
-
-Every validator still supplies its own correctly funded and authorized 10,000 VELD custodial bond. This bond is distinct from ordinary stake and remains slashable. Funding, identity, signatures, synchronization, independent validation, applicable maturity and the 480-block settlement schedule remain enforced. Registration alone does not earn endorsement rewards. Removing the aggregate registration gate does not activate governance, create a finality quorum or unlock btcVELD.
+Every validator supplies its own correctly funded and authorized 10,000 VELD custodial bond. This bond is distinct from ordinary stake and remains slashable. Funding, identity, signatures, synchronization, independent validation, applicable maturity and the 480-block settlement schedule remain enforced. Registration alone does not earn endorsement rewards.
 
 The validator pool receives 10% of ordinary block subsidy. Payouts depend on eligible endorsements in the settlement window. A pool allocation is not evidence that a validator has qualified for payment. Where no eligible endorsement recipient exists, the applicable settlement rules determine routing; the allocation must not be interpreted as an unconditional payout to operators.
 
@@ -262,16 +248,7 @@ The VELD/btcVELD AMM is a constant-product pool available after the peg's activa
 
 Swaps use deterministic integer arithmetic. Fees are charged in the asset received and remain in the pool's reserves. Liquidity-provider shares represent proportional ownership of the reserves, including retained fees. Withdrawal claims that proportion of both assets, subject to the transaction's validation rules.
 
-At and after block 9,500, the swap fee is 30 basis points (0.30%) in either direction, regardless of deviation from the opening ratio. VELD has no target price or stablecoin obligation. Reserve depth and constant-product pricing determine execution and price impact; btcVELD's Bitcoin backing is a separate custody obligation. The flat fee is a provisional policy choice, not a demonstrated economic optimum or a guarantee of profitable liquidity provision.
-
-The following four-band schedule remains the historical rule strictly before activation:
-
-| Trade effect or post-trade deviation from reference | Fee |
-|---|---:|
-| Improves the ratio or remains within 5% | 0.30% |
-| Above 5% through 10% | 0.50% |
-| Above 10% through 20% | 0.75% |
-| Above 20% | 1.00% |
+The swap fee is 30 basis points (0.30%) in either direction, regardless of deviation from the opening ratio. VELD has no target price or stablecoin obligation. Reserve depth and constant-product pricing determine execution and price impact; btcVELD's Bitcoin backing is a separate custody obligation. The flat fee is a provisional policy choice, not a demonstrated economic optimum or a guarantee of profitable liquidity provision.
 
 All AMM swap fees stay with the pool. Native VELD transaction fees are separate. Pool reserves share the applicable aggregate btcVELD custody ceiling; liquidity does not create a second independent allowance for represented Bitcoin.
 
@@ -319,8 +296,6 @@ Wallet transaction signing occurs locally. Operators must protect encrypted keyf
 
 Use the signed updater or download from `https://veld.network/#download`. Verify the package manifest and detached Veld signature with the expected release authority. GUI and terminal distributions have separate signed feeds. Source tags, source archives, and signed binary manifests identify related but distinct artifacts.
 
-Veld 3.2.2 is available from the public signed download feed. Update before block 9,500 through Veld Node's Release and updates controls or the official full package. Retain wallet backups and existing chain data, and verify the manifest against the expected release authority.
-
 Automatic updating is opt-in and checks on an hourly schedule. A verified update preserves configured mining mode, payout identity, CPU settings and Portal pairing. Pool mining does not require custody of the payout wallet key or a wallet passphrase. Solo mining can resume only when its separately protected, authorized resume mechanism is available. A failed signature or invalid package must not be installed. Operators should verify the running daemon identity, profile, synchronization state and mining mode after an update.
 
 For service health, height alone is insufficient. Useful evidence includes a stable process, completed independent verification, fresh distinct outbound peers, matching block hash and complete state digest, and progress observed over time. Fleet counts and public address groups do not reveal the health or ownership of every physical miner.
@@ -333,9 +308,9 @@ The gateway serves versioned jobs with durable, non-overlapping 64-bit nonce ass
 
 Block income uses expected-work-weighted PPLNS with a candidate lookback equal to two network blocks of expected work. Beneficiaries are frozen at the earning event. The winning share is included once. Only the pool's actual miner-category receipt is mining income; the total coinbase, vault, validator and network lottery allocations are not payable pool earnings.
 
-The pool uses one co-mining identity with a separately operator-funded stake of at least 1,000 VELD. A genuine near miss must be signed, included and eligible in the canonical window before it constitutes an entry. Workers do not receive separate on-chain entries. Actual lottery winnings use a separate frozen qualification-window contribution record. Under the owner's candidate terms, ordinary staking yield earned by the pool identity is also shared with contributors under its recorded distribution policy. Operator-contributed principal and fee funds remain separate from miner liabilities.
+The pool uses one co-mining identity with a separately operator-funded stake of at least 1,000 VELD. A genuine near miss must be signed, included and eligible in the canonical window before it constitutes an entry. Workers do not receive separate on-chain entries. Actual lottery winnings use a separate frozen qualification-window contribution record. Ordinary staking yield earned by the pool identity is also shared with contributors under its recorded distribution policy. Operator-contributed principal and fee funds remain separate from miner liabilities.
 
-Candidate settings are a 0% service fee, a 1 VELD automatic payment threshold, daily batching, and at least 120 canonical confirmations plus actual spendability. The threshold applies to the eligible amount at a payout destination across its accounts; separate private account access is retained. Sub-threshold earnings are retained. Daily processing is not a promise of daily earnings. Public fee terms and launch require separate approval.
+The settings are a 0% service fee, a 1 VELD automatic payment threshold, daily batching, and at least 120 canonical confirmations plus actual spendability. The threshold applies to the eligible amount at a payout destination across its accounts; separate private account access is retained. Sub-threshold earnings are retained. Daily processing is not a promise of daily earnings.
 
 Pending means attributed income that is not yet payable. Available means matured, reconciled earnings eligible for payment. Paid requires a canonical confirmed payment. Input reservations and durable payment intentions prevent concurrent spending. Exact signed bytes are stored before broadcast; a lost response triggers reconciliation or identical rebroadcast, never an automatic second economic payment. Backup recovery must reconcile the signer journal and independently validated chain before spending resumes. Unexplained income or a deficit is quarantined rather than silently assigned to other miners.
 
@@ -353,8 +328,6 @@ The software is subject to implementation and operational failure. Source review
 
 ## 13. Implementation and release references
 
-The 3.2.2 published binaries were built from commit `1f77a67365ff9c3c36dae2a624feb35615446202`, tree `97898f972e3a6eb0cce2caf86475afa5e4988bc6`. The corresponding source archive preserves that exact tree. The public source tag also contains later web and documentation corrections, identified separately from the binary build. See `docs/release-3.2.2-qualification.md` for executed checks and incomplete scope; historical receipts are not fresh results.
-
 | Area | Source reference |
 |---|---|
 | Network and monetary parameters | `include/core/constants.h` |
@@ -368,7 +341,6 @@ The 3.2.2 published binaries were built from commit `1f77a67365ff9c3c36dae2a624f
 | btcVELD and AMM liquidity | `include/core/onchain_tokens.h`, `include/core/amm_pool.h` |
 | Shared mining pool and payments | `pool/`, `include/pool/`, `src/veld-pool-client.cpp` |
 | SHA-384 destination migration | `docs/sha384-destinations.md` |
-| Prospective flat swap fee | `docs/amm-market-fee-candidate.md` |
 | Node lifecycle and recovery | `src/veld-node.cpp`, `include/node/node.h` |
 | Build and package identity | `BUILDING.md`, `docs/source-identity.md` |
 

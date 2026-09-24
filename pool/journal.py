@@ -11,6 +11,7 @@ import sqlite3
 import threading
 import secrets
 import stat
+from contextlib import nullcontext
 
 from .protocol import decode, encode, require, Refused, schema, hex64, MAX_JOURNAL_BYTES
 
@@ -154,23 +155,47 @@ class Journal:
             self.db.execute('INSERT INTO events VALUES(?,?,?)', (event['seq'], digest, body))
 
     def append(self, kind, payload):
+        return self.append_many([(kind, payload)])[0]
+
+    def ensure_open(self):
+        if self.db is None or self.log is None or self.guard is None:
+            raise RuntimeError('journal unavailable; restart and reconcile')
+
+    def append_many(self, entries):
+        """Commit a bounded group of ordinary hash-chained events before return.
+
+        The wire format and recovery authority are unchanged. No caller may
+        publish any member until the entire journal, anchor and index commit
+        succeeds. A crash can leave unused reservations; never reissue them.
+        """
+        require(isinstance(entries, (list, tuple)) and 1 <= len(entries) <= 8,
+                'journal batch count')
         with self.lock:
-            event = {'seq': self.sequence + 1, 'previous': self.digest, 'kind': kind, 'payload': payload}
-            digest = hashlib.sha256(encode(event)).hexdigest()
-            line = encode(dict(event, digest=digest)) + b'\n'
-            require(len(line) <= MAX_EVENT, 'event limit')
+            self.ensure_open()
+            sequence, previous = self.sequence, self.digest
+            records = []; lines = []; total = 0
+            for kind, payload in entries:
+                sequence += 1
+                event = {'seq': sequence, 'previous': previous, 'kind': kind, 'payload': payload}
+                digest = hashlib.sha256(encode(event)).hexdigest()
+                line = encode(dict(event, digest=digest)) + b'\n'
+                total += len(line)
+                require(len(line) <= MAX_EVENT and total <= MAX_EVENT, 'event limit')
+                records.append((event, digest)); lines.append(line); previous = digest
             # Persistence failure poisons this process: callers must shut down,
             # never continue with a potentially uncertain journal position.
             try:
-                require(self.log.write(line) == len(line), 'partial journal write')
+                data = b''.join(lines)
+                require(self.log.write(data) == len(data), 'partial journal write')
                 os.fsync(self.log.fileno())
                 atomic(self.anchor, encode({'seq': event['seq'], 'digest': digest}))
-                self._index(event, digest); self.db.commit()
+                for event, digest in records: self._index(event, digest)
+                self.db.commit()
             except BaseException:
                 self.close()
                 raise
             self.sequence, self.digest = event['seq'], digest
-            return self.sequence
+            return [event['seq'] for event, _ in records]
 
     def events(self):
         with self.lock:
@@ -197,8 +222,9 @@ class Journal:
                         'journal changed during replay')
 
     def close(self):
-        for name in ('db', 'log', 'guard'):
-            resource = getattr(self, name, None)
-            if resource is not None:
-                resource.close()
-                setattr(self, name, None)
+        with getattr(self, 'lock', nullcontext()):
+            for name in ('db', 'log', 'guard'):
+                resource = getattr(self, name, None)
+                if resource is not None:
+                    try:resource.close()
+                    finally:setattr(self, name, None)

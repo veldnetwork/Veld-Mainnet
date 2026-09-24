@@ -1,3 +1,4 @@
+#include "mining/address_only.h"
 #pragma once
 
 #include "../core/blockchain.h"
@@ -45,6 +46,7 @@
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
 #include "snapshot_manifest.h"
 #include "full_ibd_receipt.h"
+#include "address_only_ibd_receipt.h"
 #endif
 #include "work_admission.h"
 #include "work_admission_coordinator.h"
@@ -840,10 +842,11 @@ inline MineBlockResult MineOnly(
     }
     std::atomic<bool> nms_broadcast_guard{false};
 
-#if defined(VELD_MAINNET_POW) && !(defined(VELD_LOCAL_TEST_NETWORK) && defined(VELD_LIGHT_VERIFY))
-    Hash256 ds_seed_loop = mining::ComputeEpochSeed(
+#ifdef VELD_MAINNET_POW
+    const Hash256 ds_seed_loop = mining::ComputeEpochSeed(
         candidate.header.prev_block_hash, candidate.height,
         candidate.header.bits);
+#if !(defined(VELD_LOCAL_TEST_NETWORK) && defined(VELD_LIGHT_VERIFY))
     {
         mining::DatasetHandle warm =
             mining::GlobalDataset().get_for_seed(ds_seed_loop);
@@ -856,6 +859,7 @@ inline MineBlockResult MineOnly(
         }
     }
     mining::DatasetHandle ds_handle;
+#endif
 #endif
 
     uint64_t nonce_base = 0;
@@ -933,17 +937,14 @@ inline MineBlockResult MineOnly(
                 Hash256 seed = sh.digest();
                 tvm.Initialize(seed);
 #ifdef VELD_MAINNET_POW
-                Hash256 per_hash_seed = mining::ComputeEpochSeed(
-                    candidate.header.prev_block_hash, candidate.height,
-                    candidate.header.bits);
 #if defined(VELD_LOCAL_TEST_NETWORK) && defined(VELD_LIGHT_VERIFY)
                 // The isolated network harness can compute the exact same
                 // dataset words through the existing light verifier. Keep the
                 // normal target, work lease, preflight, and commit checks.
-                tvm.SetLightKey(per_hash_seed);
+                tvm.SetLightKey(ds_seed_loop);
 #else
                 mining::DatasetHandle ds =
-                    mining::GlobalDataset().get_for_seed(per_hash_seed);
+                    mining::GlobalDataset().get_for_seed(ds_seed_loop);
                 if (!ds.get()) {
                     stop_local = true;
                     break;
@@ -1602,6 +1603,9 @@ public:
                     compat::SecureZero(key.private_key.data(), key.private_key.size());
                 }
             } wipe{identity};
+            // The public snapshot/full-IBD receipt schema is mainnet-bound;
+            // do not derive a testnet address from a private-chain fixture
+            // configuration when publishing that receipt.
             identity.address = PubKeyToAddress(identity.public_key, false);
             const auto hash = HashToHex(tip.GetHash());
             const bool written = fleet
@@ -1622,9 +1626,57 @@ public:
             return false;
         }
     }
+    bool PersistAddressOnlyIbdReceiptAtTip(
+            const RealKeyPair& validation_identity,
+            const std::string& payout_address,
+            snapshot_bootstrap::FullIbdReceipt& out,
+            std::string* error = nullptr) {
+        try {
+            auto transition = chain_.AcquireConsensusTransitionGuard();
+            if (!ChainFullyValidated() || FailStopRequired() ||
+                !AnchorSecurityImportSatisfiedLocked_() ||
+                IndependentValidationBase() || chain_.IsEmpty()) {
+                if (error) *error = "canonical history is not fully verified";
+                return false;
+            }
+            const auto recovery = snapshot_recovery::Load(data_dir_);
+            if (recovery && recovery->phase == "complete") {
+                CompleteSnapshotRecoveryLocked_(
+                    snapshot_bootstrap::ADDRESS_RECEIPT_FILENAME,
+                    validation_identity.public_key, payout_address);
+                return snapshot_bootstrap::VerifyAddressIbdReceipt(
+                    data_dir_, validation_identity.public_key,
+                    payout_address, out, error, false, config_.IsTestNetwork());
+            }
+            const auto tip = chain_.TipCopy();
+            RealKeyPair identity = validation_identity;
+            struct WipeIdentity {
+                RealKeyPair& key;
+                ~WipeIdentity() {
+                    compat::SecureZero(key.private_key.data(), key.private_key.size());
+                }
+            } wipe{identity};
+            identity.address = PubKeyToAddress(identity.public_key, false);
+            const auto hash = HashToHex(tip.GetHash());
+            if (!snapshot_bootstrap::WriteAddressIbdReceipt(
+                    data_dir_, identity, payout_address, tip.height, hash,
+                    error, config_.IsTestNetwork())) return false;
+            CompleteSnapshotRecoveryLocked_(
+                snapshot_bootstrap::ADDRESS_RECEIPT_FILENAME,
+                identity.public_key, payout_address);
+            out.height = tip.height;
+            out.tip_hash = hash;
+            out.miner_address = payout_address;
+            return true;
+        } catch (const std::exception& failure) {
+            if (error) *error = failure.what();
+            return false;
+        }
+    }
 private:
     void CompleteSnapshotRecoveryLocked_(const std::string& receipt_name,
-                                        const Secp256k1PubKey& expected_identity) {
+                                        const Secp256k1PubKey& expected_identity,
+                                        const std::string& expected_payout = {}) {
         if (!SnapshotRecoveryPending()) return;
         if (!IsIBDComplete() || !ChainFullyValidated() ||
             !AnchorSecurityImportSatisfiedLocked_() || FailStopRequired() ||
@@ -1635,9 +1687,13 @@ private:
         const bool valid = receipt_name == snapshot_bootstrap::RECEIPT_FILENAME
             ? snapshot_bootstrap::VerifyFullIbdReceipt(
                 data_dir_, expected_identity, receipt, &error, true)
-            : receipt_name == snapshot_bootstrap::FLEET_RECEIPT_FILENAME &&
-                snapshot_bootstrap::VerifyFleetIbdReceipt(
-                    data_dir_, expected_identity, receipt, &error, true);
+            : receipt_name == snapshot_bootstrap::FLEET_RECEIPT_FILENAME
+                ? snapshot_bootstrap::VerifyFleetIbdReceipt(
+                    data_dir_, expected_identity, receipt, &error, true)
+                : receipt_name == snapshot_bootstrap::ADDRESS_RECEIPT_FILENAME &&
+                    snapshot_bootstrap::VerifyAddressIbdReceipt(
+                        data_dir_, expected_identity, expected_payout,
+                        receipt, &error, true, config_.IsTestNetwork());
         const auto transaction = snapshot_recovery::Load(data_dir_);
         if (valid && transaction && transaction->phase == "complete") {
             // Completion already committed while this receipt authenticated
@@ -3993,6 +4049,54 @@ public:
             return false;
         }
         return BindGenerationIdentityLocked_(miner_keypair, error);
+#endif
+    }
+
+    bool BindAddressGenerationIdentity(const std::string& address,
+                                       std::string* error = nullptr) {
+#ifdef VELD_FLEET_NO_MINE
+        (void)address;
+        if (error) *error = "VELD_FLEET_NO_MINE: address generation disabled";
+        return false;
+#else
+        std::lock_guard<std::mutex> lock(generation_mutex_);
+        if (mining_.load()) {
+            if (error) *error = "stop mining before changing the payout address";
+            return false;
+        }
+        return BindAddressGenerationIdentityLocked_(address, error);
+#endif
+    }
+
+    bool StartAddressMining(const std::string& address, uint32_t bits_override = 0,
+                            std::string* error = nullptr) {
+#ifdef VELD_FLEET_NO_MINE
+        (void)address; (void)bits_override;
+        if (error) *error = "VELD_FLEET_NO_MINE: address mining disabled";
+        return false;
+#else
+        std::lock_guard<std::mutex> lock(generation_mutex_);
+#ifdef VELD_PUBLIC_TESTNET
+        if (PublicTestnetRuntimeStopRequired()) {
+            if (error) *error = "PUBLIC TESTNET runtime lease is closed";
+            return false;
+        }
+#endif
+        if (mining_.load()) {
+            if (error) *error = "mining is already active";
+            return false;
+        }
+        if (mining_thread_.joinable()) mining_thread_.join();
+        if (!BindAddressGenerationIdentityLocked_(address, error)) return false;
+        mining_bits_ = bits_override;
+        if (tcp_server_) {
+            tcp_server_->SetMinerScript(miner_keypair_.GetP2PKHScript());
+            tcp_server_->SetCOMineIdentity({}, {});
+        }
+        mining_work_state_.store(MiningWorkState::Synchronizing, std::memory_order_release);
+        mining_.store(true, std::memory_order_release);
+        mining_thread_ = std::thread(&VeldNode::MiningLoop, this);
+        return true;
 #endif
     }
 
@@ -8074,6 +8178,27 @@ private:
         return true;
     }
 
+    bool BindAddressGenerationIdentityLocked_(const std::string& address,
+                                               std::string* error) {
+        if (!mining::ValidAddressOnlyDestination(address, config_.IsTestNetwork())) {
+            if (error) *error = "invalid address-only payout for this network";
+            return false;
+        }
+        const auto script = AddressToScript(address);
+        if (IsSha384KeyScript(script) && !Sha384DestinationsActive(chain_.Height()+1)) {
+            if (error) *error = "SHA-384 mining destination is not active at the next block height";
+            return false;
+        }
+        RealKeyPair recipient;
+        recipient.private_key.fill(0); recipient.public_key.fill(0);
+        recipient.address = address; recipient.testnet = config_.IsTestNetwork();
+        recipient.script_override = script;
+        miner_keypair_ = recipient;
+        generation_address_only_ = true;
+        generation_identity_bound_ = true;
+        return true;
+    }
+
     bool BindGenerationIdentityLocked_(
         const RealKeyPair& miner_keypair,
         std::string* error
@@ -8081,6 +8206,7 @@ private:
         if (!ValidateGenerationIdentityLocked_(miner_keypair, error))
             return false;
         miner_keypair_ = miner_keypair;
+        generation_address_only_ = false;
         generation_identity_bound_ = true;
         return true;
     }
@@ -8440,6 +8566,7 @@ private:
     std::atomic<uint64_t> last_pool_flush_height_{0};
     std::mutex          generation_mutex_;
     bool                generation_identity_bound_{false};
+    bool                generation_address_only_{false};
     std::thread         mining_thread_;
     // Owned, joined-on-shutdown worker that runs post-reorg mempool fixups serially.
     // Replaces the old detached reorg threads whose unbounded lifetime dereferenced
@@ -14645,6 +14772,7 @@ private:
     }
 
     void BuildAndBroadcastNmsTx(const BlockHeader& nms_header) {
+        if (generation_address_only_) return;
         if constexpr (!OPTION_B_CONSENSUS_GATE_ENABLED) {
             std::cerr << "  [nms] skip: OPTION_B disabled at compile time\n";
             std::cerr.flush();

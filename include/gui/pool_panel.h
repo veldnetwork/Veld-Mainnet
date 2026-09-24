@@ -392,6 +392,8 @@ public:
             EnableWindow(stop_,running);last_running_=running;enabled_ready_=true;
         }
     }
+    void SuppressAutomaticResume() { resume_pending_=false; }
+
     void Tick() {
         if(resume_pending_){resume_pending_=false;Start();}
         DWORD exit=STILL_ACTIVE;

@@ -70,6 +70,8 @@ class RecordTests(unittest.TestCase):
             second=pool.work(a['account'],a['worker_token'],32)
             restored=Coordinator(Node(),j,None,'pool','f'*64)
             third=restored.work(a['account'],a['worker_token'],32)
-            self.assertEqual([int(w['start'],16) for w in (first,second,third)],[0,32,64]);j.close()
+            starts=[int(w['start'],16) for w in (first,second,third)]
+            self.assertEqual(starts[0],0)
+            self.assertTrue(all(a+32<=b for a,b in zip(starts,starts[1:])));j.close()
 
 if __name__=='__main__':unittest.main()

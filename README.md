@@ -26,20 +26,9 @@ portal, btcVELD services, and public web applications for `veld-public-mainnet-v
 
 ## Releases and network identity
 
-**Veld Node 3.2.2 is published. Update before block 9,500.**
-
-This maintenance release improves Pool-page scrolling, reduces pool work-request
-overhead, and reports current pool mining through the portal. See the
-[release notes](docs/release-notes.md) for the complete changes and compatibility.
-
 Pool and Solo modes remain available. Pool members use their own payout address
 without providing a private key or personal stake. See
 [pool.veld.network](https://pool.veld.network/) for setup and private account views.
-
-The [block 9,500 upgrade](docs/consensus/upgrade-9500.md) enables opt-in SHA-384
-key destinations, removes the aggregate ordinary-stake validator registration
-prerequisite, and applies a flat **0.30%** AMM swap fee. Individual validator
-bonds, governance, finality, and btcVELD custody requirements remain separate.
 
 Enable **Settings → Release and updates → Automatic updates** in Veld Node.
 Checks run hourly while the app is open. Read the
@@ -48,9 +37,7 @@ recovery behavior.
 
 Release tags and signed packages retain their original identities. Ongoing
 maintenance on `main` does not replace released binaries. See
-[source identity](docs/source-identity.md) for exact commits and hashes and
-[qualification scope](docs/release-3.2.2-qualification.md) for executed checks
-and outstanding coverage.
+[source identity](docs/source-identity.md) for exact commits and hashes.
 
 Publication is not a comprehensive security clearance or btcVELD custody
 activation. Full economic and custody qualification remain separately tracked.

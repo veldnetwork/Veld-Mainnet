@@ -2568,8 +2568,6 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 <div class="card rule-card">
   <h2>How Veld works</h2>
   <p style="color:var(--muted);font-size:13px;line-height:1.6">
-    This page describes the network rules and the coordinated changes at block <strong>9,500</strong>.
-    Earlier blocks retain their historical validation rules. Nodes must run the compatible update before activation.
     The <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a> provides background.
     A protocol day is 480 blocks. Durations in days assume the 180-second target; actual elapsed time varies. Staking is active with a <strong>500 VELD minimum</strong>.
   </p>
@@ -2684,7 +2682,6 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
   <h2 id="endorse">9. Validators &amp; the validator pool</h2>
   <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool collects <strong>10% of ordinary block subsidy</strong> and pays it out every <strong>480 blocks</strong> in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle.</p>
   <ul>
-    <li><strong>Registration.</strong> Before block 9,500, new registrations require aggregate ordinary stake of <strong>10,000 VELD</strong>. From block 9,500, that aggregate requirement is removed. Each validator still needs its own <strong>10,000 VELD bond</strong> and must satisfy the individual eligibility checks. Existing validators can continue eligible work when aggregate stake falls. Finality, governance and btcVELD retain their separate participation requirements.</li>
     <li><strong>Register on-chain.</strong> You submit a <span class="formula">VELD_VALIDATOR|REGISTER</span> transaction binding your ML-DSA-65 public key. A matching <span class="formula">DEREGISTER</span> exits cleanly.</li>
     <li><strong>Bond the minimum.</strong> Registration requires posting the minimum validator bond of <strong>10,000 VELD</strong> (see &sect;10) into the sigless custody vault. The live value is shown on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a>.</li>
     <li><strong>Stay online.</strong> Endorsement share is your count &divide; the network&#39;s count over the last 480 blocks &mdash; consistent uptime is what pays.</li>
@@ -2694,7 +2691,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="valbond">10. Validator bond, slashing &amp; yield escrow</h2>
-  <p>A validator&#39;s registration bond is not just a balance check &mdash; it is real, slashable capital. Custody, slashing, and reporter-bounty rules are enforced by consensus. The registration change in &sect;9 does not remove or unlock the individual bond.</p>
+  <p>A validator&#39;s registration bond is not just a balance check &mdash; it is real, slashable capital. Custody, slashing, and reporter-bounty rules are enforced by consensus.</p>
   <h3>The bond (custody)</h3>
   <p>At registration the minimum bond is sent into a <strong>sigless custody vault</strong> &mdash; an address whose key nobody holds, so the principal cannot be moved arbitrarily. It sits there as collateral for as long as you validate. After a clean deregistration it remains slashable through the complete <strong>43,200-block (~90-day) finality-equivocation evidence horizon</strong>, measured from the validator's last counted finality vote when that is later. It is then <strong>returned to you in full</strong> by the mandatory, zero-fee canonical transaction at the first 480-block settlement boundary strictly after that horizon (up to about 91 days after the controlling event).</p>
   <h3>Slashing &mdash; two evidence classes</h3>
@@ -2770,14 +2767,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <li><strong>Finality anchors.</strong> Once validator finality is active, confirmed Bitcoin anchors prevent reorganizations below the retained anchored checkpoint. Anchors spend ordinary Bitcoin network fees.</li>
   </ul>
   <h3>Liquidity</h3>
-  <p>The on-chain VELD/btcVELD pool shares the same 10 BTC aggregate custody cap. From block <strong>9,500</strong>, swaps use a <strong>flat 0.30% fee</strong> in either direction; price deviation from the initial ratio no longer sets the fee. Swap fees remain in the pool for liquidity providers and are separate from the native VELD transaction fee. Reserve-based pricing and price impact still apply. Before activation, the historical bands below apply.</p>
-  <table class="tbl-rules">
-    <tr><th>Post-trade deviation from reference</th><th>Swap fee</th></tr>
-    <tr><td>Improves the ratio or stays within 5%</td><td>0.30%</td></tr>
-    <tr><td>Above 5% through 10%</td><td>0.50%</td></tr>
-    <tr><td>Above 10% through 20%</td><td>0.75%</td></tr>
-    <tr><td>Above 20%</td><td>1.00%</td></tr>
-  </table>
+  <p>The on-chain VELD/btcVELD pool shares the same 10 BTC aggregate custody cap. Swaps use a <strong>flat 0.30% fee</strong> in either direction; price deviation from the initial ratio does not set the fee. Swap fees remain in the pool for liquidity providers and are separate from the native VELD transaction fee. Reserve-based pricing and price impact still apply.</p>
 </div>
 
 <div class="card rule-card">

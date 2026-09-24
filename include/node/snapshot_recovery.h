@@ -21,10 +21,11 @@ inline constexpr const char* REVOKED = ".snapshot-fast-start-revoked";
 inline constexpr const char* JOURNAL = ".snapshot-recovery.v1";
 inline constexpr const char* IMPORT = ".snapshot-import.v1";
 inline constexpr const char* FLOORS = "snapshot-recovery-floors.v1";
-inline constexpr std::array<const char*, 10> NAMES{{
+inline constexpr std::array<const char*, 11> NAMES{{
     "db", "blocks", "index", ".snapshot-handoff",
     ".background-chainstate-required", "background-ibd", "background-chainstate",
-    "full-ibd.receipt", "fleet-full-ibd.receipt", "finality-equivocation.evj"}};
+    "full-ibd.receipt", "fleet-full-ibd.receipt",
+    "finality-equivocation.evj", "address-only-full-ibd.receipt"}};
 
 inline void Require(bool value, const std::string& message) {
     if (!value) throw std::runtime_error("snapshot recovery: " + message);
@@ -293,7 +294,8 @@ inline std::optional<Transaction> Load(const fs::path& root) {
     Transaction t{values[1],values[2],static_cast<unsigned>(mask),values[4],values[5]};
     Require(t.phase=="quarantine" || t.phase=="ibd" || t.phase=="complete", "unknown recovery phase");
     Require(t.phase=="complete" ?
-        ((t.receipt=="full-ibd.receipt" || t.receipt=="fleet-full-ibd.receipt") && LowerHex(t.receipt_hash,64)) :
+        ((t.receipt=="full-ibd.receipt" || t.receipt=="fleet-full-ibd.receipt" ||
+          t.receipt=="address-only-full-ibd.receipt") && LowerHex(t.receipt_hash,64)) :
         (t.receipt.empty() && t.receipt_hash.empty()), "invalid completion evidence");
     Require(Body(t)==body, "noncanonical recovery journal");
     return t;
@@ -447,7 +449,8 @@ inline bool Prepare(const fs::path& root, uint32_t magic, const Hash256& genesis
 inline void Complete(const fs::path& root, const std::string& receipt_name) {
     auto t=Load(root);
     Require(t && (t->phase=="ibd" || t->phase=="complete"), "completion requires fresh IBD phase");
-    Require(receipt_name=="full-ibd.receipt" || receipt_name=="fleet-full-ibd.receipt", "unknown receipt role");
+    Require(receipt_name=="full-ibd.receipt" || receipt_name=="fleet-full-ibd.receipt" ||
+            receipt_name=="address-only-full-ibd.receipt", "unknown receipt role");
     if (t->phase=="complete") {
         Require(t->receipt==receipt_name, "completion receipt role changed");
         Finish(root,*t);

@@ -136,7 +136,7 @@
     if (path === '/rules') {
       var split = document.getElementById('splits');
       var splitIntro = split && split.parentElement.querySelector('p');
-      if (splitIntro) splitIntro.innerHTML = 'Before staking activates at 10,000 VELD issued supply, each ordinary block pays <strong>50% to the miner and 50% to the vault</strong>. After activation, ordinary blocks use the four-way split below. Every 100th block routes its full subsidy to the vault in both phases.';
+      if (splitIntro) splitIntro.innerHTML = 'Ordinary blocks use the four-way split below. Every 100th block routes its full subsidy to the vault.';
       var privacy = document.getElementById('privacy');
       var items = privacy && privacy.parentElement.querySelectorAll('li');
       if (items) Array.from(items).forEach(function (item) {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Veld public-mainnet-v2 is live: a memory-hard proof-of-work network whose native transaction and finality signatures use ML-DSA-65, with staking activation at 10,000 VELD mined.">
+<meta name="description" content="Veld public-mainnet-v2 is live: a memory-hard proof-of-work network whose native transaction and finality signatures use ML-DSA-65.">
 <link rel="canonical" href="https://veld.network/">
 <title>Veld — Where Value Is Earned</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -195,24 +195,7 @@ h2 em{font-style:normal;color:var(--em);text-shadow:0 0 22px rgba(50,240,110,.4)
 .diamond-badge{display:inline-block;padding:3px 10px;border-radius:6px;background:linear-gradient(100deg,rgba(185,242,255,.15),rgba(255,255,255,.22),rgba(224,255,255,.2),rgba(185,242,255,.15));background-size:200% 100%;animation:diamondShine 3.2s ease-in-out infinite;border:1px solid rgba(185,242,255,.55);font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:#E0FFFF;text-shadow:0 0 8px rgba(185,242,255,.95);text-transform:uppercase}
 .diamond-glow-border{border-color:rgba(185,242,255,.3)!important;box-shadow:0 0 22px rgba(185,242,255,.18),inset 0 0 20px rgba(185,242,255,.04)!important}
 
-/* ── Launch timeline ── */
 .launch{background:linear-gradient(180deg,var(--bg),var(--surface) 60%);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
-.timeline{margin-top:28px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:26px 28px;position:relative;overflow:hidden}
-.timeline::before{content:"";position:absolute;top:-40px;right:-40px;width:260px;height:260px;background:radial-gradient(circle,rgba(50,240,110,.07),transparent 70%);pointer-events:none;border-radius:50%;filter:blur(20px)}
-.tl-meta{display:flex;justify-content:space-between;font-size:12px;font-family:var(--font-mono);color:var(--text-muted);margin-bottom:14px;letter-spacing:.5px}
-.tl-bar{position:relative;height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden;margin-bottom:24px;box-shadow:inset 0 0 4px rgba(0,0,0,.4)}
-/* CSS fallback width is a rough placeholder; soak.js overwrites both
-   inline width on .tl-fill and inline left on .tl-now with the live
-   day-of-120 percentage. If JS fails the visitor still sees a
-   plausible "in progress" state rather than a fixed day-1 lie. */
-.tl-fill{position:absolute;top:0;left:0;bottom:0;width:16%;background:linear-gradient(90deg,var(--em),#6eff98);border-radius:3px;box-shadow:0 0 12px rgba(50,240,110,.5)}
-.tl-now{position:absolute;top:-4px;left:16%;width:14px;height:14px;border-radius:50%;background:#fff;transform:translateX(-50%);box-shadow:0 0 0 3px rgba(50,240,110,.5),0 0 18px rgba(50,240,110,.7);animation:heartbeat 2.2s ease infinite}
-.tl-stops{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;font-size:12px;color:var(--text-muted)}
-.tl-stops .s{border-left:2px solid var(--border);padding:6px 0 6px 12px;background:var(--surface);position:relative;z-index:1}
-.tl-stops .s.on{border-left-color:var(--border);background:var(--surface);border-radius:0 6px 6px 0}
-.tl-stops .s .d{font-family:var(--font-mono);font-size:11px;color:var(--em);margin-bottom:2px;letter-spacing:.4px}
-.tl-stops .s .t{color:var(--text)}
-.tl-stops .s .sub{font-size:11.5px;color:var(--text-muted)}
 
 /* ── How-to index ── */
 .guide-index{margin-top:28px;border-top:1px solid var(--border)}
@@ -261,7 +244,6 @@ footer .tag{margin-top:10px;color:var(--text-muted);font-family:var(--font-mono)
   .how{grid-template-columns:1fr}
   .tokeno{grid-template-columns:repeat(2,1fr)}
   .tiers{grid-template-columns:repeat(2,1fr)!important}
-  .tl-stops{grid-template-columns:1fr 1fr}
   section{padding:60px 22px}
   .hero{padding:70px 22px 40px}
   .split-card{grid-template-columns:1fr;text-align:center}
@@ -359,7 +341,7 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="wc">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1v22"/><path d="M5 6l7-5 7 5"/><path d="M5 18l7 5 7-5"/></svg></div>
         <h3>Rewards follow participation</h3>
-        <p>Before staking activates, ordinary blocks split 50% to the miner and 50% to the vault. After activation, ordinary blocks split 50% miner, 20% co-mining, 20% vault, and 10% validator pool. Combined multipliers cap at <strong>3.00×</strong>.</p>
+        <p>Ordinary blocks split 50% miner, 20% co-mining, 20% vault, and 10% validator pool. Combined multipliers cap at <strong>3.00×</strong>.</p>
       </div>
       <div class="wc">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></div>
@@ -386,26 +368,26 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— 02 STAKE</div>
         <h3>Lock VELD, earn from vault</h3>
-        <p>After canonical issued supply reaches <strong>10,000 VELD mined</strong>, lock at least 500 VELD from block 3,840 (1,000 VELD before that height) for 7 / 14 / 30 / 90 days. Longer lockups earn higher multipliers (1.00× → 1.50×). Every 480 blocks, the vault distributes up to 90% of that cycle's inflow and retains the rest as principal.</p>
-        <div class="meta"><span class="k">Vault fills with:</span> 50% of ordinary blocks before activation; 20% after · <span class="k">+ 100%</span> of every 100th block</div>
+        <p>Lock at least 500 VELD for 7 / 14 / 30 / 90 days. Longer lockups earn higher multipliers (1.00× → 1.50×). Every 480 blocks, the vault distributes up to 90% of that cycle's inflow and retains the rest as principal.</p>
+        <div class="meta"><span class="k">Vault fills with:</span> 20% of ordinary blocks · <span class="k">+ 100%</span> of every 100th block</div>
       </div>
       <div class="hc">
         <div class="n">— 03 VALIDATE</div>
         <h3>Endorse blocks, sign for rewards</h3>
-        <p>Register with your own 10,000 VELD validator bond and the required eligibility checks. The additional network-wide ordinary-stake prerequisite ends at block 9,500. Your daemon endorses new blocks, and the endorsement pool pays active validators every 480 blocks.</p>
-        <div class="meta"><span class="k">Endorsement pool:</span> 10% of ordinary block rewards after staking activation</div>
+        <p>Register with your own 10,000 VELD validator bond and the required eligibility checks. Your daemon endorses new blocks, and the endorsement pool pays active validators every 480 blocks.</p>
+        <div class="meta"><span class="k">Endorsement pool:</span> 10% of ordinary block rewards</div>
       </div>
       <div class="hc">
         <div class="n">— 04 CO-MINE</div>
         <h3>Get paid for near-misses</h3>
         <p>Co-mining continues to require at least 1,000 VELD locked at your mining address. This minimum is unchanged by the ordinary-staking reduction. Keep mining on the validated chain. A valid near-miss included on-chain in the 100-block window gives that address one entry in the co-mining draw. The client submits near-misses automatically; submission and rewards are not guaranteed.</p>
-        <div class="meta"><span class="k">Co-mine pool:</span> 20% of ordinary block rewards after staking activation</div>
+        <div class="meta"><span class="k">Co-mine pool:</span> 20% of ordinary block rewards</div>
       </div>
       <div class="hc" style="border-color:rgba(255,216,74,.2)">
         <div class="n" style="color:var(--gold);text-shadow:0 0 10px rgba(255,216,74,.25)">— 05 PROVIDE</div>
         <h3>Provide pool liquidity</h3>
         <p>After btcVELD completes its one-time seven-validator activation, pool VELD with 1:1 Bitcoin-backed btcVELD and earn the fee retained by each swap. The entire pool fee accrues to liquidity providers; there is no protocol cut. Liquidity removal follows the pool’s reserve, transaction, and activation rules.</p>
-        <div class="meta"><span class="k">Swap fee:</span> 0.30% flat from block 9,500 (historical bands before activation) · <span class="k">100%</span> to providers · <span class="k">LP shares</span> track your reserve share</div>
+        <div class="meta"><span class="k">Swap fee:</span> 0.30% flat · <span class="k">100%</span> to providers · <span class="k">LP shares</span> track your reserve share</div>
       </div>
       <div class="hc" style="border-color:rgba(76,184,255,.2)">
         <div class="n" style="color:var(--blue);text-shadow:0 0 10px rgba(76,184,255,.25)">— 06 VERIFY</div>
@@ -465,7 +447,7 @@ input,textarea,[contenteditable]{cursor:text}
           <div class="sl vault"><span class="sw" style="background:#FFD84A;box-shadow:0 0 8px rgba(255,216,74,.5)"></span><span class="lbl">Vault<small>Stakers, every 480 blocks</small></span><span class="pct">20%</span></div>
           <div class="sl endorse"><span class="sw" style="background:#B07CFF;box-shadow:0 0 8px rgba(176,124,255,.5)"></span><span class="lbl">Endorsement<small>Validators, every 480 blocks</small></span><span class="pct">10%</span></div>
         </div>
-        <div style="margin-top:14px;font-size:12.5px;color:var(--text-muted);font-family:var(--font-mono);line-height:1.7">Before activation, ordinary blocks split 50% miner / 50% vault.<br>+ every 100th block routes <span style="color:var(--gold)">100% to the vault</span>.<br>+ all TX fees flow to the vault during emission.</div>
+        <div style="margin-top:14px;font-size:12.5px;color:var(--text-muted);font-family:var(--font-mono);line-height:1.7">Every 100th block routes <span style="color:var(--gold)">100% to the vault</span>.<br>+ all TX fees flow to the vault during emission.</div>
       </div>
     </div>
 
@@ -498,25 +480,7 @@ input,textarea,[contenteditable]{cursor:text}
   <div class="inner">
     <div class="section-label">Launch</div>
     <h2>Mainnet is <em>live</em>.</h2>
-    <p class="lede">Veld 3.0.0 public-mainnet-v2 launched from fresh genesis on 2 September 2026. Initial stabilization is active. btcVELD minting and redemption remain unavailable until genuine seven-qualified-validator finality is reached.</p>
-
-    <div class="timeline">
-      <div class="tl-meta">
-        <span>2026-07-06 · launch preparation</span>
-        <span id="soak-day-counter">public mainnet live</span>
-        <span>2026-09-02 · public genesis</span>
-      </div>
-      <div class="tl-bar">
-        <div class="tl-fill" id="soak-fill"></div>
-        <div class="tl-now" id="soak-now-marker"></div>
-      </div>
-      <div class="tl-stops">
-        <div class="s"><div class="d">2026-07-06</div><div class="t">Launch preparation</div><div class="sub">Production-rule validation begins</div></div>
-        <div class="s"><div class="d">2026-08-31</div><div class="t">BUILD-02</div><div class="sub">Veld 3.0.0 release qualification</div></div>
-        <div class="s"><div class="d">2026-09-02</div><div class="t">Public genesis</div><div class="sub">Fresh public-mainnet-v2 chain</div></div>
-        <div class="s on"><div class="d" id="soak-now-date">live now</div><div class="t">Initial stabilization</div><div class="sub">Mining and public participation live</div></div>
-      </div>
-    </div>
+    <p class="lede">Veld 3.0.0 public-mainnet-v2 launched from fresh genesis on 2 September 2026. btcVELD minting and redemption remain unavailable until genuine seven-qualified-validator finality is reached.</p>
   </div>
 </section>
 
@@ -541,7 +505,7 @@ input,textarea,[contenteditable]{cursor:text}
       <div class="hc">
         <div class="n">— STEP 01</div>
         <h3>Download &amp; extract</h3>
-        <p>Grab <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">VeldClient-Windows-x64-3.2.2.zip</code> from below. Extract to a stable local folder. The portable client validates a signed snapshot when eligible, or synchronizes from peers. Windows may request approval for its optional inbound P2P firewall rule.</p>
+        <p>Grab <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">VeldClient-Windows-x64.zip</code> from below. Extract to a stable local folder. The portable client validates a signed snapshot when eligible, or synchronizes from peers. Windows may request approval for its optional inbound P2P firewall rule.</p>
       </div>
       <div class="hc">
         <div class="n">— STEP 02</div>
@@ -573,7 +537,7 @@ input,textarea,[contenteditable]{cursor:text}
         <h3 style="color:var(--gold)">Validator setup</h3>
         <p>Extra requirements if you want to endorse blocks for a share of the endorsement pool:</p>
         <ul style="margin-top:10px;padding-left:0;list-style:none;font-size:13.5px;color:var(--text-dim);line-height:1.85">
-          <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Wait for staking and aggregate ordinary stake activation, then post a 10,000 VELD validator registration bond</li>
+          <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Post a 10,000 VELD validator registration bond</li>
           <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Register pubkey via wallet's Validators tab</li>
           <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Keep the node online 24/7 to endorse every block</li>
           <li style="padding:4px 0"><span style="color:var(--em);font-family:var(--font-mono);margin-right:6px">▸</span>Payout cadence: every 480 blocks (about one day at target)</li>
@@ -617,12 +581,11 @@ input,textarea,[contenteditable]{cursor:text}
 
     <div class="dl hud">
       <div class="dl-left">
-                <h3>Veld Node 3.2.2</h3>
-                <p style="color:var(--em);font-weight:600">Windows 3.2.2 fixes Pool-tab scrolling, reduces work-request overhead, and adds pool mining status to the portal. Update before block 9,500 for the scheduled validator registration, SHA-384 destination and flat 0.30% swap-fee changes. Automatic updates are opt-in and check hourly while the app is open.</p>
+                <h3>Veld Node 3.2.6</h3>
         <p>For Windows 10 / 11. Extract the download and double-click <code style="font-family:var(--font-mono);font-size:12.5px;color:var(--em);background:rgba(50,240,110,.08);padding:1px 5px;border-radius:3px">Start Veld Node.bat</code>. The app guides you through setup and sync.</p>
       </div>
       <div class="dl-right">
-        <a class="dl-btn" href="https://veld.network/downloads/VeldClient-Windows-x64-3.2.2.zip">↓ &nbsp; Download</a>
+        <a class="dl-btn" href="https://veld.network/downloads/VeldClient-Windows-x64.zip">↓ &nbsp; Download</a>
       </div>
 
       <div class="dl-steps">
@@ -636,13 +599,13 @@ input,textarea,[contenteditable]{cursor:text}
         </div>
         <div class="s">
           <div class="n">3</div>
-          <div class="txt"><strong>Verify</strong> (optional) in PowerShell: <code>Get-FileHash -Algorithm SHA256 .\VeldClient-Windows-x64-3.2.2.zip</code> — match the ZIP SHA256 below.</div>
+          <div class="txt"><strong>Verify</strong> (optional) in PowerShell: <code>Get-FileHash -Algorithm SHA256 .\VeldClient-Windows-x64.zip</code> — match the ZIP SHA256 below.</div>
         </div>
       </div>
       <div class="dl-meta">
-        <div class="hash"><span class="hash-label">ZIP SHA256</span>69d050d03c7a3ea9ef5823593b5cb0f8fbc24b59c251427e3f5167dc9ac21ffc</div>
-        <div class="hash"><span class="hash-label">EXE SHA256</span>6c1b879496d22695b91a6e117aa47ca260f6f64a55976b02c6f0dcb89f363217</div>
-        <div><a href="https://veld.network/downloads/SHA256SUMS.txt" style="color:var(--text-muted);text-decoration:underline">signed manifest</a> · <a href="https://veld.network/downloads/CHANGES.txt" style="color:var(--text-muted);text-decoration:underline">release notes</a> · <a href="https://veld.network/downloads/Veld-3.2.2-source.tar.gz" style="color:var(--text-muted);text-decoration:underline">source code</a></div>
+        <div class="hash"><span class="hash-label">ZIP SHA256</span>f7f5d976282937ccabf3c23486ef77b63cac2f1ebfbf715b58ea68c482acd0a0</div>
+        <div class="hash"><span class="hash-label">EXE SHA256</span>2e5594989ebe84282e6941bcf159c7fd27d29fe03bc54fcae41cf76f3cf33f12</div>
+        <div><a href="https://veld.network/downloads/SHA256SUMS.txt" style="color:var(--text-muted);text-decoration:underline">signed manifest</a> · <a href="https://veld.network/downloads/CHANGES.txt" style="color:var(--text-muted);text-decoration:underline">release notes</a> · <a href="https://veld.network/downloads/Veld-3.2.6-source.tar.gz" style="color:var(--text-muted);text-decoration:underline">source code</a></div>
       </div>
     </div>
 
@@ -665,6 +628,5 @@ input,textarea,[contenteditable]{cursor:text}
 
 
 
-<script src="/soak.js?v=20260902-mainnet1" defer></script>
 </body>
 </html>

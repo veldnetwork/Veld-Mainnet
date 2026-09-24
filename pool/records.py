@@ -23,6 +23,7 @@ class Records(MutableMapping):
 
     def __getitem__(self,key):
         with self.journal.lock:
+            self.journal.ensure_open()
             row=self.journal.db.execute('SELECT body FROM pool_records WHERE bucket=? AND key=?',(self.bucket,key)).fetchone()
         if row is None:raise KeyError(key)
         return decode(row[0],MAX_EVENT)
@@ -33,21 +34,25 @@ class Records(MutableMapping):
         require(type(seq) is int and type(height) is int and isinstance(status,str),'record index fields')
         body=encode(value);require(len(body)<=MAX_EVENT,'record limit')
         with self.journal.lock:
+            self.journal.ensure_open()
             self.journal.db.execute('INSERT INTO pool_records VALUES(?,?,?,?,?,?) '
                 'ON CONFLICT(bucket,key) DO UPDATE SET seq=excluded.seq,height=excluded.height,status=excluded.status,body=excluded.body',
                 (self.bucket,key,seq,height,status,body))
 
     def __delitem__(self,key):
         with self.journal.lock:
+            self.journal.ensure_open()
             row=self.journal.db.execute('DELETE FROM pool_records WHERE bucket=? AND key=?',(self.bucket,key))
             if not row.rowcount:raise KeyError(key)
 
     def __len__(self):
         with self.journal.lock:
+            self.journal.ensure_open()
             return self.journal.db.execute('SELECT COUNT(*) FROM pool_records WHERE bucket=?',(self.bucket,)).fetchone()[0]
 
     def __iter__(self):
         with self.journal.lock:
+            self.journal.ensure_open()
             cursor=self.journal.db.execute('SELECT key FROM pool_records WHERE bucket=? ORDER BY key',(self.bucket,))
             try:
                 for row in cursor:yield row[0]
@@ -61,6 +66,7 @@ class Records(MutableMapping):
             if value is not None:sql+=' AND '+column+operator+'?';args.append(value)
         sql+=' ORDER BY '+('seq' if sequence else 'key')+(' DESC' if reverse else ' ASC')
         with self.journal.lock:
+            self.journal.ensure_open()
             cursor=self.journal.db.execute(sql,args)
             try:
                 for row in cursor:yield decode(row[0],MAX_EVENT)

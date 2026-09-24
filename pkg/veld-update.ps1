@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$InstallDir,
     [int]$ParentPid = 0,
+    [string]$HandoffEvent = '',
     [ValidateSet('Node', 'Terminal')]
     [string]$Distribution = 'Node'
 )
@@ -964,6 +965,71 @@ function Wait-ForParentExit([int]$ProcessId) {
     throw 'launcher did not exit within the update handoff deadline'
 }
 
+function Signal-CommitHandoff() {
+    if ([string]::IsNullOrEmpty($HandoffEvent)) { return }
+    if ($HandoffEvent -cnotmatch '^Local\\VeldUpdateHandoff-[a-f0-9]{32}$') {
+        throw 'invalid updater handoff event'
+    }
+    $ready = [Threading.EventWaitHandle]::OpenExisting($HandoffEvent,
+        [Security.AccessControl.EventWaitHandleRights]::Modify)
+    try { $null = $ready.Set() }
+    finally { $ready.Dispose() }
+}
+
+function Start-CommitHandoff([int]$LauncherPid, [string]$UpdaterPath) {
+    if ($LauncherPid -le 0) { throw 'cannot identify the launcher process for safe handoff' }
+    $eventName = 'Local\VeldUpdateHandoff-' + [guid]::NewGuid().ToString('N')
+    $security = [Security.AccessControl.EventWaitHandleSecurity]::new()
+    $user = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $security.SetOwner($user)
+    $security.SetAccessRuleProtection($true, $false)
+    $security.AddAccessRule([Security.AccessControl.EventWaitHandleAccessRule]::new(
+        $user, [Security.AccessControl.EventWaitHandleRights]::FullControl,
+        [Security.AccessControl.AccessControlType]::Allow))
+    $created = $false
+    $ready = [Threading.EventWaitHandle]::new($false,
+        [Threading.EventResetMode]::ManualReset, $eventName, [ref]$created, $security)
+    $child = $null
+    try {
+        if (-not $created) { throw 'updater handoff event already exists' }
+        $logs = @('update-commit.log', 'update-commit-error.log') | ForEach-Object {
+            $path = Ensure-SafeParent (Join-Path $InstallDir $_) 'commit log'
+            if (Test-Path -LiteralPath $path) { Assert-RegularFile $path 'commit log' }
+            $path
+        }
+        Write-TransactionState 'HANDOFF'
+        $script:TransactionLock.Dispose()
+        $script:TransactionLock = $null
+        $arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $UpdaterPath +
+            '" -Mode Commit -InstallDir "' + $InstallDir + '" -ParentPid ' + $LauncherPid +
+            ' -Distribution ' + $Distribution + ' -HandoffEvent "' + $eventName + '"'
+        $child = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
+            -ArgumentList $arguments -WindowStyle Hidden -PassThru `
+            -RedirectStandardOutput $logs[0] -RedirectStandardError $logs[1]
+        $null = $child.Handle
+        $script:TransactionOwned = $false
+        $script:InstallLock.Dispose()
+        $script:InstallLock = $null
+        # Success tells the GUI to close. Do not return it merely because
+        # Windows created a process: the child must own the durable handoff.
+        $deadline = [Diagnostics.Stopwatch]::StartNew()
+        do {
+            $signaled = $ready.WaitOne(100)
+            $child.Refresh()
+            if ($child.HasExited) {
+                $child.WaitForExit()
+                throw ('update commit helper exited before readiness (code ' + $child.ExitCode + ')')
+            }
+            if ($signaled) { return }
+        } while ($deadline.Elapsed.TotalSeconds -lt 30)
+        throw 'update commit helper did not become ready; keep Veld open and retry'
+    }
+    finally {
+        if ($null -ne $child) { $child.Dispose() }
+        $ready.Dispose()
+    }
+}
+
 function Relaunch-InstalledClient() {
     $installed = Get-VerifiedInstalled
     if ($Distribution -eq 'Node') {
@@ -1052,6 +1118,7 @@ function Invoke-TransactionCommit([int]$LauncherPid) {
         if ((Read-TransactionState) -cne 'HANDOFF') {
             throw 'update transaction is not in handoff state'
         }
+        Signal-CommitHandoff
         Wait-ForParentExit $LauncherPid
         $package = Get-VerifiedPackage (Join-Path $Transaction 'stage')
         $installed = Get-VerifiedInstalled
@@ -1350,18 +1417,11 @@ try {
         throw 'transaction stage lost the release-signed manifest identity'
     }
     Write-TransactionState 'PREPARED'
-    $parentPid = (Get-CimInstance Win32_Process -Filter ('ProcessId=' + $PID)).ParentProcessId
-    if ($parentPid -le 0) { throw 'cannot identify the launcher process for safe handoff' }
-    $commitArguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath +
-        '" -Mode Commit -InstallDir "' + $InstallDir + '" -ParentPid ' + $parentPid +
-        ' -Distribution ' + $Distribution
-    Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $commitArguments `
-        -WindowStyle Hidden | Out-Null
-    Write-TransactionState 'HANDOFF'
-    $TransactionLock.Dispose()
-    $TransactionLock = $null
-    $TransactionOwned = $false
+    # Slow download cleanup must finish before the commit helper starts its
+    # bounded lock/parent waits. This process still owns both locks here.
     Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    $parentPid = (Get-CimInstance Win32_Process -Filter ('ProcessId=' + $PID)).ParentProcessId
+    Start-CommitHandoff $parentPid $PSCommandPath
     Write-Host '   [update] Signed package verified. Durable install handoff is ready.'
     exit 0
 }

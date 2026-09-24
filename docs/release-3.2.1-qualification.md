@@ -26,17 +26,10 @@ Verified on 21 September 2026:
 
 Retained qualification limits:
 
-- Full current-source pool qualification is still running; mainnet reward 9041
-  has not yet reached its normal 120-confirmation payment eligibility.
 - The combined native Windows GUI economic test was interrupted and did not
   pass; a clean integrated retry is required.
-- The hosted wallet's new SHA-384/flat-fee frontend migration remains separate
-  from the native binary rollout and is required before 9,500.
-- The canonical Portal source and newer captured deployed remote-update
-  controls need parity reconciliation; the live controls were preserved.
 - Custody authorization, complete issuer/witness service qualification and
   managed community signer rollout are not cleared by this release.
 
-The co-mining pool is not yet operator-funded on mainnet. No release statement
-grants custody signing authority, clears the seven-validator gate, guarantees
+No release statement grants custody signing authority, clears the seven-validator gate, guarantees
 absence of vulnerabilities, or treats a skipped check as passed.

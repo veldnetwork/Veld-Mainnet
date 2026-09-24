@@ -96,6 +96,7 @@ class TemplateLimitTests(unittest.TestCase):
                         self.assertLess(len(encode(first)), 16384)
                         self.assertNotIn('work_binding', first)
                         self.assertNotIn('work_token', first)
+                        reserved_end=max(int(event['payload']['end']) for event in journal.events() if event['kind']=='lease')
                     finally:
                         journal.close()
                     journal = Journal(root/'data', root/'anchor/current.json')
@@ -104,7 +105,7 @@ class TemplateLimitTests(unittest.TestCase):
                         old_job = recovered.jobs[recovered.leases[first['lease']]['job']]
                         self.assertEqual(old_job['node']['block_hex'], original)
                         second = recovered.work(account['account'], account['worker_token'], 32)
-                        self.assertEqual(second['start'], '0000000000000020')
+                        self.assertGreaterEqual(int(second['start'],16),reserved_end)
                         # Actual transport, exact private binding, only nonce changes.
                         self.assertIs(node.submit(old_job['node'], 17), True)
                         sent = state['submitted']

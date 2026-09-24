@@ -56,8 +56,7 @@ package manifest, ZIP checksum and their detached signatures.
 The identity's preparation-time qualification state is retained; subsequent
 runtime evidence is listed separately in the release qualification document.
 
-Activation is block **9,500**. Stale 6,200 and unpublished 9,000 proposals are
-superseded. Existing history retains its original rules.
+Activation is block **9,500**. Existing history retains its original rules.
 
 ## Veld 3.1.8
 

@@ -1,14 +1,8 @@
 # Version-one SHA-384 key destinations
 
-This candidate retains ML-DSA-65 signatures and introduces an opt-in destination
+The destination retains ML-DSA-65 signatures and uses an opt-in format
 committing to the complete 1,952-byte public key. It does not change VeldHash,
 supply, subsidy allocation, staking thresholds, or custody membership.
-
-The public-mainnet candidate height is **9,500**. This source change does not
-deploy or activate an upgrade. Operators must coordinate a qualified release
-before activation. Unselected development profiles disable the feature; isolated
-boundary tests require both explicit test-build and test-hook definitions.
-Public controllers refuse those test overrides.
 
 ## Encoding and authorization
 
@@ -25,8 +19,8 @@ existing four-byte SHA256d checksum. The checksum detects entry errors; the
 authorization strength comes from the full commitment and ML-DSA signature.
 The existing canonical signature envelope and SIGHASH_ALL binding are retained.
 
-The new opcode authorizes spending only at or after activation. Historical
-consensus allowed creating arbitrary output scripts; this proposal does not
+The opcode authorizes spending only at or after activation. Historical
+consensus allowed creating arbitrary output scripts; this does not
 retroactively reject such historical outputs. Wallet and pool preparation
 additionally refuse early use of new destinations. Cached mempool validation,
 mining identity admission and rollback recheck the current inclusion height.
@@ -73,6 +67,3 @@ evidence. `tests/wallet_outbox_browser_controls.cjs` separately checks actual
 browser storage/restart behavior with inert signature fixtures.
 
 SHA-384 algorithm reference: [NIST FIPS 180-4](https://csrc.nist.gov/pubs/fips/180-4/upd1/final).
-Full release qualification must still rerun the connected pool, services,
-co-mining, native Windows lifecycle and production controllers against the exact
-final candidate. These component checks do not authorize publication.
