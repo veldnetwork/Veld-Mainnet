@@ -1603,8 +1603,10 @@ public:
                     compat::SecureZero(key.private_key.data(), key.private_key.size());
                 }
             } wipe{identity};
-            identity.address = PubKeyToAddress(identity.public_key,
-                                              config_.IsTestNetwork());
+            // The public snapshot/full-IBD receipt schema is mainnet-bound;
+            // do not derive a testnet address from a private-chain fixture
+            // configuration when publishing that receipt.
+            identity.address = PubKeyToAddress(identity.public_key, false);
             const auto hash = HashToHex(tip.GetHash());
             const bool written = fleet
                 ? snapshot_bootstrap::WriteFleetIbdReceipt(
