@@ -46,7 +46,11 @@ struct GuiStateQualification {
               app.NodeStartCommand().find(L"--snapshot-bootstrap")==std::wstring::npos,
               "address-only full-IBD opt-out remains available");
         app.mining_enabled_=false;
-        Check(app.NodeStartCommand().find(L"--nomine --address-only")!=std::wstring::npos,"node-only startup does not silently mine");
+        const auto node_only_command=app.NodeStartCommand();
+        Check(node_only_command.find(L"--address-only --miner "+Utf8ToWide(address))!=std::wstring::npos &&
+              node_only_command.find(L" --mine ")==std::wstring::npos &&
+              node_only_command.find(L"--nomine")==std::wstring::npos,
+              "node-only public startup stays idle without a nomine flag");
         std::string secret,again,error;
         Check(veld::mining::AddressOnlyRpcSecret(app.data_dir_,secret,&error),"Windows protects separate RPC-only credential");
         Check(veld::mining::AddressOnlyRpcSecret(app.data_dir_,again,&error)&&secret==again,"RPC credential persists through restart");

@@ -7131,11 +7131,11 @@ private:
     }
 
     std::wstring NodeStartCommand() const {
-        std::wstring command=L"\""+node_path_.wstring()+L"\" ";
+        std::wstring command=L"\""+node_path_.wstring()+L"\"";
         if (address_only_) {
-            command += (mining_enabled_ ? L"--mine" : L"--nomine");
+            if (mining_enabled_) command += L" --mine";
             command += L" --address-only --miner "+Utf8ToWide(AddressPayout());
-        } else command += (mining_enabled_ ? L"--mine" : L"--endorse");
+        } else command += (mining_enabled_ ? L" --mine" : L" --endorse");
         command += L" --no-prompt --datadir "+veld::node_gui::StartupQuote(data_dir_.wstring());
         if (mining_enabled_) command += L" --threads "+std::to_wstring(mining_thread_count_);
         if (tor_choice_) command += L" --tor-only";
