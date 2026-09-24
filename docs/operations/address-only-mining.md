@@ -1,6 +1,6 @@
 # Mining to a payout address
 
-This feature is a pending update, not part of the published 3.2.6 binaries.
+Address-only solo mining is included in Veld Node 3.2.7.
 
 ## Windows
 

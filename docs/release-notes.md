@@ -1,3 +1,21 @@
+## 3.2.7 - Address-only mining, startup and pool reliability
+
+- Solo mining can pay a chosen address without creating or unlocking a wallet
+  on the mining computer. Full validation remains required before mining or
+  node services are enabled; the signed snapshot remains quarantined during
+  independent validation from genesis.
+- Windows startup offers app, solo mining, saved pool mining and node-only
+  modes. Startup unlock is optional and stored in the current user's Windows
+  Credential Manager. Diagnostics are local and upload nothing.
+- Update handoff now waits for the helper to own both install locks before the
+  client closes, and the client stays open if handoff readiness fails.
+- Pool work lifetime begins when the authenticated request is sent. The pool
+  also groups durable work reservations and bounds coordinator maintenance.
+- The cached solo-mining epoch seed produces the same canonical proofs as the
+  previous path in the tested fixtures. No measured real-hardware hashrate
+  increase is claimed.
+- No consensus, reward, staking, custody or transaction-validation rules change.
+
 ## 3.2.2 - Pool client and portal maintenance
 
 - Buffered Pool-page scrolling, charcoal scrollbar and controls, green Paid accent.

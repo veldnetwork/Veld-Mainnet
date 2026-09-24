@@ -6,7 +6,8 @@ In **Settings**, enable **Open at Windows sign-in**, then choose:
   saved pool worker for this Windows startup. Manual launches retain ordinary
   saved pool resume behavior.
 - **Solo mining**: start the normal signed node with CPU mining and saved worker
-  settings. Synchronization and work admission still apply.
+  settings, using the payout mode selected on the Mining tab, including
+  address-only solo mining. Synchronization and work admission still apply.
 - **Pool mining**: start the existing saved pool configuration and account.
   Configure and successfully use the Pool tab first. Startup never substitutes
   an endpoint or payout address and never creates an account silently.

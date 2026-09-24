@@ -3,7 +3,7 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
-## Unreleased - Address-only mining, Windows startup and update recovery
+## 3.2.7 - Address-only mining and Windows startup
 
 - Add address-only solo mining: save a payout address without creating or
   unlocking a wallet on the mining computer. Preserve ordinary proof-of-work
