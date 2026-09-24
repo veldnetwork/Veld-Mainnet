@@ -24,17 +24,13 @@
 
 ## Qualification
 
-- [3.2.2 qualification](release-3.2.2-qualification.md): released artifact checks and remaining coverage.
-- [3.2.1 qualification](release-3.2.1-qualification.md): earlier release evidence and limits.
 - [Native pool qualification](../pool/qualification/README.md): disposable chain, funded payments, and platform checks.
 - [Public pool website](pool-public-website.md): account privacy, public projections, and browser checks.
 
 ## Security and protocol
 
 - [Protocol whitepaper](WHITEPAPER.md): network design, economics, and activation.
-- [Upgrade at block 9,500](consensus/upgrade-9500.md): destinations, validator registration, and AMM fees.
 - [SHA-384 destinations](sha384-destinations.md): encoding, authorization, and migration.
-- [AMM fee policy](amm-market-fee-candidate.md): market pricing, fee treatment, and analysis limits.
 - [Upgrade at block 3,840](consensus/upgrade-3840.md): ASERT, staking, and compatibility.
 - [Coinbase accounting](consensus/coinbase-policy.md): subsidy and fee policy.
 

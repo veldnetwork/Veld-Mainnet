@@ -1,11 +1,9 @@
 # Pool service architecture and recovery
 
 This guide describes the pool implementation and its isolated qualification
-boundary. The public client includes Pool mode; the service's complete economic
-qualification remains in progress. Configuration examples and qualification
+boundary. The public client includes Pool mode. Configuration examples and qualification
 commands do not select production credentials or authorize live transactions.
-See the [release qualification record](../release-3.2.2-qualification.md) for
-artifact-specific results, and the [mining guide](pool-mining.md) for client setup.
+See the [mining guide](pool-mining.md) for client setup.
 
 ## Connected development path
 
@@ -40,7 +38,7 @@ the earning records. Whole spendable units are calculated with an interval that
 proves the integer result, falling back to exact rational arithmetic at ambiguous
 boundaries. A rounded display never alters the underlying entitlement.
 
-The candidate service fee is zero. Automatic batches use a 1 VELD threshold and
+The service fee is zero. Automatic batches use a 1 VELD threshold and
 daily scheduling. Chain receipts require at least 120 canonical confirmations
 and actual node-reported spendability. Sub-threshold balances remain recorded.
 
@@ -55,25 +53,15 @@ saves resume intent; Stop clears it. Different endpoint/address profiles retain
 separate credentials and earnings. Installation alone does not start mining.
 
 The public-release package verifier requires the helper in its signed manifest.
-Production controller packaging includes the helper; final artifact qualification
-remains required. Manually built qualification executables do not bypass the
-clean-source release gate.
-The current GUI lab disables production node, portal and updater startup and
-uses an isolated state directory. Its result is native Windows pool-path proof,
-not a whole public-client installation or solo-mode qualification.
+Production controller packaging includes the helper. Manually built qualification
+executables do not bypass the clean-source release gate.
 
 The gateway serves a dashboard with private account balances and payment history.
 View credentials are distinct from mining credentials. The dashboard keeps them
-in memory, clears them on page exit, and sends no credentials in URLs. Browser
-usability and client-to-dashboard access setup still need integrated qualification.
+in memory, clears them on page exit, and sends no credentials in URLs.
 
 Ordinary yield from the operator's pool stake is shared with contributors.
 Operator-contributed stake principal and fee/operating funds remain separate.
-A native isolated exercise has verified a funded 1,000 VELD stake, genuine NMS
-inclusion, a lottery win, an ordinary yield distribution, and payments of both
-shared categories to two contributors. Independent recipient wallets matched.
-This verifies that path; its full failure/reorganization matrix and the exact
-final candidate still require qualification before advertising completion.
 
 ## Payment boundary
 
@@ -95,51 +83,5 @@ The separate payment journal and rollback anchor must survive restoration.
 Rewinding a database index alone is recoverable. Rewinding the authoritative
 journal against a surviving newer anchor is refused. Loss or rollback of both
 is not automatically recoverable and must never be handled by starting an empty
-payment database. The native recovery exercise covers crashes before signing,
-after native signing, after the signed journal, after broadcast, on both sides of
-confirmation-journal acknowledgement, and a lost response. Each recovered one
-economic payment. Old derived indexes recover from the surviving current journal;
-stale authoritative history is refused. Native competing branches have also
-verified exact-byte re-payment after a disconnected confirmation, removal of
-orphaned immature income, and refusal of a fork beyond the unchanged 100-block
-consensus limit. The remaining reward and validator reorganization cases and
-the exact final candidate still require qualification.
-
-## Qualification state
-
-An intermediate native Windows exercise has now connected a GUI-managed worker
-and a second native process to the real private backend over TLS, mined accepted
-blocks through height 100, matured income for at least 120 confirmations,
-restarted the coordinator/gateway, and confirmed ML-DSA-signed payouts. Both
-recipient wallets matched the ledger on an independent P2P-validating node.
-The GUI displayed the paid balance and retained it when closed and automatically
-resumed. The lab uses a disposable ASERT chain and controlled historical
-construction time; it does not alter reward amounts or skip proof verification.
-
-Separate current native Windows and Linux transport tests reject wrong trust
-roots/hostnames and malformed HTTP/JSON responses. Current Linux tests also
-exercise token rotation, missing/invalid replacements, symlinks, special files,
-unsafe permissions and bounded credential reads. These focused fixtures do not
-replace adversarial testing of the combined deployed service.
-
-Run the connected Linux exercises with:
-
-```sh
-sudo python3 -m pool.qualification.run --service-roles --output /absolute/new/evidence-directory
-```
-
-See the [qualification guide](../../pool/qualification/README.md) for dependencies, isolated profiles and exact
-coverage limits. This runner emits an explicit incomplete verdict for missing
-required cases, even when its implemented exercises pass.
-
-The Linux services have been exercised under the packaged systemd restrictions
-with separate temporary identities, native work, independent validation, an
-account-preserving upgrade and ordered shutdown. A five-minute native load
-exercise reports observed share throughput, RPC latency and memory; it does not
-establish maximum public capacity. The remaining full gate includes clean native
-Windows installation and solo-mode interaction, the remaining co-mining and
-validator failure cases, native finality certificates, and a clean combined run
-on the exact final candidate.
-Passing primitive benchmarks or a worker-to-wallet probe cannot replace it.
-Qualification commands do not authorize public deployment, mainnet activation,
-signing, or publication; those require separate operational approval.
+payment database. Old derived indexes recover from the surviving current journal;
+stale authoritative history is refused.

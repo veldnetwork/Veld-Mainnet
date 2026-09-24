@@ -62,8 +62,8 @@ finality, and reserve boundaries that changes must preserve.
 ## Web applications and packaging
 
 The wallet and Explorer include embedded HTML, CSS, and JavaScript in native
-headers. Additional hosted assets live in `resources/`, `website/`, and
-`pkg/web/`. The portal serves its application from the Python entry point.
+headers. Additional hosted assets live in `resources/` and `website/`.
+The portal serves its application from the Python entry point.
 Hosted asset updates and native client releases are separate operations.
 The pool's public dashboard and authenticated operator interface are separate
 applications under `pool/web/` and `pool/admin_web/`. Their credentials and

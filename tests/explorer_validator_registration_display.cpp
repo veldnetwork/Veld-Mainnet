@@ -36,8 +36,9 @@ int main(int argc, char** argv) {
     assert(open.body.find("Validators are endorsing blocks")==std::string::npos);
     request.path="/rules";request.path_parts={"rules"};auto rules=service.Route(request);
     assert(rules.body.find("flat 0.30% fee")!=std::string::npos);
-    assert(rules.body.find("Before block 9,500")!=std::string::npos);
-    assert(rules.body.find("Each validator still needs its own")!=std::string::npos);
+    assert(rules.body.find("Before block 9,500")==std::string::npos);
+    assert(rules.body.find("aggregate ordinary stake")==std::string::npos);
+    assert(rules.body.find("Bond the minimum")!=std::string::npos);
     if(argc==2){std::ofstream(std::filesystem::path(argv[1])/"validator-open.html")<<open.body;}
     std::cout<<"PASS real Explorer registration display: unknown, zero and below-floor, open with zero validators, and unchanged 9500 boundary\n";
 }

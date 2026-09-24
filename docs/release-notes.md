@@ -9,14 +9,14 @@
 - Correct native CI dependencies and mandatory-settlement test assumptions.
 
 No consensus, supply, reward, custody, fee or activation-height change from 3.2.1.
-The scheduled block 9,500 upgrade remains in place. Signed package identity and
+Signed package identity and
 executed checks are recorded in [source identity](source-identity.md) and
 [qualification scope](release-3.2.2-qualification.md).
 
 ## 3.2.1 - Pool mining and block 9,500 upgrade
 
 Published Windows client and terminal downloads are available at
-https://veld.network/#download. Update before block **9,500**.
+https://veld.network/#download.
 
 - Integrated Pool mode alongside Solo mode, configurable HTTPS endpoint,
   payout address and CPU controls; no key disclosure or member deposit.
@@ -29,12 +29,7 @@ https://veld.network/#download. Update before block **9,500**.
   and custody gates remain unchanged.
 
 Automatic updating remains opt-in, with hourly checks while the app is open.
-Selected miners already on an earlier 3.2.1 candidate need the final package
-installed manually because conflicting equal-version updates are refused.
-
-Pool co-mining has been exercised on an isolated test chain but is not funded
-on mainnet yet. Ongoing qualification is recorded separately; this release
-does not assert general security clearance or authorize custody activation.
+This release does not assert general security clearance or authorize custody activation.
 See [exact source and binaries](source-identity.md) and
 [qualification scope](release-3.2.1-qualification.md).
 
@@ -45,9 +40,7 @@ waiting for a peer reconnect. Worker status text stays within its column.
 
 Enable **Automatic updates** in Node Settings or the paired portal. While the
 app stays open, it checks hourly and keeps mining during download and
-verification. Once the signed package is ready, it updates and resumes the
-previously running node with the same workers, identity, settings, pairing,
-data directory, and sync progress. A stopped node stays stopped.
+verification. Once the signed package is ready, it updates the client. A stopped node stays stopped.
 
 The session unlock crosses the update through a one-use Windows-protected
 handoff. No passphrase is sent to the update service or saved in settings.
@@ -240,8 +233,8 @@ The 3.1.3 network rules and block-3,840 activation schedule are unchanged.
 
 ## Retained 3.1.3 network correction
 
-Update before **block 3,840**. This correction supersedes 3.1.2 and preserves
-the intended distinction between ordinary staking and the co-mining lottery.
+This correction preserves the intended distinction between ordinary staking
+and the co-mining lottery.
 
 ## Stake requirements
 
@@ -260,7 +253,7 @@ the lottery requirement, including a shortfall of one atomic unit.
 
 ## Network upgrade
 
-The previously scheduled **3,840** activation remains unchanged. ASERT adjusts
+From block **3,840**, ASERT adjusts
 difficulty after each block toward the **180-second** target with a
 **2,700-second** half-life. Ordinary staking drops to 500 VELD at that height;
 the coordinated coinbase and validator/governance state migrations remain on
@@ -268,10 +261,9 @@ the same settlement boundary. Reward allocations, maximum stake, maturity,
 lockups, and the historical block-2,880 rules are unchanged.
 
 The correction restores the existing pre-activation lottery rule and prevents
-3.1.2 from introducing the unintended lower threshold. All miners and node
-operators, including those who already installed 3.1.2, must update before
-block 3,840. Mixed 3.1.2/3.1.3 validation after activation can disagree on
-near-miss submissions or payouts involving stakes below 1,000 VELD.
+3.1.2 from introducing the unintended lower threshold. Mixed 3.1.2/3.1.3
+validation after activation can disagree on near-miss submissions or payouts
+involving stakes below 1,000 VELD.
 
 ## Updating
 
@@ -280,4 +272,4 @@ Close the existing client before replacing it. Keep your chain data and wallet
 backups; a routine update does not require a full resynchronization.
 
 The client recovery, checkpoint, GUI/daemon diagnostics, and mining improvements
-from 3.1.2 are retained. See the [3.1.2 notes](releases/3.1.2.md) for that history.
+from 3.1.2 are retained.

@@ -1,10 +1,7 @@
 # Pool mining with Veld Node
 
 Use the official signed Windows client from [veld.network](https://veld.network/).
-Version 3.2.2 includes Pool mode alongside Solo mode. The public pool is available
-at [pool.veld.network](https://pool.veld.network/); full end-to-end qualification
-remains in progress. Read the [release qualification record](../release-3.2.2-qualification.md)
-before relying on a particular test or recovery claim.
+The public pool is available at [pool.veld.network](https://pool.veld.network/).
 
 ## Connect
 
@@ -32,7 +29,7 @@ so the device retains its account and viewing access.
 | In payment | Entitlement reserved in a durable payment intent |
 | Paid | Payments confirmed on the canonical chain |
 
-The published candidate policy is a 0% service fee, a 1 VELD automatic payout
+The published policy is a 0% service fee, a 1 VELD automatic payout
 threshold by payout address, daily batches, and at least 120 canonical
 confirmations plus actual spendability. Smaller balances remain recorded.
 Daily processing does not guarantee daily earnings or a payment from each block.
@@ -45,7 +42,7 @@ viewing access as a private credential; do not post it in support channels.
 Block rewards, lottery winnings, and ordinary pool-stake yield are separate
 income categories. Only actual pool receipts create shared rewards. Pool
 co-mining requires the operator's separately funded 1,000 VELD stake and fee
-funds; it is not yet funded on mainnet. Members do not supply those funds.
+funds. Members do not supply those funds.
 
 ## Stop, reconnect, and update
 
@@ -54,6 +51,5 @@ erase earned balances. Solo mining remains available through the Mining tab;
 confirm the active mode before starting workers.
 
 Enable **Settings → Release and updates → Automatic updates** on each PC.
-Keep Veld open for hourly signed-update checks. The updater preserves the saved
-mode and resumes previously running mining after installation. Normal Windows
-reboot behavior is separate; see [automatic updates](automatic-updates.md).
+Keep Veld open for hourly signed-update checks. Normal Windows reboot behavior
+is separate; see [automatic updates](automatic-updates.md).

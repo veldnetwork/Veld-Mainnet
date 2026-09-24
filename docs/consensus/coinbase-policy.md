@@ -30,7 +30,7 @@ and all other transaction/module checks remain separate mandatory validation.
 ## Coordinated upgrade and history
 
 The corrected admission policy is gated by `ProtocolUpgradeActive`. Public-mainnet
-activation is scheduled at block 3,840. This document specifies that compatibility
+activation is block 3,840. This document specifies that compatibility
 boundary; it does not constitute release approval.
 
 Before activation, the historical tip-only reward-multiple backstop and replay
