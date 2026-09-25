@@ -22,49 +22,18 @@ class RemoteUnlock(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='veld-portal-unlock-')
         self.store = portal.PortalStore(Path(self.temp.name) / 'portal.sqlite')
-        self.account = self.store.create_account(
-            'fixture-owner', 'Synthetic account passphrase 318'
-        )
+        self.account = self.store.create_account('fixture-owner', 'Synthetic account passphrase 318')
         self.signer = ec.generate_private_key(ec.SECP256R1())
         numbers = self.signer.public_key().public_numbers()
         x, y = b64(numbers.x.to_bytes(32, 'big')), b64(numbers.y.to_bytes(32, 'big'))
         self.command_key = dict(x=x, y=y, id=portal.command_key_id(x, y))
-        rsa_key = (
-            rsa.generate_private_key(public_exponent=65537, key_size=2048)
-            .public_key()
-            .public_numbers()
-        )
+        rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048).public_key().public_numbers()
         n = b64(rsa_key.n.to_bytes(256, 'big'))
-        self.unlock_key = dict(
-            alg='RSA-OAEP-256',
-            n=n,
-            e='AQAB',
-            identity='a' * 64,
-            id=hashlib.sha256(('VELD_PORTAL_UNLOCK_KEY_V1\n' + n + '\nAQAB').encode()).hexdigest(),
-        )
-        self.report = portal.validate_report(
-            dict(
-                portal_protocol=4,
-                name='Synthetic node',
-                version='3.1.10',
-                height=0,
-                sync_lag=0,
-                hashrate=0,
-                workers=15,
-                peers=0,
-                inbound=0,
-                blocks=0,
-                mining_state='Stopped',
-                warning='',
-                snapshot=dict(
-                    unlock_key=self.unlock_key,
-                    remote_control=False,
-                    pairing_control=True,
-                    automatic_updates=False,
-                    identity_unlocked=False,
-                ),
-            )
-        )
+        self.unlock_key = dict(alg='RSA-OAEP-256', n=n, e='AQAB', identity='a' * 64,
+            id=hashlib.sha256(('VELD_PORTAL_UNLOCK_KEY_V1\n' + n + '\nAQAB').encode()).hexdigest())
+        self.report = portal.validate_report(dict(portal_protocol=4, name='Synthetic node', version='3.1.10', height=0,
+            sync_lag=0, hashrate=0, workers=15, peers=0, inbound=0, blocks=0, mining_state='Stopped', warning='',
+            snapshot=dict(unlock_key=self.unlock_key, remote_control=False, pairing_control=True, automatic_updates=False, identity_unlocked=False)))
         self.token = 'synthetic-node-token-' + '0' * 32
         reply = self.store.report(self.token, self.report)
         self.device = reply['device_id']
@@ -75,44 +44,23 @@ class RemoteUnlock(unittest.TestCase):
 
     def command(self, sequence=1, action='node.signin'):
         issued = int(time.time())
-        payload = (
-            dict(
-                ciphertext=b64(b'x' * 40),
-                identity=self.unlock_key['identity'],
-                iv=b64(b'i' * 12),
-                key_id=self.unlock_key['id'],
-                wrapped_key=b64(b'k' * 256),
-            )
-            if action == 'node.signin'
-            else {'enabled': True}
-            if action == 'updates.automatic'
-            else {}
-        )
-        command = dict(
-            id=self.device,
-            sequence=sequence,
-            issued_at=issued,
-            expires_at=issued + 180,
-            nonce=b64(sequence.to_bytes(16, 'big')),
-            action=action,
-            payload=payload,
-            key_id=self.command_key['id'],
-        )
-        signature = self.signer.sign(
-            portal.command_envelope(command).encode(), ec.ECDSA(hashes.SHA256())
-        )
+        payload = dict(ciphertext=b64(b'x' * 40), identity=self.unlock_key['identity'], iv=b64(b'i' * 12),
+            key_id=self.unlock_key['id'], wrapped_key=b64(b'k' * 256)) if action == 'node.signin' else {'enabled': True} if action == 'updates.automatic' else {}
+        command = dict(id=self.device, sequence=sequence, issued_at=issued, expires_at=issued + 180,
+            nonce=b64(sequence.to_bytes(16, 'big')), action=action, payload=payload, key_id=self.command_key['id'])
+        signature = self.signer.sign(portal.command_envelope(command).encode(), ec.ECDSA(hashes.SHA256()))
         r, s = decode_dss_signature(signature)
         order = int('ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551', 16)
-        command['signature'] = b64(r.to_bytes(32, 'big') + min(s, order - s).to_bytes(32, 'big'))
+        command['signature'] = b64(r.to_bytes(32, 'big') + min(s, order-s).to_bytes(32, 'big'))
         return portal.validate_command(command)
 
     def test_automatic_updates_command_and_capability(self):
         self.assertIs(self.report['snapshot']['automatic_updates'], False)
         command = self.command(action='updates.automatic')
-        with self.assertRaisesRegex(ValueError, '3.2.0 or later'):
+        with self.assertRaisesRegex(ValueError,'3.2.0 or later'):
             self.store.queue_command(self.account, command)
-        self.report['version'] = '3.2.2'
-        self.store.report(self.token, self.report)
+        self.report['version']='3.2.2'
+        self.store.report(self.token,self.report)
         self.store.queue_command(self.account, command)
         reply = self.store.report(self.token, self.report)
         self.assertEqual(reply['command']['action'], 'updates.automatic')
@@ -121,40 +69,30 @@ class RemoteUnlock(unittest.TestCase):
             portal.validate_command(dict(command, payload={'enabled': 'true'}))
 
     def test_automatic_update_capability_missing_and_rollback(self):
-        self.report['version'] = '3.2.2'
+        self.report['version']='3.2.2'
         self.report['snapshot'].pop('automatic_updates')
-        self.store.report(self.token, self.report)
-        with self.assertRaisesRegex(ValueError, '3.2.0 or later'):
-            self.store.queue_command(self.account, self.command(action='updates.automatic'))
-        self.report['snapshot']['automatic_updates'] = False
-        self.store.report(self.token, self.report)
-        identity = self.store.queue_command(self.account, self.command(action='updates.automatic'))
-        self.report['version'] = '3.1.10'
-        self.assertIsNone(self.store.report(self.token, self.report)['command'])
-        self.assertEqual(
-            self.store.command_status(self.account, self.device, identity)['state'], 'failed'
-        )
-        self.assertNotIn('automatic_updates', portal.validate_snapshot({}))
+        self.store.report(self.token,self.report)
+        with self.assertRaisesRegex(ValueError,'3.2.0 or later'):
+            self.store.queue_command(self.account,self.command(action='updates.automatic'))
+        self.report['snapshot']['automatic_updates']=False
+        self.store.report(self.token,self.report)
+        identity=self.store.queue_command(self.account,self.command(action='updates.automatic'))
+        self.report['version']='3.1.10'
+        self.assertIsNone(self.store.report(self.token,self.report)['command'])
+        self.assertEqual(self.store.command_status(self.account,self.device,identity)['state'],'failed')
+        self.assertNotIn('automatic_updates',portal.validate_snapshot({}))
 
     def test_command_status_is_owned_and_contains_no_payload_or_authority(self):
-        identity = self.store.queue_command(self.account, self.command())
-        status = self.store.command_status(self.account, self.device, identity)
-        self.assertEqual(status['state'], 'queued')
-        self.assertTrue(
-            {'payload', 'payload_json', 'signature', 'command_key_x', 'command_key_y'}.isdisjoint(
-                status
-            )
-        )
-        self.assertIsNone(self.store.command_status(self.account + 1, self.device, identity))
-        self.assertIsNone(self.store.command_status(self.account, self.device + 1, identity))
-        self.assertIsNone(self.store.command_status(self.account, self.device, identity + 1))
+        identity=self.store.queue_command(self.account,self.command())
+        status=self.store.command_status(self.account,self.device,identity)
+        self.assertEqual(status['state'],'queued')
+        self.assertTrue({'payload','payload_json','signature','command_key_x','command_key_y'}.isdisjoint(status))
+        self.assertIsNone(self.store.command_status(self.account+1,self.device,identity))
+        self.assertIsNone(self.store.command_status(self.account,self.device+1,identity))
+        self.assertIsNone(self.store.command_status(self.account,self.device,identity+1))
         with self.store.database() as db:
-            db.execute(
-                'UPDATE commands SET expires_at=? WHERE id=?', (int(time.time()) - 1, identity)
-            )
-        self.assertEqual(
-            self.store.command_status(self.account, self.device, identity)['state'], 'expired'
-        )
+            db.execute('UPDATE commands SET expires_at=? WHERE id=?',(int(time.time())-1,identity))
+        self.assertEqual(self.store.command_status(self.account,self.device,identity)['state'],'expired')
 
     def test_signed_relay_acknowledgement_and_ciphertext_cleanup(self):
         self.assertTrue(self.report['snapshot']['pairing_control'])
@@ -167,14 +105,10 @@ class RemoteUnlock(unittest.TestCase):
         self.assertEqual(reply['device_id'], self.device)
         self.assertEqual(reply['command']['payload'], command['payload'])
         self.assertEqual(reply['command']['signature'], command['signature'])
-        self.report.update(
-            ack_id=command_id, ack_status='completed', ack_message='Node start requested'
-        )
+        self.report.update(ack_id=command_id, ack_status='completed', ack_message='Node start requested')
         self.store.report(self.token, self.report)
         with self.store.database() as db:
-            row = db.execute(
-                'SELECT state,payload_json FROM commands WHERE id=?', (command_id,)
-            ).fetchone()
+            row = db.execute('SELECT state,payload_json FROM commands WHERE id=?', (command_id,)).fetchone()
             self.assertEqual(row['state'], 'completed')
             self.assertEqual(row['payload_json'], '{}')
 
@@ -198,26 +132,17 @@ class RemoteUnlock(unittest.TestCase):
         self.assertEqual(reply['portal_protocol'], 3)
         with self.assertRaisesRegex(ValueError, 'Update this node'):
             self.store.queue_command(self.account, self.command())
-        self.assertIsNotNone(
-            self.store.queue_command(self.account, self.command(action='node.stop'))
-        )
+        self.assertIsNotNone(self.store.queue_command(self.account, self.command(action='node.stop')))
 
     def test_payload_and_public_key_are_bounded(self):
         payload = self.command()['payload']
-        for changed in [
-            dict(payload, password='never accepted'),
-            dict(payload, iv='bad'),
-            dict(payload, ciphertext=b64(b'x' * 1041)),
-            dict(payload, identity='bad'),
-        ]:
+        for changed in [dict(payload, password='never accepted'), dict(payload, iv='bad'),
+                        dict(payload, ciphertext=b64(b'x' * 1041)), dict(payload, identity='bad')]:
             with self.assertRaises(ValueError):
                 portal.validate_unlock_payload(changed)
         self.assertEqual(portal.validate_unlock_key(self.unlock_key), self.unlock_key)
-        for changed in [
-            dict(self.unlock_key, id='b' * 64),
-            dict(self.unlock_key, e='Aw'),
-            dict(self.unlock_key, n='A' * 342),
-        ]:
+        for changed in [dict(self.unlock_key, id='b' * 64), dict(self.unlock_key, e='Aw'),
+                        dict(self.unlock_key, n='A' * 342)]:
             with self.assertRaises(ValueError):
                 portal.validate_unlock_key(changed)
 
@@ -227,26 +152,17 @@ class RemoteUnlock(unittest.TestCase):
         self.report['snapshot'].pop('unlock_key')
         self.assertIsNone(self.store.report(self.token, self.report)['command'])
         self.store.queue_command(self.account, self.command(sequence=2, action='node.stop'))
-        self.assertEqual(
-            self.store.report(self.token, self.report)['command']['action'], 'node.stop'
-        )
+        self.assertEqual(self.store.report(self.token, self.report)['command']['action'], 'node.stop')
 
     def test_expired_and_superseded_ciphertext_is_removed(self):
         first = self.store.queue_command(self.account, self.command())
         second = self.store.queue_command(self.account, self.command(sequence=2))
         with self.store.database() as db:
-            self.assertEqual(
-                db.execute('SELECT payload_json FROM commands WHERE id=?', (first,)).fetchone()[0],
-                '{}',
-            )
-            db.execute(
-                'UPDATE commands SET expires_at=? WHERE id=?', (int(time.time()) - 1, second)
-            )
+            self.assertEqual(db.execute('SELECT payload_json FROM commands WHERE id=?', (first,)).fetchone()[0], '{}')
+            db.execute('UPDATE commands SET expires_at=? WHERE id=?', (int(time.time()) - 1, second))
         self.assertIsNone(self.store.report(self.token, self.report)['command'])
         with self.store.database() as db:
-            row = db.execute(
-                'SELECT state,payload_json FROM commands WHERE id=?', (second,)
-            ).fetchone()
+            row = db.execute('SELECT state,payload_json FROM commands WHERE id=?', (second,)).fetchone()
             self.assertEqual(tuple(row), ('expired', '{}'))
 
 

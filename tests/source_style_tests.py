@@ -116,6 +116,43 @@ class PreservationControls(unittest.TestCase):
             self.assertTrue(style.exclusion(name, pinned, patterns), name)
         self.assertFalse(style.exclusion('src/veld-node.cpp', pinned, patterns))
 
+    def test_ui_paths_are_excluded_from_formatting(self):
+        pinned, patterns = style.protected_paths()
+        names = (
+            'website/explorer-theme-v1.css',
+            'website/how-to/stake-veld/index.html',
+            'pool/web/pool.js',
+            'pool/admin_web/admin.css',
+            'include/gui/pool_panel.h',
+            'include/network/ui_desktop.h',
+            'include/network/explorer.h',
+            'src/veld-desktop.cpp',
+            'src/veld-node-gui.cpp',
+            'src/veld-miner-portal.py',
+            'scripts/generate-pool-overview-ui.py',
+            'tests/wallet_authorization_tests.js',
+            'tests/portal_unlock_windows_tests.cpp',
+        )
+        for name in names:
+            with self.subTest(path=name):
+                self.assertTrue(style.exclusion(name, pinned, patterns))
+
+    def test_core_paths_remain_in_formatting_scope(self):
+        pinned, patterns = style.protected_paths()
+        names = (
+            'src/veld-node.cpp',
+            'include/node/node.h',
+            'include/consensus/staking.h',
+            'include/wallet/wallet.h',
+            'include/wallet/wallet_crypto.h',
+            'pool/accounting.py',
+            'swap/veld_redeemd.py',
+            'tests/mining_monitor_shutdown_tests.py',
+        )
+        for name in names:
+            with self.subTest(path=name):
+                self.assertFalse(style.exclusion(name, pinned, patterns))
+
     def test_cpp_lexical_controls(self):
         compiler = shutil.which('clang++')
         self.assertIsNotNone(compiler, 'Clang is required; lexical controls must not be skipped')

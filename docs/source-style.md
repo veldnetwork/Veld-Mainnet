@@ -52,6 +52,19 @@ New files under the repository's restricted source directories may need
 `git add -f` with an explicit path. Do not broaden ignore rules for operational
 artifacts or credentials just to make adding a source file easier.
 
+## UI scope
+
+UI and presentation changes are reviewed separately. `.clang-format-ignore`
+keeps the website, Explorer, wallet and Portal interfaces, Windows GUI, pool
+screens, UI generators and their interaction fixtures outside automatic
+formatting. Files that embed UI and backend code are preserved as a whole.
+The lower-level wallet, mining, consensus and service implementations remain
+in scope. The shared checker also reads these exclusions for non-C++ files;
+existing vendored-code exclusions are unchanged.
+
+Exclusion affects formatting only. The normal build, browser, interaction,
+authorization and runtime test jobs still run against the preserved UI.
+
 ## Scope of the evidence
 
 A formatter receipt is not a successful build, a protocol-equivalence proof,

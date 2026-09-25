@@ -108,7 +108,9 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-admission-") as temp:
             ("BREW", "/arbitrary"),
         )
         for method, path in method_cases:
-            status, _ = request(method, path, proxy_headers("198.51.100.10"))
+            status, _ = request(
+                method, path, proxy_headers("198.51.100.10")
+            )
             check(status == 501)
         check(entry_count(server, "global", "requests") == len(method_cases))
         check(entry_count(server, "client:198.51.100.10", "unauthenticated") == 4)
@@ -121,15 +123,10 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-admission-") as temp:
         # dispatch as well; no cached or delayed handler work survives denial.
         server.limiter = PORTAL.RateLimiter()
         check(server.concurrent_budget.acquire(128, 64))
-        check(
-            request(
-                "OPTIONS",
-                "/healthz",
-                proxy_headers("198.51.100.13"),
-                expect_zero_work=False,
-            )[0]
-            == 503
-        )
+        check(request(
+            "OPTIONS", "/healthz", proxy_headers("198.51.100.13"),
+            expect_zero_work=False,
+        )[0] == 503)
         check((server.concurrent_budget.memory, server.concurrent_budget.work) == (128, 64))
         check(entry_count(server, "global", "requests") == 0)
         server.concurrent_budget.release(128, 64)
@@ -148,7 +145,9 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-admission-") as temp:
         # unsupported verb; it never receives a normal client/request charge.
         server.limiter = PORTAL.RateLimiter()
         wrong = "VeldProxy v1=" + "00" * 32
-        check(request("OPTIONS", "/healthz", proxy_headers("198.51.100.12", wrong))[0] == 403)
+        check(request(
+            "OPTIONS", "/healthz", proxy_headers("198.51.100.12", wrong)
+        )[0] == 403)
         check(entry_count(server, "peer:127.0.0.1", "invalid-proxy") == 1)
         check(entry_count(server, "global", "invalid-proxy") == 1)
         check(entry_count(server, "global", "boundary-work") == 1)
@@ -159,7 +158,9 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-admission-") as temp:
         # charges at the pre-dispatch error boundary.
         server.limiter = PORTAL.RateLimiter()
         check(raw_request(b"GET / extra HTTP/1.1\r\n\r\n")[0] == 400)
-        check(raw_request(b"GET /healthz HTTP/1.1\r\nHost: portal\r\nBad Header\r\n\r\n")[0] == 400)
+        check(raw_request(
+            b"GET /healthz HTTP/1.1\r\nHost: portal\r\nBad Header\r\n\r\n"
+        )[0] == 400)
         check(entry_count(server, "peer:127.0.0.1", "malformed-request") == 2)
         check(entry_count(server, "global", "malformed-request") == 2)
         check(entry_count(server, "global", "malformed-work") == 2)
@@ -178,14 +179,10 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-admission-") as temp:
         # accounting object.
         server.limiter = PORTAL.RateLimiter()
         for _ in range(PORTAL.PREPARSE_CONNECTIONS_PER_MINUTE):
-            check(
-                server.limiter.allow(
-                    "global",
-                    "preparse-connections",
-                    PORTAL.PREPARSE_CONNECTIONS_PER_MINUTE,
-                    60,
-                )
-            )
+            check(server.limiter.allow(
+                "global", "preparse-connections",
+                PORTAL.PREPARSE_CONNECTIONS_PER_MINUTE, 60,
+            ))
         refused = socket.create_connection(("127.0.0.1", port), timeout=5)
         refused.settimeout(5)
         refused.sendall(b"GET /healthz HTTP/1.1\r\nHost: portal\r\n\r\n")
@@ -195,13 +192,12 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-admission-") as temp:
             connection_closed = True
         check(connection_closed)
         refused.close()
-        check(
-            wait_for(
-                lambda: server.preparse_budget.memory == 0
-                and server.preparse_budget.work == 0
-                and getattr(server.request_slots, "_value", -1) == PORTAL.REQUEST_CONCURRENCY
-            )
-        )
+        check(wait_for(
+            lambda: server.preparse_budget.memory == 0
+            and server.preparse_budget.work == 0
+            and getattr(server.request_slots, "_value", -1)
+            == PORTAL.REQUEST_CONCURRENCY
+        ))
 
         # Sixty-four partial request lines occupy both the retained hard
         # pre-parse semaphore and the explicit global connection budget.  A
@@ -214,14 +210,12 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-admission-") as temp:
             client.settimeout(5)
             client.sendall(b"G")
             partials.append(client)
-        check(
-            wait_for(
-                lambda: (
-                    server.preparse_budget.memory == PORTAL.REQUEST_CONCURRENCY
-                    and server.preparse_budget.work == PORTAL.REQUEST_CONCURRENCY
-                )
+        check(wait_for(
+            lambda: (
+                server.preparse_budget.memory == PORTAL.REQUEST_CONCURRENCY
+                and server.preparse_budget.work == PORTAL.REQUEST_CONCURRENCY
             )
-        )
+        ))
         check(getattr(server.request_slots, "_value", -1) == 0)
         overflow = socket.create_connection(("127.0.0.1", port), timeout=5)
         overflow.settimeout(5)
@@ -233,7 +227,9 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-admission-") as temp:
         check(overflow_closed)
         overflow.close()
         check(server.preparse_budget.memory == PORTAL.REQUEST_CONCURRENCY)
-        check(entry_count(server, "global", "preparse-connections") == PORTAL.REQUEST_CONCURRENCY)
+        check(entry_count(
+            server, "global", "preparse-connections"
+        ) == PORTAL.REQUEST_CONCURRENCY)
         for client in partials:
             client.sendall(b"ET / extra HTTP/1.1\r\n\r\n")
         for client in partials:
@@ -248,13 +244,12 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-admission-") as temp:
                 or bytes(response).startswith(b"HTTP/1.0 429 ")
             )
             client.close()
-        check(
-            wait_for(
-                lambda: server.preparse_budget.memory == 0
-                and server.preparse_budget.work == 0
-                and getattr(server.request_slots, "_value", -1) == PORTAL.REQUEST_CONCURRENCY
-            )
-        )
+        check(wait_for(
+            lambda: server.preparse_budget.memory == 0
+            and server.preparse_budget.work == 0
+            and getattr(server.request_slots, "_value", -1)
+            == PORTAL.REQUEST_CONCURRENCY
+        ))
 
         source = SOURCE.read_text(encoding="utf-8")
         check("def parse_request(self) -> bool:" in source)

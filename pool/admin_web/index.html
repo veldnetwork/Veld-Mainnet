@@ -1,120 +1,23 @@
 <!doctype html>
-<html lang="en"
-    ><head
-        ><meta charset="utf-8"><meta
-            name="viewport"
-            content="width=device-width,initial-scale=1">
-<title>Veld Pool · Operator</title
-        ><link rel="stylesheet" href="/admin.css"><script src="/admin.js" defer></script
-    ></head>
-<body
-        ><main
-            ><header
-                ><div><span class="brand">◈ Veld Pool</span><h1>Operator controls</h1></div
-                ><button id="logout" hidden>Sign out</button></header
-            >
-<p class="muted"
-                >Private operator access · payout destinations and signing keys are never editable here.</p
-            >
-<form id="login"
-                ><h2>Sign in</h2
-                ><label
-                    >Operator passphrase<input
-                        id="password"
-                        type="password"
-                        autocomplete="current-password"
-                        minlength="16"
-                        maxlength="256"
-                        required></label
-                ><button>Sign in securely</button></form
-            >
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Veld Pool · Operator</title><link rel="stylesheet" href="/admin.css"><script src="/admin.js" defer></script></head>
+<body><main><header><div><span class="brand">◈ Veld Pool</span><h1>Operator controls</h1></div><button id="logout" hidden>Sign out</button></header>
+<p class="muted">Private operator access · payout destinations and signing keys are never editable here.</p>
+<form id="login"><h2>Sign in</h2><label>Operator passphrase<input id="password" type="password" autocomplete="current-password" minlength="16" maxlength="256" required></label><button>Sign in securely</button></form>
 <p id="message" role="status" aria-live="polite"></p>
 <div id="console" hidden>
-<section
-                    ><div class="heading"
-                        ><h2>Service and balances</h2
-                        ><button id="refresh" type="button">Refresh</button></div
-                    ><p id="health"></p><div class="metrics" id="metrics"></div
-                    ><p class="muted" id="identity"></p
-                ></section>
-<section
-                    ><h2>Pool settings</h2><p id="revision" class="muted"></p
-                    ><form id="settings">
-<div class="grid"
-                            ><label
-                                >Minimum per payout address (VELD)<input
-                                    id="minimum"
-                                    inputmode="decimal"
-                                    required
-                                    pattern="[0-9]+(\.[0-9]{1,8})?"></label>
-<label
-                                >Batch interval (hours)<input
-                                    id="interval"
-                                    type="number"
-                                    min="1"
-                                    max="168"
-                                    step="1"
-                                    required></label>
-<label
-                                >Service fee (%)<input
-                                    id="fee"
-                                    inputmode="decimal"
-                                    required
-                                    pattern="[0-9]+(\.[0-9]{1,4})?"></label
-                        ></div>
+<section><div class="heading"><h2>Service and balances</h2><button id="refresh" type="button">Refresh</button></div><p id="health"></p><div class="metrics" id="metrics"></div><p class="muted" id="identity"></p></section>
+<section><h2>Pool settings</h2><p id="revision" class="muted"></p><form id="settings">
+<div class="grid"><label>Minimum per payout address (VELD)<input id="minimum" inputmode="decimal" required pattern="[0-9]+(\.[0-9]{1,8})?"></label>
+<label>Batch interval (hours)<input id="interval" type="number" min="1" max="168" step="1" required></label>
+<label>Service fee (%)<input id="fee" inputmode="decimal" required pattern="[0-9]+(\.[0-9]{1,4})?"></label></div>
 <p id="fee-limit" class="muted"></p>
-<label class="toggle"
-                            ><input id="payments-paused" type="checkbox"> Pause payout signing and broadcast</label
-                        >
-<label class="toggle"
-                            ><input id="comining-paused" type="checkbox"> Pause operator-funded staking and co-mining submissions</label
-                        >
-<p class="muted"
-                            >A pause retains reservations and observes confirmations. Transactions already signed may still confirm. Resuming co-mining permits only the configured operator-funded stake and near-miss operations.</p
-                        >
-<p class="muted"
-                            >Fees apply only to newly assigned work. Existing shares keep their fee, and existing payment batches keep their minimum. Receipts always need at least 120 confirmations and actual spendability. Staking yield is shared; operator principal and fee funds stay separate.</p
-                        >
-<label
-                            >Reason for change<input
-                                id="reason"
-                                required
-                                minlength="3"
-                                maxlength="160"
-                                autocomplete="off"
-                                placeholder="Briefly describe this change"></label>
-<div class="actions"
-                            ><button id="save">Apply settings</button
-                            ><button id="reload-settings" type="button" class="secondary"
-                                >Load current settings</button
-                            ></div
-                        ></form
-                    ></section
-                >
-<section
-                    ><h2>Reconciliation</h2
-                    ><p
-                        >Recheck canonical income and existing signed payments. This cannot create a payment, sign a transaction, clear a deficit, reset records or release reserved inputs.</p
-                    ><button id="reconcile">Reconcile now</button
-                    ><button id="retry" hidden>Retry the same request</button></section
-                >
-<section
-                    ><div class="heading"
-                        ><h2>Audit history</h2><button id="latest">Latest</button></div
-                    ><div class="table"
-                        ><table
-                            ><thead
-                                ><tr
-                                    ><th>When</th><th>Action</th><th>Result</th
-                                    ><th>Operator / reason</th></tr
-                                ></thead
-                            ><tbody id="audit"></tbody></table></div
-                    ><button id="older" hidden>Older entries</button></section
-                >
-</div
-            ><footer
-                >All changes are recorded before they take effect. Keep the journal and its separately retained rollback anchor when restoring backups.</footer
-            ></main
-        ></body
-    ></html
->
+<label class="toggle"><input id="payments-paused" type="checkbox"> Pause payout signing and broadcast</label>
+<label class="toggle"><input id="comining-paused" type="checkbox"> Pause operator-funded staking and co-mining submissions</label>
+<p class="muted">A pause retains reservations and observes confirmations. Transactions already signed may still confirm. Resuming co-mining permits only the configured operator-funded stake and near-miss operations.</p>
+<p class="muted">Fees apply only to newly assigned work. Existing shares keep their fee, and existing payment batches keep their minimum. Receipts always need at least 120 confirmations and actual spendability. Staking yield is shared; operator principal and fee funds stay separate.</p>
+<label>Reason for change<input id="reason" required minlength="3" maxlength="160" autocomplete="off" placeholder="Briefly describe this change"></label>
+<div class="actions"><button id="save">Apply settings</button><button id="reload-settings" type="button" class="secondary">Load current settings</button></div></form></section>
+<section><h2>Reconciliation</h2><p>Recheck canonical income and existing signed payments. This cannot create a payment, sign a transaction, clear a deficit, reset records or release reserved inputs.</p><button id="reconcile">Reconcile now</button><button id="retry" hidden>Retry the same request</button></section>
+<section><div class="heading"><h2>Audit history</h2><button id="latest">Latest</button></div><div class="table"><table><thead><tr><th>When</th><th>Action</th><th>Result</th><th>Operator / reason</th></tr></thead><tbody id="audit"></tbody></table></div><button id="older" hidden>Older entries</button></section>
+</div><footer>All changes are recorded before they take effect. Keep the journal and its separately retained rollback anchor when restoring backups.</footer></main></body></html>

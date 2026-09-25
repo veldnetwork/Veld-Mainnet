@@ -12,32 +12,17 @@ spec.loader.exec_module(service)
 
 class Backend:
     def __init__(self):
-        self.blocks = {
-            row['height']: dict(row, bits=0x1F00FFFF, reward_veld=3.1403, winner='miner')
-            for row in map(
-                json.loads,
-                (root / 'tests/fixtures/explorer-block-page-summaries.jsonl')
-                .read_text()
-                .splitlines(),
-            )
-        }
+        self.blocks = {row['height']: dict(row, bits=0x1f00ffff, reward_veld=3.1403, winner='miner')
+                       for row in map(json.loads, (root / 'tests/fixtures/explorer-block-page-summaries.jsonl').read_text().splitlines())}
         self.height = max(self.blocks)
         # Synthetic predecessors extend this captured display fixture far enough
         # to exercise an observed-time window when its large block is the tip.
-        oldest = min(self.blocks)
-        for h in range(oldest - 1, oldest - 25, -1):
-            newer = self.blocks[h + 1]
-            self.blocks[h] = dict(
-                height=h,
-                hash=newer['prev_hash'],
-                prev_hash=hashlib.sha256(('display-fixture-' + str(h)).encode()).hexdigest(),
-                time=newer['time'] - 180,
-                size=294,
-                tx_count=1,
-                bits=0x1F00FFFF,
-                reward_veld=3.1403,
-                winner='miner',
-            )
+        oldest=min(self.blocks)
+        for h in range(oldest-1,oldest-25,-1):
+            newer=self.blocks[h+1]
+            self.blocks[h]=dict(height=h,hash=newer['prev_hash'],
+                prev_hash=hashlib.sha256(('display-fixture-'+str(h)).encode()).hexdigest(),
+                time=newer['time']-180,size=294,tx_count=1,bits=0x1f00ffff,reward_veld=3.1403,winner='miner')
         self.calls = []
         self.stats_calls = 0
         self.reorg = False

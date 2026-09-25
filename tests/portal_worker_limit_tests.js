@@ -6,24 +6,16 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/veld-miner-portal.py'), 'utf8');
 const html = source.split('PORTAL_HTML = r"""')[1].split('"""')[0];
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-const extract = (name) =>
-    script.split('\n').find((line) => line.startsWith('function ' + name + '('));
+const extract = name => script.split('\n').find(line => line.startsWith('function ' + name + '('));
 const calls = [];
-const current = { workers: 64 };
+const current = {workers: 64};
 const settings = {};
-const context = vm.createContext({
-    current: () => current,
-    snap: () => settings,
-    action: (...args) => calls.push(args),
-});
+const context = vm.createContext({current: () => current, snap: () => settings, action: (...args) => calls.push(args)});
 vm.runInContext(extract('canonicalPayload') + '\n' + extract('setWorkers'), context);
 for (const workers of [1, 7, 8, 16, 64])
-    assert.equal(
-        context.canonicalPayload('mining.workers', { workers }),
-        JSON.stringify({ workers }),
-    );
+  assert.equal(context.canonicalPayload('mining.workers', {workers}), JSON.stringify({workers}));
 for (const workers of [0, -1, 65, 256, NaN, Infinity, 1.5])
-    assert.throws(() => context.canonicalPayload('mining.workers', { workers }));
+  assert.throws(() => context.canonicalPayload('mining.workers', {workers}));
 context.setWorkers(1);
 assert.equal(calls.at(-1)[1].workers, 64);
 current.workers = 1;

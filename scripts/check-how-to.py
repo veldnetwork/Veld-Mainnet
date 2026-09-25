@@ -9,22 +9,7 @@ import re
 
 
 ROOT = Path(__file__).resolve().parents[1] / "website" / "how-to"
-VOID = {
-    "area",
-    "base",
-    "br",
-    "col",
-    "embed",
-    "hr",
-    "img",
-    "input",
-    "link",
-    "meta",
-    "param",
-    "source",
-    "track",
-    "wbr",
-}
+VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 
 
 class Guide(HTMLParser):
@@ -89,9 +74,7 @@ def main():
                 if target.fragment:
                     assert target.fragment in guides[target.path].ids, (guide.path, href)
                 checked += 1
-    print(
-        f"PASS: {len(guides)} pages, {checked} guide links/anchors, balanced HTML, mainnet markers"
-    )
+    print(f"PASS: {len(guides)} pages, {checked} guide links/anchors, balanced HTML, mainnet markers")
 
 
 if __name__ == "__main__":

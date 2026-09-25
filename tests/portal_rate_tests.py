@@ -46,8 +46,10 @@ check(PORTAL.rate_identity("127.0.0.1") == "127.0.0.1")
 check(PORTAL.rate_identity("2001:0db8::1") == "2001:db8::1")
 check(PORTAL.rate_identity("::ffff:192.0.2.7") == "192.0.2.7")
 check(PORTAL.rate_identity("not-an-address") == "unknown")
-check(PORTAL.account_rate_identity("Miner") == PORTAL.account_rate_identity("mINER"))
-check(PORTAL.account_rate_identity("Miner") != PORTAL.account_rate_identity("Miner2"))
+check(PORTAL.account_rate_identity("Miner") ==
+      PORTAL.account_rate_identity("mINER"))
+check(PORTAL.account_rate_identity("Miner") !=
+      PORTAL.account_rate_identity("Miner2"))
 check(len(PORTAL.account_rate_identity("a" * 48)) == 72)
 
 if os.name != "nt":
@@ -73,44 +75,26 @@ if os.name != "nt":
 
 boundary = PORTAL.TrustedProxyBoundary("127.0.0.1", TOKEN)
 check(boundary.resolve("127.0.0.1", {}) == "peer:127.0.0.1")
-check(
-    boundary.resolve(
-        "127.0.0.1",
-        {
-            "X-Veld-Proxy-Authorization": AUTH,
-            "X-Veld-Client-IP": "2001:0db8::1",
-        },
-    )
-    == "client:2001:db8::1"
-)
-check(
-    boundary.resolve(
-        "127.0.0.1",
-        {
-            "X-Veld-Proxy-Authorization": AUTH,
-            "X-Veld-Client-IP": "::ffff:192.0.2.7",
-        },
-    )
-    == "client:192.0.2.7"
-)
+check(boundary.resolve("127.0.0.1", {
+    "X-Veld-Proxy-Authorization": AUTH,
+    "X-Veld-Client-IP": "2001:0db8::1",
+}) == "client:2001:db8::1")
+check(boundary.resolve("127.0.0.1", {
+    "X-Veld-Proxy-Authorization": AUTH,
+    "X-Veld-Client-IP": "::ffff:192.0.2.7",
+}) == "client:192.0.2.7")
 for peer, headers in (
     ("127.0.0.1", {"X-Forwarded-For": "198.51.100.9"}),
     ("127.0.0.1", {"X-Real-IP": "198.51.100.9"}),
     ("127.0.0.1", {"X-Veld-Client-IP": "198.51.100.9"}),
-    (
-        "127.0.0.1",
-        {
-            "X-Veld-Proxy-Authorization": "VeldProxy v1=" + "00" * 32,
-            "X-Veld-Client-IP": "198.51.100.9",
-        },
-    ),
-    (
-        "127.0.0.2",
-        {
-            "X-Veld-Proxy-Authorization": AUTH,
-            "X-Veld-Client-IP": "198.51.100.9",
-        },
-    ),
+    ("127.0.0.1", {
+        "X-Veld-Proxy-Authorization": "VeldProxy v1=" + "00" * 32,
+        "X-Veld-Client-IP": "198.51.100.9",
+    }),
+    ("127.0.0.2", {
+        "X-Veld-Proxy-Authorization": AUTH,
+        "X-Veld-Client-IP": "198.51.100.9",
+    }),
 ):
     try:
         boundary.resolve(peer, headers)
@@ -138,14 +122,10 @@ check(not third_client.auth_rate("globalblocked", registration=True))
 
 atomic = PORTAL.RateLimiter()
 check(atomic.allow("victim", "account", 1, 60))
-check(
-    not atomic.allow_many(
-        (
-            ("global", "auth", 100, 60),
-            ("victim", "account", 1, 60),
-        )
-    )
-)
+check(not atomic.allow_many((
+    ("global", "auth", 100, 60),
+    ("victim", "account", 1, 60),
+)))
 check(("global", "auth") not in atomic._entries)
 
 
@@ -173,7 +153,8 @@ check(not candidate.auth_rate("account24", registration=True))
 
 bounded = PORTAL.RateLimiter()
 for index in range(8192):
-    check(bounded.allow(f"198.18.{index // 256}.{index % 256}", "bounded", 1, 3600))
+    check(bounded.allow(f"198.18.{index // 256}.{index % 256}",
+                        "bounded", 1, 3600))
 check(not bounded.allow("203.0.113.250", "bounded", 1, 3600))
 check(len(bounded._entries) == 8192)
 
@@ -223,7 +204,8 @@ def concurrent_attempt(index: int) -> None:
 
 
 threads = [
-    threading.Thread(target=concurrent_attempt, args=(index,)) for index in range(len(results))
+    threading.Thread(target=concurrent_attempt, args=(index,))
+    for index in range(len(results))
 ]
 for thread in threads:
     thread.start()
@@ -249,4 +231,5 @@ check('"global", "device-report"' in source)
 check("device_belongs" in source)
 check("X-Forwarded-For" in source and "ProxyMetadataError" in source)
 
-print(f"PASS portal_rate_tests checks={checks} trusted_proxy_atomic_account_device_global_limits=1")
+print(f"PASS portal_rate_tests checks={checks} "
+      "trusted_proxy_atomic_account_device_global_limits=1")

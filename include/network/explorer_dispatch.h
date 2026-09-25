@@ -1,7 +1,6 @@
 #pragma once
 #include <string>
-namespace veld {
-namespace explorer_dispatch {
+namespace veld { namespace explorer_dispatch {
 
 inline const char* kDispatchJs = R"DISPATCHJS(
 (function(){
@@ -57,5 +56,4 @@ inline const char* kDispatchJs = R"DISPATCHJS(
 })();
 )DISPATCHJS";
 
-}
-}
+}}

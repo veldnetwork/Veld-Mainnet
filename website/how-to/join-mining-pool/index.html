@@ -1,218 +1,68 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><meta
-            name="viewport"
-            content="width=device-width,initial-scale=1"><meta
-            name="description"
-            content="Connect Veld Node to a mining pool, use your own payout address, monitor accepted work and understand your rewards."><meta name="robots" content="index,follow">
-<meta property="og:type" content="article"><meta
-            property="og:title"
-            content="Join Veld Pool with Veld Node"><meta
-            property="og:description"
-            content="Pool setup, private account access, rewards and payment history."><meta property="og:url" content="https://veld.network/how-to/join-mining-pool/">
-<link rel="canonical" href="https://veld.network/how-to/join-mining-pool/"><title
-            >Join Veld Pool | Veld How-to</title
-        >
-<link rel="preconnect" href="https://fonts.googleapis.com"><link
-            rel="preconnect"
-            href="https://fonts.gstatic.com"
-            crossorigin><link
-            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap"
-            rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Connect Veld Node to a mining pool, use your own payout address, monitor accepted work and understand your rewards."><meta name="robots" content="index,follow">
+<meta property="og:type" content="article"><meta property="og:title" content="Join Veld Pool with Veld Node"><meta property="og:description" content="Pool setup, private account access, rewards and payment history."><meta property="og:url" content="https://veld.network/how-to/join-mining-pool/">
+<link rel="canonical" href="https://veld.network/how-to/join-mining-pool/"><title>Join Veld Pool | Veld How-to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
 </head>
 <body>
-<a class="skip" href="#guide">Skip to guide</a
-        ><header class="nav-bar"
-            ><div class="nav-inner"
-                ><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a
-                ><nav class="nav-links" aria-label="Primary navigation"
-                    ><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a
-                    ><a
-                        href="https://explorer.veld.network"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        >Explorer</a
-                    ><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer"
-                        >Wallet</a
-                    ><a href="https://pool.veld.network" target="_blank" rel="noopener noreferrer"
-                        >Pool</a
-                    ><a class="button" href="/#download">Download</a></nav
-                ></div
-            ></header
-        >
+<a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Pool</a><a class="button" href="/#download">Download</a></nav></div></header>
 <main id="guide">
 <header class="guide-hero">
   <div class="breadcrumb"><a href="/how-to/">How-to</a> / Pool mining</div>
   <h1>Join Veld Pool</h1>
-  <p class="lede"
-                    >Use your own payout address, choose your CPU workers and mine together. Your wallet keys stay with you.</p
-                >
+  <p class="lede">Use your own payout address, choose your CPU workers and mine together. Your wallet keys stay with you.</p>
   <div class="guide-actions"><span class="guide-meta">About 5 minutes</span></div>
   <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress">
-    <a class="progress-item" href="#connect"
-                        ><span class="progress-index">01</span
-                        ><span class="progress-label">Connect</span></a
-                    >
-    <a class="progress-item" href="#work"
-                        ><span class="progress-index">02</span
-                        ><span class="progress-label">Mine</span></a
-                    >
-    <a class="progress-item" href="#rewards"
-                        ><span class="progress-index">03</span
-                        ><span class="progress-label">Rewards</span></a
-                    >
-    <a class="progress-item" href="#account"
-                        ><span class="progress-index">04</span
-                        ><span class="progress-label">Your account</span></a
-                    >
+    <a class="progress-item" href="#connect"><span class="progress-index">01</span><span class="progress-label">Connect</span></a>
+    <a class="progress-item" href="#work"><span class="progress-index">02</span><span class="progress-label">Mine</span></a>
+    <a class="progress-item" href="#rewards"><span class="progress-index">03</span><span class="progress-label">Rewards</span></a>
+    <a class="progress-item" href="#account"><span class="progress-index">04</span><span class="progress-label">Your account</span></a>
   </nav>
 </header>
-<div class="shell"
-                ><article class="article">
+<div class="shell"><article class="article">
   <section class="content-section" id="connect">
     <p class="stage-label">01 / Connect</p><h2>Open the Pool tab</h2>
     <ol class="step-list">
-      <li class="step"
-                                ><div
-                                    ><h3>Choose the pool endpoint</h3
-                                    ><p
-                                        >In Veld Node, open <strong>Pool</strong>. Set <strong>Pool endpoint (HTTPS)</strong> to <code>https://pool.veld.network</code>. You can enter another compatible pool instead.</p
-                                    ></div
-                                ></li
-                            >
-      <li class="step"
-                                ><div
-                                    ><h3>Enter your payout address</h3
-                                    ><p
-                                        >Use an address from your own Veld wallet. Use the same address on your PC and laptop if you want both machines paid to that wallet. Do not enter the pool operator’s wallet address.</p
-                                    ></div
-                                ></li
-                            >
-      <li class="step"
-                                ><div
-                                    ><h3>Select CPU workers</h3
-                                    ><p
-                                        >Start with enough spare capacity for your other apps. Leave the optional certificate authority field blank for Veld Pool. Choose <strong>Start pool mining</strong>.</p
-                                    ></div
-                                ></li
-                            >
+      <li class="step"><div><h3>Choose the pool endpoint</h3><p>In Veld Node, open <strong>Pool</strong>. Set <strong>Pool endpoint (HTTPS)</strong> to <code>https://pool.veld.network</code>. You can enter another compatible pool instead.</p></div></li>
+      <li class="step"><div><h3>Enter your payout address</h3><p>Use an address from your own Veld wallet. Use the same address on your PC and laptop if you want both machines paid to that wallet. Do not enter the pool operator’s wallet address.</p></div></li>
+      <li class="step"><div><h3>Select CPU workers</h3><p>Start with enough spare capacity for your other apps. Leave the optional certificate authority field blank for Veld Pool. Choose <strong>Start pool mining</strong>.</p></div></li>
     </ol>
-    <div class="note"
-                            ><strong>No wallet import or deposit.</strong> Joining does not require your keyfile, private key, wallet passphrase or a personal stake. Installing the client does not connect or start mining automatically.</div
-                        >
+    <div class="note"><strong>No wallet import or deposit.</strong> Joining does not require your keyfile, private key, wallet passphrase or a personal stake. Installing the client does not connect or start mining automatically.</div>
   </section>
   <section class="content-section" id="work">
     <p class="stage-label">02 / Mine</p><h2>Check accepted work</h2>
-    <p
-                            >The Pool tab shows connection state, measured hashrate and accepted work. Allow time for the dataset to initialize. A submitted share becomes credited work only after the pool verifies it.</p
-                        >
+    <p>The Pool tab shows connection state, measured hashrate and accepted work. Allow time for the dataset to initialize. A submitted share becomes credited work only after the pool verifies it.</p>
     <dl class="compare">
-      <div class="compare-row"
-                                ><dt>Mining</dt
-                                ><dd
-                                    >The client is working on a current pool job. Watch accepted work advance.</dd
-                                ></div
-                            >
-      <div class="compare-row"
-                                ><dt>Retrying</dt
-                                ><dd
-                                    >A connection or verifier is temporarily unavailable. The client retries automatically; a busy verifier does not make your proof invalid.</dd
-                                ></div
-                            >
-      <div class="compare-row"
-                                ><dt>Stale work</dt
-                                ><dd
-                                    >The chain advanced before that job completed. It is different from an invalid proof or a duplicate submission.</dd
-                                ></div
-                            >
+      <div class="compare-row"><dt>Mining</dt><dd>The client is working on a current pool job. Watch accepted work advance.</dd></div>
+      <div class="compare-row"><dt>Retrying</dt><dd>A connection or verifier is temporarily unavailable. The client retries automatically; a busy verifier does not make your proof invalid.</dd></div>
+      <div class="compare-row"><dt>Stale work</dt><dd>The chain advanced before that job completed. It is different from an invalid proof or a duplicate submission.</dd></div>
     </dl>
-    <p
-                            >Use <strong>Stop pool mining</strong> before changing the endpoint, payout address or CPU settings. Starting enables resume on this device; Stop turns resume off. To return to solo mining, stop pool mining and use the <strong>Mining</strong> tab.</p
-                        >
-    <div class="note"
-                            ><strong>More threads are not always faster.</strong> Compare steady hashrate after warm-up. Memory bandwidth, temperature and other programs can reduce performance at higher worker counts.</div
-                        >
+    <p>Use <strong>Stop pool mining</strong> before changing the endpoint, payout address or CPU settings. Starting enables resume on this device; Stop turns resume off. To return to solo mining, stop pool mining and use the <strong>Mining</strong> tab.</p>
+    <div class="note"><strong>More threads are not always faster.</strong> Compare steady hashrate after warm-up. Memory bandwidth, temperature and other programs can reduce performance at higher worker counts.</div>
   </section>
   <section class="content-section" id="rewards">
     <p class="stage-label">03 / Rewards</p><h2>Understand your balance</h2>
     <dl class="compare">
-      <div class="compare-row"
-                                ><dt>Pending</dt
-                                ><dd
-                                    >Your allocated share of actual income, waiting for canonical confirmations and spendability.</dd
-                                ></div
-                            >
-      <div class="compare-row"
-                                ><dt>Available</dt
-                                ><dd
-                                    >Mature, reconciled earnings that can enter a payment batch once the threshold and schedule are met.</dd
-                                ></div
-                            >
-      <div class="compare-row"
-                                ><dt>Paid</dt
-                                ><dd
-                                    >A payment confirmed on the canonical chain. Follow its transaction ID and confirm it in your wallet.</dd
-                                ></div
-                            >
+      <div class="compare-row"><dt>Pending</dt><dd>Your allocated share of actual income, waiting for canonical confirmations and spendability.</dd></div>
+      <div class="compare-row"><dt>Available</dt><dd>Mature, reconciled earnings that can enter a payment batch once the threshold and schedule are met.</dd></div>
+      <div class="compare-row"><dt>Paid</dt><dd>A payment confirmed on the canonical chain. Follow its transaction ID and confirm it in your wallet.</dd></div>
     </dl>
-    <p
-                            >Block rewards use verified work in the pool’s recent PPLNS window. Two machines can earn different amounts even when they use the same payout address. Work from earlier contributors can still fall inside that window; only the miner-category output is shared as block income.</p
-                        >
-    <p
-                            >When the pool identity qualifies for co-mining, actual lottery winnings and its ordinary staking yield are shared with the contributors in their recorded windows. Members do not need a personal stake. Operator-contributed stake principal remains separate.</p
-                        >
-    <p
-                            >The settings are <strong>0% service fee</strong>, <strong>1 VELD payment threshold</strong>, daily batches and at least <strong>120 confirmations plus actual spendability</strong>. Eligible accounts using the same payout address are combined for the destination threshold. Earnings below it remain recorded. Check the dashboard for the active terms; daily batches do not guarantee daily earnings.</p
-                        >
+    <p>Block rewards use verified work in the pool’s recent PPLNS window. Two machines can earn different amounts even when they use the same payout address. Work from earlier contributors can still fall inside that window; only the miner-category output is shared as block income.</p>
+    <p>When the pool identity qualifies for co-mining, actual lottery winnings and its ordinary staking yield are shared with the contributors in their recorded windows. Members do not need a personal stake. Operator-contributed stake principal remains separate.</p>
+    <p>The settings are <strong>0% service fee</strong>, <strong>1 VELD payment threshold</strong>, daily batches and at least <strong>120 confirmations plus actual spendability</strong>. Eligible accounts using the same payout address are combined for the destination threshold. Earnings below it remain recorded. Check the dashboard for the active terms; daily batches do not guarantee daily earnings.</p>
   </section>
   <section class="content-section" id="account">
-    <p class="stage-label">04 / Your account</p
-                        ><h2>See rewards and payment history</h2>
-    <p
-                            >Select <strong>Copy view access</strong>, then <strong>Open dashboard</strong>. Paste the viewing access into the account sign-in form. Public pool statistics do not require private account access.</p
-                        >
-    <p
-                            >Keep the viewing access private. It is separate from your payout wallet keys. Using the same payout address on two machines does not automatically reveal either machine’s private account details to the other.</p
-                        >
-    <p
-                            >Stopping, disconnecting or restarting does not erase earned balances. Preserve the client’s account records when moving installations. Changing a payout address starts a separate account profile; it does not transfer or rewrite earlier entitlements.</p
-                        >
-    <div class="guide-actions"
-                            ><a
-                                class="button"
-                                href="https://pool.veld.network"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                >Open Veld Pool</a
-                            ><a class="button" href="/how-to/start-cpu-mining/"
-                                >Solo mining guide</a
-                            ></div
-                        >
+    <p class="stage-label">04 / Your account</p><h2>See rewards and payment history</h2>
+    <p>Select <strong>Copy view access</strong>, then <strong>Open dashboard</strong>. Paste the viewing access into the account sign-in form. Public pool statistics do not require private account access.</p>
+    <p>Keep the viewing access private. It is separate from your payout wallet keys. Using the same payout address on two machines does not automatically reveal either machine’s private account details to the other.</p>
+    <p>Stopping, disconnecting or restarting does not erase earned balances. Preserve the client’s account records when moving installations. Changing a payout address starts a separate account profile; it does not transfer or rewrite earlier entitlements.</p>
+    <div class="guide-actions"><a class="button" href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Open Veld Pool</a><a class="button" href="/how-to/start-cpu-mining/">Solo mining guide</a></div>
   </section>
-  <p class="article-foot"
-                        >Source-reviewed <time datetime="2026-09-24">24 September 2026</time> for Veld Mainnet and Windows 3.2.7. Pool setup, private access and payment policy are checked against the published client and current service configuration.</p
-                    >
-</article></div
-            >
+  <p class="article-foot">Source-reviewed <time datetime="2026-09-24">24 September 2026</time> for Veld Mainnet and Windows 3.2.7. Pool setup, private access and payment policy are checked against the published client and current service configuration.</p>
+</article></div>
 </main>
-<footer
-            ><div class="footer-inner"
-                ><div>Veld · Where value is earned.</div
-                ><div class="footer-links"
-                    ><a href="/how-to/">All guides</a
-                    ><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer"
-                        >Whitepaper</a
-                    ><a
-                        href="https://explorer.veld.network"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        >Explorer</a
-                    ><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer"
-                        >Wallet</a
-                    ></div
-                ></div
-            ></footer
-        >
+<footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>
 </body>
 </html>

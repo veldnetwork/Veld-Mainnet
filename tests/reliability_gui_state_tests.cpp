@@ -31,19 +31,16 @@ struct GuiStateQualification {
 void WriteFixture(const std::filesystem::path& path, const std::string& bytes) {
     std::ofstream out(path, std::ios::binary);
     out.write(bytes.data(), bytes.size());
-    out.close();
-    assert(out.good());
+    out.close(); assert(out.good());
 }
 struct FileLock {
     HANDLE handle = INVALID_HANDLE_VALUE;
     FileLock(const std::filesystem::path& path, DWORD sharing) {
-        handle = CreateFileW(path.c_str(), GENERIC_READ, sharing, nullptr, OPEN_EXISTING,
-                             FILE_ATTRIBUTE_NORMAL, nullptr);
+        handle = CreateFileW(path.c_str(), GENERIC_READ, sharing, nullptr,
+                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
         assert(handle != INVALID_HANDLE_VALUE);
     }
-    ~FileLock() {
-        CloseHandle(handle);
-    }
+    ~FileLock() { CloseHandle(handle); }
 };
 }
 
@@ -75,8 +72,7 @@ int main(int argc, char** argv) {
     }
     assert(ReadTextBounded(conf) == saved);
     assert(GuiStateQualification::LoadSave(dir, true));
-    std::cout
-        << "PASS: BOM/CRLF legacy settings, Unicode path, 15 workers, full sync, monitoring, restart, sharing failures\n";
+    std::cout << "PASS: BOM/CRLF legacy settings, Unicode path, 15 workers, full sync, monitoring, restart, sharing failures\n";
     WriteFixture(root / "monitoring-report.json", GuiStateQualification::Report(dir));
 
     const auto token_file = dir / L"remote-monitor.dat";
@@ -94,8 +90,7 @@ int main(int argc, char** argv) {
         assert(!SaveDeviceToken(token_file, NewDeviceToken()));
     }
     assert(LoadDeviceToken(token_file) == token);
-    std::cout
-        << "PASS: protected pairing identity, duplicate save refused, unreadable identity preserved\n";
+    std::cout << "PASS: protected pairing identity, duplicate save refused, unreadable identity preserved\n";
 
     PortalTrustState trust;
     trust.device_id = 17;
@@ -118,22 +113,16 @@ int main(int argc, char** argv) {
     assert(ReadTextBounded(trust_file) == trust_bytes);
     assert(SavePortalTrust(trust_file, trust));
     assert(LoadPortalTrust(trust_file, read_trust) && read_trust.last_sequence == 43);
-    std::cout
-        << "PASS: protected portal replay state, failed save preserves prior sequence, successful retry advances\n";
+    std::cout << "PASS: protected portal replay state, failed save preserves prior sequence, successful retry advances\n";
 
     const auto result_file = dir / L"update-last-result.json";
-    WriteFixture(
-        result_file,
-        R"({"schema":1,"status":"failed","phase":"Commit","message":"File is busy. Close other Veld windows and retry."})");
+    WriteFixture(result_file, R"({"schema":1,"status":"failed","phase":"Commit","message":"File is busy. Close other Veld windows and retry."})");
     assert(ReadLastUpdateFailure(dir) == "File is busy. Close other Veld windows and retry.");
-    WriteFixture(
-        result_file,
-        R"({"schema":1,"status":"recovery-required","message":"Recovery needs attention"})");
+    WriteFixture(result_file, R"({"schema":1,"status":"recovery-required","message":"Recovery needs attention"})");
     assert(ReadLastUpdateFailure(dir) == "Recovery needs attention");
     WriteFixture(result_file, R"({"schema":1,"status":"installed","message":"Completed"})");
     assert(ReadLastUpdateFailure(dir).empty());
     WriteFixture(result_file, "partial");
     assert(ReadLastUpdateFailure(dir).empty());
-    std::cout
-        << "PASS: hidden update failure visible after relaunch, success and malformed result handled\n";
+    std::cout << "PASS: hidden update failure visible after relaunch, success and malformed result handled\n";
 }

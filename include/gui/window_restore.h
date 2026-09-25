@@ -17,15 +17,12 @@ inline bool RestoreExistingWindow(unsigned attempts = 40) {
         if (HWND window = FindWindowW(WindowClassName(), nullptr)) {
             DWORD pid = 0;
             GetWindowThreadProcessId(window, &pid);
-            if (pid)
-                AllowSetForegroundWindow(pid);
-            if (!ShowWindowAsync(window, SW_RESTORE))
-                return false;
+            if (pid) AllowSetForegroundWindow(pid);
+            if (!ShowWindowAsync(window, SW_RESTORE)) return false;
             SetForegroundWindow(window);
             return true;
         }
-        if (attempt + 1 < attempts)
-            Sleep(50);
+        if (attempt + 1 < attempts) Sleep(50);
     }
     return false;
 }
