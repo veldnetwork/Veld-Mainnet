@@ -1,0 +1,112 @@
+name: Validate cleanup integration
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/cleanup-integrate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  integrate:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'cleanup/v3.2.7-source-readability-20260924'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install review dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: clang-format==18.1.8 ruff==0.11.13 tinycss2==1.5.1 webencodings==0.5.1 requests==2.34.2 -r tests/requirements.txt
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/style-node" prettier@3.5.3
+          sudo apt-get update
+          sudo apt-get install -y libleveldb-dev libssl-dev
+      - name: Integrate only the reviewed presentation commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/cleanup-results"
+          base=cd61379a7bb31e4470bcf0a321e58b94f7f319ba
+          upstream=90adfe5f07fa259dde80dcf3c4f1c8f0bf8a5f57
+          git merge-base --is-ancestor "$base" HEAD
+          test "$(git rev-parse "$upstream^")" = "$base"
+          python - <<'PY'
+          import subprocess
+          expected = {
+              'include/network/ui_desktop.h',
+              'website/explorer-pool-ui-v1.js',
+              'website/explorer-theme-v1.css',
+              'website/hosted-wallet/asset-sha256.json',
+              'website/hosted-wallet/presentation.conf',
+              'website/hosted-wallet/wallet-desktop-login-v1.js',
+              'website/hosted-wallet/wallet-desktop-type-v1.css',
+              'website/index.html',
+          }
+          changed = subprocess.check_output([
+              'git', 'diff', '--name-only', '-z',
+              'cd61379a7bb31e4470bcf0a321e58b94f7f319ba',
+              '90adfe5f07fa259dde80dcf3c4f1c8f0bf8a5f57',
+          ]).decode().split('\0')[:-1]
+          if set(changed) != expected:
+              raise SystemExit('upstream paths differ from the reviewed presentation change')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git merge --no-commit --no-ff --strategy=ours "$upstream"
+          git restore --source="$upstream" --staged --worktree -- \
+            include/network/ui_desktop.h website/explorer-pool-ui-v1.js \
+            website/explorer-theme-v1.css website/hosted-wallet/asset-sha256.json \
+            website/hosted-wallet/presentation.conf \
+            website/hosted-wallet/wallet-desktop-login-v1.js \
+            website/hosted-wallet/wallet-desktop-type-v1.css website/index.html
+          python scripts/source-style.py --apply --output "$RUNNER_TEMP/style-merge" --prettier "$RUNNER_TEMP/style-node/node_modules/prettier"
+          git add -u
+          git commit -m 'Merge current wallet and Explorer presentation without reverting cleanup'
+          python scripts/source-style.py --output "$RUNNER_TEMP/style-check" --prettier "$RUNNER_TEMP/style-node/node_modules/prettier"
+          cp "$RUNNER_TEMP/style-check/results.json" "$RUNNER_TEMP/cleanup-results/style.json"
+      - name: Run regression and unsigned build gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 022
+          python tests/source_style_tests.py 2>&1 | tee "$RUNNER_TEMP/cleanup-results/controls.log"
+          python tests/run_checks.py 2>&1 | tee "$RUNNER_TEMP/cleanup-results/portable.log"
+          python -m unittest discover -s pool -t . -p 'test_*.py' 2>&1 | tee "$RUNNER_TEMP/cleanup-results/pool.log"
+          python -m unittest discover -s swap -p 'test_*.py' 2>&1 | tee "$RUNNER_TEMP/cleanup-results/custody.log"
+          bash build/mainnet-v2-linux.sh node "$RUNNER_TEMP/unsigned-node" 2>&1 | tee "$RUNNER_TEMP/cleanup-results/node-build.log"
+      - name: Publish to the cleanup branch only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          git rev-parse HEAD HEAD^{tree} > "$RUNNER_TEMP/cleanup-results/identity.txt"
+          git ls-tree -r HEAD > "$RUNNER_TEMP/cleanup-results/git-tree.txt"
+          git archive --format=tar.gz --prefix=veld-cleanup/ HEAD > "$RUNNER_TEMP/cleanup-results/source.tar.gz"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" git push origin HEAD:refs/heads/cleanup/v3.2.7-source-readability-20260924
+          unset auth GH_TOKEN
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: cleanup-integration-validation
+          path: ${{ runner.temp }}/cleanup-results/
+          retention-days: 7
+          if-no-files-found: warn
