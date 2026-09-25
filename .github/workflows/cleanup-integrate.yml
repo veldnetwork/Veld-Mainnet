@@ -1,7 +1,8 @@
 name: Validate cleanup integration
 
 on:
-  pull_request:
+  push:
+    branches: ['cleanup/v3.2.7-source-readability-20260924']
     paths:
       - '.github/workflows/cleanup-integrate.yml'
 
@@ -10,7 +11,7 @@ permissions:
 
 jobs:
   integrate:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'cleanup/v3.2.7-source-readability-20260924'
+    if: github.ref == 'refs/heads/cleanup/v3.2.7-source-readability-20260924'
     permissions:
       contents: write
     runs-on: ubuntu-24.04
@@ -18,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
