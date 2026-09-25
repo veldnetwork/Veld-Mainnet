@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --only-binary=:all: clang-format==18.1.8 ruff==0.11.13 tinycss2==1.5.1 webencodings==0.5.1 -r tests/requirements.txt
+          python -m pip install --only-binary=:all: clang-format==18.1.8 ruff==0.11.13 tinycss2==1.5.1 webencodings==0.5.1 requests==2.34.2 -r tests/requirements.txt
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/style-node" prettier@3.5.3
           sudo apt-get update
           sudo apt-get install -y libleveldb-dev libssl-dev
