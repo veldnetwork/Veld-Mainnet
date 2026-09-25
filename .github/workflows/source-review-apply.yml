@@ -71,6 +71,24 @@ jobs:
           GIT_INDEX_FILE="$RUNNER_TEMP/verified-index" git update-index --force-remove .github/workflows/source-review-export.yml .github/workflows/source-review-apply.yml .github/source-review-transfer/part1 .github/source-review-transfer/part2 .github/source-review-transfer/part3 .github/source-review-transfer/part4
           reviewed_tree=$(GIT_INDEX_FILE="$RUNNER_TEMP/verified-index" git write-tree)
           test "$reviewed_tree" = 4c3da5b4d62a5a37d5ba8f79ac05772f6e374bf2
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          path = Path('pool/test_journal_files.py')
+          raw = path.read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == '0216a833d34193761cd3092fdc7bebfd4e13e3defe610dfb3ebed6b8c96a310c'
+          needle = b'            unsafe.mkdir(mode=0o755)\n'
+          assert raw.count(needle) == 1
+          raw = raw.replace(needle, needle + b'            unsafe.chmod(0o755)\n            self.assertEqual(unsafe.stat().st_mode & 0o777, 0o755)\n')
+          assert hashlib.sha256(raw).hexdigest() == '64395a18851c2265e630853a0e1ffc78ea27cfbdae2f43a3567b897d447e9aae'
+          path.write_bytes(raw)
+          PY
+          git add pool/test_journal_files.py
+          git commit -m 'test(pool): make unsafe permission fixture independent of umask'
+          cp .git/index "$RUNNER_TEMP/verified-index"
+          GIT_INDEX_FILE="$RUNNER_TEMP/verified-index" git update-index --force-remove .github/workflows/source-review-export.yml .github/workflows/source-review-apply.yml .github/source-review-transfer/part1 .github/source-review-transfer/part2 .github/source-review-transfer/part3 .github/source-review-transfer/part4
+          reviewed_tree=$(GIT_INDEX_FILE="$RUNNER_TEMP/verified-index" git write-tree)
+          test "$reviewed_tree" = cde3e6ddd1d112c151176ccee54fcfb6fccfcafa
           printf '%s\n' "$reviewed_tree" > "$RUNNER_TEMP/review-receipts/reproduced-release-tree.txt"
           cp "$RUNNER_TEMP/style-applied/results.json" "$RUNNER_TEMP/review-receipts/formatting-results.json"
           git archive --format=tar.gz --prefix=veld-reviewed-release/ "$reviewed_tree" > "$RUNNER_TEMP/review-receipts/reviewed-release-source.tar.gz"
@@ -94,8 +112,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          umask 077
+          umask 022
           python tests/source_style_tests.py 2>&1 | tee "$RUNNER_TEMP/review-receipts/style-controls.log"
+          (umask 077; python -m unittest pool.test_journal_files -v) 2>&1 | tee "$RUNNER_TEMP/review-receipts/private-permission-fixture.log"
           python tests/run_checks.py 2>&1 | tee "$RUNNER_TEMP/review-receipts/portable.log"
           python -m unittest discover -s pool -t . -p 'test_*.py' 2>&1 | tee "$RUNNER_TEMP/review-receipts/pool.log"
           python -m unittest discover -s swap -p 'test_*.py' 2>&1 | tee "$RUNNER_TEMP/review-receipts/swap.log"
