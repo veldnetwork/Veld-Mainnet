@@ -20,8 +20,7 @@ static_assert(CONSENSUS_SECURITY_UPGRADE_HEIGHT % BOND_SETTLEMENT_INTERVAL == 0,
               "Consensus security upgrade must use a settlement boundary");
 
 inline constexpr bool ConsensusSecurityUpgradeActive(uint64_t height) {
-    return CONSENSUS_SECURITY_UPGRADE_HEIGHT != 0 &&
-           height >= CONSENSUS_SECURITY_UPGRADE_HEIGHT;
+    return CONSENSUS_SECURITY_UPGRADE_HEIGHT != 0 && height >= CONSENSUS_SECURITY_UPGRADE_HEIGHT;
 }
 
 } // namespace veld

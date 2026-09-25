@@ -8,14 +8,13 @@
 
 namespace {
 size_t checks = 0;
-#define CHECK(expr)                                                          \
-    do {                                                                     \
-        ++checks;                                                            \
-        if (!(expr)) {                                                       \
-            std::cerr << "FAIL " << __FILE__ << ':' << __LINE__             \
-                      << " " #expr "\n";                                    \
-            return 1;                                                        \
-        }                                                                    \
+#define CHECK(expr)                                                                                \
+    do {                                                                                           \
+        ++checks;                                                                                  \
+        if (!(expr)) {                                                                             \
+            std::cerr << "FAIL " << __FILE__ << ':' << __LINE__ << " " #expr "\n";                 \
+            return 1;                                                                              \
+        }                                                                                          \
     } while (false)
 }
 
@@ -47,15 +46,13 @@ int main() {
     CHECK(!server.IsTrustedIPForTesting("not-a-canonical-ip"));
 
     const std::filesystem::path node_header =
-        std::filesystem::path(__FILE__).parent_path().parent_path() /
-        "include" / "node" / "node.h";
+        std::filesystem::path(__FILE__).parent_path().parent_path() / "include" / "node" / "node.h";
     std::ifstream input(node_header, std::ios::binary);
     CHECK(static_cast<bool>(input));
     std::ostringstream buffer;
     buffer << input.rdbuf();
     const std::string source = buffer.str();
-    const size_t wrapper = source.find(
-        "bool ConnectTo(const std::string& host, uint16_t port)");
+    const size_t wrapper = source.find("bool ConnectTo(const std::string& host, uint16_t port)");
     CHECK(wrapper != std::string::npos);
     const size_t wrapper_end = source.find("\n    }", wrapper);
     CHECK(wrapper_end != std::string::npos);

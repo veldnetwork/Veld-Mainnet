@@ -40,22 +40,26 @@ inline constexpr bool EXTERNAL_VALUE_OBSERVATION_REQUIRED = true;
 inline constexpr bool EXTERNAL_VALUE_OBSERVATION_REQUIRED = false;
 #endif
 
-using H256 = std::array<uint8_t,32>;
+using H256 = std::array<uint8_t, 32>;
 
 inline uint32_t rd_le32(const uint8_t* p) {
-    return (uint32_t)p[0] | ((uint32_t)p[1]<<8) | ((uint32_t)p[2]<<16) | ((uint32_t)p[3]<<24);
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
-inline H256 rd_hash(const uint8_t* p) { H256 h; std::memcpy(h.data(), p, 32); return h; }
+inline H256 rd_hash(const uint8_t* p) {
+    H256 h;
+    std::memcpy(h.data(), p, 32);
+    return h;
+}
 
 struct BtcHeaderRecord {
-    std::array<uint8_t,80> raw{};
-    H256     block_hash{};
-    H256     prev_hash{};
-    H256     merkle_root{};
+    std::array<uint8_t, 80> raw{};
+    H256 block_hash{};
+    H256 prev_hash{};
+    H256 merkle_root{};
     uint32_t time = 0;
     uint32_t bits = 0;
     uint32_t height = 0;
-    U256     chain_work;
+    U256 chain_work;
 };
 
 // A pinned, deeply-buried BTC checkpoint. `height` MUST be a retarget boundary
@@ -65,21 +69,20 @@ struct BtcHeaderRecord {
 // blocks after the checkpoint.
 struct BtcCheckpoint {
     uint32_t height = 0;
-    H256     hash{};
+    H256 hash{};
     uint32_t bits = 0;
     uint32_t time = 0;
-    U256     chain_work;
+    U256 chain_work;
     uint32_t prev10_times[10] = {0};
 };
 
 class BtcHeaderChain {
-public:
+  public:
     // pow_limit = network's max target; retarget_interval/target_timespan are
     // 2016 / 1209600 on mainnet (overridable for tests). no_retarget = regtest.
     BtcHeaderChain(const BtcCheckpoint& cp, const U256& pow_limit,
-                   uint32_t retarget_interval = 2016,
-                   int64_t  target_timespan   = 14*24*60*60,
-                   bool     no_retarget       = false)
+                   uint32_t retarget_interval = 2016, int64_t target_timespan = 14 * 24 * 60 * 60,
+                   bool no_retarget = false)
         : pow_limit_(pow_limit), retarget_interval_(retarget_interval),
           target_timespan_(target_timespan), no_retarget_(no_retarget), cp_(cp) {
         Init();
@@ -104,22 +107,21 @@ public:
     // ledger's snapshot. RestoreState sets members directly — no Init().
     struct StateSnapshot {
         std::map<H256, BtcHeaderRecord> by_hash;
-        H256                            best_tip{};
-        H256                            observed_checkpoint{};
+        H256 best_tip{};
+        H256 observed_checkpoint{};
     };
     StateSnapshot SnapshotState() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return StateSnapshot{ by_hash_, best_tip_, observed_checkpoint_ };
+        return StateSnapshot{by_hash_, best_tip_, observed_checkpoint_};
     }
     void RestoreState(const StateSnapshot& s) {
         std::lock_guard<std::mutex> lock(mutex_);
-        by_hash_  = s.by_hash;
+        by_hash_ = s.by_hash;
         best_tip_ = s.best_tip;
         observed_checkpoint_ = s.observed_checkpoint;
         RebuildBestChainIndex();
         if (observed_checkpoint_ != H256{} &&
-            (!by_hash_.count(observed_checkpoint_) ||
-             !OnBestChain(observed_checkpoint_)))
+            (!by_hash_.count(observed_checkpoint_) || !OnBestChain(observed_checkpoint_)))
             throw std::invalid_argument(
                 "restored BTC observation checkpoint is not on the selected chain");
     }
@@ -146,11 +148,10 @@ public:
             for (unsigned i = 0; i < 8; ++i)
                 buf.push_back((uint8_t)(v >> (8 * i)));
         };
-        auto put_h256 = [&buf](const H256& h) {
-            buf.insert(buf.end(), h.begin(), h.end());
-        };
+        auto put_h256 = [&buf](const H256& h) { buf.insert(buf.end(), h.begin(), h.end()); };
         auto put_u256 = [&put_u32](const U256& v) {
-            for (uint32_t limb : v.w) put_u32(limb);
+            for (uint32_t limb : v.w)
+                put_u32(limb);
         };
 
         put_u256(pow_limit_);
@@ -159,7 +160,8 @@ public:
         put_u8(no_retarget_ ? 1 : 0);
         put_h256(cp_hash_);
         put_u32(cp_height_);
-        for (uint32_t t : cp_prev10_) put_u32(t);
+        for (uint32_t t : cp_prev10_)
+            put_u32(t);
         put_h256(best_tip_);
         put_h256(observed_checkpoint_);
         put_u64((uint64_t)by_hash_.size());
@@ -182,34 +184,43 @@ public:
     // the consensus-agreed Veld block that carries the relay op.
     bool SubmitHeader(const uint8_t raw[80], uint32_t veld_block_time = 0) {
         std::lock_guard<std::mutex> lock(mutex_);
-        H256 bh   = BtcHeaderHash(raw);
-        if (by_hash_.count(bh)) return true;                 // idempotent
+        H256 bh = BtcHeaderHash(raw);
+        if (by_hash_.count(bh))
+            return true; // idempotent
         H256 prev = rd_hash(raw + 4);
-        auto pit  = by_hash_.find(prev);
-        if (pit == by_hash_.end()) return false;             // orphan — parent unknown
-        const BtcHeaderRecord parent = pit->second;          // copy (map may rehash on insert)
+        auto pit = by_hash_.find(prev);
+        if (pit == by_hash_.end())
+            return false;                           // orphan — parent unknown
+        const BtcHeaderRecord parent = pit->second; // copy (map may rehash on insert)
 
         uint32_t htime = rd_le32(raw + 68);
         uint32_t hbits = rd_le32(raw + 72);
 
-        if (!CheckProofOfWork(raw, hbits, pow_limit_)) return false;   // PoW
+        if (!CheckProofOfWork(raw, hbits, pow_limit_))
+            return false; // PoW
         uint32_t want = ExpectedBits(parent);
-        if (want == 0 || hbits != want) return false;                  // difficulty rule
-        if (htime <= MedianTimePast(parent)) return false;             // median-time-past
-        if (veld_block_time != 0 && htime > veld_block_time + 7200)     // future bound
+        if (want == 0 || hbits != want)
+            return false; // difficulty rule
+        if (htime <= MedianTimePast(parent))
+            return false;                                           // median-time-past
+        if (veld_block_time != 0 && htime > veld_block_time + 7200) // future bound
             return false;
 
         BtcHeaderRecord r;
         std::memcpy(r.raw.data(), raw, 80);
-        r.block_hash = bh; r.prev_hash = prev; r.merkle_root = rd_hash(raw + 36);
-        r.time = htime; r.bits = hbits; r.height = parent.height + 1;
-        bool neg=false, ov=false;
+        r.block_hash = bh;
+        r.prev_hash = prev;
+        r.merkle_root = rd_hash(raw + 36);
+        r.time = htime;
+        r.bits = hbits;
+        r.height = parent.height + 1;
+        bool neg = false, ov = false;
         r.chain_work = parent.chain_work + BlockWork(CompactToTarget(hbits, &neg, &ov));
         by_hash_[bh] = r;
 
         auto best_it = by_hash_.find(best_tip_);
         if (best_it == by_hash_.end()) {
-            by_hash_.erase(bh);                                  // corrupt local frame: fail closed
+            by_hash_.erase(bh); // corrupt local frame: fail closed
             return false;
         }
         if (r.chain_work > best_it->second.chain_work) {
@@ -217,8 +228,7 @@ public:
             // rolling checkpoint. A later header branch may have more locally
             // visible work, but it cannot replace the selected branch if it
             // would rewrite that independently observed checkpoint.
-            if (observed_checkpoint_ != H256{} &&
-                !DescendsFromLocked_(bh, observed_checkpoint_)) {
+            if (observed_checkpoint_ != H256{} && !DescendsFromLocked_(bh, observed_checkpoint_)) {
                 by_hash_.erase(bh);
                 return false;
             }
@@ -228,10 +238,8 @@ public:
             // The overwhelmingly common case is one new header extending the
             // selected tip.  Keep the canonical-height index O(1) here; only a
             // real Bitcoin reorg rebuilds its changed path.
-            if (r.prev_hash == old_tip && r.height == old_height + 1 &&
-                r.height >= cp_height_ &&
-                best_chain_.size() ==
-                    static_cast<size_t>(r.height - cp_height_)) {
+            if (r.prev_hash == old_tip && r.height == old_height + 1 && r.height >= cp_height_ &&
+                best_chain_.size() == static_cast<size_t>(r.height - cp_height_)) {
                 best_chain_.push_back(bh);
             } else {
                 RebuildBestChainIndex();
@@ -256,8 +264,10 @@ public:
     bool PromoteObservedCheckpoint(const H256& block_hash) {
         std::lock_guard<std::mutex> lock(mutex_);
         auto candidate = by_hash_.find(block_hash);
-        if (candidate == by_hash_.end() || !OnBestChain(block_hash)) return false;
-        if (observed_checkpoint_ == block_hash) return true;
+        if (candidate == by_hash_.end() || !OnBestChain(block_hash))
+            return false;
+        if (observed_checkpoint_ == block_hash)
+            return true;
         if (observed_checkpoint_ != H256{}) {
             auto prior = by_hash_.find(observed_checkpoint_);
             if (prior == by_hash_.end() || !OnBestChain(observed_checkpoint_))
@@ -292,29 +302,32 @@ public:
     // height schedule prevents a frozen/eclipsed checkpoint from permanently
     // reducing the private-work threshold.
     bool ExternalValueFresh(uint64_t veld_timestamp) const {
-        if (!EXTERNAL_VALUE_FRESHNESS_REQUIRED) return true;
-        if (veld_timestamp == 0) return false;
+        if (!EXTERNAL_VALUE_FRESHNESS_REQUIRED)
+            return true;
+        if (veld_timestamp == 0)
+            return false;
         std::lock_guard<std::mutex> lock(mutex_);
         auto best = by_hash_.find(best_tip_);
-        if (best == by_hash_.end()) return false;
+        if (best == by_hash_.end())
+            return false;
         static constexpr uint64_t BTC_TARGET_SECONDS = 600;
         static constexpr uint64_t MAX_LAG_SECONDS = 48 * 60 * 60;
-        static constexpr uint64_t MAX_LAG_BLOCKS =
-            MAX_LAG_SECONDS / BTC_TARGET_SECONDS;
+        static constexpr uint64_t MAX_LAG_BLOCKS = MAX_LAG_SECONDS / BTC_TARGET_SECONDS;
         if (static_cast<uint64_t>(best->second.time) > veld_timestamp &&
-            static_cast<uint64_t>(best->second.time) - veld_timestamp >
-                2 * 60 * 60) return false;
-        if (static_cast<uint64_t>(best->second.time) + MAX_LAG_SECONDS <
-            veld_timestamp) return false;
-        if (veld_timestamp <= cp_.time) return true;
+            static_cast<uint64_t>(best->second.time) - veld_timestamp > 2 * 60 * 60)
+            return false;
+        if (static_cast<uint64_t>(best->second.time) + MAX_LAG_SECONDS < veld_timestamp)
+            return false;
+        if (veld_timestamp <= cp_.time)
+            return true;
         const uint64_t elapsed = veld_timestamp - cp_.time;
         const uint64_t expected_advance = elapsed / BTC_TARGET_SECONDS;
-        const uint64_t required_advance = expected_advance > MAX_LAG_BLOCKS
-            ? expected_advance - MAX_LAG_BLOCKS : 0;
-        if (required_advance >
-            UINT64_MAX - static_cast<uint64_t>(cp_height_)) return false;
+        const uint64_t required_advance =
+            expected_advance > MAX_LAG_BLOCKS ? expected_advance - MAX_LAG_BLOCKS : 0;
+        if (required_advance > UINT64_MAX - static_cast<uint64_t>(cp_height_))
+            return false;
         return static_cast<uint64_t>(best->second.height) >=
-            static_cast<uint64_t>(cp_height_) + required_advance;
+               static_cast<uint64_t>(cp_height_) + required_advance;
     }
     bool Has(const H256& h) const {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -325,7 +338,8 @@ public:
     std::optional<BtcHeaderRecord> Get(const H256& h) const {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = by_hash_.find(h);
-        if (it == by_hash_.end()) return std::nullopt;
+        if (it == by_hash_.end())
+            return std::nullopt;
         return it->second;
     }
     size_t Size() const {
@@ -337,12 +351,14 @@ public:
     bool IsFinal(const H256& block_hash, uint32_t k) const {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = by_hash_.find(block_hash);
-        if (it == by_hash_.end()) return false;
+        if (it == by_hash_.end())
+            return false;
         auto best = by_hash_.find(best_tip_);
-        if (best == by_hash_.end()) return false;
-        if (!OnBestChain(block_hash)) return false;
-        return (uint64_t)it->second.height + k <=
-               (uint64_t)best->second.height;
+        if (best == by_hash_.end())
+            return false;
+        if (!OnBestChain(block_hash))
+            return false;
+        return (uint64_t)it->second.height + k <= (uint64_t)best->second.height;
     }
 
     // External value is admitted only when BOTH ordinary SPV burial and the
@@ -353,11 +369,11 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = by_hash_.find(block_hash);
         auto best = by_hash_.find(best_tip_);
-        if (it == by_hash_.end() || best == by_hash_.end() ||
-            !OnBestChain(block_hash) ||
+        if (it == by_hash_.end() || best == by_hash_.end() || !OnBestChain(block_hash) ||
             (uint64_t)it->second.height + k > (uint64_t)best->second.height)
             return false;
-        if (!EXTERNAL_VALUE_OBSERVATION_REQUIRED) return true;
+        if (!EXTERNAL_VALUE_OBSERVATION_REQUIRED)
+            return true;
         auto observed = by_hash_.find(observed_checkpoint_);
         if (observed == by_hash_.end() || !OnBestChain(observed_checkpoint_))
             return false;
@@ -366,26 +382,32 @@ public:
 
     // Verify a Merkle inclusion proof: folding `txid` up `branch` (dir bit i:
     // 1 = sibling on the LEFT, 0 = on the RIGHT) yields the header's merkle root.
-    bool VerifyMerkle(const H256& block_hash, const H256& txid,
-                      const std::vector<H256>& branch, uint64_t dirs) const {
+    bool VerifyMerkle(const H256& block_hash, const H256& txid, const std::vector<H256>& branch,
+                      uint64_t dirs) const {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = by_hash_.find(block_hash);
-        if (it == by_hash_.end()) return false;
+        if (it == by_hash_.end())
+            return false;
         H256 h = txid;
         for (size_t i = 0; i < branch.size(); ++i) {
             uint8_t buf[64];
-            if ((dirs >> i) & 1u) { std::memcpy(buf, branch[i].data(), 32); std::memcpy(buf+32, h.data(), 32); }
-            else                  { std::memcpy(buf, h.data(), 32); std::memcpy(buf+32, branch[i].data(), 32); }
+            if ((dirs >> i) & 1u) {
+                std::memcpy(buf, branch[i].data(), 32);
+                std::memcpy(buf + 32, h.data(), 32);
+            } else {
+                std::memcpy(buf, h.data(), 32);
+                std::memcpy(buf + 32, branch[i].data(), 32);
+            }
             h = ::veld::Hash256d(buf, 64);
         }
         return h == it->second.merkle_root;
     }
 
-private:
+  private:
     mutable std::mutex mutex_;
     std::map<H256, BtcHeaderRecord> by_hash_;
-    H256     best_tip_{};
-    H256     observed_checkpoint_{};  // validator-QC-observed rolling BTC floor
+    H256 best_tip_{};
+    H256 observed_checkpoint_{}; // validator-QC-observed rolling BTC floor
     // Derived, non-consensus cache: entry i is the selected Bitcoin block at
     // height cp_height_ + i.  IsFinal used to walk backward from best_tip_ for
     // every SPV mint/anchor proof, making one Veld block's validation cost grow
@@ -393,21 +415,25 @@ private:
     // rebuilt from the digest-committed by_hash_/best_tip_ after restore/reorg,
     // so it adds no independently mutable consensus state.
     std::vector<H256> best_chain_;
-    U256     pow_limit_;
+    U256 pow_limit_;
     uint32_t retarget_interval_;
-    int64_t  target_timespan_;
-    bool     no_retarget_;
+    int64_t target_timespan_;
+    bool no_retarget_;
     BtcCheckpoint cp_{};
-    H256     cp_hash_{};
+    H256 cp_hash_{};
     uint32_t cp_height_ = 0;
     uint32_t cp_prev10_[10] = {0};
 
     void Init() {
-        cp_hash_ = cp_.hash; cp_height_ = cp_.height;
+        cp_hash_ = cp_.hash;
+        cp_height_ = cp_.height;
         std::memcpy(cp_prev10_, cp_.prev10_times, sizeof(cp_prev10_));
         BtcHeaderRecord r;
-        r.block_hash = cp_.hash; r.time = cp_.time; r.bits = cp_.bits;
-        r.height = cp_.height; r.chain_work = cp_.chain_work;
+        r.block_hash = cp_.hash;
+        r.time = cp_.time;
+        r.bits = cp_.bits;
+        r.height = cp_.height;
+        r.chain_work = cp_.chain_work;
         // prev_hash/merkle_root/raw unknown for the checkpoint anchor — never used
         // (nothing links into the checkpoint's parent; MTP uses cp_prev10_).
         by_hash_[cp_.hash] = r;
@@ -417,18 +443,21 @@ private:
 
     // expected nBits for parent's child. 0 == "cannot determine" (reject).
     uint32_t ExpectedBits(const BtcHeaderRecord& parent) const {
-        if (no_retarget_) return parent.bits;
+        if (no_retarget_)
+            return parent.bits;
         uint32_t next_h = parent.height + 1;
-        if (next_h % retarget_interval_ != 0) return parent.bits;
+        if (next_h % retarget_interval_ != 0)
+            return parent.bits;
         // retarget: walk back (interval-1) to the epoch's first header.
         const BtcHeaderRecord* first = &parent;
         for (uint32_t i = 0; i + 1 < retarget_interval_; ++i) {
             auto it = by_hash_.find(first->prev_hash);
-            if (it == by_hash_.end()) return 0;              // missing ancestor — fail closed
+            if (it == by_hash_.end())
+                return 0; // missing ancestor — fail closed
             first = &it->second;
         }
-        return CalcNextBits(parent.bits, (int64_t)parent.time - (int64_t)first->time,
-                            pow_limit_, target_timespan_);
+        return CalcNextBits(parent.bits, (int64_t)parent.time - (int64_t)first->time, pow_limit_,
+                            target_timespan_);
     }
 
     // median of parent + its 10 ancestors (drawing on the checkpoint seed if near it)
@@ -439,13 +468,16 @@ private:
         while (t.size() < 11) {
             t.push_back(cur->time);
             if (cur->block_hash == cp_hash_) {
-                for (int j = 9; j >= 0 && t.size() < 11; --j) t.push_back(cp_prev10_[j]);
+                for (int j = 9; j >= 0 && t.size() < 11; --j)
+                    t.push_back(cp_prev10_[j]);
                 break;
             }
             auto it = by_hash_.find(cur->prev_hash);
-            if (it == by_hash_.end()) break;
+            if (it == by_hash_.end())
+                break;
             cur = &it->second;
-            if (++guard > 24) break;
+            if (++guard > 24)
+                break;
         }
         std::sort(t.begin(), t.end());
         return t.empty() ? 0 : t[t.size() / 2];
@@ -477,7 +509,8 @@ private:
                 best_chain_.swap(reversed);
                 return;
             }
-            if (expected_height == 0) break;
+            if (expected_height == 0)
+                break;
             cur = it->second.prev_hash;
             --expected_height;
         }
@@ -488,13 +521,17 @@ private:
         auto anc = by_hash_.find(ancestor);
         auto cur = by_hash_.find(child);
         if (anc == by_hash_.end() || cur == by_hash_.end() ||
-            cur->second.height < anc->second.height) return false;
+            cur->second.height < anc->second.height)
+            return false;
         uint32_t height = cur->second.height;
         for (size_t guard = 0; guard <= by_hash_.size(); ++guard) {
-            if (child == ancestor) return true;
-            if (height <= anc->second.height) return false;
+            if (child == ancestor)
+                return true;
+            if (height <= anc->second.height)
+                return false;
             auto it = by_hash_.find(child);
-            if (it == by_hash_.end()) return false;
+            if (it == by_hash_.end())
+                return false;
             child = it->second.prev_hash;
             --height;
         }
@@ -505,11 +542,12 @@ private:
     // by callers.  A missing/corrupt derived index always fails closed.
     bool OnBestChain(const H256& h) const {
         auto it = by_hash_.find(h);
-        if (it == by_hash_.end() || it->second.height < cp_height_) return false;
+        if (it == by_hash_.end() || it->second.height < cp_height_)
+            return false;
         const size_t offset = static_cast<size_t>(it->second.height - cp_height_);
         return offset < best_chain_.size() && best_chain_[offset] == h;
     }
 };
 
-}  // namespace btcspv
-}  // namespace veld
+} // namespace btcspv
+} // namespace veld

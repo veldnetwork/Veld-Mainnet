@@ -35,8 +35,7 @@ def executable(name: str, candidates: list[str]) -> str:
 
 
 class SelfSignedHttpsServer:
-    def __init__(self, certificate: Path, private_key: Path,
-                 expected_connections: int) -> None:
+    def __init__(self, certificate: Path, private_key: Path, expected_connections: int) -> None:
         self.expected_connections = expected_connections
         self.connections = 0
         self.error: BaseException | None = None
@@ -60,8 +59,7 @@ class SelfSignedHttpsServer:
                 connection, _ = self.listener.accept()
                 self.connections += 1
                 try:
-                    with self.context.wrap_socket(
-                            connection, server_side=True) as tls:
+                    with self.context.wrap_socket(connection, server_side=True) as tls:
                         tls.settimeout(3)
                         request = bytearray()
                         while b"\r\n\r\n" not in request and len(request) < 65536:
@@ -86,31 +84,39 @@ class SelfSignedHttpsServer:
         check(not self.thread.is_alive(), "TLS fixture did not finish")
         if self.error is not None:
             raise self.error
-        check(self.connections == self.expected_connections,
-              "TLS fixture did not observe both curl handshakes")
+        check(
+            self.connections == self.expected_connections,
+            "TLS fixture did not observe both curl handshakes",
+        )
 
 
 def main() -> None:
     node = (ROOT / "include" / "node" / "node.h").read_text("utf-8")
     node_main = (ROOT / "src" / "veld-node.cpp").read_text("utf-8")
-    check('{curl_executable, "--disable", "-fsS"' in node,
-          "oracle curl does not disable user configuration first")
-    check('{curl_executable, "--disable", "--fail", "--silent"' in node,
-          "checkpoint curl does not disable user configuration first")
-    check(node.count("compat::TrustedSystemCurlExecutable()") == 2 and
-          node.count("if (curl_executable.empty())") == 2 and
-          '{"curl"' not in node,
-          "node curl executable identity is not trusted and fail-closed")
-    check(node.count('"--disable"') == 2,
-          "unexpected or missing node curl configuration interlock")
-    check("rd(argv[2], 8u * 1024u * 1024u" in node_main,
-          "release manifest verifier ceiling differs from updater transfer cap")
+    check(
+        '{curl_executable, "--disable", "-fsS"' in node,
+        "oracle curl does not disable user configuration first",
+    )
+    check(
+        '{curl_executable, "--disable", "--fail", "--silent"' in node,
+        "checkpoint curl does not disable user configuration first",
+    )
+    check(
+        node.count("compat::TrustedSystemCurlExecutable()") == 2
+        and node.count("if (curl_executable.empty())") == 2
+        and '{"curl"' not in node,
+        "node curl executable identity is not trusted and fail-closed",
+    )
+    check(node.count('"--disable"') == 2, "unexpected or missing node curl configuration interlock")
+    check(
+        "rd(argv[2], 8u * 1024u * 1024u" in node_main,
+        "release manifest verifier ceiling differs from updater transfer cap",
+    )
 
     curl = executable("curl", [r"C:\Windows\System32\curl.exe"])
     openssl = executable(
         "openssl",
-        [r"C:\msys64\clang64\bin\openssl.exe",
-         r"C:\Program Files\Git\usr\bin\openssl.exe"],
+        [r"C:\msys64\clang64\bin\openssl.exe", r"C:\Program Files\Git\usr\bin\openssl.exe"],
     )
 
     with tempfile.TemporaryDirectory(prefix="veld-test-curl-tls-") as temporary:
@@ -118,51 +124,86 @@ def main() -> None:
         certificate = temp / "self-signed.pem"
         private_key = temp / "self-signed.key"
         generated = subprocess.run(
-            [openssl, "req", "-x509", "-newkey", "rsa:2048", "-sha256",
-             "-nodes", "-days", "1", "-subj", "/CN=localhost",
-             "-keyout", str(private_key), "-out", str(certificate)],
-            cwd=temp, capture_output=True, timeout=30,
+            [
+                openssl,
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-sha256",
+                "-nodes",
+                "-days",
+                "1",
+                "-subj",
+                "/CN=localhost",
+                "-keyout",
+                str(private_key),
+                "-out",
+                str(certificate),
+            ],
+            cwd=temp,
+            capture_output=True,
+            timeout=30,
         )
-        check(generated.returncode == 0,
-              f"self-signed certificate generation failed: {generated.stderr!r}")
+        check(
+            generated.returncode == 0,
+            f"self-signed certificate generation failed: {generated.stderr!r}",
+        )
 
         curl_home = temp / "curl-home"
         curl_home.mkdir()
         for name in (".curlrc", "_curlrc"):
             (curl_home / name).write_text("insecure\n", encoding="ascii")
         environment = os.environ.copy()
-        environment.update({
-            "CURL_HOME": str(curl_home),
-            "HOME": str(curl_home),
-            "USERPROFILE": str(curl_home),
-            "NO_PROXY": "127.0.0.1,localhost",
-            "no_proxy": "127.0.0.1,localhost",
-        })
+        environment.update(
+            {
+                "CURL_HOME": str(curl_home),
+                "HOME": str(curl_home),
+                "USERPROFILE": str(curl_home),
+                "NO_PROXY": "127.0.0.1,localhost",
+                "no_proxy": "127.0.0.1,localhost",
+            }
+        )
         environment.pop("CURL_CA_BUNDLE", None)
         environment.pop("SSL_CERT_FILE", None)
 
         with SelfSignedHttpsServer(certificate, private_key, 2) as server:
             url = f"https://127.0.0.1:{server.port}/fixture"
             options = [
-                "--fail", "--silent", "--show-error",
-                "--connect-timeout", "2", "--max-time", "5",
-                "--proto", "=https", url,
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--connect-timeout",
+                "2",
+                "--max-time",
+                "5",
+                "--proto",
+                "=https",
+                url,
             ]
             configured = subprocess.run(
-                [curl, *options], env=environment,
-                capture_output=True, timeout=10,
+                [curl, *options],
+                env=environment,
+                capture_output=True,
+                timeout=10,
             )
-            check(configured.returncode == 0 and configured.stdout == b"{}",
-                  "negative control did not prove insecure curlrc was active")
+            check(
+                configured.returncode == 0 and configured.stdout == b"{}",
+                "negative control did not prove insecure curlrc was active",
+            )
 
             strict = subprocess.run(
-                [curl, "--disable", *options], env=environment,
-                capture_output=True, timeout=10,
+                [curl, "--disable", *options],
+                env=environment,
+                capture_output=True,
+                timeout=10,
             )
-            check(strict.returncode != 0,
-                  "--disable allowed curlrc to bypass self-signed TLS refusal")
-            check(strict.stdout == b"",
-                  "TLS-refused request returned attacker-controlled body bytes")
+            check(
+                strict.returncode != 0, "--disable allowed curlrc to bypass self-signed TLS refusal"
+            )
+            check(
+                strict.stdout == b"", "TLS-refused request returned attacker-controlled body bytes"
+            )
 
     print(f"PASS curl_config_tls_tests checks={checks}")
 

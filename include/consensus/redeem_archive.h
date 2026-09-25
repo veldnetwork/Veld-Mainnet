@@ -15,15 +15,17 @@
 namespace veld::btcveld {
 
 class RedeemArchive {
-public:
+  public:
     using Read = std::function<std::optional<std::string>(const std::string&)>;
     using Records = std::vector<std::pair<std::string, std::string>>;
     using Write = std::function<bool(const Records&)>;
     static Hash256 HashRecord(const std::string& record) {
         return state_digest::sha256_domain("VELD_REDEEM_ARCHIVE_NODE_v1|",
-            std::vector<uint8_t>(record.begin(), record.end()));
+                                           std::vector<uint8_t>(record.begin(), record.end()));
     }
-    static Hash256 EmptyRoot() { return HashRecord(std::string(1, char(2))); }
+    static Hash256 EmptyRoot() {
+        return HashRecord(std::string(1, char(2)));
+    }
     struct Root {
         Hash256 hash = EmptyRoot();
         uint64_t count = 0;
@@ -41,18 +43,20 @@ public:
         read_ = std::move(read);
         write_ = std::move(write);
     }
-    bool Available() const { return bool(read_) && bool(write_); }
+    bool Available() const {
+        return bool(read_) && bool(write_);
+    }
 
     std::optional<std::string> Get(const Root& root, const Hash256& key) const {
         CheckRoot(root);
-        if (root.count == 0) return std::nullopt;
+        if (root.count == 0)
+            return std::nullopt;
         Hash256 hash = root.hash;
         int previous = -1;
         for (size_t steps = 0; steps <= 256; ++steps) {
             const Node node = Load(hash);
             if (node.leaf)
-                return node.key == key ? std::optional<std::string>(node.value)
-                                       : std::nullopt;
+                return node.key == key ? std::optional<std::string>(node.value) : std::nullopt;
             if (int(node.depth) <= previous)
                 throw std::runtime_error("redeem archive branch order");
             previous = node.depth;
@@ -73,17 +77,18 @@ public:
         Node terminal;
         if (root.count != 0) {
             int previous = -1;
-            for (size_t steps = 0; ; ++steps) {
-                if (steps > 256) throw std::runtime_error("redeem archive depth");
+            for (size_t steps = 0;; ++steps) {
+                if (steps > 256)
+                    throw std::runtime_error("redeem archive depth");
                 terminal = Load(cursor);
-                if (terminal.leaf) break;
+                if (terminal.leaf)
+                    break;
                 if (int(terminal.depth) <= previous)
                     throw std::runtime_error("redeem archive branch order");
                 previous = terminal.depth;
                 path.push_back(terminal);
                 hashes.push_back(cursor);
-                cursor = btcnull::Bit(key, terminal.depth)
-                    ? terminal.right : terminal.left;
+                cursor = btcnull::Bit(key, terminal.depth) ? terminal.right : terminal.left;
             }
             if (terminal.key == key) {
                 if (terminal.value != value)
@@ -98,22 +103,22 @@ public:
         size_t ancestors = 0;
         if (root.count != 0) {
             size_t split = 0;
-            while (split < 256 && btcnull::Bit(key, split) ==
-                                   btcnull::Bit(terminal.key, split)) ++split;
-            if (split == 256) throw std::runtime_error("redeem archive key collision");
+            while (split < 256 && btcnull::Bit(key, split) == btcnull::Bit(terminal.key, split))
+                ++split;
+            if (split == 256)
+                throw std::runtime_error("redeem archive key collision");
             while (ancestors < path.size() && path[ancestors].depth < split)
                 ++ancestors;
-            const Hash256 old_subtree =
-                ancestors < hashes.size() ? hashes[ancestors] : cursor;
+            const Hash256 old_subtree = ancestors < hashes.size() ? hashes[ancestors] : cursor;
             child = btcnull::Bit(key, split)
-                ? Stage(records, Branch(uint16_t(split), old_subtree, child))
-                : Stage(records, Branch(uint16_t(split), child, old_subtree));
+                        ? Stage(records, Branch(uint16_t(split), old_subtree, child))
+                        : Stage(records, Branch(uint16_t(split), child, old_subtree));
         }
         while (ancestors != 0) {
             const Node& parent = path[--ancestors];
             child = btcnull::Bit(key, parent.depth)
-                ? Stage(records, Branch(parent.depth, parent.left, child))
-                : Stage(records, Branch(parent.depth, child, parent.right));
+                        ? Stage(records, Branch(parent.depth, parent.left, child))
+                        : Stage(records, Branch(parent.depth, child, parent.right));
         }
         // Backend writes one atomic, durable batch. A failure leaves root and
         // count unchanged. Old roots remain readable through rollback/restart.
@@ -124,7 +129,7 @@ public:
         return true;
     }
 
-private:
+  private:
     struct Node {
         bool leaf = false;
         uint16_t depth = 0;
@@ -147,8 +152,7 @@ private:
         record += value;
         return record;
     }
-    static std::string Branch(uint16_t depth, const Hash256& left,
-                              const Hash256& right) {
+    static std::string Branch(uint16_t depth, const Hash256& left, const Hash256& right) {
         std::string record{char(1), char(depth & 255), char(depth >> 8)};
         AppendHash(record, left);
         AppendHash(record, right);
@@ -164,7 +168,8 @@ private:
             throw std::runtime_error("redeem archive root/count mismatch");
     }
     Node Load(const Hash256& hash) const {
-        if (!read_) throw std::runtime_error("redeem archive backend unavailable");
+        if (!read_)
+            throw std::runtime_error("redeem archive backend unavailable");
         const auto raw = read_(HashToHex(hash));
         if (!raw || raw->empty() || HashRecord(*raw) != hash)
             throw std::runtime_error("redeem archive record missing or corrupt");
@@ -174,12 +179,10 @@ private:
             node.key = ReadHash(*raw, 1);
             node.value = raw->substr(33);
         } else if ((*raw)[0] == char(1) && raw->size() == 67) {
-            node.depth = uint16_t(uint8_t((*raw)[1])) |
-                         (uint16_t(uint8_t((*raw)[2])) << 8);
+            node.depth = uint16_t(uint8_t((*raw)[1])) | (uint16_t(uint8_t((*raw)[2])) << 8);
             node.left = ReadHash(*raw, 3);
             node.right = ReadHash(*raw, 35);
-            if (node.depth >= 256 || node.left == EmptyRoot() ||
-                node.right == EmptyRoot())
+            if (node.depth >= 256 || node.left == EmptyRoot() || node.right == EmptyRoot())
                 throw std::runtime_error("redeem archive invalid branch");
         } else {
             throw std::runtime_error("redeem archive invalid record");

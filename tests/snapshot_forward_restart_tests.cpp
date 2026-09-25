@@ -12,7 +12,8 @@ namespace sb = veld::snapshot_bootstrap;
 using namespace veld;
 
 void Require(bool ok, const char* label) {
-    if (!ok) throw std::runtime_error(label);
+    if (!ok)
+        throw std::runtime_error(label);
 }
 std::string Read(const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
@@ -21,18 +22,20 @@ std::string Read(const fs::path& p) {
 }
 void Write(const fs::path& p, const std::string& text) {
     Require(!fs::exists(p), "fixture result already exists");
-    std::ofstream f(p, std::ios::binary); f << text;
+    std::ofstream f(p, std::ios::binary);
+    f << text;
     Require(bool(f), "fixture result write failed");
 }
 SnapshotManifest Authenticate(const fs::path& root, const std::string& kind) {
     auto bytes = sb::ReadBoundedPlainFile(root / (kind + ".manifest"), 65536);
     auto sig = sb::ReadBoundedPlainFile(root / (kind + ".manifest.sig"), 65536);
-    SnapshotManifest manifest; std::string error;
+    SnapshotManifest manifest;
+    std::string error;
     Require(bytes && sig && VerifySignedSnapshotManifestPinned(*bytes, *sig, manifest),
             "snapshot manifest signature refused");
-    Require(sb::ManifestMatchesCompiledPublicChain(manifest, &error),
-            "snapshot profile mismatch");
-    auto digest = sb::Sha256File(root / manifest.archive_file, sb::PUBLIC_SNAPSHOT_MAX_ARCHIVE_BYTES);
+    Require(sb::ManifestMatchesCompiledPublicChain(manifest, &error), "snapshot profile mismatch");
+    auto digest =
+        sb::Sha256File(root / manifest.archive_file, sb::PUBLIC_SNAPSHOT_MAX_ARCHIVE_BYTES);
     Require(digest && *digest == manifest.sha256, "snapshot archive digest mismatch");
     return manifest;
 }
@@ -59,11 +62,15 @@ int main(int argc, char** argv) {
                 Require(hash.has_value(), "successor index missing");
                 auto data = disk.ReadBlock(HexToHash(*hash));
                 Require(data.has_value(), "successor body missing");
-                Block b; b.height = h;
-                Require(Block::Deserialize(*data, 0, b) == data->size(), "successor body not canonical");
+                Block b;
                 b.height = h;
-                Require(b.Serialize() == *data && HashToHex(b.GetHash()) == *hash, "successor identity mismatch");
-                successors.push_back(std::move(b)); target_hash = *hash;
+                Require(Block::Deserialize(*data, 0, b) == data->size(),
+                        "successor body not canonical");
+                b.height = h;
+                Require(b.Serialize() == *data && HashToHex(b.GetHash()) == *hash,
+                        "successor identity mismatch");
+                successors.push_back(std::move(b));
+                target_hash = *hash;
             }
         }
         const auto data = root / "pending";
@@ -71,47 +78,63 @@ int main(int argc, char** argv) {
         const auto handoff = data / "db/.snapshot-consensus-replay-required";
         if (mode == "prepare") {
             std::string error;
-            Require(sb::InitializeAuthenticatedSnapshotIdentity(data, &error), "snapshot identity failed");
+            Require(sb::InitializeAuthenticatedSnapshotIdentity(data, &error),
+                    "snapshot identity failed");
             VeldNode node(MainnetConfig(), data.string());
             node.SetStakingActivation(STAKING_ACTIVATION_SUPPLY);
             node.PrepareSnapshotCandidateReplay(base.height, base.tip_hash);
             node.ValidateStoredChainOnly(base.height, base.tip_hash, false);
-            Require(!node.ChainFullyValidated() && !node.IsMiningReady(), "snapshot work was admitted early");
+            Require(!node.ChainFullyValidated() && !node.IsMiningReady(),
+                    "snapshot work was admitted early");
             Write(root / "expected-obligation", Read(obligation));
             Write(root / "expected-handoff", Read(handoff));
             for (const auto& block : successors) {
                 Require(node.GetChainMut().AddBlockDirect(block, false, false, false,
-                    mining::PowAdmissionContext::Internal()), "ordinary successor rejected");
+                                                          mining::PowAdmissionContext::Internal()),
+                        "ordinary successor rejected");
             }
-            Require(node.GetChain().Height() == target && !node.FailStopRequired(), "foreground advance failed");
+            Require(node.GetChain().Height() == target && !node.FailStopRequired(),
+                    "foreground advance failed");
             Write(root / "expected-tip-digest", HashToHex(node.ConsensusStateDigest()));
         } else {
             VeldNode node(MainnetConfig(), data.string());
             node.SetStakingActivation(STAKING_ACTIVATION_SUPPLY);
             node.SetSnapshotFastStartEligible(true, base.height, base.tip_hash);
             node.ValidateStoredChainOnly(target, target_hash, false);
-            Require(!node.ChainFullyValidated() && !node.IsMiningReady(), "restart admitted unfinished work");
+            Require(!node.ChainFullyValidated() && !node.IsMiningReady(),
+                    "restart admitted unfinished work");
             Require(node.GetTCPServer() == nullptr, "offline fixture opened network services");
             auto requirement = node.IndependentValidationBase();
             Require(requirement && requirement->height == base.height &&
-                HashToHex(requirement->tip_hash) == base.tip_hash, "restart moved the background target");
-            Require(Read(obligation) == Read(root / "expected-obligation"), "restart rewrote the background commitment");
-            Require(Read(handoff) == Read(root / "expected-handoff"), "restart changed the signed handoff");
-            Require(HashToHex(node.ConsensusStateDigest()) == Read(root / "expected-tip-digest"), "restart changed the foreground state");
+                        HashToHex(requirement->tip_hash) == base.tip_hash,
+                    "restart moved the background target");
+            Require(Read(obligation) == Read(root / "expected-obligation"),
+                    "restart rewrote the background commitment");
+            Require(Read(handoff) == Read(root / "expected-handoff"),
+                    "restart changed the signed handoff");
+            Require(HashToHex(node.ConsensusStateDigest()) == Read(root / "expected-tip-digest"),
+                    "restart changed the foreground state");
             if (mode == "finish") {
                 const auto independent_data = root / "independent";
                 std::string error;
-                Require(sb::InitializeAuthenticatedSnapshotIdentity(independent_data, &error), "independent identity failed");
+                Require(sb::InitializeAuthenticatedSnapshotIdentity(independent_data, &error),
+                        "independent identity failed");
                 VeldNode independent(MainnetConfig(), independent_data.string());
                 independent.SetStakingActivation(STAKING_ACTIVATION_SUPPLY);
                 independent.ValidateStoredChainOnly(base.height, base.tip_hash, true);
-                Require(independent.ChainFullyValidated(), "independent full verification incomplete");
+                Require(independent.ChainFullyValidated(),
+                        "independent full verification incomplete");
                 VeldNode::BackgroundValidationObservation observation;
-                observation.height = base.height; observation.tip_hash = HexToHash(base.tip_hash);
-                observation.state_digest = independent.ConsensusStateDigest(); observation.reached = true;
-                Require(node.FinalizeIndependentBackgroundValidation(observation, &error), "independent comparison failed");
-                Require(node.ChainFullyValidated() && !node.IndependentValidationBase(), "independent completion not promoted");
-                Require(!fs::exists(obligation) && !fs::exists(handoff), "completed snapshot obligations remain");
+                observation.height = base.height;
+                observation.tip_hash = HexToHash(base.tip_hash);
+                observation.state_digest = independent.ConsensusStateDigest();
+                observation.reached = true;
+                Require(node.FinalizeIndependentBackgroundValidation(observation, &error),
+                        "independent comparison failed");
+                Require(node.ChainFullyValidated() && !node.IndependentValidationBase(),
+                        "independent completion not promoted");
+                Require(!fs::exists(obligation) && !fs::exists(handoff),
+                        "completed snapshot obligations remain");
                 Require(node.GetChain().Height() == target, "completion changed foreground height");
             }
         }

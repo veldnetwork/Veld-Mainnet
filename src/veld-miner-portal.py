@@ -91,9 +91,7 @@ def supports_automatic_updates(version: str, snapshot: dict[str, Any]) -> bool:
 
 
 def command_key_id(x_coordinate: str, y_coordinate: str) -> str:
-    material = (
-        "VELD_PORTAL_KEY_V1\n" + x_coordinate + "\n" + y_coordinate
-    ).encode("ascii")
+    material = ("VELD_PORTAL_KEY_V1\n" + x_coordinate + "\n" + y_coordinate).encode("ascii")
     return hashlib.sha256(material).hexdigest()
 
 
@@ -134,7 +132,13 @@ def validate_command_key(value: Any) -> dict[str, str]:
 
 
 def validate_unlock_payload(value: Any) -> dict[str, str]:
-    if not isinstance(value, dict) or set(value) != {"ciphertext", "identity", "iv", "key_id", "wrapped_key"}:
+    if not isinstance(value, dict) or set(value) != {
+        "ciphertext",
+        "identity",
+        "iv",
+        "key_id",
+        "wrapped_key",
+    }:
         raise ValueError("invalid encrypted sign-in")
     if not all(isinstance(item, str) for item in value.values()):
         raise ValueError("invalid encrypted sign-in")
@@ -155,12 +159,18 @@ def validate_unlock_key(value: Any) -> dict[str, str] | None:
         return None
     if not isinstance(value, dict) or set(value) != {"alg", "n", "e", "id", "identity"}:
         raise ValueError("invalid node encryption key")
-    if not all(isinstance(item, str) for item in value.values()) or value["alg"] != "RSA-OAEP-256" or value["e"] != "AQAB":
+    if (
+        not all(isinstance(item, str) for item in value.values())
+        or value["alg"] != "RSA-OAEP-256"
+        or value["e"] != "AQAB"
+    ):
         raise ValueError("invalid node encryption key")
     modulus = decode_base64url_canonical(value["n"], 256)
     if not modulus[0] & 0x80 or not COMMAND_KEY_ID_RE.fullmatch(value["identity"]):
         raise ValueError("invalid node identity")
-    digest = hashlib.sha256(("VELD_PORTAL_UNLOCK_KEY_V1\n" + value["n"] + "\n" + value["e"]).encode()).hexdigest()
+    digest = hashlib.sha256(
+        ("VELD_PORTAL_UNLOCK_KEY_V1\n" + value["n"] + "\n" + value["e"]).encode()
+    ).hexdigest()
     if value["id"] != digest:
         raise ValueError("invalid node key fingerprint")
     return dict(value)
@@ -206,16 +216,10 @@ def command_envelope(command: dict[str, Any]) -> str:
     )
 
 
-def verify_command_signature(
-    command: dict[str, Any], key_x: str, key_y: str
-) -> bool:
+def verify_command_signature(command: dict[str, Any], key_x: str, key_y: str) -> bool:
     try:
-        x_coordinate = int.from_bytes(
-            decode_base64url_canonical(key_x, 32), "big"
-        )
-        y_coordinate = int.from_bytes(
-            decode_base64url_canonical(key_y, 32), "big"
-        )
+        x_coordinate = int.from_bytes(decode_base64url_canonical(key_x, 32), "big")
+        y_coordinate = int.from_bytes(decode_base64url_canonical(key_y, 32), "big")
         raw_signature = decode_base64url_canonical(command["signature"], 64)
         der_signature = utils.encode_dss_signature(
             int.from_bytes(raw_signature[:32], "big"),
@@ -233,9 +237,8 @@ def verify_command_signature(
     except (InvalidSignature, KeyError, TypeError, ValueError):
         return False
 
-PORTAL_ICON_PATH = (
-    Path(__file__).resolve().parents[1] / "resources" / "veld-portal-icon.png"
-)
+
+PORTAL_ICON_PATH = Path(__file__).resolve().parents[1] / "resources" / "veld-portal-icon.png"
 PORTAL_MANIFEST = {
     "id": "/",
     "name": "Veld Node Portal",
@@ -945,9 +948,7 @@ class RateLimiter:
         self._entries: dict[tuple[str, str], deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
 
-    def allow_many(
-        self, checks: tuple[tuple[str, str, int, int], ...]
-    ) -> bool:
+    def allow_many(self, checks: tuple[tuple[str, str, int, int], ...]) -> bool:
         now = time.monotonic()
         if not checks:
             return True
@@ -1013,14 +1014,25 @@ def account_rate_identity(account: str) -> str:
 
 def route_rate_bucket(path: str) -> str:
     known = {
-        "/", "/healthz", "/manifest.webmanifest", "/service-worker.js",
-        "/offline.html", "/icon.png", "/api/v1/session", "/api/v1/devices",
-        "/api/v1/register", "/api/v1/login", "/api/v1/logout",
-        "/api/v1/device/report", "/api/v1/device/reset-pairing",
+        "/",
+        "/healthz",
+        "/manifest.webmanifest",
+        "/service-worker.js",
+        "/offline.html",
+        "/icon.png",
+        "/api/v1/session",
+        "/api/v1/devices",
+        "/api/v1/register",
+        "/api/v1/login",
+        "/api/v1/logout",
+        "/api/v1/device/report",
+        "/api/v1/device/reset-pairing",
         "/api/v1/devices/claim",
-        "/api/v1/devices/trust-key", "/api/v1/devices/command",
+        "/api/v1/devices/trust-key",
+        "/api/v1/devices/command",
         "/api/v1/devices/command-status",
-        "/api/v1/devices/rename", "/api/v1/devices/revoke",
+        "/api/v1/devices/rename",
+        "/api/v1/devices/revoke",
     }
     return path if path in known else "/other"
 
@@ -1032,11 +1044,7 @@ class ProxyMetadataError(ValueError):
 def _header_values(headers: Any, name: str) -> list[str]:
     if hasattr(headers, "get_all"):
         return list(headers.get_all(name, []))
-    return [
-        str(value)
-        for key, value in dict(headers).items()
-        if str(key).lower() == name.lower()
-    ]
+    return [str(value) for key, value in dict(headers).items() if str(key).lower() == name.lower()]
 
 
 def load_proxy_token(path: Path) -> bytes:
@@ -1059,7 +1067,9 @@ def load_proxy_token(path: Path) -> bytes:
             or info.st_mode & 0o077
             or info.st_size > 66
         ):
-            raise ValueError("proxy token file must be regular, single-link, owner-only, and bounded")
+            raise ValueError(
+                "proxy token file must be regular, single-link, owner-only, and bounded"
+            )
         raw = os.read(fd, 67)
     finally:
         os.close(fd)
@@ -1087,8 +1097,10 @@ class TrustedProxyBoundary:
         authorization = _header_values(headers, "X-Veld-Proxy-Authorization")
         clients = _header_values(headers, "X-Veld-Client-IP")
         legacy = sum(
-            (_header_values(headers, name) for name in
-             ("X-Forwarded-For", "X-Real-IP", "Forwarded")),
+            (
+                _header_values(headers, name)
+                for name in ("X-Forwarded-For", "X-Real-IP", "Forwarded")
+            ),
             [],
         )
         if legacy or len(authorization) > 1 or len(clients) > 1:
@@ -1128,7 +1140,8 @@ class ConcurrentBudget:
             if (
                 self.memory + memory > self.memory_limit
                 or self.work + work > self.work_limit
-                or history and self.history >= 4
+                or history
+                and self.history >= 4
             ):
                 return False
             self.memory += memory
@@ -1216,9 +1229,7 @@ class PortalStore:
                 CREATE INDEX IF NOT EXISTS samples_device_time
                   ON samples(device_id,captured_at);
             """)
-            device_columns = {
-                row["name"] for row in db.execute("PRAGMA table_info(devices)")
-            }
+            device_columns = {row["name"] for row in db.execute("PRAGMA table_info(devices)")}
             device_migrations = {
                 "snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
                 "command_key_x": "TEXT NOT NULL DEFAULT ''",
@@ -1229,9 +1240,7 @@ class PortalStore:
             for name, declaration in device_migrations.items():
                 if name not in device_columns:
                     db.execute(f"ALTER TABLE devices ADD COLUMN {name} {declaration}")
-            command_columns = {
-                row["name"] for row in db.execute("PRAGMA table_info(commands)")
-            }
+            command_columns = {row["name"] for row in db.execute("PRAGMA table_info(commands)")}
             sample_columns = {row["name"] for row in db.execute("PRAGMA table_info(samples)")}
             for name, declaration in {
                 "diagnostics_json": "TEXT NOT NULL DEFAULT '{}'",
@@ -1357,9 +1366,7 @@ class PortalStore:
 
     def delete_session(self, token: str) -> None:
         with self.lock, self.database() as db:
-            db.execute(
-                "DELETE FROM sessions WHERE token_hash=?", (self.token_hash(token),)
-            )
+            db.execute("DELETE FROM sessions WHERE token_hash=?", (self.token_hash(token),))
 
     @staticmethod
     def pair_code() -> str:
@@ -1454,11 +1461,14 @@ class PortalStore:
                 "SELECT captured_at,warning,mining_state,diagnostics_json FROM samples WHERE device_id=? ORDER BY captured_at DESC,id DESC LIMIT 1",
                 (device_id,),
             ).fetchone()
-            if (latest_sample is None or int(latest_sample["captured_at"]) <= now - 10
-                    or latest_sample["warning"] != report["warning"]
-                    or latest_sample["mining_state"] != report["mining_state"]
-                    or diagnostic_transition(json.loads(latest_sample["diagnostics_json"])) !=
-                       diagnostic_transition(report["snapshot"].get("diagnostics", {}))):
+            if (
+                latest_sample is None
+                or int(latest_sample["captured_at"]) <= now - 10
+                or latest_sample["warning"] != report["warning"]
+                or latest_sample["mining_state"] != report["mining_state"]
+                or diagnostic_transition(json.loads(latest_sample["diagnostics_json"]))
+                != diagnostic_transition(report["snapshot"].get("diagnostics", {}))
+            ):
                 snapshot = report["snapshot"]
                 db.execute(
                     """INSERT INTO samples(
@@ -1474,7 +1484,8 @@ class PortalStore:
                         report["inbound"],
                         1 if snapshot.get("mining_active") else 0,
                         json.dumps(snapshot.get("diagnostics", {}), separators=(",", ":")),
-                        report["warning"], report["mining_state"],
+                        report["warning"],
+                        report["mining_state"],
                     ),
                 )
                 db.execute("DELETE FROM samples WHERE captured_at<?", (now - 86400,))
@@ -1500,7 +1511,11 @@ class PortalStore:
                     """UPDATE commands SET state='failed',completed_at=?,result=?
                        WHERE device_id=? AND action IN ('pool.start','pool.stop')
                          AND state IN ('queued','delivered')""",
-                    (now, "This client does not support remote pool controls. Update the client first.", device_id),
+                    (
+                        now,
+                        "This client does not support remote pool controls. Update the client first.",
+                        device_id,
+                    ),
                 )
             if not supports_automatic_updates(report["version"], report["snapshot"]):
                 # A legacy client cannot acknowledge an unsupported action.
@@ -1509,7 +1524,11 @@ class PortalStore:
                     """UPDATE commands SET state='failed',completed_at=?,result=?
                        WHERE device_id=? AND action='updates.automatic'
                          AND state IN ('queued','delivered')""",
-                    (now, "Automatic updates require Veld 3.2.0 or later. Use Update now first.", device_id),
+                    (
+                        now,
+                        "Automatic updates require Veld 3.2.0 or later. Use Update now first.",
+                        device_id,
+                    ),
                 )
             db.execute(
                 "UPDATE commands SET payload_json='{}' WHERE device_id=? AND action='node.signin' AND state NOT IN ('queued','delivered')",
@@ -1600,9 +1619,7 @@ class PortalStore:
         """Detach one authenticated device and issue exactly one fresh code."""
         now, token_hash = int(time.time()), self.token_hash(token)
         with self.lock, self.database() as db:
-            row = db.execute(
-                "SELECT id FROM devices WHERE token_hash=?", (token_hash,)
-            ).fetchone()
+            row = db.execute("SELECT id FROM devices WHERE token_hash=?", (token_hash,)).fetchone()
             if row is None:
                 return None
             device_id = int(row["id"])
@@ -1628,9 +1645,7 @@ class PortalStore:
                     continue
         raise RuntimeError("pair code allocation failed")
 
-    def enroll_command_key(
-        self, account_id: int, device_id: int, key: dict[str, str]
-    ) -> str:
+    def enroll_command_key(self, account_id: int, device_id: int, key: dict[str, str]) -> str:
         with self.lock, self.database() as db:
             row = db.execute(
                 "SELECT command_key_id FROM devices WHERE id=? AND account_id=?",
@@ -1701,14 +1716,11 @@ class PortalStore:
         if row is None:
             return None
         command = dict(row)
-        if (command["state"] in {"queued", "delivered"}
-                and command["expires_at"] < int(time.time())):
+        if command["state"] in {"queued", "delivered"} and command["expires_at"] < int(time.time()):
             command["state"] = "expired"
         return command
 
-    def queue_command(
-        self, account_id: int, command: dict[str, Any]
-    ) -> int | None:
+    def queue_command(self, account_id: int, command: dict[str, Any]) -> int | None:
         now = int(time.time())
         device_id = command["id"]
         with self.lock, self.database() as db:
@@ -1725,7 +1737,10 @@ class PortalStore:
                 key = validate_unlock_key(snapshot.get("unlock_key"))
                 if key is None:
                     raise ValueError("Update this node to enable remote sign-in")
-                if key["id"] != command["payload"]["key_id"] or key["identity"] != command["payload"]["identity"]:
+                if (
+                    key["id"] != command["payload"]["key_id"]
+                    or key["identity"] != command["payload"]["identity"]
+                ):
                     raise ValueError("Node sign-in identity changed; refresh and retry")
             if not owned["command_key_id"]:
                 raise ValueError("Secure control key is not enrolled")
@@ -1740,15 +1755,21 @@ class PortalStore:
             if command["action"] in {"pool.start", "pool.stop"}:
                 snapshot = json.loads(owned["snapshot_json"])
                 if snapshot.get("pool_remote_control") is not True:
-                    raise ValueError("Update this machine to a client with remote pool controls first.")
+                    raise ValueError(
+                        "Update this machine to a client with remote pool controls first."
+                    )
                 if snapshot.get("remote_control") is not True:
                     raise ValueError("Remote control pairing is not ready on this machine.")
                 if now - int(owned["last_seen"]) > ONLINE_SECONDS:
-                    raise ValueError("This machine is offline. Pool controls need the Veld app online.")
+                    raise ValueError(
+                        "This machine is offline. Pool controls need the Veld app online."
+                    )
             if command["action"] == "updates.automatic" and not supports_automatic_updates(
                 owned["version"], json.loads(owned["snapshot_json"])
             ):
-                raise ValueError("Automatic updates require Veld 3.2.0 or later. Use Update now first.")
+                raise ValueError(
+                    "Automatic updates require Veld 3.2.0 or later. Use Update now first."
+                )
             active = db.execute(
                 "SELECT COUNT(*) FROM commands WHERE device_id=? AND state IN ('queued','delivered') AND expires_at>=?",
                 (device_id, now),
@@ -1811,11 +1832,7 @@ class PortalStore:
 
 
 def bounded_int(value: Any, minimum: int, maximum: int, field: str) -> int:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int)
-        or not minimum <= value <= maximum
-    ):
+    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
         raise ValueError(f"invalid {field}")
     return value
 
@@ -1843,41 +1860,89 @@ def clean_text(value: Any, maximum: int, field: str) -> str:
 def validate_diagnostics(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
-    required = {"schema", "local_status_valid", "mining_status_valid", "peer_status_valid",
-                "status_updated_at", "process_running", "last_exit_at", "last_exit_code",
-                "work_state", "total_hashes", "mining_ready", "daemon"}
-    if (not isinstance(value, dict) or set(value) != required
-            or type(value["schema"]) is not int or value["schema"] != 1):
+    required = {
+        "schema",
+        "local_status_valid",
+        "mining_status_valid",
+        "peer_status_valid",
+        "status_updated_at",
+        "process_running",
+        "last_exit_at",
+        "last_exit_code",
+        "work_state",
+        "total_hashes",
+        "mining_ready",
+        "daemon",
+    }
+    if (
+        not isinstance(value, dict)
+        or set(value) != required
+        or type(value["schema"]) is not int
+        or value["schema"] != 1
+    ):
         raise ValueError("invalid status diagnostics")
     out = {"schema": 1}
-    for key in ("local_status_valid", "mining_status_valid", "peer_status_valid", "process_running"):
+    for key in (
+        "local_status_valid",
+        "mining_status_valid",
+        "peer_status_valid",
+        "process_running",
+    ):
         if not isinstance(value[key], bool):
             raise ValueError("invalid status validity")
         out[key] = value[key]
-    for key, maximum in {"status_updated_at": 10**12, "last_exit_at": 10**12,
-                         "last_exit_code": 2**32-1, "total_hashes": 10**19}.items():
+    for key, maximum in {
+        "status_updated_at": 10**12,
+        "last_exit_at": 10**12,
+        "last_exit_code": 2**32 - 1,
+        "total_hashes": 10**19,
+    }.items():
         out[key] = None if value[key] is None else bounded_int(value[key], 0, maximum, key)
-    out["work_state"] = None if value["work_state"] is None else clean_text(value["work_state"], 48, "work state")
+    out["work_state"] = (
+        None if value["work_state"] is None else clean_text(value["work_state"], 48, "work state")
+    )
     if value["mining_ready"] is not None and not isinstance(value["mining_ready"], bool):
         raise ValueError("invalid mining readiness")
     out["mining_ready"] = value["mining_ready"]
-    if not out["mining_status_valid"] and any(out[k] is not None for k in
-            ("status_updated_at", "work_state", "total_hashes", "mining_ready")):
+    if not out["mining_status_valid"] and any(
+        out[k] is not None
+        for k in ("status_updated_at", "work_state", "total_hashes", "mining_ready")
+    ):
         raise ValueError("unavailable mining status must be unknown")
     daemon = value["daemon"]
     out["daemon"] = None
     if daemon is not None:
-        integers = {"network_magic", "protocol_height", "asert_height", "migration_height",
-                    "security_height", "verification_height", "verification_target"}
-        fields = integers | {"version", "profile", "executable_sha256", "ibd_complete", "historical_validated"}
+        integers = {
+            "network_magic",
+            "protocol_height",
+            "asert_height",
+            "migration_height",
+            "security_height",
+            "verification_height",
+            "verification_target",
+        }
+        fields = integers | {
+            "version",
+            "profile",
+            "executable_sha256",
+            "ibd_complete",
+            "historical_validated",
+        }
         if not out["mining_status_valid"] or not isinstance(daemon, dict) or set(daemon) != fields:
             raise ValueError("invalid daemon identity")
         version = clean_text(daemon["version"], 32, "daemon version")
         profile = clean_text(daemon["profile"], 64, "daemon profile")
         digest = clean_text(daemon["executable_sha256"], 64, "daemon build hash")
-        if not VERSION_RE.fullmatch(version) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", profile) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        if (
+            not VERSION_RE.fullmatch(version)
+            or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", profile)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        ):
             raise ValueError("invalid daemon build identity")
-        result = {k: bounded_int(daemon[k], 0, 2**32-1 if k == "network_magic" else 10**12, k) for k in integers}
+        result = {
+            k: bounded_int(daemon[k], 0, 2**32 - 1 if k == "network_magic" else 10**12, k)
+            for k in integers
+        }
         for key in ("ibd_complete", "historical_validated"):
             if not isinstance(daemon[key], bool):
                 raise ValueError("invalid daemon validation state")
@@ -1889,10 +1954,22 @@ def validate_diagnostics(value: Any) -> dict[str, Any]:
 
 def diagnostic_transition(value: dict[str, Any]) -> tuple:
     daemon = value.get("daemon") or {}
-    return tuple(value.get(k) for k in (
-        "local_status_valid", "mining_status_valid", "peer_status_valid",
-        "process_running", "last_exit_at", "last_exit_code", "work_state", "mining_ready")) + tuple(
-        daemon.get(k) for k in ("version", "profile", "executable_sha256", "ibd_complete", "historical_validated"))
+    return tuple(
+        value.get(k)
+        for k in (
+            "local_status_valid",
+            "mining_status_valid",
+            "peer_status_valid",
+            "process_running",
+            "last_exit_at",
+            "last_exit_code",
+            "work_state",
+            "mining_ready",
+        )
+    ) + tuple(
+        daemon.get(k)
+        for k in ("version", "profile", "executable_sha256", "ibd_complete", "historical_validated")
+    )
 
 
 def present_device(item: dict[str, Any]) -> None:
@@ -1934,9 +2011,13 @@ def present_sample(item: dict[str, Any]) -> dict[str, Any]:
     except (ValueError, TypeError):
         diagnostic = {}
     item["diagnostics"] = diagnostic
-    for key, validity in (("height", "local_status_valid"), ("hashrate", "mining_status_valid"),
-                          ("peers", "peer_status_valid"), ("inbound", "peer_status_valid"),
-                          ("mining_active", "mining_status_valid")):
+    for key, validity in (
+        ("height", "local_status_valid"),
+        ("hashrate", "mining_status_valid"),
+        ("peers", "peer_status_valid"),
+        ("inbound", "peer_status_valid"),
+        ("mining_active", "mining_status_valid"),
+    ):
         valid = diagnostic.get(validity)
         if key == "peers" and diagnostic.get("local_status_valid"):
             valid = True
@@ -1948,11 +2029,22 @@ def present_sample(item: dict[str, Any]) -> dict[str, Any]:
 def validate_pool_snapshot(value: Any) -> dict[str, Any] | None:
     if value is None:
         return None  # Older clients do not report pool state; never infer it.
-    integers = {"configured_workers": 64, "active_workers": 64, "total_hashes": 2**64-1,
-                "accepted": 2**64-1, "verified_shares": 2**64-1,
-                "retry_count": 2**64-1, "updated_at": 10**12}
+    integers = {
+        "configured_workers": 64,
+        "active_workers": 64,
+        "total_hashes": 2**64 - 1,
+        "accepted": 2**64 - 1,
+        "verified_shares": 2**64 - 1,
+        "retry_count": 2**64 - 1,
+        "updated_at": 10**12,
+    }
     fields = set(integers) | {"schema", "running", "current", "state", "hashrate"}
-    if not isinstance(value, dict) or set(value) != fields or type(value["schema"]) is not int or value["schema"] != 1:
+    if (
+        not isinstance(value, dict)
+        or set(value) != fields
+        or type(value["schema"]) is not int
+        or value["schema"] != 1
+    ):
         raise ValueError("invalid pool report schema")
     if type(value["running"]) is not bool or type(value["current"]) is not bool:
         raise ValueError("invalid pool report validity")
@@ -1969,7 +2061,13 @@ def validate_pool_snapshot(value: Any) -> dict[str, Any] | None:
         raise ValueError("invalid live pool work state")
     if not value["current"] and (out["active_workers"] or rate):
         raise ValueError("stale pool status cannot report live hashing")
-    out.update(schema=1, running=value["running"], current=value["current"], state=value["state"], hashrate=rate)
+    out.update(
+        schema=1,
+        running=value["running"],
+        current=value["current"],
+        state=value["state"],
+        hashrate=rate,
+    )
     return out
 
 
@@ -2061,9 +2159,7 @@ def validate_snapshot(value: Any) -> dict[str, Any]:
         "eligible_nodes": bounded_int(
             topology.get("eligible_nodes", 0), 0, 10000, "eligible nodes"
         ),
-        "local_id": bounded_int(
-            topology.get("local_id", 0), 0, 2**64 - 1, "local topology id"
-        ),
+        "local_id": bounded_int(topology.get("local_id", 0), 0, 2**64 - 1, "local topology id"),
     }
     nodes = topology.get("nodes", [])
     if not isinstance(nodes, list) or len(nodes) > 64:
@@ -2095,9 +2191,7 @@ def validate_snapshot(value: Any) -> dict[str, Any]:
             {
                 "id": node_id,
                 "role": role,
-                "role_index": bounded_int(
-                    node.get("role_index"), 0, 10000, "topology role index"
-                ),
+                "role_index": bounded_int(node.get("role_index"), 0, 10000, "topology role index"),
                 "tip_state": tip_state,
                 "updated_at": bounded_int(
                     node.get("updated_at"), 0, 10**12, "topology node timestamp"
@@ -2123,9 +2217,7 @@ def validate_snapshot(value: Any) -> dict[str, Any]:
         if key in edge_keys:
             continue
         edge_keys.add(key)
-        clean_edges.append(
-            {"first": first, "second": second, "confirmed": edge["confirmed"]}
-        )
+        clean_edges.append({"first": first, "second": second, "confirmed": edge["confirmed"]})
     clean_topology["nodes"] = clean_nodes
     clean_topology["edges"] = clean_edges
     out["topology"] = clean_topology
@@ -2145,18 +2237,10 @@ def validate_snapshot(value: Any) -> dict[str, Any]:
             raise ValueError("invalid recent block")
         clean_blocks.append(
             {
-                "height": bounded_int(
-                    block.get("height", 0), 0, 10**12, "block height"
-                ),
-                "timestamp": bounded_int(
-                    block.get("timestamp", 0), 0, 10**12, "block timestamp"
-                ),
-                "tx_count": bounded_int(
-                    block.get("tx_count", 0), 0, 10**7, "transaction count"
-                ),
-                "reward": bounded_number(
-                    block.get("reward", 0), 21_000_000.0, "block reward"
-                ),
+                "height": bounded_int(block.get("height", 0), 0, 10**12, "block height"),
+                "timestamp": bounded_int(block.get("timestamp", 0), 0, 10**12, "block timestamp"),
+                "tx_count": bounded_int(block.get("tx_count", 0), 0, 10**7, "transaction count"),
+                "reward": bounded_number(block.get("reward", 0), 21_000_000.0, "block reward"),
                 "hash": clean_text(block.get("hash", ""), 72, "block hash"),
                 "winner": clean_text(block.get("winner", ""), 72, "block winner"),
             }
@@ -2206,9 +2290,7 @@ def validate_report(data: Any) -> dict[str, Any]:
     warning = clean_text(data.get("warning", ""), 160, "warning")
     ack_id = bounded_int(data.get("ack_id", 0), 0, 2**63 - 1, "acknowledgement")
     ack_status = data.get("ack_status", "")
-    ack_message = clean_text(
-        data.get("ack_message", ""), 160, "acknowledgement message"
-    )
+    ack_message = clean_text(data.get("ack_message", ""), 160, "acknowledgement message")
     if ack_id and ack_status not in {"completed", "failed", "local_confirmation"}:
         raise ValueError("invalid acknowledgement status")
     if not ack_id and (ack_status or ack_message):
@@ -2364,9 +2446,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             return self._malformed_allowed
         identity = getattr(self, "_client_rate_identity", None)
         if identity is None:
-            peer = rate_identity(
-                self.client_address[0] if self.client_address else "unknown"
-            )
+            peer = rate_identity(self.client_address[0] if self.client_address else "unknown")
             identity = "peer:" + peer
         self._malformed_allowed = self.app.limiter.allow_many(
             (
@@ -2378,9 +2458,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         self._malformed_charged = True
         return self._malformed_allowed
 
-    def send_error(
-        self, code: int, message: str | None = None, explain: str | None = None
-    ) -> None:
+    def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
         del message, explain
         # Errors raised before central parsed admission include invalid request
         # lines, overlong lines, and malformed/oversized header sets.  Charge
@@ -2391,12 +2469,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 code = 429
         self.close_connection = True
         body = json.dumps(
-            {
-                "error": (
-                    "Malformed request budget exceeded"
-                    if code == 429 else "Request refused"
-                )
-            },
+            {"error": ("Malformed request budget exceeded" if code == 429 else "Request refused")},
             separators=(",", ":"),
         ).encode()
         self._headers(code, "application/json; charset=utf-8", len(body))
@@ -2417,10 +2490,8 @@ class PortalHandler(BaseHTTPRequestHandler):
         identity = self.client_rate_identity()
         route = route_rate_bucket(path)
         history = "history" in route
-        expensive = path in {
-            "/api/v1/register", "/api/v1/login", "/api/v1/device/report"
-        }
-        memory, work = ((16, 16) if history else ((8, 8) if expensive else (4, 1)))
+        expensive = path in {"/api/v1/register", "/api/v1/login", "/api/v1/device/report"}
+        memory, work = (16, 16) if history else ((8, 8) if expensive else (4, 1))
         # Charge concurrent resources before cookie parsing or the session DB.
         if not self.app.concurrent_budget.acquire(memory, work, history):
             return False, True
@@ -2437,9 +2508,9 @@ class PortalHandler(BaseHTTPRequestHandler):
         ]
         if row:
             account_id = int(row["account_id"])
-            session_identity = "session:" + hashlib.sha256(
-                token.encode("ascii", "ignore")
-            ).hexdigest()
+            session_identity = (
+                "session:" + hashlib.sha256(token.encode("ascii", "ignore")).hexdigest()
+            )
             checks.extend(
                 (
                     (f"account:{account_id}", "authenticated", 600, 60),
@@ -2461,9 +2532,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         try:
             accepted, busy = self.admit_request(path)
         except ProxyMetadataError:
-            peer = rate_identity(
-                self.client_address[0] if self.client_address else "unknown"
-            )
+            peer = rate_identity(self.client_address[0] if self.client_address else "unknown")
             if self.app.limiter.allow_many(
                 (
                     ("peer:" + peer, "invalid-proxy", 60, 60),
@@ -2473,24 +2542,18 @@ class PortalHandler(BaseHTTPRequestHandler):
             ):
                 self.boundary_reply(403, {"error": "Proxy metadata refused"})
             else:
-                self.boundary_reply(
-                    429, {"error": "Proxy metadata rate exceeded"}
-                )
+                self.boundary_reply(429, {"error": "Proxy metadata rate exceeded"})
             return False
         except (CookieError, ValueError):
             if not self.charge_malformed_request():
-                self.boundary_reply(
-                    429, {"error": "Malformed request budget exceeded"}
-                )
+                self.boundary_reply(429, {"error": "Malformed request budget exceeded"})
             else:
                 self.boundary_reply(400, {"error": "Invalid request"})
             return False
         if accepted:
             return True
         if busy:
-            self.boundary_reply(
-                503, {"error": "Portal resource budget exhausted"}
-            )
+            self.boundary_reply(503, {"error": "Portal resource budget exhausted"})
         else:
             self.boundary_reply(429, {"error": "Request rate exceeded"})
         return False
@@ -2509,16 +2572,12 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header(
-            "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
-        )
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.send_header("X-Permitted-Cross-Domain-Policies", "none")
         if not self.app.insecure_http:
-            self.send_header(
-                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
-            )
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if csp_nonce:
             content_security_policy = (
                 "default-src 'none'; "
@@ -2536,9 +2595,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             )
         self.send_header("Content-Security-Policy", content_security_policy)
 
-    def reply(
-        self, status: int, value: dict[str, Any], cookie: str | None = None
-    ) -> None:
+    def reply(self, status: int, value: dict[str, Any], cookie: str | None = None) -> None:
         body = json.dumps(value, separators=(",", ":")).encode()
         self._headers(status, "application/json; charset=utf-8", len(body))
         if cookie:
@@ -2558,9 +2615,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         if transfer_encodings or len(lengths) != 1 or len(content_types) != 1:
             raise ValueError("ambiguous request framing")
         length_text = lengths[0]
-        if not re.fullmatch(r"[1-9][0-9]*", length_text) or not (
-            0 < int(length_text) <= MAX_BODY
-        ):
+        if not re.fullmatch(r"[1-9][0-9]*", length_text) or not (0 < int(length_text) <= MAX_BODY):
             raise ValueError("invalid request size")
         if self.headers.get_content_type() != "application/json":
             raise ValueError("JSON required")
@@ -2574,18 +2629,13 @@ class PortalHandler(BaseHTTPRequestHandler):
     def authenticated(self, csrf: bool = False) -> sqlite3.Row | None:
         row = self.app.store.session(self.session_token())
         if not row or (
-            csrf
-            and not hmac.compare_digest(
-                self.headers.get("X-CSRF-Token", ""), row["csrf"]
-            )
+            csrf and not hmac.compare_digest(self.headers.get("X-CSRF-Token", ""), row["csrf"])
         ):
             return None
         return row
 
     def rate(self, bucket: str, limit: int, seconds: int) -> bool:
-        return self.app.limiter.allow(
-            self.client_rate_identity(), bucket, limit, seconds
-        )
+        return self.app.limiter.allow(self.client_rate_identity(), bucket, limit, seconds)
 
     def auth_rate(self, account: str, registration: bool) -> bool:
         # These limits are evaluated before scrypt.  The global budget cannot
@@ -2605,10 +2655,16 @@ class PortalHandler(BaseHTTPRequestHandler):
             )
             peer_limit = ("login-peer", 60, 600)
         return self.app.limiter.allow_many(
-            tuple(checks) +
-            ((self.client_rate_identity(), *peer_limit),) +
-            (("portal-password-global", "password-verification",
-              120 if not registration else 24, 600 if not registration else 3600),)
+            tuple(checks)
+            + ((self.client_rate_identity(), *peer_limit),)
+            + (
+                (
+                    "portal-password-global",
+                    "password-verification",
+                    120 if not registration else 24,
+                    600 if not registration else 3600,
+                ),
+            )
         )
 
     def device_rate(self, account_id: int, device_id: int) -> bool:
@@ -2628,9 +2684,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.reply(200, {"ok": True})
         elif path == "/api/v1/session":
             row = self.authenticated()
-            self.reply(
-                200, {"authenticated": True, "csrf": row["csrf"]}
-            ) if row else self.reply(401, {"error": "Not signed in"})
+            self.reply(200, {"authenticated": True, "csrf": row["csrf"]}) if row else self.reply(
+                401, {"error": "Not signed in"}
+            )
         elif path == "/api/v1/devices":
             row = self.authenticated()
             self.reply(
@@ -2646,9 +2702,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         elif path == "/service-worker.js":
-            self._headers(
-                200, "application/javascript; charset=utf-8", len(PORTAL_SERVICE_WORKER)
-            )
+            self._headers(200, "application/javascript; charset=utf-8", len(PORTAL_SERVICE_WORKER))
             self.send_header("Service-Worker-Allowed", "/")
             self.end_headers()
             self.wfile.write(PORTAL_SERVICE_WORKER)
@@ -2665,23 +2719,17 @@ class PortalHandler(BaseHTTPRequestHandler):
             body = PORTAL_OFFLINE_HTML.replace(
                 b"<style>", f'<style nonce="{nonce}">'.encode("ascii"), 1
             )
-            self._headers(
-                200, "text/html; charset=utf-8", len(body), csp_nonce=nonce
-            )
+            self._headers(200, "text/html; charset=utf-8", len(body), csp_nonce=nonce)
             self.end_headers()
             self.wfile.write(body)
         elif path == "/":
             nonce = base64.b64encode(secrets.token_bytes(24)).decode("ascii")
             body = (
-                PORTAL_HTML.replace(
-                    "<style>", f'<style nonce="{nonce}">', 1
-                )
+                PORTAL_HTML.replace("<style>", f'<style nonce="{nonce}">', 1)
                 .replace("<script>", f'<script nonce="{nonce}">', 1)
                 .encode()
             )
-            self._headers(
-                200, "text/html; charset=utf-8", len(body), csp_nonce=nonce
-            )
+            self._headers(200, "text/html; charset=utf-8", len(body), csp_nonce=nonce)
             self.end_headers()
             self.wfile.write(body)
         else:
@@ -2707,29 +2755,19 @@ class PortalHandler(BaseHTTPRequestHandler):
                             "error": "Use a 3 to 48 character account name and a password of at least 12 characters."
                         },
                     )
-                if not self.auth_rate(
-                    name, registration=path.endswith("register")
-                ):
-                    return self.reply(
-                        429, {"error": "Too many attempts. Try again later."}
-                    )
+                if not self.auth_rate(name, registration=path.endswith("register")):
+                    return self.reply(429, {"error": "Too many attempts. Try again later."})
                 if not self.app.auth_slots.acquire(blocking=False):
-                    return self.reply(
-                        503, {"error": "Authentication service is busy. Try again."}
-                    )
+                    return self.reply(503, {"error": "Authentication service is busy. Try again."})
                 try:
                     if path.endswith("register"):
                         account_id = self.app.store.create_account(name, password)
                         if account_id is None:
-                            return self.reply(
-                                409, {"error": "Account name is unavailable"}
-                            )
+                            return self.reply(409, {"error": "Account name is unavailable"})
                     else:
                         account_id = self.app.store.authenticate(name, password)
                         if account_id is None:
-                            return self.reply(
-                                401, {"error": "Account or password is incorrect"}
-                            )
+                            return self.reply(401, {"error": "Account or password is incorrect"})
                 finally:
                     self.app.auth_slots.release()
                 token, csrf = self.app.store.new_session(account_id)
@@ -2747,14 +2785,15 @@ class PortalHandler(BaseHTTPRequestHandler):
                 if not DEVICE_TOKEN_RE.fullmatch(token):
                     return self.reply(401, {"error": "Invalid device credential"})
                 known = self.app.store.device_known(token)
-                token_identity = "device-token:" + hashlib.sha256(
-                    token.encode("ascii")
-                ).hexdigest()
+                token_identity = "device-token:" + hashlib.sha256(token.encode("ascii")).hexdigest()
                 report_checks: list[tuple[str, str, int, int]] = [
                     ("global", "device-report", 2000, 60),
-                    (token_identity if known else self.client_rate_identity(),
-                     "device-report" if known else "device-enrollment",
-                     180 if known else 8, 60 if known else 3600),
+                    (
+                        token_identity if known else self.client_rate_identity(),
+                        "device-report" if known else "device-enrollment",
+                        180 if known else 8,
+                        60 if known else 3600,
+                    ),
                 ]
                 if not self.app.limiter.allow_many(tuple(report_checks)):
                     return self.reply(429, {"error": "Report rate exceeded"})
@@ -2772,9 +2811,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     return self.reply(401, {"error": "Invalid device credential"})
                 if self.read_json() != {}:
                     return self.reply(400, {"error": "Invalid reset request"})
-                token_identity = "device-token:" + hashlib.sha256(
-                    token.encode("ascii")
-                ).hexdigest()
+                token_identity = "device-token:" + hashlib.sha256(token.encode("ascii")).hexdigest()
                 if not self.app.limiter.allow_many(
                     (
                         (token_identity, "pairing-reset", 3, 3600),
@@ -2805,9 +2842,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                         ("global", "claim", 600, 600),
                     )
                 ):
-                    return self.reply(
-                        429, {"error": "Too many pairing attempts. Try again later."}
-                    )
+                    return self.reply(429, {"error": "Too many pairing attempts. Try again later."})
                 if not isinstance(data, dict) or set(data) != {
                     "code",
                     "command_key",
@@ -3017,27 +3052,25 @@ def main() -> int:
         )
         return 0
     if not is_loopback_listener(args.listen):
-        parser.error(
-            "the portal backend must listen on loopback behind a local HTTPS proxy"
-        )
+        parser.error("the portal backend must listen on loopback behind a local HTTPS proxy")
     if (args.trusted_proxy_peer is None) != (args.proxy_token_file is None):
-        parser.error(
-            "--trusted-proxy-peer and --proxy-token-file must be configured together"
-        )
+        parser.error("--trusted-proxy-peer and --proxy-token-file must be configured together")
     if args.proxy_token_file is not None and not args.proxy_token_file.is_absolute():
         parser.error("--proxy-token-file must be an absolute path")
     try:
         proxy_token = (
-            load_proxy_token(args.proxy_token_file)
-            if args.proxy_token_file is not None else None
+            load_proxy_token(args.proxy_token_file) if args.proxy_token_file is not None else None
         )
     except (OSError, ValueError) as exc:
         parser.error(f"proxy token refused: {exc}")
     old_umask = os.umask(0o077)
     try:
         server = PortalServer(
-            (args.listen, args.port), PortalStore(args.database), args.insecure_http,
-            args.trusted_proxy_peer, proxy_token,
+            (args.listen, args.port),
+            PortalStore(args.database),
+            args.insecure_http,
+            args.trusted_proxy_peer,
+            proxy_token,
         )
     finally:
         os.umask(old_umask)

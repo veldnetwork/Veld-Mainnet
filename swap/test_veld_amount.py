@@ -15,8 +15,7 @@ class ExactVeldAmountTests(unittest.TestCase):
         self.assertTrue(quote_veld_str(amount, rate, 18).endswith('.00'))
 
     def test_decimal_string_and_price_feed_float_are_decimal_exact(self):
-        self.assertEqual(quote_base_units(100_000_000, '0.12345678', 8),
-                         12_000_000)
+        self.assertEqual(quote_base_units(100_000_000, '0.12345678', 8), 12_000_000)
         self.assertEqual(quote_veld_str(100_000_000, 0.12, 8), '0.12')
 
     def test_floor_is_exactly_one_cent_and_never_rounds_up(self):

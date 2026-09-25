@@ -10,13 +10,13 @@ namespace {
 size_t checks = 0;
 void Check(bool condition, const char* message) {
     ++checks;
-    if (!condition) throw std::runtime_error(message);
+    if (!condition)
+        throw std::runtime_error(message);
 }
 
 // Ordinary ledger snapshots isolate callback selection from chain construction.
 // The populated-node qualification separately earns and spends real test coins.
-void SetOrdinaryStake(StakingLedger& ledger, const std::string& address,
-                      uint64_t amount) {
+void SetOrdinaryStake(StakingLedger& ledger, const std::string& address, uint64_t amount) {
     StakingLedger::StateSnapshot state;
     StakeRecord record{};
     record.address = address;
@@ -31,8 +31,7 @@ void SetOrdinaryStake(StakingLedger& ledger, const std::string& address,
     ledger.RestoreState(state);
 }
 
-void CheckConfiguration(const NetworkConfig& config,
-                        const std::filesystem::path& root) {
+void CheckConfiguration(const NetworkConfig& config, const std::filesystem::path& root) {
     VeldNode node(config, root.string());
     node.SetQuietBoot(true);
     const std::string owner = "ordinary-stake-query-owner";
@@ -44,12 +43,10 @@ void CheckConfiguration(const NetworkConfig& config,
     const auto digest = node.GetStaking().StakingDigest();
     Check(chain.GetStakedForAddr(owner) == main_amount,
           "node total-stake query must match its ledger");
-    Check(chain.GetMatureStakeForAddr(owner, 19) == 0,
-          "wiring must preserve maturity");
+    Check(chain.GetMatureStakeForAddr(owner, 19) == 0, "wiring must preserve maturity");
     Check(chain.GetMatureStakeForAddr(owner, 20) == main_amount,
           "mature-stake query must agree with total stake");
-    Check(chain.GetStakedForAddr("absent-owner") == 0,
-          "absent owner must remain zero");
+    Check(chain.GetStakedForAddr("absent-owner") == 0, "absent owner must remain zero");
 
     StakingLedger alternate;
     SetOrdinaryStake(alternate, owner, alternate_amount);
@@ -67,8 +64,7 @@ void CheckConfiguration(const NetworkConfig& config,
     Check(node.GetStaking().StakingDigest() == digest,
           "callback reads must not mutate consensus state");
     std::cout << "PASS STAKE_QUERY_CONFIGURATION name=" << config.name
-              << " validator_override=" << config.validator_system_always_active
-              << '\n';
+              << " validator_override=" << config.validator_system_always_active << '\n';
 }
 } // namespace
 
@@ -89,8 +85,7 @@ int main(int argc, char** argv) {
         Check(standalone.GetStakedForAddr("absent-owner") == 0,
               "standalone fallback must remain unchanged");
         std::cout << "PASS security_node_stake_wiring_tests checks=" << checks
-                  << " backing_height=" << STAKE_OUTPOINT_BACKING_ACTIVATION_HEIGHT
-                  << '\n';
+                  << " backing_height=" << STAKE_OUTPOINT_BACKING_ACTIVATION_HEIGHT << '\n';
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL " << error.what() << '\n';

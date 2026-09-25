@@ -22,8 +22,8 @@ int main(int argc, char** argv) {
     RpcServer rpc(chain, mempool, storage);
     rpc.SetValidators(&registry);
     auto call = [&](const char* method) {
-        return rpc.Handle(std::string("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"") +
-            method + "\",\"params\":[]}");
+        return rpc.Handle(std::string("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"") + method +
+                          "\",\"params\":[]}");
     };
     auto info = call("getvalidators");
     assert(jstr(info, "system_active") == "false");
@@ -31,7 +31,8 @@ int main(int argc, char** argv) {
     registry.SetTotalStaked(VALIDATOR_UNLOCK_STAKED);
     assert(validator_operations_available(call("getvalidators")));
     registry.SetTotalStaked(0);
-    Block transition; transition.height = H;
+    Block transition;
+    transition.height = H;
     assert(registry.ProcessBlock(transition, [](const auto&) { return uint64_t{0}; }));
     info = call("getvalidators");
     assert(jstr(info, "system_active") == "false");
@@ -46,9 +47,12 @@ int main(int argc, char** argv) {
     namespace fq = veld::finality::qc;
     const std::string pk(3904, '1');
     ValidatorRecord rec;
-    rec.pubkey_hex = pk; rec.address = "ordinary-fixture";
-    rec.registered_height = 1; rec.active = false;
-    rec.bond_custodial = true; rec.bond_units = MIN_VALIDATOR_STAKE;
+    rec.pubkey_hex = pk;
+    rec.address = "ordinary-fixture";
+    rec.registered_height = 1;
+    rec.active = false;
+    rec.bond_custodial = true;
+    rec.bond_units = MIN_VALIDATOR_STAKE;
     for (bool slashed : {false, true}) {
         rec.slashed = slashed;
         rec.slashed_at_height = slashed ? H - 10 : 0;
@@ -60,8 +64,8 @@ int main(int argc, char** argv) {
         membership.members.push_back(fq::PubkeyCommit(pk));
         state.finality_membership[H / fq::EPOCH_BLOCKS - 1] = membership;
         registry.RestoreState(state);
-        const auto legacy = slashed ? ValidatorRegistry::SlashSettlementBoundary(H - 10) :
-            ValidatorRegistry::DeregReturnBoundary(H - 10);
+        const auto legacy = slashed ? ValidatorRegistry::SlashSettlementBoundary(H - 10)
+                                    : ValidatorRegistry::DeregReturnBoundary(H - 10);
         assert(registry.GetBondLifecycleStatus(pk, legacy - 1).principal_held);
         assert(!registry.GetBondLifecycleStatus(pk, legacy).principal_held);
         assert(registry.ProcessBlock(transition, [](const auto&) { return uint64_t{0}; }));
@@ -80,7 +84,8 @@ int main(int argc, char** argv) {
         assert(jstr(vault, "principal_held") == "true");
         assert(juint(vault, "settlement_boundary") == lifecycle.settlement_boundary);
         assert(jstr(vault, "pending_return") == (slashed ? "false" : "true"));
-        Block payment; payment.height = lifecycle.settlement_boundary;
+        Block payment;
+        payment.height = lifecycle.settlement_boundary;
         assert(registry.ProcessBlock(payment, [](const auto&) { return uint64_t{0}; }));
         assert(!registry.GetBondLifecycleStatus(pk, payment.height).principal_held);
         assert(registry.GetBondSettlements(payment.height).empty());
@@ -88,9 +93,12 @@ int main(int argc, char** argv) {
         registry.RestoreState(upgraded);
         assert(call("getbondvaultinfo") == vault);
     }
-    rec.slashed = true; rec.slashed_at_height = 1; rec.deregistered_at_height = 0;
+    rec.slashed = true;
+    rec.slashed_at_height = 1;
+    rec.deregistered_at_height = 0;
     ValidatorRegistry::StateSnapshot paid;
-    paid.validators[pk] = rec; paid.address_to_pubkey[rec.address] = pk;
+    paid.validators[pk] = rec;
+    paid.address_to_pubkey[rec.address] = pk;
     registry.RestoreState(paid);
     assert(registry.ProcessBlock(transition, [](const auto&) { return uint64_t{0}; }));
     assert(jstr(call("getbondvaultinfo"), "principal_held") == "false");

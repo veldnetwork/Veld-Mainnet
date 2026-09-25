@@ -7,8 +7,7 @@ namespace veld {
 #if defined(VELD_PUBLIC_TESTNET) && defined(VELD_PUBLIC_MAINNET)
 #error "a public artifact cannot be both testnet and final mainnet"
 #endif
-#if defined(VELD_PUBLIC_RELEASE) && !defined(VELD_PUBLIC_TESTNET) && \
-    !defined(VELD_PUBLIC_MAINNET)
+#if defined(VELD_PUBLIC_RELEASE) && !defined(VELD_PUBLIC_TESTNET) && !defined(VELD_PUBLIC_MAINNET)
 #error "VELD_PUBLIC_RELEASE requires exactly one explicit deployment role"
 #endif
 #if defined(VELD_PUBLIC_TESTNET) && !defined(VELD_PUBLIC_RELEASE)
@@ -63,11 +62,9 @@ inline constexpr bool DEPLOYMENT_DISPOSABLE = true;
 inline constexpr bool DEPLOYMENT_EXTERNAL_VALUE = false;
 #endif
 
-constexpr bool CompiledRoleAllowsFinalMainnetTrustUtility(
-        std::string_view argument) {
+constexpr bool CompiledRoleAllowsFinalMainnetTrustUtility(std::string_view argument) {
 #if defined(VELD_PUBLIC_TESTNET)
-    return argument != "--verify-release" &&
-           argument != "--verify-snapshot" &&
+    return argument != "--verify-release" && argument != "--verify-snapshot" &&
            argument != "--import-anchor-ws";
 #else
     (void)argument;

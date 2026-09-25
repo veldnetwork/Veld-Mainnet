@@ -109,9 +109,7 @@ def main() -> int:
         if not timed_out and process.returncode == 0:
             fail("failed candidate returned success without a completion record")
         disposition = (
-            "expected_prefix_deadlock_timeout"
-            if timed_out
-            else "expected_prefix_deadlock_failure"
+            "expected_prefix_deadlock_timeout" if timed_out else "expected_prefix_deadlock_failure"
         )
         result = None
     else:

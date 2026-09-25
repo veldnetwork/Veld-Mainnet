@@ -40,8 +40,8 @@ int main() {
                 search_started = static_cast<uint64_t>(std::time(nullptr));
                 return true;
             };
-            const auto found = MineOnly(chain, mempool, miner, 0, nullptr, {}, workers,
-                                       nullptr, {}, nullptr, nullptr, {}, delayed_preflight);
+            const auto found = MineOnly(chain, mempool, miner, 0, nullptr, {}, workers, nullptr, {},
+                                        nullptr, nullptr, {}, delayed_preflight);
             check(found.success && found.hashes_tried > 0, "fixture did not return a solution");
             check(search_started > prepared_timestamp &&
                       found.block.header.timestamp >= search_started,

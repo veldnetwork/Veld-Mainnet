@@ -27,7 +27,7 @@ def method_body(source: str, signature: str) -> str:
         elif source[index] == "}":
             depth -= 1
             if depth == 0:
-                return source[brace + 1:index]
+                return source[brace + 1 : index]
     raise ValueError(f"unterminated method body: {signature}")
 
 
@@ -52,39 +52,44 @@ try:
         node_header,
         "bool ConnectTo(const std::string& host, uint16_t port)",
     )
-    require("/*fleet_anchor=*/false" in ordinary,
-            "VeldNode::ConnectTo does not explicitly deny fleet-anchor authority")
-    require("/*fleet_anchor=*/true" not in ordinary,
-            "ordinary VeldNode::ConnectTo still grants fleet-anchor authority")
+    require(
+        "/*fleet_anchor=*/false" in ordinary,
+        "VeldNode::ConnectTo does not explicitly deny fleet-anchor authority",
+    )
+    require(
+        "/*fleet_anchor=*/true" not in ordinary,
+        "ordinary VeldNode::ConnectTo still grants fleet-anchor authority",
+    )
 
     explicit = method_body(
         node_header,
         "bool AddFleetAnchorIp(const std::string& ip)",
     )
     for marker, label in (
-            ("IsCanonicalIPv4Literal(ip)", "canonical exact-IP validation"),
-            ("config_.port", "network P2P-port dial"),
-            ("/*explicitly_trusted=*/true", "explicit trust"),
-            ("/*fleet_anchor=*/true", "explicit fleet-anchor dial")):
-        require(marker in explicit,
-                f"VeldNode::AddFleetAnchorIp lacks {label}")
+        ("IsCanonicalIPv4Literal(ip)", "canonical exact-IP validation"),
+        ("config_.port", "network P2P-port dial"),
+        ("/*explicitly_trusted=*/true", "explicit trust"),
+        ("/*fleet_anchor=*/true", "explicit fleet-anchor dial"),
+    ):
+        require(marker in explicit, f"VeldNode::AddFleetAnchorIp lacks {label}")
 except ValueError as exc:
     errors.append(str(exc))
 
 for marker, label in (
-        ("static bool IsCanonicalIPv4Literal", "canonical IPv4 policy"),
-        ("if (fleet_anchor &&", "fleet-anchor connection guard"),
-        ("!IsCanonicalIPv4Literal(host)", "hostname/alternate-IP rejection"),
-        ("if (!AddFleetAnchorIp(host)) return false;",
-         "configured membership insertion")):
+    ("static bool IsCanonicalIPv4Literal", "canonical IPv4 policy"),
+    ("if (fleet_anchor &&", "fleet-anchor connection guard"),
+    ("!IsCanonicalIPv4Literal(host)", "hostname/alternate-IP rejection"),
+    ("if (!AddFleetAnchorIp(host)) return false;", "configured membership insertion"),
+):
     require(marker in tcp_header, f"NodeServer lacks {label}")
 
 for marker, label in (
-        ("GetHardcodedFleetAnchorIps", "signed fleet inventory"),
-        ('"108.61.119.29"', "Fleet 01 canonical address"),
-        ('"5.78.107.166"', "Fleet 02 canonical address"),
-        ('"5.78.97.56"', "Fleet 03 canonical address"),
-        ('"5.78.127.51"', "Fleet 04 canonical address")):
+    ("GetHardcodedFleetAnchorIps", "signed fleet inventory"),
+    ('"108.61.119.29"', "Fleet 01 canonical address"),
+    ('"5.78.107.166"', "Fleet 02 canonical address"),
+    ('"5.78.97.56"', "Fleet 03 canonical address"),
+    ('"5.78.127.51"', "Fleet 04 canonical address"),
+):
     require(marker in seeder_header, f"seeder lacks {label}")
 
 sources = (
@@ -99,41 +104,58 @@ for relative in sources:
         continue
     scoped = source[main:]
     for marker, label in (
-            ('"--fleet-anchor"', "repeatable CLI parser"),
-            ("--fleet-anchor <IPv4>", "help text"),
-            ("VELD_FLEET_ANCHOR_IPS", "environment parser/help"),
-            ("AppendFleetAnchorEnvironment", "strict environment grammar"),
-            ("NodeServer::IsCanonicalIPv4Literal", "exact-IP validation"),
-            ("node.AddFleetAnchorIp(ip)", "explicit registration/dial"),
-            ("Seed node ", "stable public seed label"),
-            ("temporarily unavailable; retrying", "visible retry status"),
-            ("DiagVerbose().load()", "diagnostic endpoint visibility gate"),
-            ("(tick % 30) == 0", "periodic idempotent redial")):
+        ('"--fleet-anchor"', "repeatable CLI parser"),
+        ("--fleet-anchor <IPv4>", "help text"),
+        ("VELD_FLEET_ANCHOR_IPS", "environment parser/help"),
+        ("AppendFleetAnchorEnvironment", "strict environment grammar"),
+        ("NodeServer::IsCanonicalIPv4Literal", "exact-IP validation"),
+        ("node.AddFleetAnchorIp(ip)", "explicit registration/dial"),
+        ("Seed node ", "stable public seed label"),
+        ("temporarily unavailable; retrying", "visible retry status"),
+        ("DiagVerbose().load()", "diagnostic endpoint visibility gate"),
+        ("(tick % 30) == 0", "periodic idempotent redial"),
+    ):
         require(marker in scoped, f"{relative} lacks fleet-anchor {label}")
-    require("GetHardcodedFleetAnchorIps" in scoped,
-            f"{relative} does not install the release-bound fleet inventory")
-    require("contains an empty entry" in source,
-            f"{relative} lacks fleet-anchor empty environment-entry rejection")
+    require(
+        "GetHardcodedFleetAnchorIps" in scoped,
+        f"{relative} does not install the release-bound fleet inventory",
+    )
+    require(
+        "contains an empty entry" in source,
+        f"{relative} lacks fleet-anchor empty environment-entry rejection",
+    )
 
     start_at = scoped.find("node.Start();")
     add_at = scoped.find("node.AddFleetAnchorIp(ip)", start_at + 1)
     connect_at = scoped.find("node.ConnectTo(", start_at + 1)
-    require(start_at >= 0 and add_at > start_at,
-            f"{relative} does not register/dial anchors after node.Start")
-    require(connect_at < 0 or (add_at >= 0 and add_at < connect_at),
-            f"{relative} dials ordinary seeds/--connect before configured anchors")
-    require(scoped.count("node.AddFleetAnchorIp(ip)") == 2,
-            f"{relative} must have exactly one initial and one retry anchor dial")
-    require("/*fleet_anchor=*/true" not in scoped,
-            f"{relative} bypasses the exact-IP AddFleetAnchorIp API")
-    require("outbound retry failed for " not in scoped and
-            "registered and dialed outbound" not in scoped,
-            f"{relative} exposes raw anchor endpoints in ordinary status text")
+    require(
+        start_at >= 0 and add_at > start_at,
+        f"{relative} does not register/dial anchors after node.Start",
+    )
+    require(
+        connect_at < 0 or (add_at >= 0 and add_at < connect_at),
+        f"{relative} dials ordinary seeds/--connect before configured anchors",
+    )
+    require(
+        scoped.count("node.AddFleetAnchorIp(ip)") == 2,
+        f"{relative} must have exactly one initial and one retry anchor dial",
+    )
+    require(
+        "/*fleet_anchor=*/true" not in scoped,
+        f"{relative} bypasses the exact-IP AddFleetAnchorIp API",
+    )
+    require(
+        "outbound retry failed for " not in scoped
+        and "registered and dialed outbound" not in scoped,
+        f"{relative} exposes raw anchor endpoints in ordinary status text",
+    )
 
-require("#ifdef VELD_FLEET_NO_MINE" in node_header and
-        "StartMining() refused" in node_header and
-        "MineBlocks disabled" in node_header,
-        "VELD_FLEET_NO_MINE compile-time mining refusal was weakened")
+require(
+    "#ifdef VELD_FLEET_NO_MINE" in node_header
+    and "StartMining() refused" in node_header
+    and "MineBlocks disabled" in node_header,
+    "VELD_FLEET_NO_MINE compile-time mining refusal was weakened",
+)
 
 if errors:
     for error in errors:

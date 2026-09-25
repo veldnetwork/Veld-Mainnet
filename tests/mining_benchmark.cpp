@@ -162,9 +162,9 @@ int main(int argc, char** argv) {
             execute_ms += sample.execute_ms;
             finalize_ms += sample.finalize_ms;
         }
-        std::cout << std::fixed << std::setprecision(3) << "{\"trial\":" << trial
-                  << ",\"path\":\"" << path << "\",\"workers\":" << workers << ",\"hashes\":" << uint64_t(workers) * hashes
-                  << ",\"seconds\":" << seconds
+        std::cout << std::fixed << std::setprecision(3) << "{\"trial\":" << trial << ",\"path\":\""
+                  << path << "\",\"workers\":" << workers
+                  << ",\"hashes\":" << uint64_t(workers) * hashes << ",\"seconds\":" << seconds
                   << ",\"hashes_per_second\":" << (uint64_t(workers) * hashes / seconds)
                   << ",\"dataset_build_ms\":" << dataset_ms << ",\"dataset_bytes\":" << DATASET_SIZE
                   << ",\"scratchpad_bytes\":" << SCRATCHPAD_SIZE

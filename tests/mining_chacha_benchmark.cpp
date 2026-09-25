@@ -16,14 +16,19 @@ int main() {
             const auto started = Clock::now();
             for (unsigned repeat = 0; repeat < 64; ++repeat) {
                 iv[0] = static_cast<uint8_t>(repeat);
-                if (bulk) veld::mining::MiningChaChaKeystream(key, iv, output.data(), output.size());
-                else veld::vendored_crypto::chacha20_keystream(key, iv, output.data(), output.size());
+                if (bulk)
+                    veld::mining::MiningChaChaKeystream(key, iv, output.data(), output.size());
+                else
+                    veld::vendored_crypto::chacha20_keystream(key, iv, output.data(),
+                                                              output.size());
                 checksum += output[repeat * 13];
             }
-            const auto ms = std::chrono::duration<double, std::milli>(Clock::now() - started).count();
-            std::cout << "{\"trial\":" << trial << ",\"implementation\":\"" << (bulk ? "bulk" : "scalar")
-                      << "\",\"ms\":" << ms << ",\"bytes\":" << 64 * output.size()
-                      << ",\"checksum\":" << checksum << "}\n";
+            const auto ms =
+                std::chrono::duration<double, std::milli>(Clock::now() - started).count();
+            std::cout << "{\"trial\":" << trial << ",\"implementation\":\""
+                      << (bulk ? "bulk" : "scalar") << "\",\"ms\":" << ms
+                      << ",\"bytes\":" << 64 * output.size() << ",\"checksum\":" << checksum
+                      << "}\n";
         }
     }
 }

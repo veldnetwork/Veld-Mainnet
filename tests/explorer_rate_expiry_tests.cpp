@@ -23,22 +23,17 @@ int main() {
     veld::explorer::BlockExplorer explorer(chain, mempool);
 
     using State = veld::explorer::BlockExplorer::TestExplorerRateSlotState;
-    const auto state = [&](const std::string& identity,
-                           const std::string& bucket) -> State {
+    const auto state = [&](const std::string& identity, const std::string& bucket) -> State {
         return explorer.TestExplorerRateSlot(identity, bucket);
     };
-    const auto take = [&](const std::string& identity,
-                          const std::string& bucket,
-                          uint64_t amount, uint64_t limit,
-                          uint32_t seconds, uint64_t now_s) {
-        return explorer.TestExplorerTakeChargeAt(
-            identity, bucket, amount, limit, seconds, now_s);
+    const auto take = [&](const std::string& identity, const std::string& bucket, uint64_t amount,
+                          uint64_t limit, uint32_t seconds, uint64_t now_s) {
+        return explorer.TestExplorerTakeChargeAt(identity, bucket, amount, limit, seconds, now_s);
     };
     const auto client_identity = [&](size_t ordinal) {
-        const std::string raw = "10."
-            + std::to_string((ordinal >> 16) & 0xff) + "."
-            + std::to_string((ordinal >> 8) & 0xff) + "."
-            + std::to_string(ordinal & 0xff);
+        const std::string raw = "10." + std::to_string((ordinal >> 16) & 0xff) + "." +
+                                std::to_string((ordinal >> 8) & 0xff) + "." +
+                                std::to_string(ordinal & 0xff);
         std::string canonical;
         check(veld::net::trusted_proxy::CanonicalIp(raw, canonical));
         check(canonical == raw);
@@ -49,8 +44,8 @@ int main() {
     check(explorer.TestExplorerRateMapMax() == 10000);
     std::string canonical;
     check(!veld::net::trusted_proxy::CanonicalIp(std::string(65, '1'), canonical));
-    check(veld::net::trusted_proxy::CanonicalIp(
-        "2001:0db8:0000:0000:0000:0000:0000:0001", canonical));
+    check(veld::net::trusted_proxy::CanonicalIp("2001:0db8:0000:0000:0000:0000:0000:0001",
+                                                canonical));
     check(canonical == "2001:db8::1");
     check(canonical.size() <= 45);
 
@@ -92,18 +87,15 @@ int main() {
     const std::string route_bucket = "route:address-page";
     for (size_t i = 0; i < explorer.TestExplorerRateMapMax(); ++i)
         check(take(client_identity(i), route_bucket, 1, 2, 60, 100));
-    check(explorer.TestExplorerRateSlotCount()
-          == explorer.TestExplorerRateMapMax());
+    check(explorer.TestExplorerRateSlotCount() == explorer.TestExplorerRateMapMax());
     size_t longest = 0;
     const size_t aggregate = explorer.TestExplorerRateKeyBytes(&longest);
     check(longest <= kMaximumKeyBytes);
     check(aggregate <= explorer.TestExplorerRateMapMax() * kMaximumKeyBytes);
 
-    const std::string overflow = client_identity(
-        explorer.TestExplorerRateMapMax());
+    const std::string overflow = client_identity(explorer.TestExplorerRateMapMax());
     check(!take(overflow, route_bucket, 1, 2, 60, 219));
-    check(explorer.TestExplorerRateSlotCount()
-          == explorer.TestExplorerRateMapMax());
+    check(explorer.TestExplorerRateSlotCount() == explorer.TestExplorerRateMapMax());
     check(!state(overflow, route_bucket).present);
 
     const std::string retained = client_identity(0);
@@ -112,8 +104,7 @@ int main() {
     check(state(retained, route_bucket).window_start == 219);
     check(state(retained, route_bucket).count == 1);
     check(!take(overflow, route_bucket, 1, 2, 60, 219));
-    check(explorer.TestExplorerRateSlotCount()
-          == explorer.TestExplorerRateMapMax());
+    check(explorer.TestExplorerRateSlotCount() == explorer.TestExplorerRateMapMax());
 
     check(take(overflow, route_bucket, 1, 2, 60, 220));
     check(explorer.TestExplorerRateSlotCount() == 2);
@@ -121,13 +112,11 @@ int main() {
     check(state(overflow, route_bucket).present);
     check(!state(client_identity(1), route_bucket).present);
     longest = 0;
-    check(explorer.TestExplorerRateKeyBytes(&longest)
-          <= 2 * kMaximumKeyBytes);
+    check(explorer.TestExplorerRateKeyBytes(&longest) <= 2 * kMaximumKeyBytes);
     check(longest <= kMaximumKeyBytes);
 
     std::cout << "PASS explorer_rate_expiry_tests checks=" << checks
               << " exact_window_reset=1 exact_stale_prune=1"
-              << " bounded_key_bytes=1 hard_cap="
-              << explorer.TestExplorerRateMapMax() << "\n";
+              << " bounded_key_bytes=1 hard_cap=" << explorer.TestExplorerRateMapMax() << "\n";
     return 0;
 }

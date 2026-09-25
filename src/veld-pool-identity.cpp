@@ -54,8 +54,8 @@ int main(int argc, char** argv) {
             Require(txid.size() == 64 &&
                         txid.find_first_not_of("0123456789abcdef") == std::string::npos,
                     "txid encoding");
-            return std::pair{
-                txid, static_cast<uint32_t>(Amount(*input.Get("vout"), UINT32_MAX - 1))};
+            return std::pair{txid,
+                             static_cast<uint32_t>(Amount(*input.Get("vout"), UINT32_MAX - 1))};
         };
         for (const auto& input : allowed.array) {
             const auto point = coin(input);

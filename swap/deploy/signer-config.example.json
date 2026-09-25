@@ -11,21 +11,21 @@
       "genesis_hash": "REPLACE_WITH_REVIEWED_COMPILED_AND_STORED_GENESIS_HASH",
       "launch_block_hash": "REPLACE_WITH_REVIEWED_HEIGHT_ONE_HASH"
     },
-    "token_cmd": [
-      "/usr/local/bin/veld-node",
-      "--print-rpc-token"
-    ]
+    "token_cmd": ["/usr/local/bin/veld-node", "--print-rpc-token"]
   },
   "min_prevout_confirmations": 6,
   "c1_reservation_authority": {
     "enabled": true,
     "allocation_witness_command": [
-      "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
-      "wrap-allocation-witness", "veld_wt_allocate"
+      "/usr/bin/ssh",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "ConnectTimeout=15",
+      "wrap-allocation-witness",
+      "veld_wt_allocate"
     ],
-    "durable_archive_command": [
-      "/REPLACE_WITH_C1_SIGNER_COMPLIANCE_ARCHIVE_CLIENT"
-    ]
+    "durable_archive_command": ["/REPLACE_WITH_C1_SIGNER_COMPLIANCE_ARCHIVE_CLIENT"]
   },
   "mint_authority": {
     "topology": "single-active-shared-witness",
@@ -36,8 +36,13 @@
     "witness": {
       "witness_id": "btcveld-watchtower-primary",
       "command": [
-        "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
-        "mint-witness", "veld_wt_reserve"
+        "/usr/bin/ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=15",
+        "mint-witness",
+        "veld_wt_reserve"
       ]
     }
   }

@@ -68,10 +68,16 @@ P2TR_SCRIPT_RE = re.compile(r"^5120[0-9a-f]{64}$")
 
 
 def _wire_uint(value, field, positive=False):
-    if (isinstance(value, bool) or not isinstance(value, int) or value < 0 or
-            value > MAX_WIRE_INT or (positive and value == 0)):
-        raise ValueError("%s must be a bounded %sinteger" %
-                         (field, "positive " if positive else "non-negative "))
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value < 0
+        or value > MAX_WIRE_INT
+        or (positive and value == 0)
+    ):
+        raise ValueError(
+            "%s must be a bounded %sinteger" % (field, "positive " if positive else "non-negative ")
+        )
     return value
 
 
@@ -84,8 +90,7 @@ def solvency_headroom(custody_sats, backing_liability_sats, margin_sats):
     independently confirmed exact Bitcoin payout.  Negative means fail-closed
     insolvency.
     """
-    return (int(custody_sats) - int(backing_liability_sats) -
-            int(margin_sats))
+    return int(custody_sats) - int(backing_liability_sats) - int(margin_sats)
 
 
 def is_solvent(custody_sats, supply_sats, margin_sats=0):
@@ -93,8 +98,16 @@ def is_solvent(custody_sats, supply_sats, margin_sats=0):
 
 
 # ------------------------------------------------- watchtower -> signer payload
-def build_beat_payload(custody_sats, supply_sats, margin_sats, tip, tip_hash,
-                       seq, ttl_secs, backing_liability_sats=None):
+def build_beat_payload(
+    custody_sats,
+    supply_sats,
+    margin_sats,
+    tip,
+    tip_hash,
+    seq,
+    ttl_secs,
+    backing_liability_sats=None,
+):
     """Watchtower side: construct a SOLVENT beat payload. Only call when solvent;
     raises if headroom would be negative (never advertise phantom headroom)."""
     custody_sats = _wire_uint(custody_sats, "custody_sats")
@@ -103,8 +116,7 @@ def build_beat_payload(custody_sats, supply_sats, margin_sats, tip, tip_hash,
         # Compatibility for pure/regtest callers. Production watchtower code
         # always passes the independently derived complete liability explicitly.
         backing_liability_sats = supply_sats
-    backing_liability_sats = _wire_uint(
-        backing_liability_sats, "backing_liability_sats")
+    backing_liability_sats = _wire_uint(backing_liability_sats, "backing_liability_sats")
     if backing_liability_sats < supply_sats:
         raise ValueError("backing_liability_sats cannot be below live supply")
     margin_sats = _wire_uint(margin_sats, "margin_sats")
@@ -113,8 +125,7 @@ def build_beat_payload(custody_sats, supply_sats, margin_sats, tip, tip_hash,
     ttl_secs = _wire_uint(ttl_secs, "ttl_secs", positive=True)
     if not isinstance(tip_hash, str) or not HASH256_RE.fullmatch(tip_hash):
         raise ValueError("tip_hash must be canonical lowercase hash256")
-    headroom = solvency_headroom(
-        custody_sats, backing_liability_sats, margin_sats)
+    headroom = solvency_headroom(custody_sats, backing_liability_sats, margin_sats)
     if headroom < 0:
         raise ValueError("refusing to build a SOLVENT beat while insolvent")
     return {
@@ -147,8 +158,15 @@ def canonical_beat_bytes(payload):
     return json.dumps(core, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def reservation_id(issuer_id, request_id, unsigned_tx_sha256, sats, recipient,
-                   deposit_outpoint=None, allocation_request_id=None):
+def reservation_id(
+    issuer_id,
+    request_id,
+    unsigned_tx_sha256,
+    sats,
+    recipient,
+    deposit_outpoint=None,
+    allocation_request_id=None,
+):
     """Stable identity for one mint authorization request.
 
     The witness keys idempotency by the complete immutable request, not by a
@@ -164,8 +182,9 @@ def reservation_id(issuer_id, request_id, unsigned_tx_sha256, sats, recipient,
         "deposit_outpoint": deposit_outpoint,
         "allocation_request_id": allocation_request_id,
     }
-    return hashlib.sha256(json.dumps(
-        core, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        json.dumps(core, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def canonical_reservation_bytes(receipt):
@@ -183,13 +202,28 @@ def validate_reservation_receipt(receipt):
     if receipt.get("kind") != RESERVATION_KIND:
         return False, "reservation receipt kind is invalid"
     expected_fields = {
-        "v", "kind", "issuer_id", "witness_id", "request_id",
-        "unsigned_tx_sha256", "reservation_id", "sats", "recipient",
-        "beat_seq", "tip", "tip_hash", "headroom_sats", "reserved_at",
-        "allocation_verified", "allocation_request_id",
-        "allocation_descriptor_index", "allocation_btc_address",
-        "allocation_script_pubkey", "deposit_outpoint",
-        "sig_alg", "sig",
+        "v",
+        "kind",
+        "issuer_id",
+        "witness_id",
+        "request_id",
+        "unsigned_tx_sha256",
+        "reservation_id",
+        "sats",
+        "recipient",
+        "beat_seq",
+        "tip",
+        "tip_hash",
+        "headroom_sats",
+        "reserved_at",
+        "allocation_verified",
+        "allocation_request_id",
+        "allocation_descriptor_index",
+        "allocation_btc_address",
+        "allocation_script_pubkey",
+        "deposit_outpoint",
+        "sig_alg",
+        "sig",
     }
     c1_policy_fields = {
         "allocation_capacity_policy_sha256",
@@ -224,27 +258,33 @@ def validate_reservation_receipt(receipt):
     if allocation_verified:
         allocation_request_id, descriptor_index, address, script, outpoint = allocation_fields
         if version == RESERVATION_VERSION:
-            descriptor_allowed = (type(descriptor_index) is int and
-                                  1 <= descriptor_index <= 999)
+            descriptor_allowed = type(descriptor_index) is int and 1 <= descriptor_index <= 999
         else:
             policy_sha256 = receipt.get("allocation_capacity_policy_sha256")
-            range_start = receipt.get(
-                "allocation_public_descriptor_range_start")
+            range_start = receipt.get("allocation_public_descriptor_range_start")
             range_end = receipt.get("allocation_public_descriptor_range_end")
             descriptor_allowed = (
-                isinstance(policy_sha256, str) and
-                HASH256_RE.fullmatch(policy_sha256) is not None and
-                type(range_start) is int and range_start == 1000 and
-                type(range_end) is int and 10999 <= range_end <= 1_000_000 and
-                type(descriptor_index) is int and
-                range_start <= descriptor_index <= range_end)
-        if (not isinstance(allocation_request_id, str) or
-                not ALLOCATION_REQUEST_RE.fullmatch(allocation_request_id) or
-                not descriptor_allowed or
-                not isinstance(address, str) or not P2TR_ADDRESS_RE.fullmatch(address) or
-                not isinstance(script, str) or not P2TR_SCRIPT_RE.fullmatch(script) or
-                not isinstance(outpoint, str) or not BTC_OUTPOINT_RE.fullmatch(outpoint) or
-                int(outpoint.rsplit(":", 1)[1]) > 0xffffffff):
+                isinstance(policy_sha256, str)
+                and HASH256_RE.fullmatch(policy_sha256) is not None
+                and type(range_start) is int
+                and range_start == 1000
+                and type(range_end) is int
+                and 10999 <= range_end <= 1_000_000
+                and type(descriptor_index) is int
+                and range_start <= descriptor_index <= range_end
+            )
+        if (
+            not isinstance(allocation_request_id, str)
+            or not ALLOCATION_REQUEST_RE.fullmatch(allocation_request_id)
+            or not descriptor_allowed
+            or not isinstance(address, str)
+            or not P2TR_ADDRESS_RE.fullmatch(address)
+            or not isinstance(script, str)
+            or not P2TR_SCRIPT_RE.fullmatch(script)
+            or not isinstance(outpoint, str)
+            or not BTC_OUTPOINT_RE.fullmatch(outpoint)
+            or int(outpoint.rsplit(":", 1)[1]) > 0xFFFFFFFF
+        ):
             return False, "verified allocation binding is malformed"
     elif any(value is not None for value in allocation_fields):
         return False, "unverified reservation carries allocation fields"
@@ -259,16 +299,26 @@ def validate_reservation_receipt(receipt):
     except ValueError as e:
         return False, str(e)
     expected = reservation_id(
-        receipt["issuer_id"], receipt["request_id"],
-        receipt["unsigned_tx_sha256"], receipt["sats"], receipt["recipient"],
-        receipt["deposit_outpoint"], receipt["allocation_request_id"])
+        receipt["issuer_id"],
+        receipt["request_id"],
+        receipt["unsigned_tx_sha256"],
+        receipt["sats"],
+        receipt["recipient"],
+        receipt["deposit_outpoint"],
+        receipt["allocation_request_id"],
+    )
     if receipt["reservation_id"] != expected:
         return False, "reservation_id is inconsistent with immutable request"
     if receipt.get("sig_alg") != "mldsa65":
         return False, "reservation signature algorithm is invalid"
     sig = receipt.get("sig")
-    if (not isinstance(sig, str) or not sig or len(sig) > 65536 or
-            len(sig) % 2 or not re.fullmatch(r"[0-9a-f]+", sig)):
+    if (
+        not isinstance(sig, str)
+        or not sig
+        or len(sig) > 65536
+        or len(sig) % 2
+        or not re.fullmatch(r"[0-9a-f]+", sig)
+    ):
         return False, "reservation signature is malformed"
     return True, "ok"
 
@@ -276,16 +326,19 @@ def validate_reservation_receipt(receipt):
 def _read_canonical_varint(raw, pos):
     if pos >= len(raw):
         raise ValueError("truncated transaction varint")
-    first = raw[pos]; pos += 1
-    if first < 0xfd:
+    first = raw[pos]
+    pos += 1
+    if first < 0xFD:
         return first, pos
-    width = {0xfd: 2, 0xfe: 4, 0xff: 8}[first]
+    width = {0xFD: 2, 0xFE: 4, 0xFF: 8}[first]
     if pos + width > len(raw):
         raise ValueError("truncated transaction varint body")
-    value = int.from_bytes(raw[pos:pos + width], "little")
-    if ((first == 0xfd and value < 0xfd) or
-            (first == 0xfe and value <= 0xffff) or
-            (first == 0xff and value <= 0xffffffff)):
+    value = int.from_bytes(raw[pos : pos + width], "little")
+    if (
+        (first == 0xFD and value < 0xFD)
+        or (first == 0xFE and value <= 0xFFFF)
+        or (first == 0xFF and value <= 0xFFFFFFFF)
+    ):
         raise ValueError("non-minimal transaction varint")
     return value, pos + width
 
@@ -297,9 +350,12 @@ def unsigned_template_from_signed_hex(signed_tx_hex):
     stream lets the independent witness prove a committed signed tx is the exact
     unsigned template whose SHA-256 was reserved.
     """
-    if (not isinstance(signed_tx_hex, str) or not signed_tx_hex or
-            len(signed_tx_hex) % 2 or
-            not re.fullmatch(r"[0-9a-fA-F]+", signed_tx_hex)):
+    if (
+        not isinstance(signed_tx_hex, str)
+        or not signed_tx_hex
+        or len(signed_tx_hex) % 2
+        or not re.fullmatch(r"[0-9a-fA-F]+", signed_tx_hex)
+    ):
         raise ValueError("signed transaction is malformed hex")
     raw = bytes.fromhex(signed_tx_hex)
     if len(raw) < 10:
@@ -308,17 +364,20 @@ def unsigned_template_from_signed_hex(signed_tx_hex):
     in_count, after_count = _read_canonical_varint(raw, pos)
     if not (1 <= in_count <= 10_000):
         raise ValueError("signed transaction input count is invalid")
-    unsigned = bytearray(raw[:after_count]); pos = after_count
+    unsigned = bytearray(raw[:after_count])
+    pos = after_count
     for _ in range(in_count):
         if pos + 36 > len(raw):
             raise ValueError("signed transaction input is truncated")
-        unsigned.extend(raw[pos:pos + 36]); pos += 36
+        unsigned.extend(raw[pos : pos + 36])
+        pos += 36
         script_len, after_len = _read_canonical_varint(raw, pos)
         if script_len == 0 or script_len > 32768 or after_len + script_len + 4 > len(raw):
             raise ValueError("signed transaction input script is empty/oversized/truncated")
         pos = after_len + script_len
         unsigned.append(0)
-        unsigned.extend(raw[pos:pos + 4]); pos += 4
+        unsigned.extend(raw[pos : pos + 4])
+        pos += 4
 
     outputs_start = pos
     out_count, pos = _read_canonical_varint(raw, pos)
@@ -340,9 +399,12 @@ def unsigned_template_from_signed_hex(signed_tx_hex):
 
 def validate_unsigned_template_hex(unsigned_tx_hex):
     """Parse the complete Veld transaction envelope and require empty scriptSigs."""
-    if (not isinstance(unsigned_tx_hex, str) or not unsigned_tx_hex or
-            len(unsigned_tx_hex) % 2 or
-            not re.fullmatch(r"[0-9a-fA-F]+", unsigned_tx_hex)):
+    if (
+        not isinstance(unsigned_tx_hex, str)
+        or not unsigned_tx_hex
+        or len(unsigned_tx_hex) % 2
+        or not re.fullmatch(r"[0-9a-fA-F]+", unsigned_tx_hex)
+    ):
         raise ValueError("unsigned transaction is malformed hex")
     raw = bytes.fromhex(unsigned_tx_hex)
     if len(raw) < 10:
@@ -391,14 +453,28 @@ def validate_beat_payload(p):
         return False, "bad kind %r" % (kind,)
     if kind == "HALT":
         return True, "ok"
-    for k in ("custody_sats", "supply_sats", "backing_liability_sats",
-              "margin_sats", "headroom_sats", "tip", "tip_hash", "seq",
-              "ttl_secs"):
+    for k in (
+        "custody_sats",
+        "supply_sats",
+        "backing_liability_sats",
+        "margin_sats",
+        "headroom_sats",
+        "tip",
+        "tip_hash",
+        "seq",
+        "ttl_secs",
+    ):
         if k not in p:
             return False, "missing " + k
     try:
-        for k in ("custody_sats", "supply_sats", "backing_liability_sats",
-                  "margin_sats", "headroom_sats", "tip"):
+        for k in (
+            "custody_sats",
+            "supply_sats",
+            "backing_liability_sats",
+            "margin_sats",
+            "headroom_sats",
+            "tip",
+        ):
             _wire_uint(p[k], k)
         _wire_uint(p["seq"], "seq", positive=True)
         _wire_uint(p["ttl_secs"], "ttl_secs", positive=True)
@@ -413,8 +489,8 @@ def validate_beat_payload(p):
     # Headroom must be exactly consistent with the amounts - the receiver will not
     # take the watchtower's word for a headroom that doesn't match custody-supply.
     if int(p["headroom_sats"]) != solvency_headroom(
-            p["custody_sats"], p["backing_liability_sats"],
-            p["margin_sats"]):
+        p["custody_sats"], p["backing_liability_sats"], p["margin_sats"]
+    ):
         return False, "headroom inconsistent with custody/liability/margin"
     return True, "ok"
 
@@ -479,6 +555,8 @@ def heartbeat_gate(hb, now, outstanding_signed_sats, mint_sats):
     headroom = int(hb["headroom_sats"])
     used = int(outstanding_signed_sats)
     if used + int(mint_sats) > headroom:
-        return False, ("would exceed watchtower headroom: outstanding_signed %d + mint %d > headroom %d"
-                       % (used, int(mint_sats), headroom))
+        return False, (
+            "would exceed watchtower headroom: outstanding_signed %d + mint %d > headroom %d"
+            % (used, int(mint_sats), headroom)
+        )
     return True, "ok"

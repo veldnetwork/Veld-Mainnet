@@ -15,12 +15,13 @@ int main() {
     const auto script = AddressToScript(key.address);
     assert(!script.empty());
     const auto operation = ValidatorRegistry::BuildRegisterOp(pubkey);
-    std::vector<uint8_t> marker{0x6a, 0x4d,
-        static_cast<uint8_t>(operation.size() & 255),
-        static_cast<uint8_t>(operation.size() >> 8)};
+    std::vector<uint8_t> marker{0x6a, 0x4d, static_cast<uint8_t>(operation.size() & 255),
+                                static_cast<uint8_t>(operation.size() >> 8)};
     marker.insert(marker.end(), operation.begin(), operation.end());
     Transaction tx;
-    TxInput input; input.prev_tx_hash.fill(1); input.prev_out_index = 0;
+    TxInput input;
+    input.prev_tx_hash.fill(1);
+    input.prev_out_index = 0;
     tx.inputs.push_back(input);
     tx.outputs.emplace_back(MIN_VALIDATOR_STAKE, AddressToScript(STAKE_VAULT_ADDRESS));
     tx.outputs.emplace_back(0, marker);
@@ -44,9 +45,10 @@ int main() {
     const auto state = activated.SnapshotState();
     assert(state.validators.at(pubkey).bond_custodial);
     assert(state.validators.at(pubkey).bond_units == MIN_VALIDATOR_STAKE);
-    std::cout << "CONFIRMED: signed 10000 VELD bond does not increase ordinary stake; "
-              << "registration is ignored at zero ordinary network stake.\n"
-              << "CONTROL: identical signed bond registers when ordinary network stake reaches 10000 VELD; "
-              << "individual logical stake remains zero.\n"
-              << "Scope: public-profile module transition; no mainnet transaction submitted.\n";
+    std::cout
+        << "CONFIRMED: signed 10000 VELD bond does not increase ordinary stake; "
+        << "registration is ignored at zero ordinary network stake.\n"
+        << "CONTROL: identical signed bond registers when ordinary network stake reaches 10000 VELD; "
+        << "individual logical stake remains zero.\n"
+        << "Scope: public-profile module transition; no mainnet transaction submitted.\n";
 }

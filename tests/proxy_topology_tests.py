@@ -42,8 +42,11 @@ def proxy_headers(client: str, auth: str = AUTH) -> dict[str, str]:
 with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
     database = Path(temp) / "portal.sqlite3"
     server = PORTAL.PortalServer(
-        ("127.0.0.1", 0), PORTAL.PortalStore(database), True,
-        "127.0.0.1", TOKEN,
+        ("127.0.0.1", 0),
+        PORTAL.PortalStore(database),
+        True,
+        "127.0.0.1",
+        TOKEN,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -75,28 +78,32 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
         check(request(headers={"X-Veld-Client-IP": "198.51.100.9"})[0] == 403)
 
         # Wrong authentication and a correct explicitly trusted proxy.
-        check(request(headers=proxy_headers(
-            "198.51.100.10", "VeldProxy v1=" + "00" * 32))[0] == 403)
+        check(
+            request(headers=proxy_headers("198.51.100.10", "VeldProxy v1=" + "00" * 32))[0] == 403
+        )
         check(request(headers=proxy_headers("198.51.100.10"))[0] == 200)
         check(request(headers=proxy_headers("2001:0db8::10"))[0] == 200)
 
         server.limiter = PORTAL.RateLimiter()
         for _ in range(59):
-            check(server.limiter.allow(
-                "peer:127.0.0.1", "invalid-proxy", 60, 60
-            ))
-        check(request(headers=proxy_headers(
-            "198.51.100.11", "VeldProxy v1=" + "00" * 32))[0] == 403)
-        check(request(headers=proxy_headers(
-            "198.51.100.11", "VeldProxy v1=" + "00" * 32))[0] == 429)
+            check(server.limiter.allow("peer:127.0.0.1", "invalid-proxy", 60, 60))
+        check(
+            request(headers=proxy_headers("198.51.100.11", "VeldProxy v1=" + "00" * 32))[0] == 403
+        )
+        check(
+            request(headers=proxy_headers("198.51.100.11", "VeldProxy v1=" + "00" * 32))[0] == 429
+        )
         check(request(headers=proxy_headers("198.51.100.11"))[0] == 200)
 
         # Establish real verified account, session, bearer, and device
         # principals through the same loopback proxy topology.
-        register_body = json.dumps({
-            "account": "operator",
-            "password": "correct horse battery staple",
-        }, separators=(",", ":")).encode()
+        register_body = json.dumps(
+            {
+                "account": "operator",
+                "password": "correct horse battery staple",
+            },
+            separators=(",", ":"),
+        ).encode()
         register_headers = proxy_headers("198.51.100.40") | {
             "Content-Type": "application/json",
             "Content-Length": str(len(register_body)),
@@ -127,12 +134,15 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
         }
         report_body = json.dumps(report_value, separators=(",", ":")).encode()
         report_status, report_response, _ = request(
-            "/api/v1/device/report", "POST",
-            proxy_headers("198.51.100.41") | {
+            "/api/v1/device/report",
+            "POST",
+            proxy_headers("198.51.100.41")
+            | {
                 "Authorization": "Bearer " + device_token,
                 "Content-Type": "application/json",
                 "Content-Length": str(len(report_body)),
-            }, report_body,
+            },
+            report_body,
         )
         check(report_status == 200)
         check(isinstance(report_response.get("device_id"), int))
@@ -140,9 +150,11 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
 
         private_key = PORTAL.ec.generate_private_key(PORTAL.ec.SECP256R1())
         numbers = private_key.public_key().public_numbers()
-        encode_coordinate = lambda value: base64.urlsafe_b64encode(
-            value.to_bytes(32, "big")
-        ).rstrip(b"=").decode("ascii")
+        encode_coordinate = (
+            lambda value: base64.urlsafe_b64encode(value.to_bytes(32, "big"))
+            .rstrip(b"=")
+            .decode("ascii")
+        )
         claim_value = {
             "code": report_response["pair_code"],
             "command_key": {
@@ -158,20 +170,16 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
             "Content-Type": "application/json",
             "Content-Length": str(len(claim_body)),
         }
-        check(request(
-            "/api/v1/devices/claim", "POST", authenticated_headers, claim_body
-        )[0] == 200)
-        rename_body = json.dumps({
-            "id": report_response["device_id"], "name": "Renamed fixture"
-        }, separators=(",", ":")).encode()
+        check(request("/api/v1/devices/claim", "POST", authenticated_headers, claim_body)[0] == 200)
+        rename_body = json.dumps(
+            {"id": report_response["device_id"], "name": "Renamed fixture"}, separators=(",", ":")
+        ).encode()
         rename_headers = session_headers | {
             "X-CSRF-Token": register_value["csrf"],
             "Content-Type": "application/json",
             "Content-Length": str(len(rename_body)),
         }
-        check(request(
-            "/api/v1/devices/rename", "POST", rename_headers, rename_body
-        )[0] == 200)
+        check(request("/api/v1/devices/rename", "POST", rename_headers, rename_body)[0] == 200)
 
         reset_headers = proxy_headers("198.51.100.41") | {
             "Authorization": "Bearer " + device_token,
@@ -184,17 +192,18 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
         check(reset_status == 200)
         check(isinstance(reset_value.get("pair_code"), str))
         check(reset_value["pair_code"] != report_response["pair_code"])
-        devices_status, devices_value, _ = request(
-            "/api/v1/devices", headers=session_headers
-        )
+        devices_status, devices_value, _ = request("/api/v1/devices", headers=session_headers)
         check(devices_status == 200 and devices_value["devices"] == [])
         report_status, report_after_reset, _ = request(
-            "/api/v1/device/report", "POST",
-            proxy_headers("198.51.100.41") | {
+            "/api/v1/device/report",
+            "POST",
+            proxy_headers("198.51.100.41")
+            | {
                 "Authorization": "Bearer " + device_token,
                 "Content-Type": "application/json",
                 "Content-Length": str(len(report_body)),
-            }, report_body,
+            },
+            report_body,
         )
         check(report_status == 200)
         check(report_after_reset["paired"] is False)
@@ -209,30 +218,28 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
             "Content-Length": "2",
         }
         for _ in range(119):
-            check(server.limiter.allow(
-                "client:198.51.100.50", "unauthenticated", 120, 60
-            ))
-        check(request(
-            "/api/v1/device/report", "POST", invalid_report_headers, b"{}"
-        )[0] == 401)
-        check(request(
-            "/api/v1/device/report", "POST", invalid_report_headers, b"{}"
-        )[0] == 429)
-        check(request(
-            "/api/v1/device/report", "POST",
-            proxy_headers("198.51.100.51") | {
-                "Authorization": "Bearer " + device_token,
-                "Content-Type": "application/json",
-                "Content-Length": str(len(report_body)),
-            }, report_body,
-        )[0] == 200)
+            check(server.limiter.allow("client:198.51.100.50", "unauthenticated", 120, 60))
+        check(request("/api/v1/device/report", "POST", invalid_report_headers, b"{}")[0] == 401)
+        check(request("/api/v1/device/report", "POST", invalid_report_headers, b"{}")[0] == 429)
+        check(
+            request(
+                "/api/v1/device/report",
+                "POST",
+                proxy_headers("198.51.100.51")
+                | {
+                    "Authorization": "Bearer " + device_token,
+                    "Content-Type": "application/json",
+                    "Content-Length": str(len(report_body)),
+                },
+                report_body,
+            )[0]
+            == 200
+        )
 
         # Exhausting client A cannot spend client B's independent allowance.
         server.limiter = PORTAL.RateLimiter()
         for _ in range(120):
-            check(server.limiter.allow(
-                "client:198.51.100.20", "unauthenticated", 120, 60
-            ))
+            check(server.limiter.allow("client:198.51.100.20", "unauthenticated", 120, 60))
         check(request(headers=proxy_headers("198.51.100.20"))[0] == 429)
         check(request(headers=proxy_headers("198.51.100.21"))[0] == 200)
 
@@ -240,9 +247,7 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
         # is one shared bounded identity, not an exemption.
         server.limiter = PORTAL.RateLimiter()
         for _ in range(120):
-            check(server.limiter.allow(
-                "peer:127.0.0.1", "unauthenticated", 120, 60
-            ))
+            check(server.limiter.allow("peer:127.0.0.1", "unauthenticated", 120, 60))
         check(request()[0] == 429)
         check(request(headers=proxy_headers("198.51.100.22"))[0] == 200)
 
@@ -267,22 +272,26 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
         }
         check(request("/api/v1/login", "POST", login_headers, login_body)[0] == 503)
         server.concurrent_budget.release(128, 64)
-        check(request(
-            "/api/v1/device/report", "POST",
-            proxy_headers("198.51.100.26") | {
-                "Authorization": "Bearer invalid",
-                "Content-Type": "application/json",
-                "Content-Length": "2",
-            }, b"{}",
-        )[0] == 401)
+        check(
+            request(
+                "/api/v1/device/report",
+                "POST",
+                proxy_headers("198.51.100.26")
+                | {
+                    "Authorization": "Bearer invalid",
+                    "Content-Type": "application/json",
+                    "Content-Length": "2",
+                },
+                b"{}",
+            )[0]
+            == 401
+        )
 
         # Password verification, device-report, and malformed-request work
         # each have an independent global budget exercised through HTTP.
         server.limiter = PORTAL.RateLimiter()
         for _ in range(120):
-            check(server.limiter.allow(
-                "portal-password-global", "password-verification", 120, 600
-            ))
+            check(server.limiter.allow("portal-password-global", "password-verification", 120, 600))
         check(request("/api/v1/login", "POST", login_headers, login_body)[0] == 429)
 
         server.limiter = PORTAL.RateLimiter()
@@ -293,9 +302,7 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
             "Content-Type": "application/json",
             "Content-Length": "2",
         }
-        check(request(
-            "/api/v1/device/report", "POST", report_headers, b"{}"
-        )[0] == 429)
+        check(request("/api/v1/device/report", "POST", report_headers, b"{}")[0] == 429)
 
         server.limiter = PORTAL.RateLimiter()
         for _ in range(300):
@@ -305,9 +312,7 @@ with tempfile.TemporaryDirectory(prefix="veld-portal-proxy-") as temp:
             "Content-Type": "application/json",
             "Content-Length": "1",
         }
-        check(request(
-            "/api/v1/login", "POST", malformed_headers, malformed
-        )[0] == 429)
+        check(request("/api/v1/login", "POST", malformed_headers, malformed)[0] == 429)
     finally:
         server.shutdown()
         server.server_close()
@@ -323,5 +328,7 @@ check("limit_req_zone" in template and "limit_conn_zone" in template)
 check("--trusted-proxy-peer 127.0.0.1" in template)
 check("explorer-proxy.conf" in template)
 
-print(f"PASS proxy_topology_tests checks={checks} "
-      "actual_loopback_trusted_proxy_global_route_work_budgets=1")
+print(
+    f"PASS proxy_topology_tests checks={checks} "
+    "actual_loopback_trusted_proxy_global_route_work_budgets=1"
+)

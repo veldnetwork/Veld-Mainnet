@@ -1,4 +1,5 @@
 """Exercise the production mining monitor's shutdown cancellation with native threads."""
+
 from pathlib import Path
 import argparse
 import hashlib
@@ -7,7 +8,7 @@ import os
 import subprocess
 import tempfile
 
-prefix=r'''#include <atomic>
+prefix = r'''#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -32,7 +33,7 @@ struct Harness {
             while(!stop_now.load()) { miner_progress_counter_.fetch_add(1); std::this_thread::yield(); }
         });
 '''
-suffix=r'''
+suffix = r'''
         while(!entered.load()) std::this_thread::yield();
         running_.store(false);
         mining_.store(false);
@@ -54,6 +55,7 @@ int main() {
 }
 '''
 
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-root', type=Path, default=Path(__file__).resolve().parents[1])
@@ -73,13 +75,20 @@ def main():
         env = dict(os.environ)
         if os.name == 'nt' and Path(args.cxx).is_absolute():
             env['PATH'] = str(Path(args.cxx).parent) + os.pathsep + env.get('PATH', '')
-        subprocess.run([args.cxx, '-std=c++20', '-O1', '-pthread', str(harness), '-o', str(binary)],
-                       check=True, env=env, timeout=90)
+        subprocess.run(
+            [args.cxx, '-std=c++20', '-O1', '-pthread', str(harness), '-o', str(binary)],
+            check=True,
+            env=env,
+            timeout=90,
+        )
         run = subprocess.run([str(binary)], capture_output=True, text=True, env=env, timeout=15)
-        result = dict(result='PASS' if run.returncode == 0 else 'FAIL', run_exit=run.returncode,
-                      source_header_sha256=hashlib.sha256(header).hexdigest(),
-                      monitor_body_sha256=hashlib.sha256(body.encode()).hexdigest(),
-                      output=run.stdout + run.stderr)
+        result = dict(
+            result='PASS' if run.returncode == 0 else 'FAIL',
+            run_exit=run.returncode,
+            source_header_sha256=hashlib.sha256(header).hexdigest(),
+            monitor_body_sha256=hashlib.sha256(body.encode()).hexdigest(),
+            output=run.stdout + run.stderr,
+        )
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(result, indent=2) + '\n')

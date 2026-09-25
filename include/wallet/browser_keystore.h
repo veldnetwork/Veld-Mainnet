@@ -41,20 +41,16 @@ inline void WipeBrowserPlaintext(std::string& value) {
     value.shrink_to_fit();
 }
 
-inline bool DecryptBrowserKeystoreCiphertext(
-    uint32_t version,
-    const std::string& password,
-    const uint8_t* salt, size_t salt_len,
-    const uint8_t* iv, size_t iv_len,
-    const uint8_t* sealed, size_t sealed_len,
-    std::string& plaintext)
-{
+inline bool DecryptBrowserKeystoreCiphertext(uint32_t version, const std::string& password,
+                                             const uint8_t* salt, size_t salt_len,
+                                             const uint8_t* iv, size_t iv_len,
+                                             const uint8_t* sealed, size_t sealed_len,
+                                             std::string& plaintext) {
     WipeBrowserPlaintext(plaintext);
-    if (!salt || salt_len != BROWSER_KEYSTORE_SALT_BYTES
-        || !iv || iv_len != BROWSER_KEYSTORE_IV_BYTES
-        || !sealed || sealed_len <= BROWSER_KEYSTORE_TAG_BYTES
-        || sealed_len - BROWSER_KEYSTORE_TAG_BYTES
-               > BROWSER_KEYSTORE_MAX_PLAINTEXT_BYTES)
+    if (!salt || salt_len != BROWSER_KEYSTORE_SALT_BYTES || !iv ||
+        iv_len != BROWSER_KEYSTORE_IV_BYTES || !sealed ||
+        sealed_len <= BROWSER_KEYSTORE_TAG_BYTES ||
+        sealed_len - BROWSER_KEYSTORE_TAG_BYTES > BROWSER_KEYSTORE_MAX_PLAINTEXT_BYTES)
         return false;
 
     const size_t ciphertext_len = sealed_len - BROWSER_KEYSTORE_TAG_BYTES;
@@ -82,17 +78,15 @@ inline bool DecryptBrowserKeystoreCiphertext(
     }
     BCRYPT_ALG_HANDLE algorithm = nullptr;
     BCRYPT_KEY_HANDLE aes_key = nullptr;
-    if (::BCryptOpenAlgorithmProvider(
-            &algorithm, BCRYPT_AES_ALGORITHM, nullptr, 0) == STATUS_SUCCESS) {
+    if (::BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_AES_ALGORITHM, nullptr, 0) ==
+        STATUS_SUCCESS) {
         do {
-            if (::BCryptSetProperty(
-                    algorithm, BCRYPT_CHAINING_MODE,
-                    (PUCHAR)BCRYPT_CHAIN_MODE_GCM,
-                    sizeof(BCRYPT_CHAIN_MODE_GCM), 0) != STATUS_SUCCESS) break;
-            if (::BCryptGenerateSymmetricKey(
-                    algorithm, &aes_key, nullptr, 0,
-                    key.data(), static_cast<ULONG>(key.size()), 0)
-                != STATUS_SUCCESS) break;
+            if (::BCryptSetProperty(algorithm, BCRYPT_CHAINING_MODE, (PUCHAR)BCRYPT_CHAIN_MODE_GCM,
+                                    sizeof(BCRYPT_CHAIN_MODE_GCM), 0) != STATUS_SUCCESS)
+                break;
+            if (::BCryptGenerateSymmetricKey(algorithm, &aes_key, nullptr, 0, key.data(),
+                                             static_cast<ULONG>(key.size()), 0) != STATUS_SUCCESS)
+                break;
             BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO info{};
             BCRYPT_INIT_AUTH_MODE_INFO(info);
             info.pbNonce = const_cast<PUCHAR>(iv);
@@ -100,24 +94,24 @@ inline bool DecryptBrowserKeystoreCiphertext(
             info.pbTag = const_cast<PUCHAR>(tag);
             info.cbTag = BROWSER_KEYSTORE_TAG_BYTES;
             if (version == BROWSER_KEYSTORE_VERSION_V3) {
-                info.pbAuthData = reinterpret_cast<PUCHAR>(
-                    const_cast<char*>(BROWSER_KEYSTORE_V3_AAD));
-                info.cbAuthData = static_cast<ULONG>(
-                    sizeof(BROWSER_KEYSTORE_V3_AAD) - 1);
+                info.pbAuthData =
+                    reinterpret_cast<PUCHAR>(const_cast<char*>(BROWSER_KEYSTORE_V3_AAD));
+                info.cbAuthData = static_cast<ULONG>(sizeof(BROWSER_KEYSTORE_V3_AAD) - 1);
             }
             ULONG produced = 0;
             if (::BCryptDecrypt(
-                    aes_key, const_cast<PUCHAR>(sealed),
-                    static_cast<ULONG>(ciphertext_len), &info,
+                    aes_key, const_cast<PUCHAR>(sealed), static_cast<ULONG>(ciphertext_len), &info,
                     nullptr, 0, reinterpret_cast<PUCHAR>(plaintext.data()),
-                    static_cast<ULONG>(plaintext.size()), &produced, 0)
-                != STATUS_SUCCESS) break;
+                    static_cast<ULONG>(plaintext.size()), &produced, 0) != STATUS_SUCCESS)
+                break;
             plaintext.resize(produced);
             ok = produced == ciphertext_len;
         } while (false);
     }
-    if (aes_key) ::BCryptDestroyKey(aes_key);
-    if (algorithm) ::BCryptCloseAlgorithmProvider(algorithm, 0);
+    if (aes_key)
+        ::BCryptDestroyKey(aes_key);
+    if (algorithm)
+        ::BCryptCloseAlgorithmProvider(algorithm, 0);
 #else
     if (ciphertext_len > static_cast<size_t>(std::numeric_limits<int>::max())) {
         WipeBrowserPlaintext(plaintext);
@@ -127,43 +121,42 @@ inline bool DecryptBrowserKeystoreCiphertext(
     if (ctx) {
         int produced = 0;
         int aad_bytes = 0;
-        if (::EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1
-            && ::EVP_CIPHER_CTX_ctrl(
-                   ctx, EVP_CTRL_GCM_SET_IVLEN, BROWSER_KEYSTORE_IV_BYTES, nullptr) == 1
-            && ::EVP_DecryptInit_ex(ctx, nullptr, nullptr, key.data(), iv) == 1) {
+        if (::EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
+            ::EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, BROWSER_KEYSTORE_IV_BYTES,
+                                  nullptr) == 1 &&
+            ::EVP_DecryptInit_ex(ctx, nullptr, nullptr, key.data(), iv) == 1) {
             bool aad_ok = true;
             if (version == BROWSER_KEYSTORE_VERSION_V3) {
-                aad_ok = ::EVP_DecryptUpdate(
-                    ctx, nullptr, &aad_bytes,
-                    reinterpret_cast<const uint8_t*>(BROWSER_KEYSTORE_V3_AAD),
-                    static_cast<int>(sizeof(BROWSER_KEYSTORE_V3_AAD) - 1)) == 1;
+                aad_ok =
+                    ::EVP_DecryptUpdate(ctx, nullptr, &aad_bytes,
+                                        reinterpret_cast<const uint8_t*>(BROWSER_KEYSTORE_V3_AAD),
+                                        static_cast<int>(sizeof(BROWSER_KEYSTORE_V3_AAD) - 1)) == 1;
             }
-            if (aad_ok && ::EVP_DecryptUpdate(
-                   ctx, reinterpret_cast<uint8_t*>(plaintext.data()), &produced,
-                   sealed, static_cast<int>(ciphertext_len)) == 1
-            && ::EVP_CIPHER_CTX_ctrl(
-                   ctx, EVP_CTRL_GCM_SET_TAG, BROWSER_KEYSTORE_TAG_BYTES,
-                   const_cast<uint8_t*>(tag)) == 1) {
-            int final_bytes = 0;
-            if (::EVP_DecryptFinal_ex(
-                    ctx, reinterpret_cast<uint8_t*>(plaintext.data()) + produced,
-                    &final_bytes) == 1) {
-                plaintext.resize(static_cast<size_t>(produced + final_bytes));
-                ok = plaintext.size() == ciphertext_len;
-            }
+            if (aad_ok &&
+                ::EVP_DecryptUpdate(ctx, reinterpret_cast<uint8_t*>(plaintext.data()), &produced,
+                                    sealed, static_cast<int>(ciphertext_len)) == 1 &&
+                ::EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, BROWSER_KEYSTORE_TAG_BYTES,
+                                      const_cast<uint8_t*>(tag)) == 1) {
+                int final_bytes = 0;
+                if (::EVP_DecryptFinal_ex(ctx,
+                                          reinterpret_cast<uint8_t*>(plaintext.data()) + produced,
+                                          &final_bytes) == 1) {
+                    plaintext.resize(static_cast<size_t>(produced + final_bytes));
+                    ok = plaintext.size() == ciphertext_len;
+                }
             }
         }
         ::EVP_CIPHER_CTX_free(ctx);
     }
 #endif
 
-    if (!ok) WipeBrowserPlaintext(plaintext);
+    if (!ok)
+        WipeBrowserPlaintext(plaintext);
     return ok;
 }
 
-inline bool ParseBrowserKeystoreIdentity(
-    std::string_view json, std::string& private_key_hex, std::string& address)
-{
+inline bool ParseBrowserKeystoreIdentity(std::string_view json, std::string& private_key_hex,
+                                         std::string& address) {
     WipeBrowserPlaintext(private_key_hex);
     address.clear();
     bool success = false;
@@ -180,36 +173,46 @@ inline bool ParseBrowserKeystoreIdentity(
     } output_guard{private_key_hex, address, success};
     size_t pos = 0;
     auto skip_ws = [&] {
-        while (pos < json.size()
-               && (json[pos] == ' ' || json[pos] == '\t'
-                   || json[pos] == '\r' || json[pos] == '\n')) ++pos;
+        while (pos < json.size() &&
+               (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n'))
+            ++pos;
     };
     auto parse_string = [&](std::string& out, size_t ceiling) -> bool {
         out.clear();
-        if (pos >= json.size() || json[pos++] != '"') return false;
+        if (pos >= json.size() || json[pos++] != '"')
+            return false;
         while (pos < json.size() && json[pos] != '"') {
             const unsigned char c = static_cast<unsigned char>(json[pos++]);
             // The browser's key/address alphabet never needs JSON escapes.
             // Reject them instead of accepting ambiguous alternate encodings.
-            if (c == '\\' || c < 0x20 || out.size() == ceiling) return false;
+            if (c == '\\' || c < 0x20 || out.size() == ceiling)
+                return false;
             out.push_back(static_cast<char>(c));
         }
-        if (pos >= json.size() || json[pos++] != '"') return false;
+        if (pos >= json.size() || json[pos++] != '"')
+            return false;
         return true;
     };
 
     skip_ws();
-    if (pos >= json.size() || json[pos++] != '{') return false;
+    if (pos >= json.size() || json[pos++] != '{')
+        return false;
     bool have_key = false, have_address = false;
     for (;;) {
         skip_ws();
-        if (pos < json.size() && json[pos] == '}') { ++pos; break; }
+        if (pos < json.size() && json[pos] == '}') {
+            ++pos;
+            break;
+        }
         std::string field, value;
-        if (!parse_string(field, 32)) return false;
+        if (!parse_string(field, 32))
+            return false;
         skip_ws();
-        if (pos >= json.size() || json[pos++] != ':') return false;
+        if (pos >= json.size() || json[pos++] != ':')
+            return false;
         skip_ws();
-        if (!parse_string(value, 128)) return false;
+        if (!parse_string(value, 128))
+            return false;
         if (field == "key" && !have_key) {
             private_key_hex = std::move(value);
             have_key = true;
@@ -222,60 +225,55 @@ inline bool ParseBrowserKeystoreIdentity(
             return false;
         }
         skip_ws();
-        if (pos < json.size() && json[pos] == ',') { ++pos; continue; }
-        if (pos < json.size() && json[pos] == '}') { ++pos; break; }
+        if (pos < json.size() && json[pos] == ',') {
+            ++pos;
+            continue;
+        }
+        if (pos < json.size() && json[pos] == '}') {
+            ++pos;
+            break;
+        }
         WipeBrowserPlaintext(private_key_hex);
         address.clear();
         return false;
     }
     skip_ws();
-    const bool key_is_hex = private_key_hex.size() == 64
-        && std::all_of(private_key_hex.begin(), private_key_hex.end(), [](unsigned char c) {
-               return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
-                   || (c >= 'A' && c <= 'F');
-           });
-    if (pos != json.size() || !have_key || !have_address || !key_is_hex
-        || address.empty()) {
+    const bool key_is_hex =
+        private_key_hex.size() == 64 &&
+        std::all_of(private_key_hex.begin(), private_key_hex.end(), [](unsigned char c) {
+            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        });
+    if (pos != json.size() || !have_key || !have_address || !key_is_hex || address.empty()) {
         return false;
     }
     success = true;
     return true;
 }
 
-inline bool DecryptBrowserKeystoreCiphertext(
-    uint32_t version,
-    const std::string& password,
-    const std::vector<uint8_t>& salt,
-    const std::vector<uint8_t>& iv,
-    const std::vector<uint8_t>& sealed,
-    std::string& plaintext)
-{
-    return DecryptBrowserKeystoreCiphertext(
-        version, password, salt.data(), salt.size(), iv.data(), iv.size(),
-        sealed.data(), sealed.size(), plaintext);
+inline bool DecryptBrowserKeystoreCiphertext(uint32_t version, const std::string& password,
+                                             const std::vector<uint8_t>& salt,
+                                             const std::vector<uint8_t>& iv,
+                                             const std::vector<uint8_t>& sealed,
+                                             std::string& plaintext) {
+    return DecryptBrowserKeystoreCiphertext(version, password, salt.data(), salt.size(), iv.data(),
+                                            iv.size(), sealed.data(), sealed.size(), plaintext);
 }
 
-inline bool DecryptBrowserKeystoreCiphertext(
-    const std::string& password,
-    const uint8_t* salt, size_t salt_len,
-    const uint8_t* iv, size_t iv_len,
-    const uint8_t* sealed, size_t sealed_len,
-    std::string& plaintext)
-{
-    return DecryptBrowserKeystoreCiphertext(
-        BROWSER_KEYSTORE_VERSION_V2, password, salt, salt_len,
-        iv, iv_len, sealed, sealed_len, plaintext);
+inline bool DecryptBrowserKeystoreCiphertext(const std::string& password, const uint8_t* salt,
+                                             size_t salt_len, const uint8_t* iv, size_t iv_len,
+                                             const uint8_t* sealed, size_t sealed_len,
+                                             std::string& plaintext) {
+    return DecryptBrowserKeystoreCiphertext(BROWSER_KEYSTORE_VERSION_V2, password, salt, salt_len,
+                                            iv, iv_len, sealed, sealed_len, plaintext);
 }
 
-inline bool DecryptBrowserKeystoreCiphertext(
-    const std::string& password,
-    const std::vector<uint8_t>& salt,
-    const std::vector<uint8_t>& iv,
-    const std::vector<uint8_t>& sealed,
-    std::string& plaintext)
-{
-    return DecryptBrowserKeystoreCiphertext(
-        BROWSER_KEYSTORE_VERSION_V2, password, salt, iv, sealed, plaintext);
+inline bool DecryptBrowserKeystoreCiphertext(const std::string& password,
+                                             const std::vector<uint8_t>& salt,
+                                             const std::vector<uint8_t>& iv,
+                                             const std::vector<uint8_t>& sealed,
+                                             std::string& plaintext) {
+    return DecryptBrowserKeystoreCiphertext(BROWSER_KEYSTORE_VERSION_V2, password, salt, iv, sealed,
+                                            plaintext);
 }
 
 } // namespace wallet_crypto

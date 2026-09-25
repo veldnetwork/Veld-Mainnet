@@ -17,7 +17,10 @@ class ManagedProcessTests(unittest.TestCase):
         return run_bounded_subprocess([sys.executable, "-I", "-c", code], **options)
 
     def test_bounded_input_and_separate_streams(self):
-        result = self.run_child("import sys; print(sys.stdin.read()); print('error',file=sys.stderr)", input_text="exact input")
+        result = self.run_child(
+            "import sys; print(sys.stdin.read()); print('error',file=sys.stderr)",
+            input_text="exact input",
+        )
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "exact input")
         self.assertEqual(result.stderr.strip(), "error")
@@ -40,8 +43,11 @@ class ManagedProcessTests(unittest.TestCase):
             self.run_child("import os; os.write(2,b'x'*100000)")
 
     def test_simultaneous_large_input_and_output_do_not_deadlock(self):
-        result = self.run_child("import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data)",
-            input_text="x" * 200000, stdout_max=200000)
+        result = self.run_child(
+            "import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data)",
+            input_text="x" * 200000,
+            stdout_max=200000,
+        )
         self.assertEqual(result.stdout, "x" * 200000)
 
     def test_invalid_utf8_is_refused(self):
@@ -53,13 +59,17 @@ class ManagedProcessTests(unittest.TestCase):
             run_bounded_subprocess(["python.exe", "-V"], timeout=1, stdout_max=100, stderr_max=100)
 
     def test_child_is_already_in_a_job_when_code_starts(self):
-        result = self.run_child("import ctypes; from ctypes import wintypes as w; k=ctypes.WinDLL('kernel32'); "
+        result = self.run_child(
+            "import ctypes; from ctypes import wintypes as w; k=ctypes.WinDLL('kernel32'); "
             "k.GetCurrentProcess.restype=w.HANDLE; k.IsProcessInJob.argtypes=[w.HANDLE,w.HANDLE,ctypes.POINTER(w.BOOL)]; "
-            "answer=w.BOOL(); assert k.IsProcessInJob(k.GetCurrentProcess(),None,ctypes.byref(answer)); print(bool(answer.value))")
+            "answer=w.BOOL(); assert k.IsProcessInJob(k.GetCurrentProcess(),None,ctypes.byref(answer)); print(bool(answer.value))"
+        )
         self.assertEqual(result.stdout.strip(), "True")
 
     def test_descendant_is_terminated_when_primary_exits(self):
-        result = self.run_child("import subprocess,sys; p=subprocess.Popen([sys.executable,'-I','-c','import time; time.sleep(30)']); print(p.pid,flush=True)")
+        result = self.run_child(
+            "import subprocess,sys; p=subprocess.Popen([sys.executable,'-I','-c','import time; time.sleep(30)']); print(p.pid,flush=True)"
+        )
         pid = int(result.stdout.strip())
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel.OpenProcess.argtypes = [w.DWORD, w.BOOL, w.DWORD]
@@ -84,15 +94,23 @@ class ManagedProcessTests(unittest.TestCase):
         self.assertTrue(event)
         try:
             os.set_handle_inheritable(event, True)
-            code = ("import ctypes; from ctypes import wintypes as w; k=ctypes.WinDLL('kernel32'); "
-                "k.SetEvent.argtypes=[w.HANDLE]; " + f"print(bool(k.SetEvent({event})))")
+            code = (
+                "import ctypes; from ctypes import wintypes as w; k=ctypes.WinDLL('kernel32'); "
+                "k.SetEvent.argtypes=[w.HANDLE]; " + f"print(bool(k.SetEvent({event})))"
+            )
             # Prove the same kernel object is signaled when inheritance is explicit.
             # A handle number alone may legitimately name a different child object.
             startup = subprocess.STARTUPINFO()
             startup.lpAttributeList = {"handle_list": [event]}
-            control = subprocess.run([sys.executable, "-I", "-c", code], startupinfo=startup,
-                close_fds=True, capture_output=True, text=True, timeout=5,
-                creationflags=subprocess.CREATE_NO_WINDOW)
+            control = subprocess.run(
+                [sys.executable, "-I", "-c", code],
+                startupinfo=startup,
+                close_fds=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
             self.assertEqual(control.returncode, 0)
             self.assertEqual(control.stdout.strip(), "True")
             self.assertEqual(kernel.WaitForSingleObject(event, 0), 0)

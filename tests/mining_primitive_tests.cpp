@@ -149,7 +149,8 @@ int main() {
             // Exact square neighborhoods catch Newton termination/rounding
             // errors, including UINT64_MAX roots and 128-bit intermediate sums.
             const U128 square = U128(low) * low;
-            if (square) CheckSqrt(square - 1);
+            if (square)
+                CheckSqrt(square - 1);
             CheckSqrt(square);
             CheckSqrt(square + 1);
             CheckSqrt(U128(high & INT64_MAX) << veld::mining::VELD_FIXED_FRAC_BITS);

@@ -13,8 +13,7 @@ namespace veld::btcveld {
 // callback would pair its derived supply with that final tip. Keep the previous
 // coherent tuple until the final callback, while ordinary linear connects
 // publish immediately.
-constexpr bool ShouldPublishSupplySnapshot(bool from_reorg,
-                                           uint64_t callback_height,
+constexpr bool ShouldPublishSupplySnapshot(bool from_reorg, uint64_t callback_height,
                                            uint64_t canonical_tip_height) {
     return !from_reorg || callback_height == canonical_tip_height;
 }
@@ -30,7 +29,7 @@ struct SupplySnapshot {
 };
 
 class SupplySnapshotPublisher {
-public:
+  public:
     void Publish(int64_t supply_sats, uint64_t tip, const Hash256& tip_hash) {
         std::lock_guard<std::mutex> lock(mutex_);
         snapshot_ = SupplySnapshot{supply_sats, tip, tip_hash};
@@ -41,9 +40,9 @@ public:
         return snapshot_;
     }
 
-private:
+  private:
     mutable std::mutex mutex_;
     std::optional<SupplySnapshot> snapshot_;
 };
 
-}  // namespace veld::btcveld
+} // namespace veld::btcveld

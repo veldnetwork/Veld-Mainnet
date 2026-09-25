@@ -29,26 +29,33 @@ class OperatorFilePolicyTests(unittest.TestCase):
             original = root / "original"
             original.write_bytes(b"safe")
             original.chmod(0o600)
-            self.assertEqual(file_policy.read_bounded_regular_file(
-                str(original.resolve()), 16, "fixture", private=True), b"safe")
+            self.assertEqual(
+                file_policy.read_bounded_regular_file(
+                    str(original.resolve()), 16, "fixture", private=True
+                ),
+                b"safe",
+            )
 
             symlink = root / "symlink"
             symlink.symlink_to(original)
             with self.assertRaises(OSError):
                 file_policy.read_bounded_regular_file(
-                    str(symlink.absolute()), 16, "fixture", private=True)
+                    str(symlink.absolute()), 16, "fixture", private=True
+                )
 
             hardlink = root / "hardlink"
             os.link(original, hardlink)
             with self.assertRaisesRegex(RuntimeError, "non-linked"):
                 file_policy.read_bounded_regular_file(
-                    str(original.resolve()), 16, "fixture", private=True)
+                    str(original.resolve()), 16, "fixture", private=True
+                )
             hardlink.unlink()
 
             original.chmod(0o622)
             with self.assertRaisesRegex(RuntimeError, "private regular file"):
                 file_policy.read_bounded_regular_file(
-                    str(original.resolve()), 16, "fixture", private=True)
+                    str(original.resolve()), 16, "fixture", private=True
+                )
 
     def test_nonsecret_policy_may_be_group_readable_but_not_writable(self):
         with tempfile.TemporaryDirectory() as root:
@@ -56,25 +63,30 @@ class OperatorFilePolicyTests(unittest.TestCase):
             policy.write_text('{"enabled":false}')
             policy.chmod(0o640)
             self.assertEqual(
-                file_policy.load_bounded_json_file(
-                    str(policy.resolve()), 1024, "policy"),
+                file_policy.load_bounded_json_file(str(policy.resolve()), 1024, "policy"),
                 {"enabled": False},
             )
             policy.chmod(0o660)
             with self.assertRaisesRegex(RuntimeError, "writable"):
-                file_policy.load_bounded_json_file(
-                    str(policy.resolve()), 1024, "policy")
+                file_policy.load_bounded_json_file(str(policy.resolve()), 1024, "policy")
 
     def test_subprocess_output_is_hard_bounded_before_parent_read(self):
         result = file_policy.run_bounded_subprocess(
-            [sys.executable, "-c", "print('ok')"], timeout=5,
-            stdout_max=64, stderr_max=64, description="fixture child")
+            [sys.executable, "-c", "print('ok')"],
+            timeout=5,
+            stdout_max=64,
+            stderr_max=64,
+            description="fixture child",
+        )
         self.assertEqual(result.stdout, "ok\n")
         with self.assertRaisesRegex(RuntimeError, "output exceeds"):
             file_policy.run_bounded_subprocess(
-                [sys.executable, "-c", "print('x' * 1000000)"], timeout=5,
-                stdout_max=1024, stderr_max=1024,
-                description="oversized fixture child")
+                [sys.executable, "-c", "print('x' * 1000000)"],
+                timeout=5,
+                stdout_max=1024,
+                stderr_max=1024,
+                description="oversized fixture child",
+            )
 
 
 class MintLedgerSecurityTests(unittest.TestCase):
@@ -132,16 +144,13 @@ class MintLedgerSecurityTests(unittest.TestCase):
     def test_remote_mint_signer_uses_only_the_pinned_host_key_file(self):
         completed = mock.Mock(returncode=0, stdout="ab" * 100, stderr="")
         signer = mintd.RemoteSigner(
-            "veld-mint-signer", "/var/lib/veld-peg/.ssh/mint.key",
-            "veld_signerd --capability mint")
-        with mock.patch.object(
-                mintd, "run_bounded_subprocess", return_value=completed) as run:
-            self.assertEqual(signer.sign("00" * 50, [], "V" + "3" * 33, 1),
-                             "ab" * 100)
+            "veld-mint-signer", "/var/lib/veld-peg/.ssh/mint.key", "veld_signerd --capability mint"
+        )
+        with mock.patch.object(mintd, "run_bounded_subprocess", return_value=completed) as run:
+            self.assertEqual(signer.sign("00" * 50, [], "V" + "3" * 33, 1), "ab" * 100)
         command = run.call_args.args[0]
         self.assertIn("StrictHostKeyChecking=yes", command)
-        self.assertIn(
-            "UserKnownHostsFile=/var/lib/veld-peg/.ssh/known_hosts", command)
+        self.assertIn("UserKnownHostsFile=/var/lib/veld-peg/.ssh/known_hosts", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
 
     def test_unfinished_intent_halts_before_discovering_or_minting_new_deposits(self):
@@ -156,7 +165,8 @@ class MintLedgerSecurityTests(unittest.TestCase):
             daemon.production = False
             daemon.ledger = self._ledger()
             daemon.eligible_deposits = mock.Mock(
-                side_effect=AssertionError("must not enumerate deposits"))
+                side_effect=AssertionError("must not enumerate deposits")
+            )
             daemon.run_once()
             daemon.eligible_deposits.assert_not_called()
             self.assertTrue(daemon.halted())
@@ -201,8 +211,13 @@ class MintLedgerSecurityTests(unittest.TestCase):
             daemon.WINDOW_SECS = 3600
             daemon.ledger_path = str(root / "minted_deposits.json")
             daemon.ledger = {
-                outpoint: {"status": "minted", "recipient": "V" + "3" * 33,
-                           "sats": 1, "at": 0, "veld_txid": "44" * 32},
+                outpoint: {
+                    "status": "minted",
+                    "recipient": "V" + "3" * 33,
+                    "sats": 1,
+                    "at": 0,
+                    "veld_txid": "44" * 32,
+                },
             }
             daemon.mint_outpoint_consumed = mock.Mock(return_value=True)
             self.assertEqual(daemon._prune_settled_ledger(), 1)
@@ -265,21 +280,32 @@ class DurableAuthoritySecurityTests(unittest.TestCase):
             def call(self, method, params=None):
                 cursor = (params or [""])[0]
                 return {
-                    "tip": 1, "tip_hash": "11" * 32, "final_height": 1,
-                    "cursor": cursor, "next_cursor": cursor,
-                    "page_limit": 512, "has_more": False,
+                    "tip": 1,
+                    "tip_hash": "11" * 32,
+                    "final_height": 1,
+                    "cursor": cursor,
+                    "next_cursor": cursor,
+                    "page_limit": 512,
+                    "has_more": False,
                     "redeem_count": 0,
                     "redeem_root": redeemd.RedeemCommitment().root.hex(),
-                    "redeems": [{
-                        "txid": "22" * 32, "vout": 0,
-                        "from": "V" + "4" * 33, "amount_sats": 1,
-                        "block": 1, "block_hash": "11" * 32,
-                        "memo": "0014" + "33" * 20,
-                        # A load-bearing redeem feed must never treat this row
-                        # as ignorable absence.
-                        "token": "btcVELD", "is_mint": False,
-                        "is_burn": False, "is_redeem": False,
-                    }],
+                    "redeems": [
+                        {
+                            "txid": "22" * 32,
+                            "vout": 0,
+                            "from": "V" + "4" * 33,
+                            "amount_sats": 1,
+                            "block": 1,
+                            "block_hash": "11" * 32,
+                            "memo": "0014" + "33" * 20,
+                            # A load-bearing redeem feed must never treat this row
+                            # as ignorable absence.
+                            "token": "btcVELD",
+                            "is_mint": False,
+                            "is_burn": False,
+                            "is_redeem": False,
+                        }
+                    ],
                 }
 
         with self.assertRaisesRegex(RuntimeError, "non-canonical redeem row"):
@@ -326,19 +352,26 @@ class WatchtowerAndSignerStateSecurityTests(unittest.TestCase):
             alias = root / "alias"
             os.link(sequence, alias)
             with mock.patch.multiple(
-                    receiver, LASTSEQF=str(sequence),
-                    HEARTBEATF=str(root / "missing-heartbeat")):
+                receiver, LASTSEQF=str(sequence), HEARTBEATF=str(root / "missing-heartbeat")
+            ):
                 with self.assertRaisesRegex(RuntimeError, "non-linked"):
                     receiver._last_sequence()
 
     def test_unrelated_corrupt_signed_row_cannot_reduce_window_cap(self):
         signed = b"\x00"
         txid = hashlib.sha256(hashlib.sha256(signed).digest()).hexdigest()
-        state = {"signed": [{
-            "request_id": "44" * 32, "txid": txid,
-            "signed_tx_hex": signed.hex(), "sats": -1,
-            "to": "V" + "5" * 33, "at": 1,
-        }]}
+        state = {
+            "signed": [
+                {
+                    "request_id": "44" * 32,
+                    "txid": txid,
+                    "signed_tx_hex": signed.hex(),
+                    "sats": -1,
+                    "to": "V" + "5" * 33,
+                    "at": 1,
+                }
+            ]
+        }
         with self.assertRaisesRegex(ValueError, "positive integer"):
             signerd.window_signed_sats(state)
 
@@ -346,28 +379,38 @@ class WatchtowerAndSignerStateSecurityTests(unittest.TestCase):
         signed = b"\x01"
         txid = hashlib.sha256(hashlib.sha256(signed).digest()).hexdigest()
         old = {
-            "request_id": "55" * 32, "txid": txid,
-            "signed_tx_hex": signed.hex(), "sats": 1,
-            "to": "V" + "6" * 33, "at": 1,
+            "request_id": "55" * 32,
+            "txid": txid,
+            "signed_tx_hex": signed.hex(),
+            "sats": 1,
+            "to": "V" + "6" * 33,
+            "at": 1,
         }
         state = {
             "signed": [old],
             "mint_accounting": {
                 "version": signerd.MINT_ACCOUNTING_VERSION,
-                "pending": [], "confirmed": [],
+                "pending": [],
+                "confirmed": [],
             },
         }
-        self.assertEqual(signerd.prune_finalized_signed_audits(
-            state, now=signerd.WINDOW_SECS + 2), 1)
+        self.assertEqual(
+            signerd.prune_finalized_signed_audits(state, now=signerd.WINDOW_SECS + 2), 1
+        )
         self.assertEqual(state["signed"], [])
 
         state["signed"] = [old]
-        state["mint_accounting"]["pending"] = [{
-            "request_id": old["request_id"], "txid": old["txid"],
-            "sats": 1, "signed_at": 1,
-        }]
-        self.assertEqual(signerd.prune_finalized_signed_audits(
-            state, now=signerd.WINDOW_SECS + 2), 0)
+        state["mint_accounting"]["pending"] = [
+            {
+                "request_id": old["request_id"],
+                "txid": old["txid"],
+                "sats": 1,
+                "signed_at": 1,
+            }
+        ]
+        self.assertEqual(
+            signerd.prune_finalized_signed_audits(state, now=signerd.WINDOW_SECS + 2), 0
+        )
 
 
 if __name__ == "__main__":

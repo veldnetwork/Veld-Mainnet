@@ -14,7 +14,7 @@ struct ExplorerHistoryBudget {
     size_t reads = 0;
     size_t remaining_load_bytes = MAX_READS * MAX_BLOCK_SIZE;
 
-    template<typename Chain>
+    template <typename Chain>
     auto Read(Chain& chain, uint64_t height) -> decltype(chain.GetBlock(height, BODY_LIMIT)) {
         if (reads >= MAX_READS || remaining_load_bytes < MAX_BLOCK_SIZE)
             throw std::runtime_error("Explorer historical lookup incomplete: work budget reached");
@@ -35,12 +35,15 @@ struct ExplorerLookupProgress : rpc_detail::RecentLookupProgress {
             unavailable.reset();
         } else if (height > tip_height) {
             const auto delta = height - tip_height;
-            if (delta >= WINDOW) unavailable.reset();
-            else unavailable <<= static_cast<size_t>(delta);
+            if (delta >= WINDOW)
+                unavailable.reset();
+            else
+                unavailable <<= static_cast<size_t>(delta);
         }
         rpc_detail::RecentLookupProgress::ObserveTip(height, hash, anchor_canonical);
         // This renderer searches the inclusive recent 501-block range.
-        for (size_t i = 501; i < WINDOW; ++i) unavailable.reset(i);
+        for (size_t i = 501; i < WINDOW; ++i)
+            unavailable.reset(i);
     }
     void MarkUnavailable(uint64_t height) {
         if (height <= tip_height && tip_height - height < 501) {
@@ -57,6 +60,8 @@ struct ExplorerLookupProgress : rpc_detail::RecentLookupProgress {
         const auto next = Next();
         return (!next || tip_height - *next > 500) && unavailable.none();
     }
-    void RetryUnavailable() { examined &= ~unavailable; }
+    void RetryUnavailable() {
+        examined &= ~unavailable;
+    }
 };
 }

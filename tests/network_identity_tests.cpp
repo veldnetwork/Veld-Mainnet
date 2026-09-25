@@ -10,20 +10,19 @@ namespace {
 
 size_t checks = 0;
 
-#define CHECK(expr)                                                          \
-    do {                                                                     \
-        ++checks;                                                            \
-        if (!(expr)) {                                                       \
-            std::cerr << "FAIL " << __FILE__ << ':' << __LINE__             \
-                      << " " #expr "\n";                                    \
-            return 1;                                                        \
-        }                                                                    \
+#define CHECK(expr)                                                                                \
+    do {                                                                                           \
+        ++checks;                                                                                  \
+        if (!(expr)) {                                                                             \
+            std::cerr << "FAIL " << __FILE__ << ':' << __LINE__ << " " #expr "\n";                 \
+            return 1;                                                                              \
+        }                                                                                          \
     } while (false)
 
-std::shared_ptr<net::Connection> MakeConnection(
-        const std::string& address, uint16_t port) {
+std::shared_ptr<net::Connection> MakeConnection(const std::string& address, uint16_t port) {
     const auto fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (!compat::IsValidSocket(fd)) return {};
+    if (!compat::IsValidSocket(fd))
+        return {};
     return std::make_shared<net::Connection>(fd, address, port, true);
 }
 
@@ -31,8 +30,7 @@ std::shared_ptr<net::Connection> MakeConnection(
 
 int main() {
     compat::InitNetwork();
-    CHECK(MessageType::REQUIRED_NETWORK_IDENTITY_SERVICES ==
-          MessageType::NODE_BTCVELD_RESERVE_V1);
+    CHECK(MessageType::REQUIRED_NETWORK_IDENTITY_SERVICES == MessageType::NODE_BTCVELD_RESERVE_V1);
 
     Blockchain chain;
     Mempool mempool;
@@ -44,13 +42,11 @@ int main() {
     legacy_state.version_sent = true;
     legacy_state.version_acked = true;
     VersionPayload legacy;
-    legacy.services = MessageType::NODE_FULL |
-                      MessageType::NODE_HOLE_PUNCH;
+    legacy.services = MessageType::NODE_FULL | MessageType::NODE_HOLE_PUNCH;
     legacy.nonce = 11;
     server.TestDispatchPeerMessageWithState(
         legacy_state, *legacy_connection,
-        P2PMessage(MAINNET_MAGIC, MessageType::VERSION,
-                   legacy.Serialize()));
+        P2PMessage(MAINNET_MAGIC, MessageType::VERSION, legacy.Serialize()));
     CHECK(!legacy_state.their_version);
     CHECK(!legacy_state.handshake_done);
 
@@ -61,10 +57,8 @@ int main() {
     current_state.version_acked = true;
     PeerManager current_peer(MAINNET_MAGIC, 0);
     const P2PMessage current = current_peer.BuildVersionMessage(0, 12);
-    CHECK((current.payload[4] &
-           MessageType::NODE_BTCVELD_RESERVE_V1) != 0);
-    server.TestDispatchPeerMessageWithState(
-        current_state, *current_connection, current);
+    CHECK((current.payload[4] & MessageType::NODE_BTCVELD_RESERVE_V1) != 0);
+    server.TestDispatchPeerMessageWithState(current_state, *current_connection, current);
     CHECK(current_state.their_version);
     CHECK(current_state.handshake_done);
 

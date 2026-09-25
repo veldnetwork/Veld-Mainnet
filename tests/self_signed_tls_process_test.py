@@ -22,10 +22,23 @@ def main() -> int:
         key = temp_path / "key.pem"
         subprocess.run(
             [
-                str(OPENSSL), "req", "-x509", "-newkey", "rsa:2048",
-                "-sha256", "-nodes", "-days", "1", "-subj", "/CN=localhost",
-                "-addext", "subjectAltName=DNS:localhost",
-                "-keyout", str(key), "-out", str(cert),
+                str(OPENSSL),
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-sha256",
+                "-nodes",
+                "-days",
+                "1",
+                "-subj",
+                "/CN=localhost",
+                "-addext",
+                "subjectAltName=DNS:localhost",
+                "-keyout",
+                str(key),
+                "-out",
+                str(cert),
             ],
             check=True,
             stdout=subprocess.DEVNULL,
@@ -47,9 +60,7 @@ def main() -> int:
                 try:
                     with context.wrap_socket(raw, server_side=True) as secure:
                         secure.recv(4096)
-                        secure.sendall(
-                            b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\n{}"
-                        )
+                        secure.sendall(b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\n{}")
                 except (ssl.SSLError, ConnectionError, OSError):
                     raw.close()
             finally:
@@ -61,8 +72,12 @@ def main() -> int:
         env["PATH"] = str(OPENSSL.parent) + os.pathsep + env.get("PATH", "")
         env["VELD_TEST_SELF_SIGNED_TLS_PORT"] = str(listener.getsockname()[1])
         result = subprocess.run(
-            [str(TEST_BINARY)], env=env, text=True, capture_output=True,
-            timeout=30, check=False,
+            [str(TEST_BINARY)],
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
         )
         worker.join(timeout=15)
         if result.returncode != 0:

@@ -19,8 +19,12 @@ LINE = re.compile(
 
 def run_once() -> tuple[str, str, str]:
     completed = subprocess.run(
-        [str(BINARY)], cwd=ROOT, text=True, capture_output=True,
-        timeout=120, check=False,
+        [str(BINARY)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=120,
+        check=False,
     )
     if completed.returncode != 0:
         raise RuntimeError(completed.stdout + completed.stderr)
@@ -37,9 +41,7 @@ def main() -> int:
     first = run_once()
     second = run_once()
     if first != second:
-        raise RuntimeError(
-            "fresh-process replay mismatch:\n" + first[0] + "\n" + second[0]
-        )
+        raise RuntimeError("fresh-process replay mismatch:\n" + first[0] + "\n" + second[0])
     print(
         "PASS reserve_process_replay_test processes=2 "
         f"canonical_digest={first[1]} "

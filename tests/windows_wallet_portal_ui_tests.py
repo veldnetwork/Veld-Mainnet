@@ -38,8 +38,9 @@ for forbidden in (
 
 require("const CACHE='veld-portal-shell-v23'" in PORTAL, "portal cache version")
 require('id="mobile-nav"' in PORTAL, "portal needs a dedicated mobile navbar")
-require('$("mobile-nav").hidden=!d' in PORTAL,
-        "unpaired portal must not expose inactive navigation")
+require(
+    '$("mobile-nav").hidden=!d' in PORTAL, "unpaired portal must not expose inactive navigation"
+)
 require(".side{display:none!important}" in PORTAL, "desktop sidebar must be hidden on mobile")
 require(
     'document.querySelectorAll("#nav button,#mobile-nav button")' in PORTAL,
@@ -62,10 +63,11 @@ for required in (
     'remote_trust_ = {}',
 ):
     require(required in GUI, f"Windows client pairing reset is missing {required}")
-require('def reset_pairing(self, token: str)' in PORTAL,
-        "portal does not implement authenticated device re-pairing")
-require('path == "/api/v1/device/reset-pairing"' in PORTAL,
-        "portal pairing reset route is missing")
+require(
+    'def reset_pairing(self, token: str)' in PORTAL,
+    "portal does not implement authenticated device re-pairing",
+)
+require('path == "/api/v1/device/reset-pairing"' in PORTAL, "portal pairing reset route is missing")
 
 for surface_name, surface in (
     ("wallet", WALLET),
@@ -79,8 +81,7 @@ for surface_name, surface in (
         )
 
 require(
-    'class="ar stake" data-act-click="h9c6994df" type="button" '
-    'title="Open staking"' in WALLET,
+    'class="ar stake" data-act-click="h9c6994df" type="button" title="Open staking"' in WALLET,
     "wallet stake shortcut must allow navigation before activation",
 )
 require(
@@ -95,15 +96,13 @@ require(
     "button.disabled = locked" in WALLET,
     "wallet activation state must control stake submission",
 )
-do_stake = WALLET[WALLET.index("function doStake() {"):
-                  WALLET.index("function _doStakeContinue(")]
+do_stake = WALLET[WALLET.index("function doStake() {") : WALLET.index("function _doStakeContinue(")]
 require(
     "if (!_veldStakingActivation.active)" in do_stake,
     "direct stake submission must fail closed before activation",
 )
 require(
-    do_stake.index("if (!_veldStakingActivation.active)") <
-    do_stake.index("if (!__opLock('stake'"),
+    do_stake.index("if (!_veldStakingActivation.active)") < do_stake.index("if (!__opLock('stake'"),
     "activation rejection must precede transaction preparation",
 )
 require(

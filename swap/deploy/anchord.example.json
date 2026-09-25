@@ -1,19 +1,12 @@
 {
   "production": true,
   "state_dir": "/var/lib/veld-anchord",
-  "cli_base": [
-    "/usr/local/bin/bitcoin-cli",
-    "-datadir=/var/lib/bitcoin"
-  ],
+  "cli_base": ["/usr/local/bin/bitcoin-cli", "-datadir=/var/lib/bitcoin"],
   "btc_wallet": "veld-anchor-fees",
   "btc_rpc_timeout": 30,
   "veld_rpc": {
     "url": "http://127.0.0.1:8334",
-    "token_cmd": [
-      "/usr/local/bin/veld-node",
-      "--datadir=/var/lib/veld",
-      "--print-rpc-token"
-    ]
+    "token_cmd": ["/usr/local/bin/veld-node", "--datadir=/var/lib/veld", "--print-rpc-token"]
   },
   "fund_addr": "REPLACE_WITH_DEDICATED_VELD_ANCHOR_RELAY_FEE_ADDRESS",
   "btc_fund_addr": "REPLACE_WITH_WALLET_OWNED_LEGACY_P2PKH_ADDRESS",

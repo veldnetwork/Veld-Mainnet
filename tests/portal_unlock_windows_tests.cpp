@@ -29,7 +29,8 @@ int main(int argc, char** argv) {
     std::ifstream fixture(root / "ciphertext.txt");
     assert(fixture);
     veld::node_gui::PortalUnlockPayload payload;
-    for (auto* field : {&payload.ciphertext, &payload.identity, &payload.iv, &payload.key_id, &payload.wrapped_key}) {
+    for (auto* field : {&payload.ciphertext, &payload.identity, &payload.iv, &payload.key_id,
+                        &payload.wrapped_key}) {
         std::getline(fixture, *field);
         assert(!field->empty());
     }
@@ -57,5 +58,6 @@ int main(int argc, char** argv) {
     changed.wrapped_key[3] = changed.wrapped_key[3] == 'A' ? 'B' : 'A';
     assert(!key.Decrypt(changed, 17, nonce, identity, passphrase));
     assert(passphrase.empty());
-    std::cout << "PASS: browser-compatible remote unlock, Unicode, durable private key, tamper and context rejection\n";
+    std::cout
+        << "PASS: browser-compatible remote unlock, Unicode, durable private key, tamper and context rejection\n";
 }

@@ -65,8 +65,10 @@ struct GuiStateQualification {
             trusted.unattended = false;
             trusted.last_sequence = 44;
             const auto path = dir / "remote-trust.dat";
-            if (legacy) SaveLegacyTrust(path, trusted);
-            else assert(SavePortalTrust(path, trusted));
+            if (legacy)
+                SaveLegacyTrust(path, trusted);
+            else
+                assert(SavePortalTrust(path, trusted));
             NodeGuiApp app(dir);
             app.remote_monitoring_enabled_.store(true);
             std::string rejection;
@@ -80,12 +82,14 @@ struct GuiStateQualification {
         }
     }
 
-    static void CheckStorageFailure(const std::filesystem::path& root, const MonitoringReply& reply) {
+    static void CheckStorageFailure(const std::filesystem::path& root,
+                                    const MonitoringReply& reply) {
         const auto corrupt = root / "corrupt-trust";
         std::filesystem::create_directory(corrupt);
         const std::string invalid = "not a protected pairing record";
         assert(veld::node_gui::WriteStateFile(corrupt / "remote-trust.dat",
-            reinterpret_cast<const BYTE*>(invalid.data()), invalid.size()));
+                                              reinterpret_cast<const BYTE*>(invalid.data()),
+                                              invalid.size()));
         NodeGuiApp app(corrupt);
         app.remote_monitoring_enabled_.store(true);
         std::string rejection;
@@ -134,9 +138,11 @@ struct GuiStateQualification {
     }
 
     static void CheckControlActions(const std::filesystem::path& root) {
-        for (const auto* action : {"node.start", "node.stop", "node.signin", "updates.check", "updates.install", "updates.automatic"}) {
+        for (const auto* action : {"node.start", "node.stop", "node.signin", "updates.check",
+                                   "updates.install", "updates.automatic"}) {
             MonitoringReply reply;
-            assert(ParseMonitoringReply(ReadTextBounded(root / (std::string(action) + ".json"), 16384), reply));
+            assert(ParseMonitoringReply(
+                ReadTextBounded(root / (std::string(action) + ".json"), 16384), reply));
             const auto dir = root / (std::string(action) + "-state");
             std::filesystem::create_directory(dir);
             NodeGuiApp app(dir);
@@ -162,11 +168,10 @@ struct GuiStateQualification {
     static void CheckSyncModeActions(const std::filesystem::path& root) {
         for (const std::string mode : {"full", "snapshot"}) {
             MonitoringReply reply;
-            assert(ParseMonitoringReply(ReadTextBounded(
-                root / ("sync.mode-" + mode + ".json"), 16384), reply));
+            assert(ParseMonitoringReply(
+                ReadTextBounded(root / ("sync.mode-" + mode + ".json"), 16384), reply));
             assert(reply.command.action == "sync.mode" && reply.command.mode == mode);
-            assert(CanonicalPortalCommandPayload(reply.command) ==
-                "{\"mode\":\"" + mode + "\"}");
+            assert(CanonicalPortalCommandPayload(reply.command) == "{\"mode\":\"" + mode + "\"}");
             const auto dir = root / ("sync.mode-" + mode + "-state");
             std::filesystem::create_directory(dir);
             NodeGuiApp app(dir);
@@ -175,9 +180,9 @@ struct GuiStateQualification {
             assert(app.EnrollPortalControl(reply, rejection));
             const auto saved = ReadTextBounded(dir / "remote-trust.dat");
             PortalTrustState next;
-            assert(EvaluatePortalCommandTrust(reply.command, app.remote_trust_,
-                static_cast<uint64_t>(std::time(nullptr)), next, rejection) ==
-                PortalCommandTrustVerdict::ExistingPairing);
+            assert(EvaluatePortalCommandTrust(
+                       reply.command, app.remote_trust_, static_cast<uint64_t>(std::time(nullptr)),
+                       next, rejection) == PortalCommandTrustVerdict::ExistingPairing);
             assert(next.last_sequence == reply.command.sequence);
             assert(!NodeGuiApp::UnattendedPortalAction(reply.command.action));
             const auto description = app.RemoteCommandDescription(reply.command);
@@ -188,7 +193,8 @@ struct GuiStateQualification {
                 assert(description.find(L"snapshot") == std::wstring::npos);
             } else {
                 assert(description.find(L"signed snapshot") != std::wstring::npos);
-                assert(description.find(L"independent historical validation") != std::wstring::npos);
+                assert(description.find(L"independent historical validation") !=
+                       std::wstring::npos);
             }
             // Verify the pre-confirmation boundary without opening an approval
             // dialog or dispatching a synchronization change.
@@ -197,7 +203,8 @@ struct GuiStateQualification {
         }
     }
 
-    static void CheckResetPersistence(const std::filesystem::path& root, const MonitoringReply& reply) {
+    static void CheckResetPersistence(const std::filesystem::path& root,
+                                      const MonitoringReply& reply) {
         const auto dir = root / "pending-reset";
         std::filesystem::create_directory(dir);
         NodeGuiApp app(dir);
@@ -213,8 +220,8 @@ struct GuiStateQualification {
         assert(!restarted.EnrollPortalControl(reply, rejection));
         assert(!restarted.AuthorizeRemoteCommand(reply.command, rejection));
         const auto path = dir / "remote-trust.dat";
-        HANDLE locked = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
-            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        HANDLE locked = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
         assert(locked != INVALID_HANDLE_VALUE);
         assert(!restarted.CompleteRemotePairReset());
         assert(restarted.portal_pair_reset_requested_.load());
@@ -231,9 +238,12 @@ struct GuiStateQualification {
 
 void SaveLegacyTrust(const std::filesystem::path& path, const PortalTrustState& state) {
     std::string text = "VELD_PORTAL_TRUST_V1\n" + std::to_string(state.device_id) + "\n" +
-        std::to_string(state.last_sequence) + "\n" + state.key_id + "\n" + state.key_x + "\n" + state.key_y + "\n";
-    DATA_BLOB plain{static_cast<DWORD>(text.size()), reinterpret_cast<BYTE*>(text.data())}, encrypted{}, entropy = PortalTrustEntropy();
-    assert(CryptProtectData(&plain, L"Veld portal command trust", &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &encrypted));
+                       std::to_string(state.last_sequence) + "\n" + state.key_id + "\n" +
+                       state.key_x + "\n" + state.key_y + "\n";
+    DATA_BLOB plain{static_cast<DWORD>(text.size()), reinterpret_cast<BYTE*>(text.data())},
+        encrypted{}, entropy = PortalTrustEntropy();
+    assert(CryptProtectData(&plain, L"Veld portal command trust", &entropy, nullptr, nullptr,
+                            CRYPTPROTECT_UI_FORBIDDEN, &encrypted));
     assert(veld::node_gui::WriteStateFile(path, encrypted.pbData, encrypted.cbData));
     SecureZeroMemory(encrypted.pbData, encrypted.cbData);
     LocalFree(encrypted.pbData);
@@ -250,7 +260,8 @@ int main(int argc, char** argv) {
     PortalTrustState current, next;
     std::string rejection;
     const auto now = static_cast<uint64_t>(std::time(nullptr));
-    assert(EvaluatePortalCommandTrust(reply.command, current, now, next, rejection) == PortalCommandTrustVerdict::NewPairing);
+    assert(EvaluatePortalCommandTrust(reply.command, current, now, next, rejection) ==
+           PortalCommandTrustVerdict::NewPairing);
     assert(!next.unattended);
     current = next;
     current.unattended = true;
@@ -271,17 +282,22 @@ int main(int argc, char** argv) {
     GuiStateQualification::CheckControlActions(root);
     GuiStateQualification::CheckSyncModeActions(root);
     GuiStateQualification::CheckResetPersistence(root, reply);
-    assert(EvaluatePortalCommandTrust(reply.command, reloaded, now, next, rejection) == PortalCommandTrustVerdict::Reject);
+    assert(EvaluatePortalCommandTrust(reply.command, reloaded, now, next, rejection) ==
+           PortalCommandTrustVerdict::Reject);
     assert(rejection.find("Replay") != std::string::npos);
     current = {};
     auto changed = reply.command;
     changed.unlock.ciphertext[3] = changed.unlock.ciphertext[3] == 'A' ? 'B' : 'A';
-    assert(EvaluatePortalCommandTrust(changed, current, now, next, rejection) == PortalCommandTrustVerdict::Reject);
-    assert(EvaluatePortalCommandTrust(reply.command, current, reply.command.expires_at + 1, next, rejection) == PortalCommandTrustVerdict::Reject);
+    assert(EvaluatePortalCommandTrust(changed, current, now, next, rejection) ==
+           PortalCommandTrustVerdict::Reject);
+    assert(EvaluatePortalCommandTrust(reply.command, current, reply.command.expires_at + 1, next,
+                                      rejection) == PortalCommandTrustVerdict::Reject);
     changed = reply.command;
     changed.device_id = 18;
-    assert(EvaluatePortalCommandTrust(changed, current, now, next, rejection) == PortalCommandTrustVerdict::Reject);
+    assert(EvaluatePortalCommandTrust(changed, current, now, next, rejection) ==
+           PortalCommandTrustVerdict::Reject);
     const auto before = ReadTextBounded(path);
     assert(before.find("VELD_PORTAL_TRUST") == std::string::npos);
-    std::cout << "PASS: pairing grants remote control without prompts; six signed actions, full and snapshot signatures and confirmation boundaries, restart, legacy migration, corrupt trust, storage failure, revocation, replay, expiry, tamper, and device binding\n";
+    std::cout
+        << "PASS: pairing grants remote control without prompts; six signed actions, full and snapshot signatures and confirmation boundaries, restart, legacy migration, corrupt trust, storage failure, revocation, replay, expiry, tamper, and device binding\n";
 }

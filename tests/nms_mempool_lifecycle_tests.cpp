@@ -17,7 +17,8 @@ namespace {
 unsigned checks = 0;
 void Check(bool ok, const char* label) {
     ++checks;
-    if (!ok) throw std::runtime_error(label);
+    if (!ok)
+        throw std::runtime_error(label);
 }
 UTXO Funding(Blockchain& chain, const RealKeyPair& signer, uint8_t tag) {
     UTXO u;
@@ -63,19 +64,23 @@ Block Candidate(Blockchain& chain, const RealKeyPair& signer,
     b.height = chain.Height() + 1;
     b.header = Claim(chain, b.height * 101);
     uint64_t fees = 0;
-    for (const auto& entry : entries) fees += entry.second;
-    b.transactions.push_back(Blockchain::BuildCanonicalCoinbase(
-        b.height, chain.TotalSupplyUnits(), fees, signer.GetP2PKHScript()));
-    for (const auto& entry : entries) b.transactions.push_back(entry.first);
+    for (const auto& entry : entries)
+        fees += entry.second;
+    b.transactions.push_back(Blockchain::BuildCanonicalCoinbase(b.height, chain.TotalSupplyUnits(),
+                                                                fees, signer.GetP2PKHScript()));
+    for (const auto& entry : entries)
+        b.transactions.push_back(entry.first);
     if (b.height % COMINE_WINDOW_BLOCKS == 0) {
         auto inputs = chain.GetUTXOsForScript(AddressToScript(POOL_ADDRESS));
         uint64_t value = 0;
-        for (const auto& input : inputs) value += input.value;
-        const auto outputs = chain.ComputeExpectedPoolOutputs(
-            b.header.prev_block_hash, value, b.height);
+        for (const auto& input : inputs)
+            value += input.value;
+        const auto outputs =
+            chain.ComputeExpectedPoolOutputs(b.header.prev_block_hash, value, b.height);
         if (!outputs.empty()) {
             std::sort(inputs.begin(), inputs.end(), [](const UTXO& a, const UTXO& z) {
-                return a.tx_hash != z.tx_hash ? a.tx_hash < z.tx_hash : a.output_index < z.output_index;
+                return a.tx_hash != z.tx_hash ? a.tx_hash < z.tx_hash
+                                              : a.output_index < z.output_index;
             });
             Transaction payout;
             for (const auto& source : inputs) {
@@ -92,20 +97,27 @@ Block Candidate(Blockchain& chain, const RealKeyPair& signer,
     b.UpdateMerkleRoot();
     return b;
 }
-bool Contains(const std::vector<std::pair<Transaction, uint64_t>>& rows,
-              const Transaction& tx) {
-    for (const auto& row : rows) if (row.first.GetTxID() == tx.GetTxID()) return true;
+bool Contains(const std::vector<std::pair<Transaction, uint64_t>>& rows, const Transaction& tx) {
+    for (const auto& row : rows)
+        if (row.first.GetTxID() == tx.GetTxID())
+            return true;
     return false;
 }
 }
 int main() {
     try {
         Blockchain chain;
-        Check(chain.AddBlockDirect(CreateGenesisBlock(), true, false, false,
-            mining::PowAdmissionContext::Internal()).IsAccepted(), "genesis");
+        Check(chain
+                  .AddBlockDirect(CreateGenesisBlock(), true, false, false,
+                                  mining::PowAdmissionContext::Internal())
+                  .IsAccepted(),
+              "genesis");
         const auto signer = GenerateKeyPair(false);
-        Check(chain.AddBlockDirect(Candidate(chain, signer), false, false, false,
-            mining::PowAdmissionContext::Internal()).IsAccepted(), "first block");
+        Check(chain
+                  .AddBlockDirect(Candidate(chain, signer), false, false, false,
+                                  mining::PowAdmissionContext::Internal())
+                  .IsAccepted(),
+              "first block");
         Mempool pool;
         const auto old_input = Funding(chain, signer, 0x81);
         const auto old = Spend(old_input, signer, Claim(chain, 111));
@@ -113,29 +125,33 @@ int main() {
         Check(mining::NeedsNmsSubmission(chain, pool, script, chain.TipCopy().GetHash()),
               "initial wallet needs a near-miss entry");
         const auto revision = pool.NmsTemplateRevision();
-        Check(pool.Add(old, MIN_TX_FEE, chain.Height(), chain) ==
-            Mempool::AddResult::ACCEPTED, "current signed claim admission");
-        Check(pool.NmsTemplateRevision() != revision,
-              "accepted near-miss wakes a mining template");
+        Check(pool.Add(old, MIN_TX_FEE, chain.Height(), chain) == Mempool::AddResult::ACCEPTED,
+              "current signed claim admission");
+        Check(pool.NmsTemplateRevision() != revision, "accepted near-miss wakes a mining template");
         Check(!mining::NeedsNmsSubmission(chain, pool, script, chain.TipCopy().GetHash()),
               "pending peer or local claim blocks a duplicate");
         Check(Contains(pool.GetBlockTransactionsWithFees(20, MAX_BLOCK_SIZE, &chain), old),
-            "current claim selectable");
+              "current claim selectable");
         Check(chain.ValidateNmsLocking(*ExtractNmsFromTx(old), chain.Height() + 1) ==
-            NmsValidationDisposition::Valid, "current claim consensus context");
+                  NmsValidationDisposition::Valid,
+              "current claim consensus context");
 
-        Check(chain.AddBlockDirect(Candidate(chain, signer), false, false, false,
-            mining::PowAdmissionContext::Internal()).IsAccepted(), "competing block");
+        Check(chain
+                  .AddBlockDirect(Candidate(chain, signer), false, false, false,
+                                  mining::PowAdmissionContext::Internal())
+                  .IsAccepted(),
+              "competing block");
         Check(chain.ValidateNmsLocking(*ExtractNmsFromTx(old), chain.Height() + 1) ==
-            NmsValidationDisposition::ConsensusInvalid, "old claim expires at next tip");
+                  NmsValidationDisposition::ConsensusInvalid,
+              "old claim expires at next tip");
         Check(mining::NeedsNmsSubmission(chain, pool, script, chain.TipCopy().GetHash()),
               "expired unconfirmed entry can be replaced in the same window");
         const auto fresh = Spend(Funding(chain, signer, 0x82), signer, Claim(chain, 222));
         const auto payment = Spend(Funding(chain, signer, 0x83), signer);
-        Check(pool.Add(fresh, MIN_TX_FEE, chain.Height(), chain) ==
-            Mempool::AddResult::ACCEPTED, "fresh claim admission");
-        Check(pool.Add(payment, MIN_TX_FEE, chain.Height(), chain) ==
-            Mempool::AddResult::ACCEPTED, "payment admission");
+        Check(pool.Add(fresh, MIN_TX_FEE, chain.Height(), chain) == Mempool::AddResult::ACCEPTED,
+              "fresh claim admission");
+        Check(pool.Add(payment, MIN_TX_FEE, chain.Height(), chain) == Mempool::AddResult::ACCEPTED,
+              "payment admission");
         UTXO child_input;
         child_input.tx_hash = old.GetTxID();
         child_input.output_index = 2;
@@ -145,16 +161,16 @@ int main() {
         pool.InsertUncheckedForTest(child, MIN_TX_FEE, true);
         const auto selected = pool.GetBlockTransactionsWithFees(20, MAX_BLOCK_SIZE, &chain);
         Check(Contains(selected, fresh) && Contains(selected, payment),
-            "current claim and payment retained");
+              "current claim and payment retained");
         Check(!Contains(selected, child), "unconfirmed child withheld");
 #ifdef EXPECT_STALE_NMS_DEFECT
         Check(Contains(selected, old), "baseline reproduces expired selection");
         Check(pool.RemoveStale(chain) == 0, "baseline maintenance misses expired claim");
-        const auto rejected = chain.AddBlockDirect(Candidate(chain, signer, selected),
-            false, false, false, mining::PowAdmissionContext::Internal());
+        const auto rejected = chain.AddBlockDirect(Candidate(chain, signer, selected), false, false,
+                                                   false, mining::PowAdmissionContext::Internal());
         Check(rejected.Disposition() == Blockchain::BlockAdmissionDisposition::ConsensusInvalid &&
-            Blockchain::GetLastRejectTag() == "nms_validation_failed",
-            "baseline completed candidate rejected for expired claim");
+                  Blockchain::GetLastRejectTag() == "nms_validation_failed",
+              "baseline completed candidate rejected for expired claim");
 #else
         Mempool relay;
 #ifdef EXPECT_STALE_RELAY_DEFECT
@@ -163,27 +179,27 @@ int main() {
         const auto expired_result = Mempool::AddResult::EXPIRED_NMS;
 #endif
         for (unsigned retry = 0; retry < 12; ++retry)
-            Check(relay.Add(old, MIN_TX_FEE, chain.Height(), chain) ==
-                expired_result,
-                "expired relay is not an invalid-transaction offence");
+            Check(relay.Add(old, MIN_TX_FEE, chain.Height(), chain) == expired_result,
+                  "expired relay is not an invalid-transaction offence");
         Check(!relay.Contains(old.GetTxID()), "expired relay never admitted");
         Check(!relay.GetSpender(old_input.tx_hash, old_input.output_index),
-            "expired relay never reserves funds");
+              "expired relay never reserves funds");
         auto forged = old;
         forged.inputs[0].script_sig.back() ^= 1;
         forged.InvalidateTxIDCache();
-        Check(relay.Add(forged, MIN_TX_FEE, chain.Height(), chain) ==
-            Mempool::AddResult::INVALID, "forged expired claim still invalid");
+        Check(relay.Add(forged, MIN_TX_FEE, chain.Height(), chain) == Mempool::AddResult::INVALID,
+              "forged expired claim still invalid");
         auto unknown_header = Claim(chain, 333);
         unknown_header.prev_block_hash.fill(0xa4);
         const auto unknown = Spend(old_input, signer, unknown_header);
-        Check(relay.Add(unknown, MIN_TX_FEE, chain.Height(), chain) ==
-            Mempool::AddResult::INVALID, "unknown parent is not expiry");
+        Check(relay.Add(unknown, MIN_TX_FEE, chain.Height(), chain) == Mempool::AddResult::INVALID,
+              "unknown parent is not expiry");
         auto wrong_target = ExtractNmsFromTx(old)->header;
         wrong_target.bits ^= 1;
         const auto malformed = Spend(old_input, signer, wrong_target);
         Check(relay.Add(malformed, MIN_TX_FEE, chain.Height(), chain) ==
-            Mempool::AddResult::INVALID, "incorrect old target still invalid");
+                  Mempool::AddResult::INVALID,
+              "incorrect old target still invalid");
         compat::InitNetwork();
         {
             Mempool peer_pool;
@@ -198,41 +214,41 @@ int main() {
 #ifdef EXPECT_STALE_RELAY_DEFECT
             Check(server.IsBanned(peer_ip), "baseline reproduces stale relay ban");
 #else
-            Check(!server.IsBanned(peer_ip) &&
-                server.TestViolationScore(peer_ip) == 0,
-                "repeated expired relay has zero peer penalty");
+            Check(!server.IsBanned(peer_ip) && server.TestViolationScore(peer_ip) == 0,
+                  "repeated expired relay has zero peer penalty");
             Check(net::NodeServer::MempoolRejectBanScore(expired_result) == 0,
-                "expiration carries no ban score");
+                  "expiration carries no ban score");
 #endif
             Check(!peer_pool.Contains(old.GetTxID()), "peer expiry never admitted");
             const auto invalid_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
             Check(compat::IsValidSocket(invalid_fd), "invalid peer fixture socket");
             const std::string invalid_ip = "198.51.100.69";
             net::Connection invalid_peer(invalid_fd, invalid_ip, 32069, true);
-            server.TestDispatchPeerMessage(invalid_peer,
-                P2PMessage(MAINNET_MAGIC, MessageType::TX, malformed.Serialize()));
+            server.TestDispatchPeerMessage(
+                invalid_peer, P2PMessage(MAINNET_MAGIC, MessageType::TX, malformed.Serialize()));
             Check(server.TestViolationScore(invalid_ip) == 10,
-                "invalid target still penalized through peer handler");
+                  "invalid target still penalized through peer handler");
         }
         Check(!Contains(selected, old), "expired claim excluded before maintenance");
         const auto direct = pool.GetBlockTransactions(20, MAX_BLOCK_SIZE, &chain);
         for (const auto& tx : direct)
-            Check(tx.GetTxID() != old.GetTxID(), "transaction-only selector excludes expired claim");
+            Check(tx.GetTxID() != old.GetTxID(),
+                  "transaction-only selector excludes expired claim");
         Check(pool.RemoveStale(chain) == 2, "maintenance removes expired claim and descendant");
         Check(!pool.Contains(old.GetTxID()) && !pool.Contains(child.GetTxID()),
-            "expired graph removed");
+              "expired graph removed");
         Check(pool.Contains(fresh.GetTxID()) && pool.Contains(payment.GetTxID()),
-            "current entries survive maintenance");
+              "current entries survive maintenance");
         Check(!pool.GetSpender(old_input.tx_hash, old_input.output_index),
-            "expired claim releases input reservation");
+              "expired claim releases input reservation");
         Check(pool.RemoveStale(chain) == 0, "maintenance idempotent");
         const auto candidate = Candidate(chain, signer, selected);
-        const auto accepted = chain.AddBlockDirect(candidate,
-            false, false, false, mining::PowAdmissionContext::Internal());
+        const auto accepted = chain.AddBlockDirect(candidate, false, false, false,
+                                                   mining::PowAdmissionContext::Internal());
         Check(accepted.IsAccepted(), "same consensus accepts corrected candidate");
         pool.RemoveConfirmed(candidate);
         Check(!pool.Contains(fresh.GetTxID()) && !pool.Contains(payment.GetTxID()),
-            "confirmed entries removed");
+              "confirmed entries removed");
         Check(chain.Height() == 3, "chain advances through expired claim");
         chain.NmsReset();
         chain.RebuildNmsTallyToHeight_(chain.Height());
@@ -252,22 +268,32 @@ int main() {
         Mempool simultaneous;
         const auto first = Spend(Funding(chain, signer, 0x92), signer, Claim(chain, 555));
         const auto second = Spend(Funding(chain, signer, 0x93), signer, Claim(chain, 666));
-        Check(simultaneous.Add(first, MIN_TX_FEE, chain.Height(), chain) == Mempool::AddResult::ACCEPTED &&
-                  simultaneous.Add(second, MIN_TX_FEE, chain.Height(), chain) == Mempool::AddResult::ACCEPTED,
+        Check(simultaneous.Add(first, MIN_TX_FEE, chain.Height(), chain) ==
+                      Mempool::AddResult::ACCEPTED &&
+                  simultaneous.Add(second, MIN_TX_FEE, chain.Height(), chain) ==
+                      Mempool::AddResult::ACCEPTED,
               "two machines can relay independently valid claims");
         const auto one = simultaneous.GetBlockTransactionsWithFees(20, MAX_BLOCK_SIZE, &chain);
         Check(one.size() == 1 && (Contains(one, first) || Contains(one, second)),
               "template includes only one fee-paying entry per wallet");
-        Check(chain.AddBlockDirect(Candidate(chain, signer, one), false, false, false,
-                  mining::PowAdmissionContext::Internal()).IsAccepted(),
+        Check(chain
+                  .AddBlockDirect(Candidate(chain, signer, one), false, false, false,
+                                  mining::PowAdmissionContext::Internal())
+                  .IsAccepted(),
               "one selected entry confirms under unchanged consensus");
         while (chain.Height() < 99)
-            Check(chain.AddBlockDirect(Candidate(chain, signer), false, false, false,
-                      mining::PowAdmissionContext::Internal()).IsAccepted(), "advance window fixture");
+            Check(chain
+                      .AddBlockDirect(Candidate(chain, signer), false, false, false,
+                                      mining::PowAdmissionContext::Internal())
+                      .IsAccepted(),
+                  "advance window fixture");
         Check(!chain.NmsNeedsSubmission(script, chain.TipCopy().GetHash()),
               "confirmed entry remains sufficient through payout boundary");
-        Check(chain.AddBlockDirect(Candidate(chain, signer), false, false, false,
-                  mining::PowAdmissionContext::Internal()).IsAccepted(), "window boundary");
+        Check(chain
+                  .AddBlockDirect(Candidate(chain, signer), false, false, false,
+                                  mining::PowAdmissionContext::Internal())
+                  .IsAccepted(),
+              "window boundary");
         Check(chain.NmsGetCredit(BytesToHex(script)) == 0 &&
                   chain.NmsNeedsSubmission(script, chain.TipCopy().GetHash()),
               "new window clears eligibility for one new entry");

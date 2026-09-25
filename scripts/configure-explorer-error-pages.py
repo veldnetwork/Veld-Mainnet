@@ -5,6 +5,7 @@ The generated snippet belongs in the Explorer server block; API handling,
 rate budgets, caches and the wallet server remain unchanged. Review and test
 both outputs before installation. This script does not reload any service.
 """
+
 import argparse
 from pathlib import Path
 
@@ -48,9 +49,12 @@ def configure_site(site):
         old = '        proxy_intercept_errors off;'
         if location.count(old) != 1:
             raise ValueError('Unexpected intercept configuration in ' + selector)
-        location = location.replace(old, '''        proxy_intercept_errors on;
+        location = location.replace(
+            old,
+            '''        proxy_intercept_errors on;
         error_page 429 = @explorer_page_throttled;
-        error_page 502 503 504 = @explorer_page_busy;''')
+        error_page 502 503 504 = @explorer_page_busy;''',
+        )
         explorer = explorer[:begin] + location + explorer[finish:]
     return site[:start] + explorer + site[end:]
 

@@ -69,15 +69,17 @@ int main(int argc, char** argv) {
                     throw std::runtime_error("schema");
                 if (!verification_workspace)
                     verification_workspace.emplace();
-                const auto proof = mining::VeldHashWithDataset<true>(
-                    bytes, height, network, &*verification_workspace);
+                const auto proof = mining::VeldHashWithDataset<true>(bytes, height, network,
+                                                                     &*verification_workspace);
                 if (!mining::g_veldhash_last_dataset_ok())
                     throw std::runtime_error("resource unavailable");
                 std::cout << "OK " << HashToHex(proof) << ' '
                           << HashToHex(header.GetTemplateWorkIdentity());
                 if (command == "inspect")
-                    std::cout << ' ' << (proof < network.bytes ? "block" :
-                                        IsNmsProofInRange(proof, network) ? "near_miss" : "none");
+                    std::cout << ' '
+                              << (proof < network.bytes               ? "block"
+                                  : IsNmsProofInRange(proof, network) ? "near_miss"
+                                                                      : "none");
                 std::cout << std::endl;
             } else if (command == "scan") {
                 if (!(input >> target_text >> start_text >> count_text) || (input >> extra))

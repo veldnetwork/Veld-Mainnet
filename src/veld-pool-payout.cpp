@@ -21,9 +21,9 @@ int main(int argc, char** argv) {
         if (argc == 2 && std::string(argv[1]) == "--policy") {
             auto genesis = HexToBytes(GENESIS_HASH);
             std::reverse(genesis.begin(), genesis.end());
-            std::cout << "{\"chain\":\"" << BytesToHex(genesis)
-                      << "\",\"minimum_fee_units\":\"" << MIN_TX_FEE
-                      << "\",\"dust_threshold_units\":\"" << DUST_THRESHOLD_UNITS << "\"}\n";
+            std::cout << "{\"chain\":\"" << BytesToHex(genesis) << "\",\"minimum_fee_units\":\""
+                      << MIN_TX_FEE << "\",\"dust_threshold_units\":\"" << DUST_THRESHOLD_UNITS
+                      << "\"}\n";
             return 0;
         }
         Require(argc == 3, "requires private pool and operator-fee seed paths");
@@ -115,8 +115,8 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < tx.inputs.size(); ++i) {
             ScriptInterpreter verifier;
             Require(verifier.Execute(tx.inputs[i].script_sig,
-                                     fee_input[i] ? fee_script : pool_script,
-                                     tx, static_cast<uint32_t>(i)),
+                                     fee_input[i] ? fee_script : pool_script, tx,
+                                     static_cast<uint32_t>(i)),
                     "signature self verification");
         }
         const auto bytes = tx.Serialize();

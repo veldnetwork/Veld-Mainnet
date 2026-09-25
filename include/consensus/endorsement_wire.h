@@ -17,7 +17,8 @@ struct EndorsementWire {
 };
 
 inline bool EndorsementLowerHex(std::string_view text, size_t size) {
-    if (text.size() != size) return false;
+    if (text.size() != size)
+        return false;
     for (char c : text)
         if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
             return false;
@@ -36,19 +37,22 @@ inline bool ParseEndorsementWire(std::string_view data, EndorsementWire& out) {
     constexpr std::string_view legacy = "VELD_VALIDATOR|ENDORSE|";
     constexpr std::string_view current = "VELD_VALIDATOR|ENDORSE2|";
     const bool attributed = data.starts_with(current);
-    if (!attributed && !data.starts_with(legacy)) return false;
+    if (!attributed && !data.starts_with(legacy))
+        return false;
     data.remove_prefix(attributed ? current.size() : legacy.size());
     std::array<std::string_view, 4> fields{};
     const size_t count = attributed ? 4 : 3;
     for (size_t i = 0; i < count; ++i) {
         const size_t end = data.find('|');
-        if ((i + 1 == count) != (end == std::string_view::npos)) return false;
+        if ((i + 1 == count) != (end == std::string_view::npos))
+            return false;
         fields[i] = end == std::string_view::npos ? data : data.substr(0, end);
-        if (end != std::string_view::npos) data.remove_prefix(end + 1);
+        if (end != std::string_view::npos)
+            data.remove_prefix(end + 1);
     }
-    if (!ParseCanonicalUint64Text(fields[0], out.height) ||
-        !EndorsementLowerHex(fields[1], 64) ||
-        !EndorsementLowerHex(fields[count - 1], 6618)) return false;
+    if (!ParseCanonicalUint64Text(fields[0], out.height) || !EndorsementLowerHex(fields[1], 64) ||
+        !EndorsementLowerHex(fields[count - 1], 6618))
+        return false;
     if (attributed) {
         constexpr std::string_view alphabet =
             "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";

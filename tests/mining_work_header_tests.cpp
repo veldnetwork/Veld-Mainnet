@@ -37,8 +37,7 @@ int main() {
     for (uint64_t now : {1001ULL, 1002ULL, 1600ULL, 2200ULL}) {
         const auto snapshot = slow.Read();
         if (!slow.RefreshTimestamp(snapshot.generation, now) ||
-            slow.Read().header.timestamp != now ||
-            snapshot.header.timestamp >= now)
+            slow.Read().header.timestamp != now || snapshot.header.timestamp >= now)
             return 1;
     }
 
@@ -68,8 +67,7 @@ int main() {
     original.timestamp = UINT64_MAX - 1;
     MiningWorkHeader boundary(original);
     if (!boundary.RefreshTimestamp(0, UINT64_MAX) || boundary.RefreshTimestamp(1, 0) ||
-        boundary.RefreshTimestamp(1, UINT64_MAX) ||
-        boundary.Read().header.timestamp != UINT64_MAX)
+        boundary.RefreshTimestamp(1, UINT64_MAX) || boundary.Read().header.timestamp != UINT64_MAX)
         return 1;
     if (failed)
         return 1;

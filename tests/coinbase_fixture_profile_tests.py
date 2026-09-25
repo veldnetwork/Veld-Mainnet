@@ -1,4 +1,5 @@
 """Compile the supply-cap fixture boundary in private and public profiles."""
+
 import argparse
 import json
 from pathlib import Path
@@ -19,7 +20,8 @@ def main():
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=False)
     source = output / "coinbase-fixture-profile.cpp"
-    source.write_text('''#include "node/node.h"
+    source.write_text(
+        '''#include "node/node.h"
 #include "core/version.h"
 #include <concepts>
 #include <string_view>
@@ -40,11 +42,18 @@ static_assert(veld::ASERT_ACTIVATION_HEIGHT == 0);
 static_assert(veld::SECURITY_STATE_MIGRATION_HEIGHT == 0);
 #endif
 #endif
-''', encoding="utf-8")
-    private = ["VELD_TEST_CHAIN_BUILD", "VELD_TEST_HOOKS",
-               "VELD_DSTATE_QUALIFICATION", "VELD_ASERT_TESTCHAIN",
-               "VELD_TEST_BRANCH_CONTEXT", "VELD_TEST_STAKE_OUTPOINT_BACKING",
-               "VELD_PROTOCOL_UPGRADE_TEST_HEIGHT=3360"]
+''',
+        encoding="utf-8",
+    )
+    private = [
+        "VELD_TEST_CHAIN_BUILD",
+        "VELD_TEST_HOOKS",
+        "VELD_DSTATE_QUALIFICATION",
+        "VELD_ASERT_TESTCHAIN",
+        "VELD_TEST_BRANCH_CONTEXT",
+        "VELD_TEST_STAKE_OUTPOINT_BACKING",
+        "VELD_PROTOCOL_UPGRADE_TEST_HEIGHT=3360",
+    ]
     cases = [("private-fixture", private, True, True)]
     for profile in ("VELD_PUBLIC_MAINNET", "VELD_PUBLIC_TESTNET"):
         flags = ["VELD_PUBLIC_RELEASE", profile]
@@ -52,19 +61,38 @@ static_assert(veld::SECURITY_STATE_MIGRATION_HEIGHT == 0);
         cases.append((profile.lower() + "-reject-fixture", flags + private, True, False))
     results = []
     for name, flags, visible, allowed in cases:
-        command = [args.compiler, "-std=c++20", "-fsyntax-only", "-DVELD_MAINNET_POW",
-                   "-DVELD_USE_LEVELDB", "-DEXPECT_FIXTURE=" + str(int(visible)),
-                   '-DEXPECTED_CLIENT_VERSION="' + version.group(1) + '"',
-                   "-I" + str(root / "include"), "-I" + str(root / "vendor/pqc"),
-                   *("-D" + flag for flag in flags), str(source)]
-        result = subprocess.run(command, capture_output=True, text=True,
-                                encoding="utf-8", errors="replace", timeout=180)
+        command = [
+            args.compiler,
+            "-std=c++20",
+            "-fsyntax-only",
+            "-DVELD_MAINNET_POW",
+            "-DVELD_USE_LEVELDB",
+            "-DEXPECT_FIXTURE=" + str(int(visible)),
+            '-DEXPECTED_CLIENT_VERSION="' + version.group(1) + '"',
+            "-I" + str(root / "include"),
+            "-I" + str(root / "vendor/pqc"),
+            *("-D" + flag for flag in flags),
+            str(source),
+        ]
+        result = subprocess.run(
+            command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180
+        )
         (output / (name + ".log")).write_text(result.stdout + result.stderr, encoding="utf-8")
         passed = (result.returncode == 0) == allowed
         if not allowed:
-            passed = passed and "cannot be combined with consensus test or bypass macros" in result.stderr
-        results.append(dict(case=name, command=command, exit_code=result.returncode,
-                            expected_compile=allowed, passed=passed))
+            passed = (
+                passed
+                and "cannot be combined with consensus test or bypass macros" in result.stderr
+            )
+        results.append(
+            dict(
+                case=name,
+                command=command,
+                exit_code=result.returncode,
+                expected_compile=allowed,
+                passed=passed,
+            )
+        )
         (output / "results.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
         if not passed:
             raise AssertionError(name + ": " + result.stderr[-2000:])

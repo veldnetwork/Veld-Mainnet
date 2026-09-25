@@ -26,8 +26,8 @@ Hash256 Filled(uint8_t value) {
     return hash;
 }
 
-work_admission::AdmissionCoordinator::Configuration OpenConfiguration(
-        const work_admission::AdmissionCoordinator& coordinator) {
+work_admission::AdmissionCoordinator::Configuration
+OpenConfiguration(const work_admission::AdmissionCoordinator& coordinator) {
     const uint64_t close_epoch_before = coordinator.ObserveCloseEpoch();
     work_admission::AdmissionCoordinator::Configuration configuration;
     auto& p = configuration.prerequisites;
@@ -48,8 +48,8 @@ work_admission::AdmissionCoordinator::Configuration OpenConfiguration(
     p.genesis_hash = Filled(0x11);
     p.profile_digest = Filled(0x22);
     configuration.permitted_paths.fill(true);
-    work_admission::AdmissionCoordinator::BindCloseEpochSnapshot(
-        configuration, close_epoch_before, coordinator.ObserveCloseEpoch());
+    work_admission::AdmissionCoordinator::BindCloseEpochSnapshot(configuration, close_epoch_before,
+                                                                 coordinator.ObserveCloseEpoch());
     return configuration;
 }
 
@@ -63,7 +63,7 @@ work_admission::Subject FinalitySubject() {
     return subject;
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     namespace fq = ::veld::finality::qc;
@@ -84,18 +84,15 @@ int main() {
     vote.pubkey_hex.assign(dilithium::PUBKEY_BYTES * 2, '0');
     vote.signature.assign(dilithium::SIG_MAX_BYTES, 0);
     const auto wire = fq::EncodeSignedVoteWire(vote);
-    Check(wire.size() == fq::SIGNED_VOTE_WIRE_BYTES,
-          "canonical standalone finality wire encoded");
+    Check(wire.size() == fq::SIGNED_VOTE_WIRE_BYTES, "canonical standalone finality wire encoded");
 
-    const auto suffix = std::to_string(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    const auto datadir = std::filesystem::temp_directory_path() /
-        ("veld-finality-work-lock-" + suffix);
+    const auto suffix = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto datadir =
+        std::filesystem::temp_directory_path() / ("veld-finality-work-lock-" + suffix);
     {
         VeldNode node(MainnetConfig(), datadir.string());
         const auto started = std::chrono::steady_clock::now();
-        const auto result =
-            node.TestVerifyFinalityVoteWireWithHeldTransition(wire);
+        const auto result = node.TestVerifyFinalityVoteWireWithHeldTransition(wire);
         const auto elapsed = std::chrono::steady_clock::now() - started;
         Check(result == net::NodeServer::FinalityVoteVerifyResult::RejectedState,
               "caller-held verifier reaches deterministic state result");
@@ -104,52 +101,40 @@ int main() {
     }
     std::error_code cleanup_error;
     std::filesystem::remove_all(datadir, cleanup_error);
-    Check(!cleanup_error && !std::filesystem::exists(datadir),
-          "fixture datadir removed");
+    Check(!cleanup_error && !std::filesystem::exists(datadir), "fixture datadir removed");
 
     uint8_t next_token = 1;
     Coordinator coordinator(
-        Coordinator::Limits{std::chrono::milliseconds(500),
-                            std::chrono::milliseconds(1200), 4, 8},
+        Coordinator::Limits{std::chrono::milliseconds(500), std::chrono::milliseconds(1200), 4, 8},
         [&](Coordinator::TokenBytes& token) {
             token.fill(next_token++);
             return true;
         });
     const auto configuration = OpenConfiguration(coordinator);
-    Check(coordinator.Open(configuration).opened,
-          "finality coordinator opens explicitly");
+    Check(coordinator.Open(configuration).opened, "finality coordinator opens explicitly");
     const auto subject = FinalitySubject();
-    auto issued = coordinator.IssueRemoteSigningLease(
-        work_admission::Path::FinalityVote, subject, std::nullopt,
-        false, std::chrono::milliseconds(1000));
-    Check(issued && issued.grant,
-          "remote finality capability issued before close");
-    const auto closing = coordinator.BeginClose(
-        work_admission::Refusal::BindingMismatch);
-    Check(!closing.fully_closed && coordinator.GetSnapshot().phase ==
-              Coordinator::Phase::Closing,
+    auto issued =
+        coordinator.IssueRemoteSigningLease(work_admission::Path::FinalityVote, subject,
+                                            std::nullopt, false, std::chrono::milliseconds(1000));
+    Check(issued && issued.grant, "remote finality capability issued before close");
+    const auto closing = coordinator.BeginClose(work_admission::Refusal::BindingMismatch);
+    Check(!closing.fully_closed && coordinator.GetSnapshot().phase == Coordinator::Phase::Closing,
           "acquired-first finality capability holds bounded closing phase");
     auto consumed = coordinator.ConsumeRemoteSigningLease(
-        issued.grant->token, work_admission::Path::FinalityVote, subject,
-        issued.grant->binding);
-    Check(consumed && consumed.lease,
-          "acquired-first finality capability consumes while closing");
-    Check(consumed.lease->ClaimForSink(),
-          "acquired-first finality sink claims exactly once");
-    Check(!consumed.lease->ClaimForSink(),
-          "claimed finality sink cannot be replayed");
+        issued.grant->token, work_admission::Path::FinalityVote, subject, issued.grant->binding);
+    Check(consumed && consumed.lease, "acquired-first finality capability consumes while closing");
+    Check(consumed.lease->ClaimForSink(), "acquired-first finality sink claims exactly once");
+    Check(!consumed.lease->ClaimForSink(), "claimed finality sink cannot be replayed");
     consumed.lease.reset();
     Check(coordinator.GetSnapshot().phase == Coordinator::Phase::Closed,
           "finality close completes after acquired-first sink releases");
 
     const auto close_wins = coordinator.IssueRemoteSigningLease(
-        work_admission::Path::FinalityVote, subject, issued.grant->binding,
-        false, std::chrono::milliseconds(1000));
-    Check(!close_wins &&
-              close_wins.error == Coordinator::Error::Closed,
+        work_admission::Path::FinalityVote, subject, issued.grant->binding, false,
+        std::chrono::milliseconds(1000));
+    Check(!close_wins && close_wins.error == Coordinator::Error::Closed,
           "close-first finality acquisition emits no capability");
 
-    std::cout << "PASS finality_work_admission_lock_tests checks="
-              << checks << "\n";
+    std::cout << "PASS finality_work_admission_lock_tests checks=" << checks << "\n";
     return 0;
 }
