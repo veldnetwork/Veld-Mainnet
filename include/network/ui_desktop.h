@@ -704,9 +704,9 @@ table{min-width:100%}
 /* Charcoal actions, including primary wallet operations. */
 .btn-em{background:linear-gradient(#353940,#292c31);color:#f2f3f5;border:1px solid #646b76;box-shadow:inset 0 1px #ffffff12}.btn-em:hover{background:#3b4048;box-shadow:none}.btn-em:active{background:#24272c;box-shadow:none}.btn-ghost{background:#202328;border-color:#4c525b;color:#eceef0}.btn-ghost:hover,.btn-ghost:active{background:#30353c;border-color:#727b87;color:#fff}.btn:focus-visible,.copy-btn:focus-visible,.tab-btn:focus-visible{outline:2px solid #e8af48;outline-offset:4px}
 
-/* Charcoal is the action default in both themes, including light mode. */
-html[data-theme="light"] body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn),html:not([data-theme="light"]) body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn){background:linear-gradient(#353940,#292c31)!important;color:#f2f3f5!important;-webkit-text-fill-color:#f2f3f5!important;border:1px solid #646b76!important;box-shadow:inset 0 1px #ffffff12!important;filter:none!important}
-html[data-theme="light"] body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn):hover,html:not([data-theme="light"]) body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn):hover{background:#3b4048!important;border-color:#858e9a!important;color:#fff!important}
+/* Charcoal actions belong to dark mode; light mode uses its later light palette. */
+html:not([data-theme="light"]) body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn){background:linear-gradient(#353940,#292c31)!important;color:#f2f3f5!important;-webkit-text-fill-color:#f2f3f5!important;border:1px solid #646b76!important;box-shadow:inset 0 1px #ffffff12!important;filter:none!important}
+html:not([data-theme="light"]) body :is(.btn-em,.btn-gold,.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn):hover{background:#3b4048!important;border-color:#858e9a!important;color:#fff!important}
 
 </style>
 <!-- Wallet presentation overrides. Kept after the base stylesheet so the
@@ -2291,11 +2291,11 @@ html[data-theme="light"] .page-header .page-sub,html[data-theme="light"] .pheade
 /* Decorative status dots are omitted; only controls explicitly labelled
    "Live" retain a status indicator. */
 #mobile-status>.dot,.card-title .live,.card-title .live-dot{display:none!important}
-/* Desktop uses the same compact mono typography as the mobile wallet. */
+/* Desktop reading copy follows the wallet's sans-serif type scale. */
 @media(min-width:769px){
-  html body,html body *{
-    font-family:var(--font)!important;
-  }
+  html body{font-family:var(--sans)!important}
+  html:not([data-theme="light"]) body :is(.page-title,.ptitle,.modal-title),
+  html[data-theme="light"] body :is(.page-title,.ptitle,.modal-title){font-family:var(--sans)!important}
 }
 </style>
 </head>
@@ -2468,7 +2468,7 @@ __VELD_DEPLOYMENT_BANNER_HTML__
   <div class="ks-indicator" id="ks-indicator">
     <span id="ks-icon"></span>
     <span id="ks-label" class="ks-locked">No keystore</span>
-    <button class="btn btn-sm btn-ghost" id="ks-btn" data-act-click="h65975421" style="margin-left:auto;font-size:9px;padding:2px 7px">Settings</button>
+    <button class="btn btn-sm btn-ghost" id="ks-btn" data-act-click="h65975421" type="button" aria-label="Log in to wallet" style="margin-left:auto;font-size:12px;padding:7px 12px">Log in</button>
   </div>
   <div class="status-bar">
     <div class="dot" id="dot"></div>
@@ -8914,6 +8914,11 @@ function updateKsIndicator() {
   var unlocked = __veldKey.get();
   var icon = document.getElementById('ks-icon');
   var label = document.getElementById('ks-label');
+  var action = document.getElementById('ks-btn');
+  if (action) {
+    action.textContent = unlocked ? 'Settings' : 'Log in';
+    action.setAttribute('aria-label', unlocked ? 'Wallet settings' : 'Log in to wallet');
+  }
   if (!ks) {
     icon.textContent = ''; label.textContent = 'No keystore'; label.className = 'ks-locked';
   } else if (unlocked) {
