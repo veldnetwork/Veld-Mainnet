@@ -345,8 +345,8 @@ class RedemptionDurabilityTests(unittest.TestCase):
                 c.reconcile_bitcoin_authority()
             s.close()
 
-    def test_single_wallet_requires_explicit_development_override(self):
-        with self.assertRaisesRegex(RuntimeError, "disabled"):
+    def test_single_wallet_mode_is_refused(self):
+        with self.assertRaisesRegex(RuntimeError, "fixed 3-of-5 threshold mode"):
             rd.sign_payout(MarkerBtc(), "00", {}, {"mode": "single_wallet_dev"})
 
     def test_threshold_requires_independent_quorum(self):

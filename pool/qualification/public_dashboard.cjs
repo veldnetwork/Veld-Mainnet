@@ -180,15 +180,13 @@ let browser;
         await page
             .locator('#private')
             .screenshot({ path: path.join(output, 'private-account-mobile.png') });
-        const fills = await page
-            .locator('button:visible,.button:visible')
-            .evaluateAll((es) =>
-                es.map((e) => ({
-                    label: e.textContent.trim(),
-                    color: getComputedStyle(e).backgroundColor,
-                    image: getComputedStyle(e).backgroundImage,
-                })),
-            );
+        const fills = await page.locator('button:visible,.button:visible').evaluateAll((es) =>
+            es.map((e) => ({
+                label: e.textContent.trim(),
+                color: getComputedStyle(e).backgroundColor,
+                image: getComputedStyle(e).backgroundImage,
+            })),
+        );
         for (const fill of fills) {
             for (const m of (fill.color + ' ' + fill.image).matchAll(
                 /rgba?\((\d+),\s*(\d+),\s*(\d+)/g,

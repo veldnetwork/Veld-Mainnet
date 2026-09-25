@@ -6655,30 +6655,10 @@ class NodeServer {
         }
     }
 
-    // Per-message dispatch slot. PeerProtocolStep is the event-loop driver's entry
-    // point — given a fully-parsed P2PMessage and the peer's
-    // externalized PeerState, it advances the per-peer protocol by
-    // exactly one step and returns one of three outcomes:
-    //
-    //   Handled   — the message was processed in full; caller MUST
-    //               continue to the next message (do NOT also run
-    //               the legacy inline dispatch in HandlePeer for
-    //               this same message — that would double-process).
-    //
-    //   NotHandled — this command isn't migrated yet; caller should
-    //               fall through to HandlePeer's inline dispatch.
-    //               Step 2 starts with PING / PONG only here; future
-    //               steps move more handlers into this function until
-    //               the inline chain is empty and HandlePeer's loop
-    //               can be retired (Phase C step 4).
-    //
-    //   DropPeer  — fatal protocol violation or unrecoverable state;
-    //               caller MUST break out of its loop and let the
-    //               cleanup path run.
-    //
-    // No state mutates that the legacy inline dispatch wouldn't
-    // mutate for the same message. Behavior is bit-identical to the
-    // pre-extraction code path on a per-handler basis.
+    // Dispatch one parsed message against the connection's PeerState.
+    // Handled: continue to the next message without dispatching it again.
+    // NotHandled: let HandlePeer's inline dispatcher process the command.
+    // DropPeer: leave the receive loop and run connection cleanup.
     enum class StepResult : uint8_t { Handled = 0, NotHandled = 1, DropPeer = 2 };
     StepResult PeerProtocolStep(PeerState& ps, Connection& conn, PeerManager& pm,
                                 const P2PMessage& msg, const std::string& key, bool) {

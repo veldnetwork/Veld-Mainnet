@@ -56,10 +56,10 @@ assert (
     in node
 )
 admission = region(pool, "AddResult AddImpl_", "std::vector<Transaction> GetAllTransactions()")
-assert admission.index("if (Contains(txid)) return AddResult::DUPLICATE;") < admission.index(
-    "StakeTransactionValid("
-)
-assert "if (entries_.count(key)) return AddResult::DUPLICATE;" in admission
+assert admission.index(
+    "if (Contains(txid))\n            return AddResult::DUPLICATE;"
+) < admission.index("StakeTransactionValid(")
+assert "if (entries_.count(key))\n            return AddResult::DUPLICATE;" in admission
 assert "ValidateTransactionLocking(tx, false, &permanent_failure)" in admission
 cache = region(admission, "bool permanent_failure = false;", "if (token_family)")
 assert cache.index("if (permanent_failure)") < cache.index("recently_rejected_.insert(key)")

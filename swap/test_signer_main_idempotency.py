@@ -386,6 +386,9 @@ class SignerMainIdempotencyTests(unittest.TestCase):
                 if path is not None and path.endswith(".prepared.json"):
                     events.append("fsync-prepared")
                     return original_save(value, path, max_bytes)
+                if path is not None and path.endswith(".transaction.json"):
+                    events.append("fsync-transaction")
+                    return original_save(value, path, max_bytes)
                 signed = value.get("signed", [])
                 entry = sd._accounting_entry(value, request_id)
                 if not signed:
@@ -396,10 +399,59 @@ class SignerMainIdempotencyTests(unittest.TestCase):
                     events.append("fsync-signed-bytes")
                 return original_save(value)
 
+            rpc = mock.Mock(spec=["call", "expected_chain", "verify_chain_identity"])
+            rpc.expected_chain = "fixture-chain"
+            rpc.call.side_effect = AssertionError("the ordering fixture must not perform RPC")
+
+            def evidence(keygen, call, chain, transaction, script, prevouts, **intent):
+                # This fixture tests durable ordering, not native evidence verification.
+                self.assertEqual(keygen, paths["veld-keygen"])
+                self.assertIs(call, rpc.call)
+                self.assertEqual(chain, rpc.expected_chain)
+                self.assertEqual(transaction, unsigned_hex)
+                self.assertEqual(script, "00" * 25)
+                self.assertEqual(prevouts, [{"txid": "x"}])
+                self.assertEqual(
+                    intent,
+                    {
+                        "issuer": issuer,
+                        "operation_type": "BTCVELD_MINT",
+                        "recipient": recipient,
+                        "amount": sats,
+                    },
+                )
+                events.append("prepare-evidence")
+                return {
+                    "version": 2,
+                    "prepared": {"unsigned_tx_hex": unsigned_hex},
+                    "authorization": {
+                        "operation_type": "BTCVELD_MINT",
+                        "recipient": recipient,
+                        "amount": sats,
+                        "change_destination": issuer,
+                        "operation_identity_digest": "00" * 32,
+                        "maximum_absolute_fee": sd.EXPECTED_MINT_FEE_UNITS,
+                        "maximum_fee_rate": 19,
+                    },
+                }
+
             def sign_process(argv, **ignored):
-                events.append("sign")
+                operation = argv[1]
+                self.assertIn(operation, ("authorize-intent", "sign-tx"))
+                transaction = Path(argv[3])
+                self.assertEqual(
+                    json.loads(transaction.read_text())["unsigned_tx_hex"], unsigned_hex
+                )
                 out_path = Path(argv[argv.index("--out") + 1])
-                out_path.write_text(signed_hex)
+                if operation == "authorize-intent":
+                    self.assertEqual(events[-1], "fsync-transaction")
+                    events.append("authorize-intent")
+                    out_path.write_text("{}\n")
+                else:
+                    self.assertEqual(events[-1], "fsync-prevout-signing")
+                    self.assertTrue(Path(argv[argv.index("--intent") + 1]).is_file())
+                    events.append("sign")
+                    out_path.write_text(signed_hex)
                 out_path.chmod(0o600)
                 return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
@@ -477,7 +529,7 @@ class SignerMainIdempotencyTests(unittest.TestCase):
                         ),
                     )
                 )
-                stack.enter_context(mock.patch.object(sd, "TrustedVeldRpc", return_value=object()))
+                stack.enter_context(mock.patch.object(sd, "TrustedVeldRpc", return_value=rpc))
                 stack.enter_context(
                     mock.patch.object(
                         sd,
@@ -517,8 +569,9 @@ class SignerMainIdempotencyTests(unittest.TestCase):
                 stack.enter_context(
                     mock.patch.object(sd, "save_signer_state_durable", side_effect=durable_save)
                 )
+                stack.enter_context(mock.patch.object(sd, "prepare_evidence", side_effect=evidence))
                 stack.enter_context(
-                    mock.patch.object(sd.subprocess, "run", side_effect=sign_process)
+                    mock.patch.object(sd, "run_bounded_subprocess", side_effect=sign_process)
                 )
                 stack.enter_context(mock.patch.object(sd.sys, "stdin", stdin))
                 stack.enter_context(mock.patch.object(sd.sys, "stdout", stdout))
@@ -532,7 +585,10 @@ class SignerMainIdempotencyTests(unittest.TestCase):
                     "fsync-prevout-lease",
                     "reserve",
                     "fsync-reservation",
+                    "prepare-evidence",
                     "fsync-prepared",
+                    "fsync-transaction",
+                    "authorize-intent",
                     "fsync-prevout-signing",
                     "sign",
                     "fsync-signed-bytes",

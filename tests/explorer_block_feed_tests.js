@@ -7,7 +7,9 @@ const asset = fs.readFileSync(
     path.join(__dirname, '../website/explorer-route-context-v1.js'),
     'utf8',
 );
-const start = asset.lastIndexOf('(function () {', asset.indexOf('var state = { pending: false'));
+const stateDeclaration = /var\s+state\s*=\s*\{\s*pending:\s*false\b/.exec(asset);
+assert(stateDeclaration, 'block-feed state declaration must be present');
+const start = asset.lastIndexOf('(function () {', stateDeclaration.index);
 const end = asset.indexOf(
     '// Both block lists derive their badges from the same event feed and renderer.',
 );

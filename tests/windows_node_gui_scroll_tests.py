@@ -20,7 +20,7 @@ require("case WM_VSCROLL:", "scrollbar input is handled")
 require("wp == VK_PRIOR", "keyboard page scrolling is handled")
 require("std::array<int, 9> page_scroll_offsets_", "all nine pages keep their own offset")
 require(
-    "page_ == Page::Settings ? S(1502) :",
+    "page_ == Page::Settings ? S(1502)\n                            :",
     "settings receives enough virtual height for all controls",
 )
 require(
@@ -46,9 +46,7 @@ print("PASS windows_node_gui_scroll_tests checks=11")
 paint = GUI[GUI.index("    void Paint() {") : GUI.index("    void DrawSidebar(")]
 if paint.index("pool_panel_->Show(") >= paint.index("BeginPaint("):
     raise AssertionError("pool controls must move before the paint DC clips their old positions")
-resize = GUI[
-    GUI.index("            case WM_SIZE:") : GUI.index("            case WM_EXITSIZEMOVE:")
-]
+resize = GUI[GUI.index("        case WM_SIZE:") : GUI.index("        case WM_EXITSIZEMOVE:")]
 if "ShouldHideInTray(minimize_to_tray_, tray_added_, wp)" not in resize:
     raise AssertionError(
         "only explicit tray opt-in with an available icon may hide a minimized window"

@@ -1,30 +1,8 @@
-// Per-peer connection state.
+// Per-peer handshake, request and liveness state.
 //
-// Previously every per-peer state field lived as a stack local inside
-// HandlePeer (in tcp.h, ~2400-line function). That couples the state
-// machine to the thread-per-connection model: the only way to drive
-// progress on a peer is to wake its dedicated thread and re-enter its
-// stack frame. At 10k peers that's 10k OS threads (20-80 GB virtual
-// stack at default sizes, plus context-switch storms).
-//
-// PeerState moves all of those locals into a heap-allocated struct
-// keyed by Connection. HandlePeer reads and writes through *peer_state,
-// allowing connection state to survive across handler boundaries.
-// can:
-//   Phase A: drive the same state machine from a poll() loop on the
-//            accept side.
-//   Phase B: replace per-peer recv loop with non-blocking recv that
-//            yields when no data is ready.
-//   Phase C: replace thread-per-peer with single epoll/IOCP loop;
-//            handlers become pure functions of (PeerState&, msg).
-//
-// All fields here have one-to-one semantic correspondents in the
-// pre-refactor HandlePeer. The field comments cite the original
-// HandlePeer line numbers (tcp.h ~2540-2630) and describe what each
-// timer / state bit is for. Do NOT add new fields here without a
-// matching plan to drive them from the future event-loop body —
-// otherwise the whole refactor goal of "all per-peer state lives in
-// one struct" gets eroded.
+// Connection owns this state so protocol progress does not depend on a
+// handler's stack frame. HandlePeer reads and updates it through peer_state.
+// Keep request tracking and timers bound to the connection lifecycle.
 
 #pragma once
 

@@ -162,15 +162,13 @@ function fixture(options = {}) {
         return event;
     }
     async function finish(response = {}) {
-        requests
-            .at(-1)
-            .resolve({
-                ok: true,
-                url: 'https://explorer.test/mempool',
-                headers: { get: () => 'text/html; charset=utf-8' },
-                text: async () => '<main>Mempool</main>',
-                ...response,
-            });
+        requests.at(-1).resolve({
+            ok: true,
+            url: 'https://explorer.test/mempool',
+            headers: { get: () => 'text/html; charset=utf-8' },
+            text: async () => '<main>Mempool</main>',
+            ...response,
+        });
         await flush();
     }
     return {
