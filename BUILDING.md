@@ -110,5 +110,7 @@ builds are validation targets, not production artifacts. They must use separate
 output directories and must never be substituted for a production-role build.
 
 These controllers build source only. A locally built result is not an official
-signed Veld release. Verify official BUILD-02 packages against the signed
-manifest and hashes published at `https://veld.network/`.
+signed Veld release. Verify the intended versioned package using its signed
+release identity and checksum records, as described in
+[release verification](docs/release-verification.md). The historical BUILD-02
+launch record does not identify current release packages.

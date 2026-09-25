@@ -25,6 +25,31 @@ Verify downloaded binaries using the official package manifest and signature.
 Building from source does not grant the official release signature. Different
 toolchains or paths can produce different binary hashes.
 
+## Veld 3.2.7
+
+The [published 3.2.7 release](https://github.com/veldnetwork/Veld-Mainnet/releases/tag/v3.2.7)
+is associated with this tagged source:
+
+| Field | Value |
+| --- | --- |
+| Source tag | `v3.2.7` |
+| Tag commit | `cdceef25ccc5612855d89e784e8f9fd09a6e755d` |
+| Tag tree | `8147916a46d8370b89bda680963acc8b0572a17d` |
+
+The release lists `RELEASE-IDENTITY-3.2.7.json` and its detached signature,
+`RELEASE-ASSETS-SHA256.txt` and its detached signature, and package checksum
+manifests. Obtain these files from the versioned release, not an unversioned
+latest-download alias. Follow [release verification](release-verification.md)
+before installing a package or asserting that its binaries match a source tree.
+
+The tag above identifies Git source. It does not, by itself, authenticate a
+binary-build identity: read and verify the signed release identity and the
+actual package manifests. Do not substitute the cleanup branch, `main`, or a
+GitHub pull-request test-merge commit for the identity of a published package.
+Maintenance changes after the tag do not replace the 3.2.7 binaries. A future
+release needs its own version, signed records, and platform qualification;
+never move this tag to a newer cleanup commit.
+
 ## Veld 3.2.2
 
 Binary-build commit: `1f77a67365ff9c3c36dae2a624feb35615446202`.

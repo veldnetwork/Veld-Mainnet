@@ -38,6 +38,8 @@ recovery behavior.
 Release tags and signed packages retain their original identities. Ongoing
 maintenance on `main` does not replace released binaries. See
 [source identity](docs/source-identity.md) for exact commits and hashes.
+For 3.2.7, see the [tagged source identity](docs/source-identity.md#veld-327)
+and [release verification guide](docs/release-verification.md).
 
 Publication is not a comprehensive security clearance or btcVELD custody
 activation. Full economic and custody qualification remain separately tracked.
