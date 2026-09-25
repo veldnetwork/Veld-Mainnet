@@ -14,7 +14,6 @@
 - The cached solo-mining epoch seed produces the same canonical proofs as the
   previous path in the tested fixtures. No measured real-hardware hashrate
   increase is claimed.
-- No consensus, reward, staking, custody or transaction-validation rules change.
 
 ## 3.2.2 - Pool client and portal maintenance
 

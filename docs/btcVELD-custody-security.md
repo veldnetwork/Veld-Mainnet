@@ -1,6 +1,5 @@
 # btcVELD custody requirements and current limits
 
-The 3.2.1 source candidate is not a custody activation or a security clearance.
 Native reserve authorization, refund retirement, intended-chain issuer readiness,
 and the integrated community signer still require qualification. A release
 signature establishes artifact authenticity; it does not establish those properties.
