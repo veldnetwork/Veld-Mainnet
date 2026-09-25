@@ -28,8 +28,9 @@ jobs:
           git archive --format=tar.gz --prefix=veld-3.2.7/ HEAD > "$RUNNER_TEMP/source-review/source.tar.gz"
           git ls-tree -r --full-tree HEAD > "$RUNNER_TEMP/source-review/git-tree.txt"
           git rev-parse HEAD HEAD^{tree} > "$RUNNER_TEMP/source-review/identity.txt"
+          python -m pip download --only-binary=:all: --no-deps --dest "$RUNNER_TEMP/source-review/tools" clang-format==18.1.8 ruff==0.11.13
           cd "$RUNNER_TEMP/source-review"
-          sha256sum source.tar.gz git-tree.txt identity.txt > SHA256SUMS.txt
+          sha256sum source.tar.gz git-tree.txt identity.txt tools/* > SHA256SUMS.txt
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: veld-3.2.7-review-source
