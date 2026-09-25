@@ -28,7 +28,7 @@ constexpr const char* DOMAIN_STATE = "VELD_FINALITY_STATE_v1|";
 constexpr size_t SNAPSHOT_RETENTION = 2;
 
 class FinalityState {
-public:
+  public:
     // ---- activation state machine ---------------------------------------
     // Consecutive qualified epochs observed. Finality goes live at 2 (960
     // blocks / 48h); anchors follow one further qualified epoch.
@@ -43,13 +43,13 @@ public:
     // memory. Startup and accepted-reorg replay reconstruct it from the selected
     // branch, as required for branch-relative mint validity. Once a retained QC
     // exists its exact carrier gate prevents a reorg from erasing that history.
-    bool     finality_ever_active         = false;
-    bool     ever_promoted_anchor         = false;
+    bool finality_ever_active = false;
+    bool ever_promoted_anchor = false;
 
     // ---- retained artifacts ---------------------------------------------
-    std::map<uint64_t, EpochSnapshot> snapshots;   // epoch_id -> frozen set
-    FinalizedRecord                   record;      // latest canonical certificate
-    FinalizedRecord                   certified_carrier_record;
+    std::map<uint64_t, EpochSnapshot> snapshots; // epoch_id -> frozen set
+    FinalizedRecord record;                      // latest canonical certificate
+    FinalizedRecord certified_carrier_record;
     bool security_upgrade_active = false;
 
     void OnBlockHeight(uint64_t height) {
@@ -66,31 +66,36 @@ public:
     }
 
     uint64_t RequiredReorgAncestor() const {
-        if (record.IsNull()) return 0;
-        return ConsensusSecurityUpgradeActive(record.carrier.height)
-            ? record.target.height : record.carrier.height;
+        if (record.IsNull())
+            return 0;
+        return ConsensusSecurityUpgradeActive(record.carrier.height) ? record.target.height
+                                                                     : record.carrier.height;
     }
 
     // Called only after the candidate suffix has passed complete canonical
     // module/signature validation. This is a retention postcondition, never a
     // substitute for validating candidate certificates.
-    bool CandidateRetainsFinality(const FinalityState& candidate,
-            const std::function<bool(uint64_t, const Hash256&)>& branch_has) const {
-        if (record.IsNull()) return true;
-        if (!branch_has(record.target.height, record.target.hash)) return false;
+    bool CandidateRetainsFinality(
+        const FinalityState& candidate,
+        const std::function<bool(uint64_t, const Hash256&)>& branch_has) const {
+        if (record.IsNull())
+            return true;
+        if (!branch_has(record.target.height, record.target.hash))
+            return false;
         if (!ConsensusSecurityUpgradeActive(record.carrier.height))
             return branch_has(record.carrier.height, record.carrier.hash);
         return !candidate.record.IsNull() &&
-            candidate.record.target.height >= record.target.height &&
-            (candidate.record.target.height != record.target.height ||
-             candidate.record.target.hash == record.target.hash);
+               candidate.record.target.height >= record.target.height &&
+               (candidate.record.target.height != record.target.height ||
+                candidate.record.target.hash == record.target.hash);
     }
 
     // Observe an epoch boundary. `snap` must have been built from canonical
     // state at epoch_start-1 (see finality_snapshot.h on why it cannot be
     // rebuilt retroactively).
     bool OnEpochBoundary(const EpochSnapshot& snap) {
-        if (!SnapshotWellFormed(snap)) return false;
+        if (!SnapshotWellFormed(snap))
+            return false;
         auto existing = snapshots.find(snap.epoch_id);
         if (existing != snapshots.end()) {
             const EpochSnapshot& prior = existing->second;
@@ -98,11 +103,10 @@ public:
             // snapshot for an already-observed epoch is a consensus failure,
             // never an overwrite followed by a second warm-up increment.
             return prior.snapshot_height == snap.snapshot_height &&
-                   prior.total_weight == snap.total_weight &&
-                   prior.root == snap.root;
+                   prior.total_weight == snap.total_weight && prior.root == snap.root;
         }
-        if (!snapshots.empty() &&
-            snap.epoch_id <= snapshots.rbegin()->first) return false;
+        if (!snapshots.empty() && snap.epoch_id <= snapshots.rbegin()->first)
+            return false;
         snapshots[snap.epoch_id] = snap;
         while (snapshots.size() > SNAPSHOT_RETENTION)
             snapshots.erase(snapshots.begin());
@@ -111,9 +115,10 @@ public:
             if (consecutive_qualified_epochs != UINT32_MAX)
                 ++consecutive_qualified_epochs;
         } else {
-            consecutive_qualified_epochs = 0;   // restart, not pause
+            consecutive_qualified_epochs = 0; // restart, not pause
         }
-        if (consecutive_qualified_epochs >= 2) finality_ever_active = true;
+        if (consecutive_qualified_epochs >= 2)
+            finality_ever_active = true;
         return true;
     }
 
@@ -137,25 +142,34 @@ public:
     bool OnCertificate(const QuorumCert& qc, const CheckpointRef& carrier,
                        const Hash256& canonical_target_hash) {
         auto it = snapshots.find(qc.epoch_id);
-        if (it == snapshots.end())      return false;   // set not retained
-        if (!FinalityActive())          return false;   // warm-up incomplete
-        if (qc.target.hash != canonical_target_hash) return false;
+        if (it == snapshots.end())
+            return false; // set not retained
+        if (!FinalityActive())
+            return false; // warm-up incomplete
+        if (qc.target.hash != canonical_target_hash)
+            return false;
 
         // Linear locked-QC transition.  The first certificate is round zero
         // with a null source.  Thereafter every certificate names the exact
         // retained target as its justified source.  Rounds are monotonic
         // inside an epoch and reset when the immutable snapshot changes.
         if (record.IsNull()) {
-            if (!qc.source.IsNull()) return false;
+            if (!qc.source.IsNull())
+                return false;
         } else {
-            if (qc.source != record.target) return false;
-            if (qc.target.height <= record.target.height) return false;
-            if (qc.epoch_id < record.epoch_id) return false;
+            if (qc.source != record.target)
+                return false;
+            if (qc.target.height <= record.target.height)
+                return false;
+            if (qc.epoch_id < record.epoch_id)
+                return false;
         }
 
         auto candidate = Finalize(qc, it->second, carrier);
-        if (!candidate)                 return false;
-        if (!RecordSupersedes(*candidate, record)) return false;
+        if (!candidate)
+            return false;
+        if (!RecordSupersedes(*candidate, record))
+            return false;
 
         // A new QC may certify the previous carrier as part of its exact
         // target prefix. Only such a record can authorize a new durable anchor.
@@ -178,7 +192,8 @@ public:
     // become eligible only after a later extension.
     bool ReorgPermitted(uint64_t common_ancestor_height,
                         const std::function<bool(uint64_t, const Hash256&)>& branch_has) const {
-        if (record.IsNull()) return true;
+        if (record.IsNull())
+            return true;
         if (!ConsensusSecurityUpgradeActive(record.carrier.height))
             return ReorgAllowed(record, common_ancestor_height, branch_has);
         // Necessary early gate only. CandidateRetainsFinality is mandatory at
@@ -190,8 +205,7 @@ public:
     // Additive finality+Bitcoin security milestone. Peg launch permission uses
     // the seven-validator activation latch but does not require an anchor.
     bool SecurityMilestoneComplete() const {
-        return qc::SecurityMilestoneComplete(finality_ever_active,
-                                             ever_promoted_anchor);
+        return qc::SecurityMilestoneComplete(finality_ever_active, ever_promoted_anchor);
     }
 
     // Consensus digest of the finality state.
@@ -252,6 +266,6 @@ public:
     }
 };
 
-}  // namespace qc
-}  // namespace finality
-}  // namespace veld
+} // namespace qc
+} // namespace finality
+} // namespace veld

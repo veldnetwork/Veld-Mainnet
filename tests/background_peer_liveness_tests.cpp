@@ -17,12 +17,16 @@ constexpr uint32_t MAGIC = 0xF17EBA6C;
 size_t checks = 0;
 void Check(bool value, const char* label) {
     ++checks;
-    if (!value) throw std::runtime_error(label);
+    if (!value)
+        throw std::runtime_error(label);
 }
 
 void InitChain(Blockchain& chain) {
-    Check(chain.AddBlockDirect(CreateGenesisBlock(), true, false, false,
-        mining::PowAdmissionContext::Internal()).IsAccepted(), "genesis admission");
+    Check(chain
+              .AddBlockDirect(CreateGenesisBlock(), true, false, false,
+                              mining::PowAdmissionContext::Internal())
+              .IsAccepted(),
+          "genesis admission");
 }
 
 uint16_t AvailableLoopbackPort() {
@@ -32,10 +36,10 @@ uint16_t AvailableLoopbackPort() {
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     Check(::bind(socket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0,
-        "reserve loopback port");
+          "reserve loopback port");
     socklen_t length = sizeof(address);
     Check(::getsockname(socket, reinterpret_cast<sockaddr*>(&address), &length) == 0,
-        "read reserved port");
+          "read reserved port");
     const auto port = ntohs(address.sin_port);
     VELD_CLOSE_SOCKET(socket);
     return port;
@@ -43,7 +47,8 @@ uint16_t AvailableLoopbackPort() {
 
 std::string PeerId(Server& receiver, uint64_t nonce) {
     for (const auto& peer : receiver.GetPeerInfoList())
-        if (peer.node_id == nonce) return peer.connection_id;
+        if (peer.node_id == nonce)
+            return peer.connection_id;
     return {};
 }
 
@@ -62,25 +67,26 @@ struct RawPeer {
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         address.sin_port = htons(port);
         Check(::connect(socket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0,
-            "raw peer loopback connect");
+              "raw peer loopback connect");
         connection = std::make_unique<Connection>(socket, "127.0.0.1", port, false);
         VersionPayload version;
         version.nonce = nonce;
-        version.services = MessageType::NODE_FULL |
-            MessageType::REQUIRED_NETWORK_IDENTITY_SERVICES;
+        version.services = MessageType::NODE_FULL | MessageType::REQUIRED_NETWORK_IDENTITY_SERVICES;
         Check(connection->Send(P2PMessage(MAGIC, MessageType::VERSION, version.Serialize())),
-            "raw VERSION");
+              "raw VERSION");
         Check(connection->Send(P2PMessage(MAGIC, MessageType::VERACK)), "raw VERACK");
     }
 
     void Poll(int64_t elapsed) {
         if (!connection->IsConnected()) {
-            if (closed_at < 0) closed_at = elapsed;
+            if (closed_at < 0)
+                closed_at = elapsed;
             return;
         }
         for (int i = 0; i < 32; ++i) {
             const auto result = connection->TryRecvMessage(MAGIC);
-            if (result.status != Connection::TryRecvStatus::MessageReady) break;
+            if (result.status != Connection::TryRecvStatus::MessageReady)
+                break;
             if (result.msg.command == MessageType::PING)
                 connection->Send(P2PMessage(MAGIC, MessageType::PONG, result.msg.payload));
             if (malformed && !sent_malformed && result.msg.command == MessageType::VERACK) {
@@ -109,7 +115,10 @@ int main() {
         for (int attempt = 0; attempt < 8; ++attempt) {
             port = AvailableLoopbackPort();
             auto candidate = std::make_unique<Server>(port, MAGIC, receiver_chain, receiver_pool);
-            if (candidate->Start()) { receiver = std::move(candidate); break; }
+            if (candidate->Start()) {
+                receiver = std::move(candidate);
+                break;
+            }
         }
         Check(bool(receiver), "real receiving NodeServer listener");
         Server first(0, MAGIC, first_chain, first_pool);
@@ -130,8 +139,8 @@ int main() {
         int timeout_events = 0;
         int64_t first_missing_at = -1, second_missing_at = -1;
         while (Clock::now() - start < 245s) {
-            const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                Clock::now() - start).count();
+            const auto elapsed =
+                std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - start).count();
             // These are the receiving node's real maintenance methods. The
             // background peers get no foreground BroadcastTipsig assistance.
             receiver->ReapStuckHandshakes();
@@ -150,7 +159,7 @@ int main() {
             }
             // Deliberately suspend foreground supervision for one minute.
             if (foreground_connected && !(elapsed >= 45 && elapsed < 105) &&
-                    elapsed - last_foreground_tip >= 30) {
+                elapsed - last_foreground_tip >= 30) {
                 foreground.BroadcastTipsig();
                 last_foreground_tip = elapsed;
             }
@@ -162,25 +171,32 @@ int main() {
             }
             Check(lost == 0, "connection diagnostic capture is complete");
             if (elapsed >= 25) {
-                if (PeerId(*receiver, first.TopologyId()).empty() && !restarted && first_missing_at < 0)
+                if (PeerId(*receiver, first.TopologyId()).empty() && !restarted &&
+                    first_missing_at < 0)
                     first_missing_at = elapsed;
                 if (PeerId(*receiver, second.TopologyId()).empty() && second_missing_at < 0)
                     second_missing_at = elapsed;
-                if (old_first_id.empty()) old_first_id = PeerId(*receiver, first.TopologyId());
+                if (old_first_id.empty())
+                    old_first_id = PeerId(*receiver, first.TopologyId());
             }
             if (elapsed >= 115 && !restarted) {
                 const bool first_live = !PeerId(*receiver, first.TopologyId()).empty();
                 const bool second_live = !PeerId(*receiver, second.TopologyId()).empty();
                 std::cout << "deadline_check first=" << first_live << " second=" << second_live
-                    << " first_missing_s=" << first_missing_at << " second_missing_s=" << second_missing_at
-                    << " missing_tip_closed_s=" << missing.closed_at
-                    << " malformed_tip_closed_s=" << malformed.closed_at
-                    << " handshake_timeouts=" << timeout_events << std::endl;
-                Check(first_live && second_live, "background connections were reaped after handshake grace");
-                Check(missing.closed_at >= 85 && missing.closed_at <= 110, "missing TIPSIG remains rejected");
+                          << " first_missing_s=" << first_missing_at
+                          << " second_missing_s=" << second_missing_at
+                          << " missing_tip_closed_s=" << missing.closed_at
+                          << " malformed_tip_closed_s=" << malformed.closed_at
+                          << " handshake_timeouts=" << timeout_events << std::endl;
+                Check(first_live && second_live,
+                      "background connections were reaped after handshake grace");
+                Check(missing.closed_at >= 85 && missing.closed_at <= 110,
+                      "missing TIPSIG remains rejected");
                 Check(malformed.sent_malformed && malformed.closed_at >= 85 &&
-                    malformed.closed_at <= 110, "malformed TIPSIG cannot bypass the reaper");
-                Check(receiver->VersionReadyPeers() == 1, "same-IP connections remain one quorum source");
+                          malformed.closed_at <= 110,
+                      "malformed TIPSIG cannot bypass the reaper");
+                Check(receiver->VersionReadyPeers() == 1,
+                      "same-IP connections remain one quorum source");
                 const auto before_stop = Clock::now();
                 first.Stop();
                 Check(Clock::now() - before_stop < 2s, "background stop remains bounded");
@@ -189,20 +205,21 @@ int main() {
                 restarted = true;
             }
             if (restarted && elapsed >= 120) {
-                if (new_first_id.empty()) new_first_id = PeerId(*receiver, first.TopologyId());
+                if (new_first_id.empty())
+                    new_first_id = PeerId(*receiver, first.TopologyId());
                 Check(!new_first_id.empty() && new_first_id != old_first_id,
-                    "reconnect owns a new connection identity");
+                      "reconnect owns a new connection identity");
                 Check(PeerId(*receiver, first.TopologyId()) == new_first_id,
-                    "reconnected background remains attached");
+                      "reconnected background remains attached");
                 Check(!PeerId(*receiver, second.TopologyId()).empty(),
-                    "same-IP neighbor remains connected");
+                      "same-IP neighbor remains connected");
                 Check(!PeerId(*receiver, foreground.TopologyId()).empty(),
-                    "foreground connection remains attached");
+                      "foreground connection remains attached");
             }
             if (elapsed / 30 != last_report) {
                 last_report = elapsed / 30;
                 std::cout << "elapsed_s=" << elapsed << " peers=" << receiver->ConnectedPeers()
-                    << " handshake_timeouts=" << timeout_events << std::endl;
+                          << " handshake_timeouts=" << timeout_events << std::endl;
             }
             std::this_thread::sleep_for(20ms);
         }
@@ -212,10 +229,14 @@ int main() {
         // Concurrent socket cleanup may record a close before the reaper's
         // diagnostic reason, so event-label counts are informational.
         const auto before_stop = Clock::now();
-        first.Stop(); second.Stop(); foreground.Stop(); receiver->Stop();
+        first.Stop();
+        second.Stop();
+        foreground.Stop();
+        receiver->Stop();
         Check(Clock::now() - before_stop < 3s, "all peers stop cleanly");
         std::cout << "PASS background peer liveness checks=" << checks
-            << " duration_s=245 same_ip=1 reconnect_survived_s=130 reaper_unchanged=1" << std::endl;
+                  << " duration_s=245 same_ip=1 reconnect_survived_s=130 reaper_unchanged=1"
+                  << std::endl;
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL background peer liveness: " << error.what() << std::endl;

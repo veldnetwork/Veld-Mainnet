@@ -32,274 +32,401 @@ using namespace veld;
 using namespace veld::pool;
 std::atomic<bool> stopping{false};
 static_assert(std::atomic<bool>::is_always_lock_free);
-void Stop(int) { stopping.store(true); }
-std::string Quote(const std::string& value) { return '"'+json::EscapeStringBytes(value)+'"'; }
-std::string Object(const std::map<std::string,std::string>& values) {
-    std::string out="{";
-    for (const auto& [key,value]:values) { if(out.size()>1)out+=',';out+=Quote(key)+':'+Quote(value); }
-    return out+'}';
+void Stop(int) {
+    stopping.store(true);
+}
+std::string Quote(const std::string& value) {
+    return '"' + json::EscapeStringBytes(value) + '"';
+}
+std::string Object(const std::map<std::string, std::string>& values) {
+    std::string out = "{";
+    for (const auto& [key, value] : values) {
+        if (out.size() > 1)
+            out += ',';
+        out += Quote(key) + ':' + Quote(value);
+    }
+    return out + '}';
 }
 Json Read(const std::filesystem::path& path) {
-    std::vector<uint8_t> bytes;std::string error;
-    if(channel::secure_file::Read(path.string(),bytes,&error,16384,true)!=channel::secure_file::ReadResult::Ok)
-        throw std::runtime_error("private pool configuration unavailable");
-    return Parse(std::string(bytes.begin(),bytes.end()));
-}
-void Write(const std::filesystem::path& path,const std::map<std::string,std::string>& value) {
+    std::vector<uint8_t> bytes;
     std::string error;
-    Require(channel::secure_file::AtomicWriteText(path.string(),Object(value),&error,true),"private pool state write failed");
+    if (channel::secure_file::Read(path.string(), bytes, &error, 16384, true) !=
+        channel::secure_file::ReadResult::Ok)
+        throw std::runtime_error("private pool configuration unavailable");
+    return Parse(std::string(bytes.begin(), bytes.end()));
+}
+void Write(const std::filesystem::path& path, const std::map<std::string, std::string>& value) {
+    std::string error;
+    Require(channel::secure_file::AtomicWriteText(path.string(), Object(value), &error, true),
+            "private pool state write failed");
 }
 void Pause(uint64_t milliseconds) {
-    const auto end=std::chrono::steady_clock::now()+std::chrono::milliseconds(milliseconds);
-    while (!stopping && std::chrono::steady_clock::now()<end)
+    const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds);
+    while (!stopping && std::chrono::steady_clock::now() < end)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 }
-struct Counters { std::atomic<uint64_t> hashes{0},accepted{0},near_misses{0},stale{0},rejected{0},active{0},retries{0}; } counters;
+struct Counters {
+    std::atomic<uint64_t> hashes{0}, accepted{0}, near_misses{0}, stale{0}, rejected{0}, active{0},
+        retries{0};
+} counters;
 class InstanceLock {
 #ifdef _WIN32
     channel::secure_file::WinHandle handle_;
 #else
-    int descriptor_=-1;
+    int descriptor_ = -1;
 #endif
-public:
+  public:
     explicit InstanceLock(const std::filesystem::path& path) {
 #ifdef _WIN32
-        handle_=channel::secure_file::WinHandle(CreateFileW(path.c_str(),GENERIC_WRITE,0,nullptr,
-            OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL|FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
-        Require(bool(handle_),"pool account is already in use");
+        handle_ = channel::secure_file::WinHandle(
+            CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+        Require(bool(handle_), "pool account is already in use");
 #else
-        descriptor_=open(path.c_str(),O_CREAT|O_WRONLY|O_CLOEXEC|O_NOFOLLOW,0600);
-        if(descriptor_<0 || flock(descriptor_,LOCK_EX|LOCK_NB)!=0) {
-            if(descriptor_>=0)close(descriptor_);descriptor_=-1;
+        descriptor_ = open(path.c_str(), O_CREAT | O_WRONLY | O_CLOEXEC | O_NOFOLLOW, 0600);
+        if (descriptor_ < 0 || flock(descriptor_, LOCK_EX | LOCK_NB) != 0) {
+            if (descriptor_ >= 0)
+                close(descriptor_);
+            descriptor_ = -1;
             throw std::runtime_error("pool account is already in use");
         }
 #endif
     }
     ~InstanceLock() {
 #ifndef _WIN32
-        if(descriptor_>=0)close(descriptor_);
+        if (descriptor_ >= 0)
+            close(descriptor_);
 #endif
     }
 };
 }
 
-int main(int argc,char** argv) {
+int main(int argc, char** argv) {
     using namespace veld;
     using namespace veld::pool;
-    ClientStage main_stage=ClientStage::Configuration;
+    ClientStage main_stage = ClientStage::Configuration;
     try {
         compat::HardenDllSearchPath();
         // Identity probes are pure: no configuration, account, key, or network access.
-        if(argc==2 && std::string(argv[1])=="--version") {
-            std::cout<<"Veld Pool Worker "<<CLIENT_VERSION<<'\n';return 0;
-        }
-        if(argc==2 && std::string(argv[1])=="--deployment-info") {
-            std::cout<<"VELD_DEPLOYMENT_INFO_V1_JSON {\"binary_role\":\"pool-worker\","
-                     <<"\"client_version\":\""<<CLIENT_VERSION<<"\","
-                     <<"\"profile_id\":\""<<DEPLOYMENT_PROFILE_ID<<"\","
-                     <<"\"genesis_fingerprint\":\""<<GENESIS_HASH<<"\","
-                     <<"\"worker_protocol\":\"veld-pool/1\",\"signing_authority\":false,"
-                     <<"\"remote_tls_backend\":\"openssl\",\"fleet_no_mine\":false}\n";
+        if (argc == 2 && std::string(argv[1]) == "--version") {
+            std::cout << "Veld Pool Worker " << CLIENT_VERSION << '\n';
             return 0;
         }
-        Require(argc==3 || argc==5,"use --config PRIVATE_CONFIG [--rounds COUNT]");
-        Require(std::string(argv[1])=="--config","configuration argument required");
-        uint64_t rounds=0;
-        if(argc==5){Require(std::string(argv[3])=="--rounds","rounds argument");rounds=Number(argv[4],1000000);}
+        if (argc == 2 && std::string(argv[1]) == "--deployment-info") {
+            std::cout << "VELD_DEPLOYMENT_INFO_V1_JSON {\"binary_role\":\"pool-worker\","
+                      << "\"client_version\":\"" << CLIENT_VERSION << "\","
+                      << "\"profile_id\":\"" << DEPLOYMENT_PROFILE_ID << "\","
+                      << "\"genesis_fingerprint\":\"" << GENESIS_HASH << "\","
+                      << "\"worker_protocol\":\"veld-pool/1\",\"signing_authority\":false,"
+                      << "\"remote_tls_backend\":\"openssl\",\"fleet_no_mine\":false}\n";
+            return 0;
+        }
+        Require(argc == 3 || argc == 5, "use --config PRIVATE_CONFIG [--rounds COUNT]");
+        Require(std::string(argv[1]) == "--config", "configuration argument required");
+        uint64_t rounds = 0;
+        if (argc == 5) {
+            Require(std::string(argv[3]) == "--rounds", "rounds argument");
+            rounds = Number(argv[4], 1000000);
+        }
         compat::InitNetwork();
-        std::signal(SIGINT,Stop);std::signal(SIGTERM,Stop);
+        std::signal(SIGINT, Stop);
+        std::signal(SIGTERM, Stop);
 #ifndef _WIN32
-        std::signal(SIGPIPE,SIG_IGN);
+        std::signal(SIGPIPE, SIG_IGN);
 #endif
-        const auto cfg=Read(argv[2]);
-        Require(cfg.object.size()==8,"pool client configuration schema");
-        const auto endpoint=Text(Field(cfg,"endpoint")),ca=Text(Field(cfg,"ca_file"));
-        const auto genesis=Hex(Field(cfg,"genesis"),64),address=Text(Field(cfg,"payout_address"));
-        auto compiled=HexToBytes(GENESIS_HASH);std::reverse(compiled.begin(),compiled.end());
-        Require(genesis==BytesToHex(compiled),"pool configuration is for a different compiled chain");
-        const auto payout_script=AddressToScript(address);
-        Require(payout_script.size()==25 || IsSha384KeyScript(payout_script),"pool payout address is invalid");
-        const auto threads=Number(Text(Field(cfg,"threads")),mining::MAX_MINING_WORKERS);
-        Require(threads>0,"pool worker count must be positive");
-        const auto count=Number(Text(Field(cfg,"nonce_count")),4096);
-        Require(count>0,"pool nonce count must be positive");
-        const auto pause=Number(Text(Field(cfg,"pause_ms")),60000);
-        const auto directory=std::filesystem::absolute(Text(Field(cfg,"state_directory")));
+        const auto cfg = Read(argv[2]);
+        Require(cfg.object.size() == 8, "pool client configuration schema");
+        const auto endpoint = Text(Field(cfg, "endpoint")), ca = Text(Field(cfg, "ca_file"));
+        const auto genesis = Hex(Field(cfg, "genesis"), 64),
+                   address = Text(Field(cfg, "payout_address"));
+        auto compiled = HexToBytes(GENESIS_HASH);
+        std::reverse(compiled.begin(), compiled.end());
+        Require(genesis == BytesToHex(compiled),
+                "pool configuration is for a different compiled chain");
+        const auto payout_script = AddressToScript(address);
+        Require(payout_script.size() == 25 || IsSha384KeyScript(payout_script),
+                "pool payout address is invalid");
+        const auto threads = Number(Text(Field(cfg, "threads")), mining::MAX_MINING_WORKERS);
+        Require(threads > 0, "pool worker count must be positive");
+        const auto count = Number(Text(Field(cfg, "nonce_count")), 4096);
+        Require(count > 0, "pool nonce count must be positive");
+        const auto pause = Number(Text(Field(cfg, "pause_ms")), 60000);
+        const auto directory = std::filesystem::absolute(Text(Field(cfg, "state_directory")));
         std::string error;
-        Require(channel::secure_file::EnsurePrivateDirectory(directory.string(),&error),"private pool state directory required");
-        InstanceLock instance(directory/"pool-client.lock");
-        Require(!std::filesystem::exists(directory/"stop.request"),"clear the previous stop request before starting");
-        TlsClient client(endpoint,ca);
-        std::string account,worker_token,view_token;
-        const auto account_path=directory/"pool-account.json";
-        if(std::filesystem::exists(account_path)) {
-            const auto saved=Read(account_path);
-            Require(saved.object.size()==6 && Text(Field(saved,"endpoint"))==endpoint &&
-                    Text(Field(saved,"address"))==address && Text(Field(saved,"genesis"))==genesis,
+        Require(channel::secure_file::EnsurePrivateDirectory(directory.string(), &error),
+                "private pool state directory required");
+        InstanceLock instance(directory / "pool-client.lock");
+        Require(!std::filesystem::exists(directory / "stop.request"),
+                "clear the previous stop request before starting");
+        TlsClient client(endpoint, ca);
+        std::string account, worker_token, view_token;
+        const auto account_path = directory / "pool-account.json";
+        if (std::filesystem::exists(account_path)) {
+            const auto saved = Read(account_path);
+            Require(saved.object.size() == 6 && Text(Field(saved, "endpoint")) == endpoint &&
+                        Text(Field(saved, "address")) == address &&
+                        Text(Field(saved, "genesis")) == genesis,
                     "saved pool account does not match configuration");
-            account=Hex(Field(saved,"account"),32);worker_token=Hex(Field(saved,"worker_token"),64);
-            view_token=Hex(Field(saved,"view_token"),64);
+            account = Hex(Field(saved, "account"), 32);
+            worker_token = Hex(Field(saved, "worker_token"), 64);
+            view_token = Hex(Field(saved, "view_token"), 64);
         } else {
-            main_stage=ClientStage::Registration;
+            main_stage = ClientStage::Registration;
             Json registered;
-            unsigned retry=0;
-            for(;;) {
-                if(stopping || std::filesystem::exists(directory/"stop.request"))return 0;
-                try { registered=client.Call("register",Object({{"address",address}}));break; }
-                catch(const Retry&) {
-                    Write(directory/"pool-status.json",{{"address",address},{"status","Connecting; retrying"},
-                          {"active_workers","0"}});
-                    const unsigned steps=std::min(100u,5u*(++retry));
-                    for(unsigned step=0;step<steps && !stopping;++step) {
-                        if(std::filesystem::exists(directory/"stop.request"))return 0;
+            unsigned retry = 0;
+            for (;;) {
+                if (stopping || std::filesystem::exists(directory / "stop.request"))
+                    return 0;
+                try {
+                    registered = client.Call("register", Object({{"address", address}}));
+                    break;
+                } catch (const Retry&) {
+                    Write(directory / "pool-status.json", {{"address", address},
+                                                           {"status", "Connecting; retrying"},
+                                                           {"active_workers", "0"}});
+                    const unsigned steps = std::min(100u, 5u * (++retry));
+                    for (unsigned step = 0; step < steps && !stopping; ++step) {
+                        if (std::filesystem::exists(directory / "stop.request"))
+                            return 0;
                         Pause(100);
                     }
                 }
             }
-            Require(Text(Field(registered,"version"))=="veld-pool/1","unsupported pool version");
-            account=Hex(Field(registered,"account"),32);worker_token=Hex(Field(registered,"worker_token"),64);
-            view_token=Hex(Field(registered,"view_token"),64);
-            main_stage=ClientStage::State;
-            Write(account_path,{{"endpoint",endpoint},{"address",address},{"genesis",genesis},
-                               {"account",account},{"worker_token",worker_token},{"view_token",view_token}});
+            Require(Text(Field(registered, "version")) == "veld-pool/1",
+                    "unsupported pool version");
+            account = Hex(Field(registered, "account"), 32);
+            worker_token = Hex(Field(registered, "worker_token"), 64);
+            view_token = Hex(Field(registered, "view_token"), 64);
+            main_stage = ClientStage::State;
+            Write(account_path, {{"endpoint", endpoint},
+                                 {"address", address},
+                                 {"genesis", genesis},
+                                 {"account", account},
+                                 {"worker_token", worker_token},
+                                 {"view_token", view_token}});
         }
         std::mutex status_mutex;
-        std::string detail="Connecting";bool fatal=false;
-        ClientFailure failure=FailureFromCode("local_failure");
-        ClientStage failure_stage=ClientStage::Configuration;
+        std::string detail = "Connecting";
+        bool fatal = false;
+        ClientFailure failure = FailureFromCode("local_failure");
+        ClientStage failure_stage = ClientStage::Configuration;
         std::atomic<uint64_t> finished{0};
-        auto status=[&](const char* value){
-            std::lock_guard<std::mutex> lock(status_mutex);if(!fatal)detail=value;
+        auto status = [&](const char* value) {
+            std::lock_guard<std::mutex> lock(status_mutex);
+            if (!fatal)
+                detail = value;
         };
-        auto fail=[&](const std::exception& error,ClientStage stage){
+        auto fail = [&](const std::exception& error, ClientStage stage) {
             std::lock_guard<std::mutex> lock(status_mutex);
             // Preserve the first failure even when other threads are unwinding.
-            if(!fatal){failure=ClassifyFailure(error);failure_stage=stage;
-                detail=FailureSummary(failure.code,StageName(stage));fatal=true;}
+            if (!fatal) {
+                failure = ClassifyFailure(error);
+                failure_stage = stage;
+                detail = FailureSummary(failure.code, StageName(stage));
+                fatal = true;
+            }
         };
         std::vector<std::thread> workers;
-        std::map<std::string,std::string> snapshot={{"address",address},{"account",account},{"genesis",genesis}};
+        std::map<std::string, std::string> snapshot = {
+            {"address", address}, {"account", account}, {"genesis", genesis}};
         try {
-            for(uint64_t thread=0;thread<threads;++thread) workers.emplace_back([&] {
-                uint64_t completed=0,retries=0;
-                ClientStage stage=ClientStage::Work;
-                try {
-                    std::optional<mining::VeldHashVM> workspace;
-                    while(!stopping && (!rounds || completed<rounds)) {
-                        try {
-                            std::chrono::steady_clock::time_point request_sent;
-                            stage=ClientStage::Work;
-                            const auto job=client.Call("work",Object({{"account",account},{"token",worker_token},{"count",std::to_string(count)}}),&request_sent);
-                            Require(Text(Field(job,"version"))=="veld-pool/1" && Hex(Field(job,"chain"),64)==genesis,
-                                    "pool job network or version mismatch");
-                            const auto lease=Hex(Field(job,"lease"),32),encoded=Hex(Field(job,"header"),176);
-                            const auto target=HexToHash(Hex(Field(job,"target"),64));
-                            Require(target!=Hash256{},"zero pool accounting target");
-                            const auto height=Number(Text(Field(job,"height")));
-                            const auto nonce_text=Hex(Field(job,"start"),16);
-                            const uint64_t first=std::stoull(nonce_text,nullptr,16);
-                            const uint64_t amount=Number(Text(Field(job,"count")),count);
-                            Require(amount>0 && amount-1<=UINT64_MAX-first,"pool nonce range overflow");
-                            const auto ttl=Number(Text(Field(job,"ttl_ms")),10000);
-                            const auto expires=request_sent+std::chrono::milliseconds(ttl);
-                            BlockHeader header;Require(header.Deserialize(HexToBytes(encoded)) && header.nonce==0,"pool header encoding");
-                            CanonicalPowTarget network;Require(DecodeCanonicalVeldTarget(header.bits,network),"pool network target");
-                            retries=0;status("Mining");++counters.active;
-                            struct Active { ~Active(){--counters.active;} } active;
-                            for(uint64_t offset=0;offset<amount && !stopping && std::chrono::steady_clock::now()<expires;++offset) {
-                                header.nonce=first+offset;
-                                stage=ClientStage::Hashing;
-                                if(!workspace)workspace.emplace();
-                                const auto proof=mining::VeldHashWithDataset<mining::VELD_DEFAULT_LIGHT_DATASET>(
-                                    header.Serialize(),height,network,&*workspace);
-                                if(!mining::g_veldhash_last_dataset_ok()) throw Retry("local hashing resources unavailable");
-                                ++counters.hashes;
-                                if(proof<target || proof<network.bytes || IsNmsProofInRange(proof,network)) {
-                                    std::ostringstream nonce;nonce<<std::hex<<std::setfill('0')<<std::setw(16)<<header.nonce;
-                                    const auto request=Object({{"account",account},{"token",worker_token},{"lease",lease},{"nonce",nonce.str()}});
-                                    Json result;
-                                    stage=ClientStage::Submission;
-                                    // Preserve the same leased proof during bounded retries.
-                                    for(unsigned retry=0;;++retry) {
-                                        try{result=client.Call("submit",request);break;}
-                                        catch(const Retry&){if(retry==7 || stopping)throw;Pause(std::min(1000u,50u<<retry));}
+            for (uint64_t thread = 0; thread < threads; ++thread)
+                workers.emplace_back([&] {
+                    uint64_t completed = 0, retries = 0;
+                    ClientStage stage = ClientStage::Work;
+                    try {
+                        std::optional<mining::VeldHashVM> workspace;
+                        while (!stopping && (!rounds || completed < rounds)) {
+                            try {
+                                std::chrono::steady_clock::time_point request_sent;
+                                stage = ClientStage::Work;
+                                const auto job =
+                                    client.Call("work",
+                                                Object({{"account", account},
+                                                        {"token", worker_token},
+                                                        {"count", std::to_string(count)}}),
+                                                &request_sent);
+                                Require(Text(Field(job, "version")) == "veld-pool/1" &&
+                                            Hex(Field(job, "chain"), 64) == genesis,
+                                        "pool job network or version mismatch");
+                                const auto lease = Hex(Field(job, "lease"), 32),
+                                           encoded = Hex(Field(job, "header"), 176);
+                                const auto target = HexToHash(Hex(Field(job, "target"), 64));
+                                Require(target != Hash256{}, "zero pool accounting target");
+                                const auto height = Number(Text(Field(job, "height")));
+                                const auto nonce_text = Hex(Field(job, "start"), 16);
+                                const uint64_t first = std::stoull(nonce_text, nullptr, 16);
+                                const uint64_t amount = Number(Text(Field(job, "count")), count);
+                                Require(amount > 0 && amount - 1 <= UINT64_MAX - first,
+                                        "pool nonce range overflow");
+                                const auto ttl = Number(Text(Field(job, "ttl_ms")), 10000);
+                                const auto expires = request_sent + std::chrono::milliseconds(ttl);
+                                BlockHeader header;
+                                Require(header.Deserialize(HexToBytes(encoded)) &&
+                                            header.nonce == 0,
+                                        "pool header encoding");
+                                CanonicalPowTarget network;
+                                Require(DecodeCanonicalVeldTarget(header.bits, network),
+                                        "pool network target");
+                                retries = 0;
+                                status("Mining");
+                                ++counters.active;
+                                struct Active {
+                                    ~Active() {
+                                        --counters.active;
                                     }
-                                    const auto disposition=Text(Field(result,"status"));
-                                    if(disposition=="verified")++counters.accepted;
-                                    else if(disposition=="near_miss")++counters.near_misses;
-                                    else if(disposition=="stale")++counters.stale;
-                                    else if(disposition=="invalid")++counters.rejected;
-                                    else Require(disposition=="duplicate" || disposition=="pending","pool submission status");
+                                } active;
+                                for (uint64_t offset = 0;
+                                     offset < amount && !stopping &&
+                                     std::chrono::steady_clock::now() < expires;
+                                     ++offset) {
+                                    header.nonce = first + offset;
+                                    stage = ClientStage::Hashing;
+                                    if (!workspace)
+                                        workspace.emplace();
+                                    const auto proof = mining::VeldHashWithDataset<
+                                        mining::VELD_DEFAULT_LIGHT_DATASET>(
+                                        header.Serialize(), height, network, &*workspace);
+                                    if (!mining::g_veldhash_last_dataset_ok())
+                                        throw Retry("local hashing resources unavailable");
+                                    ++counters.hashes;
+                                    if (proof < target || proof < network.bytes ||
+                                        IsNmsProofInRange(proof, network)) {
+                                        std::ostringstream nonce;
+                                        nonce << std::hex << std::setfill('0') << std::setw(16)
+                                              << header.nonce;
+                                        const auto request = Object({{"account", account},
+                                                                     {"token", worker_token},
+                                                                     {"lease", lease},
+                                                                     {"nonce", nonce.str()}});
+                                        Json result;
+                                        stage = ClientStage::Submission;
+                                        // Preserve the same leased proof during bounded retries.
+                                        for (unsigned retry = 0;; ++retry) {
+                                            try {
+                                                result = client.Call("submit", request);
+                                                break;
+                                            } catch (const Retry&) {
+                                                if (retry == 7 || stopping)
+                                                    throw;
+                                                Pause(std::min(1000u, 50u << retry));
+                                            }
+                                        }
+                                        const auto disposition = Text(Field(result, "status"));
+                                        if (disposition == "verified")
+                                            ++counters.accepted;
+                                        else if (disposition == "near_miss")
+                                            ++counters.near_misses;
+                                        else if (disposition == "stale")
+                                            ++counters.stale;
+                                        else if (disposition == "invalid")
+                                            ++counters.rejected;
+                                        else
+                                            Require(disposition == "duplicate" ||
+                                                        disposition == "pending",
+                                                    "pool submission status");
+                                    }
+                                    Pause(pause);
                                 }
-                                Pause(pause);
+                                ++completed;
+                            } catch (const Retry& error) {
+                                ++counters.retries;
+                                status(error.what());
+                                Pause(std::min(uint64_t(30000), 250u * (++retries)));
                             }
-                            ++completed;
-                        } catch(const Retry& error) {
-                            ++counters.retries;
-                            status(error.what());Pause(std::min(uint64_t(30000),250u*(++retries)));
                         }
+                    } catch (const std::exception& error) {
+                        fail(error, stage);
+                        stopping = true;
                     }
-                } catch(const std::exception& error) {
-                    fail(error,stage);stopping=true;
-                }
-                ++finished;
-            });
-            auto next_balance=std::chrono::steady_clock::now();
-            while(finished<threads) {
-                if(std::filesystem::exists(directory/"stop.request"))stopping=true;
+                    ++finished;
+                });
+            auto next_balance = std::chrono::steady_clock::now();
+            while (finished < threads) {
+                if (std::filesystem::exists(directory / "stop.request"))
+                    stopping = true;
                 {
                     std::lock_guard<std::mutex> lock(status_mutex);
                     // One waiting worker must not mark other active workers
                     // offline. A real all-worker pause retains its reason.
-                    snapshot["status"]=!fatal && counters.active.load()>0?"Mining":detail;
-                    if(fatal){snapshot["failure_code"]=failure.code;snapshot["failure_stage"]=StageName(failure_stage);}
+                    snapshot["status"] = !fatal && counters.active.load() > 0 ? "Mining" : detail;
+                    if (fatal) {
+                        snapshot["failure_code"] = failure.code;
+                        snapshot["failure_stage"] = StageName(failure_stage);
+                    }
                 }
-                snapshot["hashes"]=std::to_string(counters.hashes.load());
-                snapshot["accepted"]=std::to_string(counters.accepted.load());
-                snapshot["near_misses"]=std::to_string(counters.near_misses.load());
-                snapshot["stale"]=std::to_string(counters.stale.load());
-                snapshot["rejected"]=std::to_string(counters.rejected.load());
-                snapshot["active_workers"]=std::to_string(counters.active.load());
-                snapshot["retry_count"]=std::to_string(counters.retries.load());
-                if(!stopping && std::chrono::steady_clock::now()>=next_balance) {
+                snapshot["hashes"] = std::to_string(counters.hashes.load());
+                snapshot["accepted"] = std::to_string(counters.accepted.load());
+                snapshot["near_misses"] = std::to_string(counters.near_misses.load());
+                snapshot["stale"] = std::to_string(counters.stale.load());
+                snapshot["rejected"] = std::to_string(counters.rejected.load());
+                snapshot["active_workers"] = std::to_string(counters.active.load());
+                snapshot["retry_count"] = std::to_string(counters.retries.load());
+                if (!stopping && std::chrono::steady_clock::now() >= next_balance) {
                     try {
-                        main_stage=ClientStage::Balance;
-                        const auto balance=client.Call("account",Object({{"account",account},{"token",view_token}}));
-                        Require(Text(Field(balance,"account"))==account && Text(Field(balance,"address"))==address,"pool balance identity");
-                        for(const auto field:{"pending_units","available_units","reserved_units","paid_units","verified_shares"}) {
-                            const auto value=Text(Field(balance,field));Number(value);snapshot[field]=value;
+                        main_stage = ClientStage::Balance;
+                        const auto balance = client.Call(
+                            "account", Object({{"account", account}, {"token", view_token}}));
+                        Require(Text(Field(balance, "account")) == account &&
+                                    Text(Field(balance, "address")) == address,
+                                "pool balance identity");
+                        for (const auto field :
+                             {"pending_units", "available_units", "reserved_units", "paid_units",
+                              "verified_shares"}) {
+                            const auto value = Text(Field(balance, field));
+                            Number(value);
+                            snapshot[field] = value;
                         }
-                        snapshot["balances_updated"]=std::to_string(std::time(nullptr));
-                    } catch(const Retry&) {} // Existing balance timestamp remains stale.
-                    next_balance=std::chrono::steady_clock::now()+std::chrono::seconds(15);
+                        snapshot["balances_updated"] = std::to_string(std::time(nullptr));
+                    } catch (const Retry&) {
+                    } // Existing balance timestamp remains stale.
+                    next_balance = std::chrono::steady_clock::now() + std::chrono::seconds(15);
                 }
-                main_stage=ClientStage::State;
-                snapshot["updated_at"]=std::to_string(std::time(nullptr));
-                Write(directory/"pool-status.json",snapshot);
-                if(stopping)std::this_thread::sleep_for(std::chrono::milliseconds(200));else Pause(1000);
+                main_stage = ClientStage::State;
+                snapshot["updated_at"] = std::to_string(std::time(nullptr));
+                Write(directory / "pool-status.json", snapshot);
+                if (stopping)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                else
+                    Pause(1000);
             }
-        } catch(const std::exception& error) {
-            fail(error,main_stage);stopping=true;
-        } catch(...) {
-            stopping=true;for(auto& worker:workers)worker.join();throw;
+        } catch (const std::exception& error) {
+            fail(error, main_stage);
+            stopping = true;
+        } catch (...) {
+            stopping = true;
+            for (auto& worker : workers)
+                worker.join();
+            throw;
         }
-        for(auto& worker:workers)worker.join();
-        snapshot["status"]=fatal?FailureSummary(failure.code,StageName(failure_stage)):"Stopped";
-        if(fatal){snapshot["failure_code"]=failure.code;snapshot["failure_stage"]=StageName(failure_stage);}
-        snapshot["active_workers"]="0";snapshot["hashes"]=std::to_string(counters.hashes.load());
-        snapshot["accepted"]=std::to_string(counters.accepted.load());
-        main_stage=ClientStage::State;
-        const auto receipt=Object({{"hashes",std::to_string(counters.hashes.load())},
-            {"accepted",std::to_string(counters.accepted.load())},{"status",fatal?"refused":"stopped"},
-            {"failure_code",fatal?failure.code:""},{"failure_stage",fatal?StageName(failure_stage):""}});
+        for (auto& worker : workers)
+            worker.join();
+        snapshot["status"] =
+            fatal ? FailureSummary(failure.code, StageName(failure_stage)) : "Stopped";
+        if (fatal) {
+            snapshot["failure_code"] = failure.code;
+            snapshot["failure_stage"] = StageName(failure_stage);
+        }
+        snapshot["active_workers"] = "0";
+        snapshot["hashes"] = std::to_string(counters.hashes.load());
+        snapshot["accepted"] = std::to_string(counters.accepted.load());
+        main_stage = ClientStage::State;
+        const auto receipt = Object({{"hashes", std::to_string(counters.hashes.load())},
+                                     {"accepted", std::to_string(counters.accepted.load())},
+                                     {"status", fatal ? "refused" : "stopped"},
+                                     {"failure_code", fatal ? failure.code : ""},
+                                     {"failure_stage", fatal ? StageName(failure_stage) : ""}});
         // Emit the bounded cause even if the final private status write fails.
-        std::cout<<receipt<<std::endl;
-        snapshot["updated_at"]=std::to_string(std::time(nullptr));
-        Write(directory/"pool-status.json",snapshot);
-        return fatal?1:0;
-    } catch(const std::exception& error) {
-        const auto failure=ClassifyFailure(error);
-        std::cerr<<Object({{"status","refused"},{"failure_code",failure.code},
-            {"failure_stage",StageName(main_stage)}})<<'\n';return 1;
+        std::cout << receipt << std::endl;
+        snapshot["updated_at"] = std::to_string(std::time(nullptr));
+        Write(directory / "pool-status.json", snapshot);
+        return fatal ? 1 : 0;
+    } catch (const std::exception& error) {
+        const auto failure = ClassifyFailure(error);
+        std::cerr << Object({{"status", "refused"},
+                             {"failure_code", failure.code},
+                             {"failure_stage", StageName(main_stage)}})
+                  << '\n';
+        return 1;
     }
 }

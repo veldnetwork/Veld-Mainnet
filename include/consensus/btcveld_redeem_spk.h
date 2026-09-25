@@ -25,7 +25,8 @@ namespace veld {
 // REDEEM can never burn btcVELD to an address that cannot be paid.
 inline bool IsStandardBtcRedeemSpk(const std::vector<uint8_t>& s) {
     // P2PKH
-    if (s.size() == 25 && s[0] == 0x76 && s[1] == 0xa9 && s[2] == 0x14 && s[23] == 0x88 && s[24] == 0xac)
+    if (s.size() == 25 && s[0] == 0x76 && s[1] == 0xa9 && s[2] == 0x14 && s[23] == 0x88 &&
+        s[24] == 0xac)
         return true;
     // P2SH
     if (s.size() == 23 && s[0] == 0xa9 && s[1] == 0x14 && s[22] == 0x87)
@@ -33,14 +34,15 @@ inline bool IsStandardBtcRedeemSpk(const std::vector<uint8_t>& s) {
     // SegWit v0..v16
     if (s.size() >= 4 && s.size() <= 42) {
         uint8_t v = s[0];
-        bool ver_ok = (v == 0x00) || (v >= 0x51 && v <= 0x60);   // OP_0, or OP_1..OP_16
+        bool ver_ok = (v == 0x00) || (v >= 0x51 && v <= 0x60); // OP_0, or OP_1..OP_16
         uint8_t plen = s[1];
         if (ver_ok && plen >= 2 && plen <= 40 && (size_t)plen + 2 == s.size()) {
-            if (v == 0x00) return plen == 20 || plen == 32;      // v0: P2WPKH(20) / P2WSH(32) only
-            return true;                                          // v1..v16 (taproot program = 32; future-proof)
+            if (v == 0x00)
+                return plen == 20 || plen == 32; // v0: P2WPKH(20) / P2WSH(32) only
+            return true;                         // v1..v16 (taproot program = 32; future-proof)
         }
     }
     return false;
 }
 
-}  // namespace veld
+} // namespace veld

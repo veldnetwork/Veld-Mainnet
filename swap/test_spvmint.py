@@ -42,14 +42,18 @@ def output(value, script):
 def veld_transaction(op_string, change=400_000):
     fund_spk = spv.veld_p2pkh_from_address(FUND)
     version = struct.pack("<I", 2)
-    vin = (compact(1) + b"\x55" * 32 + struct.pack("<I", 1) +
-           compact(0) + struct.pack("<I", 0xFFFFFFFE))
+    vin = (
+        compact(1)
+        + b"\x55" * 32
+        + struct.pack("<I", 1)
+        + compact(0)
+        + struct.pack("<I", 0xFFFFFFFE)
+    )
     outputs = []
     if change:
         outputs.append(output(change, fund_spk))
     outputs.append(output(0, spv._canonical_op_return(op_string.encode("ascii"))))
-    return (version + vin + compact(len(outputs)) + b"".join(outputs) +
-            struct.pack("<I", 0)).hex()
+    return (version + vin + compact(len(outputs)) + b"".join(outputs) + struct.pack("<I", 0)).hex()
 
 
 def sign_veld_transaction(unsigned_hex, script=b"\x51"):
@@ -61,8 +65,13 @@ def sign_veld_transaction(unsigned_hex, script=b"\x51"):
 
 def transaction(outputs, segwit=False):
     version = struct.pack("<I", 2)
-    vin = (compact(1) + b"\x11" * 32 + struct.pack("<I", 1) +
-           compact(0) + struct.pack("<I", 0xFFFFFFFE))
+    vin = (
+        compact(1)
+        + b"\x11" * 32
+        + struct.pack("<I", 1)
+        + compact(0)
+        + struct.pack("<I", 0xFFFFFFFE)
+    )
     vout = compact(len(outputs)) + b"".join(outputs)
     locktime = struct.pack("<I", 7)
     legacy = version + vin + vout + locktime
@@ -73,11 +82,9 @@ def transaction(outputs, segwit=False):
     return wire, legacy
 
 
-def valid_outputs(amount=50_000, duplicate_custody=False,
-                  duplicate_marker=False):
+def valid_outputs(amount=50_000, duplicate_custody=False, duplicate_marker=False):
     marker = op_return(spv.RECIPIENT_TAG + RECIPIENT.encode("ascii"))
-    outputs = [output(amount, CUSTODY_SPK), output(0, marker),
-               output(10_000, CHANGE_SPK)]
+    outputs = [output(amount, CUSTODY_SPK), output(0, marker), output(10_000, CHANGE_SPK)]
     if duplicate_custody:
         outputs.append(output(1, CUSTODY_SPK))
     if duplicate_marker:
@@ -87,9 +94,13 @@ def valid_outputs(amount=50_000, duplicate_custody=False,
 
 def peg(supply=0):
     return {
-        "active": True, "spv_active": True, "token_id": "btcVELD",
-        "supply_sats": supply, "spv_max_per_mint_sats": 100_000,
-        "spv_max_custody_sats": 200_000, "spv_k_btc": 6,
+        "active": True,
+        "spv_active": True,
+        "token_id": "btcVELD",
+        "supply_sats": supply,
+        "spv_max_per_mint_sats": 100_000,
+        "spv_max_custody_sats": 200_000,
+        "spv_k_btc": 6,
     }
 
 
@@ -108,10 +119,12 @@ class PureTests(unittest.TestCase):
                 with self.subTest(url=url):
                     with self.assertRaises(RuntimeError):
                         spv.VeldRPC({"url": url, "token_file": token_file})
-            rpc = spv.VeldRPC({
-                "url": "http://[::1]:8332/rpc",
-                "token_file": token_file,
-            })
+            rpc = spv.VeldRPC(
+                {
+                    "url": "http://[::1]:8332/rpc",
+                    "token_file": token_file,
+                }
+            )
             self.assertEqual(rpc.url, "http://[::1]:8332/rpc")
             self.assertEqual(rpc.token, "ab" * 32)
 
@@ -130,14 +143,11 @@ class PureTests(unittest.TestCase):
 
     def test_deposit_validation_derives_exact_vout_recipient_amount(self):
         _, legacy = transaction(valid_outputs())
-        found = spv.validate_deposit_tx(legacy, CUSTODY_SPK.hex(), peg(),
-                                        RECIPIENT, 50_000)
-        self.assertEqual(found, {"recipient": RECIPIENT,
-                                 "amount_sats": 50_000, "vout": 0})
+        found = spv.validate_deposit_tx(legacy, CUSTODY_SPK.hex(), peg(), RECIPIENT, 50_000)
+        self.assertEqual(found, {"recipient": RECIPIENT, "amount_sats": 50_000, "vout": 0})
 
     def test_deposit_validation_rejects_ambiguous_outputs(self):
-        _, duplicate_custody = transaction(
-            valid_outputs(duplicate_custody=True))
+        _, duplicate_custody = transaction(valid_outputs(duplicate_custody=True))
         with self.assertRaisesRegex(RuntimeError, "exactly one index-0"):
             spv.validate_deposit_tx(duplicate_custody, CUSTODY_SPK.hex(), peg())
         _, duplicate_marker = transaction(valid_outputs(duplicate_marker=True))
@@ -174,20 +184,24 @@ class PureTests(unittest.TestCase):
         unsigned = veld_transaction(op)
         prepared = {
             "unsigned_tx_hex": unsigned,
-            "inputs": [{"index": 0, "sighash_hex": "66" * 32,
-                        "prev_script_hex":
-                            spv.veld_p2pkh_from_address(FUND).hex()}],
-            "total_input": 500_000, "total_output": 0,
-            "fee": spv.VELD_OP_FEE_UNITS, "change": 400_000,
+            "inputs": [
+                {
+                    "index": 0,
+                    "sighash_hex": "66" * 32,
+                    "prev_script_hex": spv.veld_p2pkh_from_address(FUND).hex(),
+                }
+            ],
+            "total_input": 500_000,
+            "total_output": 0,
+            "fee": spv.VELD_OP_FEE_UNITS,
+            "change": 400_000,
         }
-        parsed, _spk, _fee, _total = spv.validate_prepared_op(
-            prepared, FUND, op)
+        parsed, _spk, _fee, _total = spv.validate_prepared_op(prepared, FUND, op)
         signed = spv.parse_veld_tx_hex(sign_veld_transaction(unsigned), signed=True)
         self.assertEqual(signed["unsigned_hex"], parsed["raw"].hex())
 
         bad_spk = bytes.fromhex("76a914" + "77" * 20 + "88ac")
-        altered = bytes.fromhex(unsigned).replace(
-            spv.veld_p2pkh_from_address(FUND), bad_spk).hex()
+        altered = bytes.fromhex(unsigned).replace(spv.veld_p2pkh_from_address(FUND), bad_spk).hex()
         prepared["unsigned_tx_hex"] = altered
         with self.assertRaisesRegex(RuntimeError, "exact MSPV outputs"):
             spv.validate_prepared_op(prepared, FUND, op)
@@ -204,8 +218,7 @@ class PureTests(unittest.TestCase):
     def test_state_rejects_hardlinks_duplicate_json_and_oversize(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "spvmint-state.json")
-            spv.save_state(path, {"schema": spv.STATE_SCHEMA,
-                                  "bitcoin_txs": {}, "deposits": {}})
+            spv.save_state(path, {"schema": spv.STATE_SCHEMA, "bitcoin_txs": {}, "deposits": {}})
             linked = os.path.join(directory, "linked-state.json")
             os.link(path, linked)
             with self.assertRaisesRegex(RuntimeError, "non-linked"):
@@ -242,11 +255,12 @@ class PureTests(unittest.TestCase):
 
     def test_bitcoin_cli_rejects_duplicate_json_from_bounded_runner(self):
         completed = subprocess.CompletedProcess(
-            ["bitcoin-cli"], 0, stdout='{"allowed":true,"allowed":false}\n',
-            stderr="")
-        with mock.patch.object(spv, "_validate_executable"), \
-                mock.patch.object(spv, "run_bounded_subprocess",
-                                  return_value=completed):
+            ["bitcoin-cli"], 0, stdout='{"allowed":true,"allowed":false}\n', stderr=""
+        )
+        with (
+            mock.patch.object(spv, "_validate_executable"),
+            mock.patch.object(spv, "run_bounded_subprocess", return_value=completed),
+        ):
             cli = spv.BitcoinCLI(["/trusted/bitcoin-cli"], "wallet", 10)
             with self.assertRaisesRegex(RuntimeError, "malformed JSON"):
                 cli.call("getblockchaininfo")
@@ -275,9 +289,14 @@ class FakeBitcoin:
         if method == "getaddressinfo":
             return {"ismine": True}
         if method == "testmempoolaccept":
-            return [{"allowed": True, "txid": self.txid,
-                     "wtxid": spv.dsha(bytes.fromhex(self.finalized_hex))[::-1].hex(),
-                     "fees": {"base": 0.00000100}}]
+            return [
+                {
+                    "allowed": True,
+                    "txid": self.txid,
+                    "wtxid": spv.dsha(bytes.fromhex(self.finalized_hex))[::-1].hex(),
+                    "fees": {"base": 0.00000100},
+                }
+            ]
         if method == "sendrawtransaction":
             return self.txid
         if method == "getrawtransaction":
@@ -287,8 +306,7 @@ class FakeBitcoin:
         if method == "getblockcount":
             return 200
         if method == "getblockheader":
-            return {"hash": "aa" * 32, "height": 100,
-                    "confirmations": 101}
+            return {"hash": "aa" * 32, "height": 100, "confirmations": 101}
         raise AssertionError("unexpected Bitcoin RPC %s %r" % (method, args))
 
 
@@ -305,28 +323,41 @@ class FakeVeld:
 
     def rpc(self, method, params=None):
         if method == "getbtcveldmintstatus":
-            return {"outpoint": params[0], "consumed": self.consumed,
-                    "proof_version": spv.NULLIFIER_PROOF_VERSION,
-                    "proof_hex": self.nullifier_proof_hex,
-                    "root": self.nullifier_root,
-                    "count": self.nullifier_count,
-                    "tip": 200, "tip_hash": "22" * 32}
+            return {
+                "outpoint": params[0],
+                "consumed": self.consumed,
+                "proof_version": spv.NULLIFIER_PROOF_VERSION,
+                "proof_hex": self.nullifier_proof_hex,
+                "root": self.nullifier_root,
+                "count": self.nullifier_count,
+                "tip": 200,
+                "tip_hash": "22" * 32,
+            }
         if method == "preparerawop":
             self.prepared += 1
             self.last_op = params[1]
             return {
                 "unsigned_tx_hex": veld_transaction(params[1]),
-                "inputs": [{"index": 0, "sighash_hex": "66" * 32,
-                            "prev_script_hex":
-                                spv.veld_p2pkh_from_address(FUND).hex()}],
-                "total_input": 500_000, "total_output": 0,
-                "fee": spv.VELD_OP_FEE_UNITS, "change": 400_000,
+                "inputs": [
+                    {
+                        "index": 0,
+                        "sighash_hex": "66" * 32,
+                        "prev_script_hex": spv.veld_p2pkh_from_address(FUND).hex(),
+                    }
+                ],
+                "total_input": 500_000,
+                "total_output": 0,
+                "fee": spv.VELD_OP_FEE_UNITS,
+                "change": 400_000,
             }
         if method == "gettxout":
-            return {"txid": params[0], "vout": int(params[1]),
-                    "value_units": 500_000,
-                    "script_pubkey_hex": spv.veld_p2pkh_from_address(FUND).hex(),
-                    "confirmations": 10}
+            return {
+                "txid": params[0],
+                "vout": int(params[1]),
+                "value_units": 500_000,
+                "script_pubkey_hex": spv.veld_p2pkh_from_address(FUND).hex(),
+                "confirmations": 10,
+            }
         if method == "getbtcheaderinfo":
             return {"spv_active": True, "k_btc": 6, "best_height": 200}
         if method == "sendrawtransaction":
@@ -410,19 +441,15 @@ class OperatorTests(unittest.TestCase):
         btc = FakeBitcoin(wire.hex())
         veld = FakeVeld()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       FakeSigner())
+            operator = HarnessOperator(self.config(directory), btc, veld, FakeSigner())
             result = operator.deposit(RECIPIENT, 50_000)
             self.assertEqual(result["outpoint"], btc.txid + ":0")
             self.assertTrue(result["segwit_funded"])
-            funded_call = next(c for c in btc.calls
-                               if c[0] == "walletcreatefundedpsbt")
+            funded_call = next(c for c in btc.calls if c[0] == "walletcreatefundedpsbt")
             self.assertIn(spv.RECIPIENT_TAG.hex(), funded_call[1][1])
             self.assertIn(RECIPIENT.encode("ascii").hex(), funded_call[1][1])
-            state = spv.load_state(os.path.join(directory,
-                                                "spvmint-state.json"))
-            self.assertEqual(state["deposits"][result["outpoint"]]["status"],
-                             "deposited")
+            state = spv.load_state(os.path.join(directory, "spvmint-state.json"))
+            self.assertEqual(state["deposits"][result["outpoint"]]["status"], "deposited")
 
     def test_deposit_refuses_bad_recipient_checksum_before_wallet_spend(self):
         wire, _ = transaction(valid_outputs(), segwit=True)
@@ -430,12 +457,10 @@ class OperatorTests(unittest.TestCase):
         veld = FakeVeld()
         bad = RECIPIENT[:-1] + ("1" if RECIPIENT[-1] != "1" else "2")
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       FakeSigner())
+            operator = HarnessOperator(self.config(directory), btc, veld, FakeSigner())
             with self.assertRaisesRegex(RuntimeError, "checksum"):
                 operator.deposit(bad, 50_000)
-            self.assertNotIn("walletcreatefundedpsbt",
-                             [item[0] for item in btc.calls])
+            self.assertNotIn("walletcreatefundedpsbt", [item[0] for item in btc.calls])
 
     def test_deposit_binds_actual_mempool_fee_not_only_psbt_metadata(self):
         wire, _ = transaction(valid_outputs(), segwit=True)
@@ -444,17 +469,20 @@ class OperatorTests(unittest.TestCase):
             def call(self, method, *args, wallet=False):
                 if method == "testmempoolaccept":
                     self.calls.append((method, args, wallet))
-                    return [{"allowed": True, "txid": self.txid,
-                             "wtxid": spv.dsha(bytes.fromhex(
-                                 self.finalized_hex))[::-1].hex(),
-                             "fees": {"base": 0.00000200}}]
+                    return [
+                        {
+                            "allowed": True,
+                            "txid": self.txid,
+                            "wtxid": spv.dsha(bytes.fromhex(self.finalized_hex))[::-1].hex(),
+                            "fees": {"base": 0.00000200},
+                        }
+                    ]
                 return super().call(method, *args, wallet=wallet)
 
         btc = FeeMismatchBitcoin(wire.hex())
         veld = FakeVeld()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       FakeSigner())
+            operator = HarnessOperator(self.config(directory), btc, veld, FakeSigner())
             with self.assertRaisesRegex(RuntimeError, "actual fee"):
                 operator.deposit(RECIPIENT, 50_000)
             self.assertNotIn("sendrawtransaction", [item[0] for item in btc.calls])
@@ -464,14 +492,16 @@ class OperatorTests(unittest.TestCase):
         btc = FakeBitcoin(wire.hex())
         veld = FakeVeld()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       FakeSigner())
+            operator = HarnessOperator(self.config(directory), btc, veld, FakeSigner())
             operator._identity(full_derivation=True)
             state = spv.load_state(operator.state_path)
             state["bitcoin_txs"][btc.txid] = {
-                "status": "broadcasting", "raw_hex": wire.hex(),
-                "recipient": RECIPIENT, "amount_sats": 50_000,
-                "custody_vout": 0, "fee_sats": 100,
+                "status": "broadcasting",
+                "raw_hex": wire.hex(),
+                "recipient": RECIPIENT,
+                "amount_sats": 50_000,
+                "custody_vout": 0,
+                "fee_sats": 100,
                 # Omit change_pos to exercise upgrade recovery inference.
                 "created_at": 1,
             }
@@ -480,11 +510,9 @@ class OperatorTests(unittest.TestCase):
             result = operator.deposit(RECIPIENT, 50_000)
             self.assertTrue(result["recovered"])
             self.assertEqual(result["btc_txid"], btc.txid)
-            self.assertNotIn("walletcreatefundedpsbt",
-                             [call[0] for call in btc.calls])
+            self.assertNotIn("walletcreatefundedpsbt", [call[0] for call in btc.calls])
             restored = spv.load_state(operator.state_path)
-            self.assertEqual(restored["bitcoin_txs"][btc.txid]["status"],
-                             "broadcast")
+            self.assertEqual(restored["bitcoin_txs"][btc.txid]["status"], "broadcast")
             self.assertEqual(restored["bitcoin_txs"][btc.txid]["change_pos"], 2)
 
     def test_new_deposit_is_held_behind_different_unresolved_wal(self):
@@ -492,39 +520,41 @@ class OperatorTests(unittest.TestCase):
         btc = FakeBitcoin(wire.hex())
         veld = FakeVeld()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       FakeSigner())
+            operator = HarnessOperator(self.config(directory), btc, veld, FakeSigner())
             state = spv.load_state(operator.state_path)
             state["bitcoin_txs"][btc.txid] = {
-                "status": "broadcasting", "raw_hex": wire.hex(),
-                "recipient": RECIPIENT, "amount_sats": 50_000,
-                "custody_vout": 0, "fee_sats": 100, "change_pos": 2,
+                "status": "broadcasting",
+                "raw_hex": wire.hex(),
+                "recipient": RECIPIENT,
+                "amount_sats": 50_000,
+                "custody_vout": 0,
+                "fee_sats": 100,
+                "change_pos": 2,
                 "created_at": 1,
             }
             spv.save_state(operator.state_path, state)
             with self.assertRaisesRegex(RuntimeError, "original recipient and amount"):
                 operator.deposit(RECIPIENT, 49_999)
-            self.assertNotIn("walletcreatefundedpsbt",
-                             [call[0] for call in btc.calls])
+            self.assertNotIn("walletcreatefundedpsbt", [call[0] for call in btc.calls])
 
     def test_mocked_mint_posts_once_then_chain_replay_status_stops_fee(self):
         _, legacy = transaction(valid_outputs(), segwit=False)
         btc_txid = spv.dsha(legacy)[::-1].hex()
         proof = {
-            "block_hash": "aa" * 32, "block_height": 100,
-            "confirmations": 7, "branch_len": 2,
+            "block_hash": "aa" * 32,
+            "block_height": 100,
+            "confirmations": 7,
+            "branch_len": 2,
             "op_string": spv.OP_PREFIX + (spv.PROOF_MAGIC + b"x" * 100).hex(),
             "legacy_tx": legacy,
-            "deposit": {"recipient": RECIPIENT,
-                        "amount_sats": 50_000, "vout": 0},
+            "deposit": {"recipient": RECIPIENT, "amount_sats": 50_000, "vout": 0},
             "segwit": False,
         }
         btc = FakeBitcoin(legacy.hex())
         veld = FakeVeld()
         signer = FakeSigner()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       signer, proof=proof)
+            operator = HarnessOperator(self.config(directory), btc, veld, signer, proof=proof)
             first = operator.mint(btc_txid, RECIPIENT)
             self.assertTrue(first["broadcast"])
             self.assertEqual(first["outpoint"], btc_txid + ":0")
@@ -543,19 +573,21 @@ class OperatorTests(unittest.TestCase):
         _, legacy = transaction(valid_outputs(), segwit=False)
         btc_txid = spv.dsha(legacy)[::-1].hex()
         proof = {
-            "block_hash": "aa" * 32, "block_height": 100,
-            "confirmations": 7, "branch_len": 1,
+            "block_hash": "aa" * 32,
+            "block_height": 100,
+            "confirmations": 7,
+            "branch_len": 1,
             "op_string": spv.OP_PREFIX + (spv.PROOF_MAGIC + b"m" * 80).hex(),
             "legacy_tx": legacy,
-            "deposit": {"recipient": RECIPIENT,
-                        "amount_sats": 50_000, "vout": 0},
+            "deposit": {"recipient": RECIPIENT, "amount_sats": 50_000, "vout": 0},
             "segwit": False,
         }
         btc = FakeBitcoin(legacy.hex())
         veld = FakeVeld()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       MutatingSigner(), proof=proof)
+            operator = HarnessOperator(
+                self.config(directory), btc, veld, MutatingSigner(), proof=proof
+            )
             with self.assertRaisesRegex(RuntimeError, "signer changed"):
                 operator.mint(btc_txid, RECIPIENT)
             self.assertEqual(veld.broadcast, 0)
@@ -566,19 +598,21 @@ class OperatorTests(unittest.TestCase):
         _, legacy = transaction(valid_outputs(), segwit=False)
         btc_txid = spv.dsha(legacy)[::-1].hex()
         proof = {
-            "block_hash": "aa" * 32, "block_height": 100,
-            "confirmations": 7, "branch_len": 1,
+            "block_hash": "aa" * 32,
+            "block_height": 100,
+            "confirmations": 7,
+            "branch_len": 1,
             "op_string": spv.OP_PREFIX + (spv.PROOF_MAGIC + b"r" * 80).hex(),
             "legacy_tx": legacy,
-            "deposit": {"recipient": RECIPIENT,
-                        "amount_sats": 50_000, "vout": 0},
+            "deposit": {"recipient": RECIPIENT, "amount_sats": 50_000, "vout": 0},
             "segwit": False,
         }
         btc = FakeBitcoin(legacy.hex())
         veld = FakeVeld()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       ReorgSigner(btc), proof=proof)
+            operator = HarnessOperator(
+                self.config(directory), btc, veld, ReorgSigner(btc), proof=proof
+            )
             with self.assertRaisesRegex(RuntimeError, "reorg"):
                 operator.mint(btc_txid, RECIPIENT)
             self.assertEqual(veld.broadcast, 0)
@@ -587,13 +621,13 @@ class OperatorTests(unittest.TestCase):
         _, legacy = transaction(valid_outputs(), segwit=False)
         btc_txid = spv.dsha(legacy)[::-1].hex()
         proof = {
-            "block_hash": "aa" * 32, "block_height": 100,
-            "confirmations": 7, "branch_len": 1,
-            "op_string": spv.OP_PREFIX +
-                         (spv.PROOF_MAGIC + b"n" * 80).hex(),
+            "block_hash": "aa" * 32,
+            "block_height": 100,
+            "confirmations": 7,
+            "branch_len": 1,
+            "op_string": spv.OP_PREFIX + (spv.PROOF_MAGIC + b"n" * 80).hex(),
             "legacy_tx": legacy,
-            "deposit": {"recipient": RECIPIENT,
-                        "amount_sats": 50_000, "vout": 0},
+            "deposit": {"recipient": RECIPIENT, "amount_sats": 50_000, "vout": 0},
             "segwit": False,
         }
         btc = FakeBitcoin(legacy.hex())
@@ -607,10 +641,10 @@ class OperatorTests(unittest.TestCase):
                 return signed
 
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       RootRaceSigner(), proof=proof)
-            with self.assertRaisesRegex(spv.Pending,
-                                        "nullifier root changed"):
+            operator = HarnessOperator(
+                self.config(directory), btc, veld, RootRaceSigner(), proof=proof
+            )
+            with self.assertRaisesRegex(spv.Pending, "nullifier root changed"):
                 operator.mint(btc_txid, RECIPIENT)
             self.assertEqual(veld.broadcast, 0)
             state = spv.load_state(operator.state_path)
@@ -620,13 +654,13 @@ class OperatorTests(unittest.TestCase):
         _, legacy = transaction(valid_outputs(), segwit=False)
         btc_txid = spv.dsha(legacy)[::-1].hex()
         proof = {
-            "block_hash": "aa" * 32, "block_height": 100,
-            "confirmations": 7, "branch_len": 1,
-            "op_string": spv.OP_PREFIX +
-                         (spv.PROOF_MAGIC + b"o" * 80).hex(),
+            "block_hash": "aa" * 32,
+            "block_height": 100,
+            "confirmations": 7,
+            "branch_len": 1,
+            "op_string": spv.OP_PREFIX + (spv.PROOF_MAGIC + b"o" * 80).hex(),
             "legacy_tx": legacy,
-            "deposit": {"recipient": RECIPIENT,
-                        "amount_sats": 50_000, "vout": 0},
+            "deposit": {"recipient": RECIPIENT, "amount_sats": 50_000, "vout": 0},
             "segwit": False,
         }
         btc = FakeBitcoin(legacy.hex())
@@ -640,8 +674,7 @@ class OperatorTests(unittest.TestCase):
 
         signer = RebuildingSigner()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       signer, proof=proof)
+            operator = HarnessOperator(self.config(directory), btc, veld, signer, proof=proof)
             operator.mint(btc_txid, RECIPIENT)
             self.assertEqual(signer.calls, 1)
 
@@ -652,26 +685,24 @@ class OperatorTests(unittest.TestCase):
             veld.nullifier_count = 1
             proof["nullifier_root"] = veld.nullifier_root
             proof["nullifier_count"] = veld.nullifier_count
-            proof["op_string"] = spv.OP_PREFIX + (
-                spv.PROOF_MAGIC + b"q" * 80).hex()
+            proof["op_string"] = spv.OP_PREFIX + (spv.PROOF_MAGIC + b"q" * 80).hex()
             rebuilt = operator.mint(btc_txid, RECIPIENT)
             self.assertTrue(rebuilt["broadcast"])
             self.assertEqual(signer.calls, 2)
-            durable = spv.load_state(operator.state_path)["deposits"][
-                btc_txid + ":0"]
+            durable = spv.load_state(operator.state_path)["deposits"][btc_txid + ":0"]
             self.assertEqual(durable["nullifier_root"], "33" * 32)
 
     def test_stale_signed_carrier_is_retained_while_visible(self):
         _, legacy = transaction(valid_outputs(), segwit=False)
         btc_txid = spv.dsha(legacy)[::-1].hex()
         proof = {
-            "block_hash": "aa" * 32, "block_height": 100,
-            "confirmations": 7, "branch_len": 1,
-            "op_string": spv.OP_PREFIX +
-                         (spv.PROOF_MAGIC + b"s" * 80).hex(),
+            "block_hash": "aa" * 32,
+            "block_height": 100,
+            "confirmations": 7,
+            "branch_len": 1,
+            "op_string": spv.OP_PREFIX + (spv.PROOF_MAGIC + b"s" * 80).hex(),
             "legacy_tx": legacy,
-            "deposit": {"recipient": RECIPIENT,
-                        "amount_sats": 50_000, "vout": 0},
+            "deposit": {"recipient": RECIPIENT, "amount_sats": 50_000, "vout": 0},
             "segwit": False,
         }
 
@@ -685,43 +716,39 @@ class OperatorTests(unittest.TestCase):
         veld = VisibleVeld()
         signer = FakeSigner()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       signer, proof=proof)
+            operator = HarnessOperator(self.config(directory), btc, veld, signer, proof=proof)
             operator.mint(btc_txid, RECIPIENT)
-            original = spv.load_state(operator.state_path)["deposits"][
-                btc_txid + ":0"]
+            original = spv.load_state(operator.state_path)["deposits"][btc_txid + ":0"]
             veld.nullifier_root = "44" * 32
             veld.nullifier_count = 1
             proof["nullifier_root"] = veld.nullifier_root
             proof["nullifier_count"] = veld.nullifier_count
-            proof["op_string"] = spv.OP_PREFIX + (
-                spv.PROOF_MAGIC + b"t" * 80).hex()
-            with self.assertRaisesRegex(spv.Pending,
-                                        "stale-root MSP2 transaction is still visible"):
+            proof["op_string"] = spv.OP_PREFIX + (spv.PROOF_MAGIC + b"t" * 80).hex()
+            with self.assertRaisesRegex(
+                spv.Pending, "stale-root MSP2 transaction is still visible"
+            ):
                 operator.mint(btc_txid, RECIPIENT)
-            current = spv.load_state(operator.state_path)["deposits"][
-                btc_txid + ":0"]
-            self.assertEqual(current["signed_veld_tx_hex"],
-                             original["signed_veld_tx_hex"])
+            current = spv.load_state(operator.state_path)["deposits"][btc_txid + ":0"]
+            self.assertEqual(current["signed_veld_tx_hex"], original["signed_veld_tx_hex"])
             self.assertEqual(signer.calls, 1)
 
     def test_restart_refuses_signed_wal_if_current_proof_identity_changed(self):
         _, legacy = transaction(valid_outputs(), segwit=False)
         btc_txid = spv.dsha(legacy)[::-1].hex()
         proof = {
-            "block_hash": "aa" * 32, "block_height": 100,
-            "confirmations": 7, "branch_len": 1,
+            "block_hash": "aa" * 32,
+            "block_height": 100,
+            "confirmations": 7,
+            "branch_len": 1,
             "op_string": spv.OP_PREFIX + (spv.PROOF_MAGIC + b"p" * 80).hex(),
             "legacy_tx": legacy,
-            "deposit": {"recipient": RECIPIENT,
-                        "amount_sats": 50_000, "vout": 0},
+            "deposit": {"recipient": RECIPIENT, "amount_sats": 50_000, "vout": 0},
             "segwit": False,
         }
         btc = FakeBitcoin(legacy.hex())
         veld = FakeVeld()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       FakeSigner(), proof=proof)
+            operator = HarnessOperator(self.config(directory), btc, veld, FakeSigner(), proof=proof)
             operator.mint(btc_txid, RECIPIENT)
             proof["block_hash"] = "bb" * 32
             with self.assertRaisesRegex(RuntimeError, "identity mismatch"):
@@ -732,12 +759,13 @@ class OperatorTests(unittest.TestCase):
         _, legacy = transaction(valid_outputs(), segwit=False)
         btc_txid = spv.dsha(legacy)[::-1].hex()
         proof = {
-            "block_hash": "aa" * 32, "block_height": 100,
-            "confirmations": 7, "branch_len": 1,
+            "block_hash": "aa" * 32,
+            "block_height": 100,
+            "confirmations": 7,
+            "branch_len": 1,
             "op_string": spv.OP_PREFIX + (spv.PROOF_MAGIC + b"w" * 80).hex(),
             "legacy_tx": legacy,
-            "deposit": {"recipient": RECIPIENT,
-                        "amount_sats": 50_000, "vout": 0},
+            "deposit": {"recipient": RECIPIENT, "amount_sats": 50_000, "vout": 0},
             "segwit": False,
         }
 
@@ -756,8 +784,7 @@ class OperatorTests(unittest.TestCase):
         veld = LostResponseVeld()
         signer = FakeSigner()
         with tempfile.TemporaryDirectory() as directory:
-            operator = HarnessOperator(self.config(directory), btc, veld,
-                                       signer, proof=proof)
+            operator = HarnessOperator(self.config(directory), btc, veld, signer, proof=proof)
             with self.assertRaisesRegex(RuntimeError, "lost response"):
                 operator.mint(btc_txid, RECIPIENT)
             durable = spv.load_state(operator.state_path)["deposits"][btc_txid + ":0"]

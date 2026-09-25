@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline deployment-contract tests for the 3-of-5 custody signer mesh."""
+
 import ast
 import hashlib
 import json
@@ -38,8 +39,7 @@ class DeploymentConfigTests(unittest.TestCase):
         for path in public_examples:
             self.assertNotRegex(path.read_text(), external_ipv4, str(path))
         watchtower = json.loads((DEPLOY / "watchtowerd.conf.example").read_text())
-        self.assertEqual(watchtower["signer"]["ssh_target"],
-                         "veldwt@REPLACE_WITH_SIGNER_HOST")
+        self.assertEqual(watchtower["signer"]["ssh_target"], "veldwt@REPLACE_WITH_SIGNER_HOST")
 
     def test_source_tree_does_not_ship_the_synthetic_custody_allowlist(self):
         """A fixture-shaped manifest must never look deployable by filename."""
@@ -52,8 +52,7 @@ class DeploymentConfigTests(unittest.TestCase):
             self.assertNotIn("#testsum1", descriptor, manifest)
             self.assertNotIn("[00000001/86h/0h/0h]", descriptor, manifest)
             self.assertFalse(
-                scripts[:2] == ["5120" + "00" * 31 + "01",
-                                "5120" + "00" * 31 + "02"],
+                scripts[:2] == ["5120" + "00" * 31 + "01", "5120" + "00" * 31 + "02"],
                 f"{manifest} contains the sequential synthetic SPK fixture",
             )
 
@@ -65,20 +64,27 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertTrue(authority["witness"]["witness_id"])
         self.assertIn("BatchMode=yes", authority["witness"]["command"])
         self.assertEqual(authority["witness"]["command"][0], "/usr/bin/ssh")
-        self.assertEqual(authority["witness"]["command"][-1],
-                         "veld_wt_reserve")
+        self.assertEqual(authority["witness"]["command"][-1], "veld_wt_reserve")
         c1_authority = signer["c1_reservation_authority"]
-        self.assertEqual(c1_authority["durable_archive_command"],
-                         ["/REPLACE_WITH_C1_SIGNER_COMPLIANCE_ARCHIVE_CLIENT"])
-        coordinator = json.loads((
-            DEPLOY / "c1-reservationd-config.example.json").read_text())
+        self.assertEqual(
+            c1_authority["durable_archive_command"],
+            ["/REPLACE_WITH_C1_SIGNER_COMPLIANCE_ARCHIVE_CLIENT"],
+        )
+        coordinator = json.loads((DEPLOY / "c1-reservationd-config.example.json").read_text())
         self.assertEqual(coordinator["version"], 2)
-        self.assertEqual(coordinator["terminal_archive_command"],
-                         ["/REPLACE_WITH_C1_COORDINATOR_COMPLIANCE_ARCHIVE_CLIENT"])
+        self.assertEqual(
+            coordinator["terminal_archive_command"],
+            ["/REPLACE_WITH_C1_COORDINATOR_COMPLIANCE_ARCHIVE_CLIENT"],
+        )
 
         c1_runbook = (DEPLOY / "C1-WRAP-ADMISSION-RUNBOOK.md").read_text()
-        for required in ("read it back", "COMPLIANCE", "ten years",
-                         "durable_archive_command", "terminal_archive_command"):
+        for required in (
+            "read it back",
+            "COMPLIANCE",
+            "ten years",
+            "durable_archive_command",
+            "terminal_archive_command",
+        ):
             self.assertIn(required, c1_runbook)
 
         authorized = (DEPLOY / "watchtower-authorized_keys.example").read_text()
@@ -87,10 +93,14 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn("restrict", authorized)
 
         runbook = (DEPLOY / "MINT-SIGNER-WITNESS-RUNBOOK.md").read_text()
-        for required in ("Exactly one issuer signer", "strictly more than 100",
-                         "WITNESS_RECONCILIATION_REQUIRED",
-                         "reconcile_witness_restore.py", "Two distinct operators",
-                         "Never restore `active-mint-signer`"):
+        for required in (
+            "Exactly one issuer signer",
+            "strictly more than 100",
+            "WITNESS_RECONCILIATION_REQUIRED",
+            "reconcile_witness_restore.py",
+            "Two distinct operators",
+            "Never restore `active-mint-signer`",
+        ):
             self.assertIn(required, runbook)
         service = (DEPLOY / "veld-watchtowerd.service").read_text()
         self.assertIn("StateDirectoryMode=0700", service)
@@ -123,18 +133,22 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn("custody_manifest_sha256", payout)
         self.assertIn("custody_consensus_manifest_sha256", payout)
         self.assertEqual(payout["wallet"], "btcveld-custody-signer-1")
-        self.assertEqual(payout["authority_db"],
-                         "/var/lib/veld-signer/obligations.sqlite3")
+        self.assertEqual(payout["authority_db"], "/var/lib/veld-signer/obligations.sqlite3")
         self.assertEqual(payout["cli_base"][0], "/usr/local/bin/bitcoin-cli")
         for name in ("redeemd-threshold.json", "redeemd-threshold.example.json"):
             cfg = json.loads((DEPLOY / name).read_text())
             self.assertEqual(cfg["cli_base"][0], "/usr/local/bin/bitcoin-cli")
             self.assertEqual(cfg["custody_script_range"], [0, 10999])
-            self.assertEqual(cfg["custody_spk_manifest_file"],
-                             "/etc/veld/custody-spks-operational.json")
+            self.assertEqual(
+                cfg["custody_spk_manifest_file"], "/etc/veld/custody-spks-operational.json"
+            )
 
-        for name in ("signer-box-setup.sh", "signer-daemon-setup.sh",
-                     "custody-operator-setup.sh", "custody-signer-keygen.sh"):
+        for name in (
+            "signer-box-setup.sh",
+            "signer-daemon-setup.sh",
+            "custody-operator-setup.sh",
+            "custody-signer-keygen.sh",
+        ):
             text = (DEPLOY / name).read_text()
             self.assertIn("custody-signer-[1-5]", text, name)
         record = (DEPLOY / "custody-descriptor.txt").read_text()
@@ -145,23 +159,22 @@ class DeploymentConfigTests(unittest.TestCase):
     def test_forced_command_uses_fail_closed_unlocking_wrapper(self):
         authorized = (DEPLOY / "signer-authorized_keys.example").read_text()
         mint_command = (
-            'command="/usr/bin/python3 /opt/veld-signer/veld_signerd.py '
-            '--capability mint"')
+            'command="/usr/bin/python3 /opt/veld-signer/veld_signerd.py --capability mint"'
+        )
         c1_command = (
             'command="/usr/bin/python3 /opt/veld-signer/veld_signerd.py '
-            '--capability c1-reservation"')
+            '--capability c1-reservation"'
+        )
         self.assertEqual(authorized.count(mint_command), 1)
         self.assertEqual(authorized.count(c1_command), 1)
         self.assertIn("DISTINCT SSH key", authorized)
         self.assertIn("AAAA...MINTER_PUBKEY...", authorized)
         self.assertIn("AAAA...C1_RESERVATION_COORDINATOR_PUBKEY...", authorized)
-        self.assertNotIn(
-            'command="/usr/bin/python3 /opt/veld-signer/veld_signerd.py"',
-            authorized)
+        self.assertNotIn('command="/usr/bin/python3 /opt/veld-signer/veld_signerd.py"', authorized)
         self.assertIn('command="/opt/veld-signer/sign-wrapper.sh"', authorized)
         self.assertNotIn(
-            'command="/usr/bin/python3 /opt/veld-signer/veld_payout_signerd.py"',
-            authorized)
+            'command="/usr/bin/python3 /opt/veld-signer/veld_payout_signerd.py"', authorized
+        )
 
         setup = (DEPLOY / "signer-daemon-setup.sh").read_text()
         self.assertIn("/tmp/rpc_url_policy.py", setup)
@@ -177,8 +190,8 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn("bitcoin-cli -stdin", setup)
         self.assertIn('"bitcoin_datadir":bitcoin_datadir', setup)
         self.assertIn(
-            '"cli_base":["/usr/local/bin/bitcoin-cli","-datadir="+bitcoin_datadir]',
-            setup)
+            '"cli_base":["/usr/local/bin/bitcoin-cli","-datadir="+bitcoin_datadir]', setup
+        )
         self.assertIn("BTC_DATADIR=$(python3 -c", setup)
         self.assertNotIn("bitcoin-cli -datadir=/var/lib/bitcoin", setup)
         self.assertNotIn("bitcoin-cli -stdin -datadir=/var/lib/bitcoin", setup)
@@ -242,38 +255,54 @@ class DeploymentConfigTests(unittest.TestCase):
                 [sys.executable, "-I", "-B", "-c", probe, str(installed)],
                 cwd=empty_cwd,
                 env={"PATH": "/usr/bin:/bin", "HOME": str(empty_cwd)},
-                capture_output=True, text=True, timeout=10)
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
             self.assertEqual(out.returncode, 0, out.stderr)
-            self.assertEqual(json.loads(out.stdout), {
-                name: name + ".py" for name in (
-                    "veld_payout_signerd", "veld_redeemd", "rpc_url_policy",
-                    "veld_redeem_commitment", "veld_custody_binding",
-                )
-            })
+            self.assertEqual(
+                json.loads(out.stdout),
+                {
+                    name: name + ".py"
+                    for name in (
+                        "veld_payout_signerd",
+                        "veld_redeemd",
+                        "rpc_url_policy",
+                        "veld_redeem_commitment",
+                        "veld_custody_binding",
+                    )
+                },
+            )
             self.assertEqual(list(empty_cwd.iterdir()), [])
 
     @unittest.skipUnless(os.name == "posix", "Bash wrapper generation requires POSIX")
     def test_wrapper_generator_preserves_configured_environment_path(self):
         setup = (DEPLOY / "signer-daemon-setup.sh").read_text()
-        initialization = [line for line in setup.splitlines()
-                          if line.startswith("ENV_FILE=")]
-        self.assertEqual(initialization, [
-            'ENV_FILE=$(realpath -e -- "${VELD_ROOT_ENV:-/etc/veld/env}")',
-        ])
-        self.assertLess(setup.index(initialization[0]),
-                        setup.index('[ -f "$ENV_FILE" ]'))
+        initialization = [line for line in setup.splitlines() if line.startswith("ENV_FILE=")]
+        self.assertEqual(
+            initialization,
+            [
+                'ENV_FILE=$(realpath -e -- "${VELD_ROOT_ENV:-/etc/veld/env}")',
+            ],
+        )
+        self.assertLess(setup.index(initialization[0]), setup.index('[ -f "$ENV_FILE" ]'))
         generator = re.search(
             r"^\{\n(?P<header>.*?)^cat <<'WRAP'\n"
             r"(?P<body>.*?)^WRAP\n^\} >/opt/veld-signer/sign-wrapper\.sh$",
-            setup, re.MULTILINE | re.DOTALL)
+            setup,
+            re.MULTILINE | re.DOTALL,
+        )
         self.assertIsNotNone(generator)
         header = generator.group("header")
         # Only path resolution and these two printing builtins may execute. The
         # provisioning script and generated wallet wrapper are never run.
-        self.assertEqual(header.splitlines(), [
-            "printf '%s\\n' '#!/bin/bash'",
-            "printf 'ENV_FILE=%q\\n' \"$ENV_FILE\"",
-        ])
+        self.assertEqual(
+            header.splitlines(),
+            [
+                "printf '%s\\n' '#!/bin/bash'",
+                "printf 'ENV_FILE=%q\\n' \"$ENV_FILE\"",
+            ],
+        )
         fragment = "set -euo pipefail\n" + initialization[0] + "\n" + header
         with tempfile.TemporaryDirectory(prefix="signer-wrapper-test-") as td:
             root = Path(td)
@@ -284,41 +313,55 @@ class DeploymentConfigTests(unittest.TestCase):
             forced_cwd = root / "forced-command"
             forced_cwd.mkdir()
             for configured in (
-                    str(env_file),
-                    str(env_file.relative_to(root)),
-                    str(Path("signer test") / ".." / env_file.relative_to(root))):
+                str(env_file),
+                str(env_file.relative_to(root)),
+                str(Path("signer test") / ".." / env_file.relative_to(root)),
+            ):
                 with self.subTest(configured=configured):
                     out = subprocess.run(
                         ["/bin/bash", "--noprofile", "--norc", "-c", fragment],
                         cwd=root,
                         env={"VELD_ROOT_ENV": configured, "PATH": "/usr/bin:/bin"},
-                        capture_output=True, text=True, timeout=10)
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
                     self.assertEqual(out.returncode, 0, out.stderr)
                     lines = out.stdout.splitlines()
                     self.assertEqual(len(lines), 2)
                     self.assertEqual(lines[0], "#!/bin/bash")
-                    self.assertEqual(shlex.split(lines[1]),
-                                     ["ENV_FILE=" + str(env_file.resolve())])
+                    self.assertEqual(shlex.split(lines[1]), ["ENV_FILE=" + str(env_file.resolve())])
                     wrapper = out.stdout + generator.group("body")
                     self.assertIn('require_root_file "$ENV_FILE"', wrapper)
                     self.assertIn('. "$ENV_FILE"', wrapper)
                     checked = subprocess.run(
                         ["/bin/bash", "--noprofile", "--norc", "-n"],
-                        cwd=forced_cwd, input=wrapper,
+                        cwd=forced_cwd,
+                        input=wrapper,
                         env={"PATH": "/usr/bin:/bin"},
-                        capture_output=True, text=True, timeout=10)
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
                     self.assertEqual(checked.returncode, 0, checked.stderr)
             missing = subprocess.run(
                 ["/bin/bash", "--noprofile", "--norc", "-c", fragment],
                 cwd=root,
                 env={"VELD_ROOT_ENV": "missing.env", "PATH": "/usr/bin:/bin"},
-                capture_output=True, text=True, timeout=10)
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
             self.assertNotEqual(missing.returncode, 0)
             self.assertEqual(missing.stdout, "")
 
     def test_public_payout_token_command_uses_signer_node_datadir(self):
-        expected = ["/usr/local/bin/veld-node", "--print-rpc-token",
-                    "--datadir", "/var/lib/veld-node"]
+        expected = [
+            "/usr/local/bin/veld-node",
+            "--print-rpc-token",
+            "--datadir",
+            "/var/lib/veld-node",
+        ]
         payout = json.loads((DEPLOY / "payout-signer-config.example.json").read_text())
         self.assertEqual(payout["veld_rpc"]["token_cmd"], expected)
 
@@ -326,16 +369,17 @@ class DeploymentConfigTests(unittest.TestCase):
         config_source = re.search(r"<<'PY'\n(.*?)\nPY\n", setup, re.DOTALL)
         self.assertIsNotNone(config_source)
         assignments = [
-            node.value for node in ast.parse(config_source.group(1)).body
-            if isinstance(node, ast.Assign) and
-            any(isinstance(target, ast.Name) and target.id == "cfg"
-                for target in node.targets)
+            node.value
+            for node in ast.parse(config_source.group(1)).body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "cfg" for target in node.targets)
         ]
         self.assertEqual(len(assignments), 1)
         config = assignments[0]
         self.assertIsInstance(config, ast.Dict)
         rpc_values = [
-            value for key, value in zip(config.keys, config.values)
+            value
+            for key, value in zip(config.keys, config.values)
             if isinstance(key, ast.Constant) and key.value == "veld_rpc"
         ]
         self.assertEqual(len(rpc_values), 1)
@@ -406,20 +450,25 @@ else:
             log = td / "bitcoin-cli.log"
             self._fake_bitcoin_cli(fake)
             env = dict(os.environ)
-            env.update({"PATH": str(td) + os.pathsep + env.get("PATH", ""),
-                        "FAKE_BTC_LOG": str(log), "BTC_DATADIR": str(td / "btc"),
-                        "CUSTODY_RANGE_END": "10999",
-                        "CUSTODY_SPKS_OUT":
-                            str(td / "custody-spks-operational.json"),
-                        "CUSTODY_CONSENSUS_SPKS_OUT":
-                            str(td / "custody-spks-consensus.json"),
-                        "CUSTODY_BINDING_OUT":
-                            str(td / "custody-release-binding.json")})
-            pubs = ["[0000000%d/86h/0h/0h]xpub%s/0/*" %
-                    (i, chr(ord("A") + i) * 107) for i in range(1, 6)]
+            env.update(
+                {
+                    "PATH": str(td) + os.pathsep + env.get("PATH", ""),
+                    "FAKE_BTC_LOG": str(log),
+                    "BTC_DATADIR": str(td / "btc"),
+                    "CUSTODY_RANGE_END": "10999",
+                    "CUSTODY_SPKS_OUT": str(td / "custody-spks-operational.json"),
+                    "CUSTODY_CONSENSUS_SPKS_OUT": str(td / "custody-spks-consensus.json"),
+                    "CUSTODY_BINDING_OUT": str(td / "custody-release-binding.json"),
+                }
+            )
+            pubs = [
+                "[0000000%d/86h/0h/0h]xpub%s/0/*" % (i, chr(ord("A") + i) * 107)
+                for i in range(1, 6)
+            ]
 
-            out = subprocess.run([str(script)] + pubs, env=env,
-                                 capture_output=True, text=True, timeout=10)
+            out = subprocess.run(
+                [str(script)] + pubs, env=env, capture_output=True, text=True, timeout=10
+            )
             self.assertEqual(out.returncode, 0, out.stderr)
             calls = [json.loads(x) for x in log.read_text().splitlines()]
             derive = next(x for x in calls if "deriveaddresses" in x)
@@ -434,72 +483,73 @@ else:
             self.assertNotIn("next_index", request[0])
             self.assertIs(request[0]["active"], False)
 
-            full_derive = next(
-                x for x in calls
-                if "deriveaddresses" in x and x[-1] == "[0,10999]")
+            full_derive = next(x for x in calls if "deriveaddresses" in x and x[-1] == "[0,10999]")
             self.assertEqual(full_derive[-1], "[0,10999]")
-            operational = json.loads(
-                (td / "custody-spks-operational.json").read_text())
-            consensus = json.loads(
-                (td / "custody-spks-consensus.json").read_text())
-            binding = json.loads(
-                (td / "custody-release-binding.json").read_text())
+            operational = json.loads((td / "custody-spks-operational.json").read_text())
+            consensus = json.loads((td / "custody-spks-consensus.json").read_text())
+            binding = json.loads((td / "custody-release-binding.json").read_text())
             self.assertEqual(operational["range"], [0, 10999])
             self.assertEqual(len(operational["script_pubkeys"]), 11000)
             self.assertEqual(consensus["range"], [0, 999])
-            self.assertEqual(
-                consensus["script_pubkeys"],
-                operational["script_pubkeys"][:1000])
+            self.assertEqual(consensus["script_pubkeys"], operational["script_pubkeys"][:1000])
             self.assertEqual(binding["schema"], 2)
-            self.assertEqual(
-                binding["statement"],
-                "veld-btcveld-custody-binding-v2-dual-manifest")
+            self.assertEqual(binding["statement"], "veld-btcveld-custody-binding-v2-dual-manifest")
             self.assertEqual(binding["script_range"], [0, 10999])
             self.assertEqual(binding["consensus_script_range"], [0, 999])
             self.assertEqual(
                 binding["manifest_sha256"],
-                hashlib.sha256(
-                    (td / "custody-spks-operational.json").read_bytes()
-                ).hexdigest())
+                hashlib.sha256((td / "custody-spks-operational.json").read_bytes()).hexdigest(),
+            )
             self.assertEqual(
                 binding["consensus_manifest_sha256"],
-                hashlib.sha256(
-                    (td / "custody-spks-consensus.json").read_bytes()
-                ).hexdigest())
+                hashlib.sha256((td / "custody-spks-consensus.json").read_bytes()).hexdigest(),
+            )
 
             for wrong_end in ("999", "11000"):
                 with self.subTest(wrong_launch_range=wrong_end):
                     wrong_env = dict(env)
                     wrong_env["CUSTODY_RANGE_END"] = wrong_end
                     wrong = subprocess.run(
-                        [str(script)] + pubs, env=wrong_env,
-                        capture_output=True, text=True, timeout=10)
+                        [str(script)] + pubs,
+                        env=wrong_env,
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
                     self.assertNotEqual(wrong.returncode, 0)
                     self.assertIn("must be exactly 10999", wrong.stderr)
 
-            duplicate = subprocess.run([str(script)] + [pubs[0]] * 5, env=env,
-                                       capture_output=True, text=True, timeout=10)
+            duplicate = subprocess.run(
+                [str(script)] + [pubs[0]] * 5, env=env, capture_output=True, text=True, timeout=10
+            )
             self.assertNotEqual(duplicate.returncode, 0)
             self.assertIn("duplicate", duplicate.stderr.lower())
 
             private = list(pubs)
             private[2] = "[00000003/86h/0h/0h]xprv" + "A" * 40 + "/0/*"
-            rejected = subprocess.run([str(script)] + private, env=env,
-                                      capture_output=True, text=True, timeout=10)
+            rejected = subprocess.run(
+                [str(script)] + private, env=env, capture_output=True, text=True, timeout=10
+            )
             self.assertNotEqual(rejected.returncode, 0)
             self.assertIn("private key material", rejected.stderr.lower())
 
             injected = list(pubs)
             injected[4] = injected[4] + "),pk(02" + "a" * 64 + ")"
             injection_reject = subprocess.run(
-                [str(script)] + injected, env=env,
-                capture_output=True, text=True, timeout=10)
+                [str(script)] + injected, env=env, capture_output=True, text=True, timeout=10
+            )
             self.assertNotEqual(injection_reject.returncode, 0)
             self.assertIn("exactly match", injection_reject.stderr.lower())
 
-            private_info_env = dict(env); private_info_env["FAKE_HASPRIVATE"] = "1"
-            core_reject = subprocess.run([str(script)] + pubs, env=private_info_env,
-                                         capture_output=True, text=True, timeout=10)
+            private_info_env = dict(env)
+            private_info_env["FAKE_HASPRIVATE"] = "1"
+            core_reject = subprocess.run(
+                [str(script)] + pubs,
+                env=private_info_env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
             self.assertNotEqual(core_reject.returncode, 0)
             self.assertIn("contains private keys", core_reject.stderr.lower())
 

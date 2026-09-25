@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify a source-only Python payload without generating unpinned bytecode."""
+
 import argparse
 from pathlib import Path
 

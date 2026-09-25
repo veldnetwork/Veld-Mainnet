@@ -2,12 +2,7 @@
   "_comment": "veld_wrapd config for the custody box. Production fails closed unless its ranged P2TR wallet, exact C1 operational manifest, and separately pinned compiled Veld consensus custody identity agree.",
   "production": true,
   "development_only_allow_unsafe_allocator": false,
-  "cli_base": [
-    "/usr/bin/sudo",
-    "-u",
-    "bitcoin",
-    "/usr/bin/bitcoin-cli"
-  ],
+  "cli_base": ["/usr/bin/sudo", "-u", "bitcoin", "/usr/bin/bitcoin-cli"],
   "wallet": "btcveld-custody-watchonly",
   "custody_spk_manifest_file": "/opt/veld-custody/custody-spks-operational.json",
   "custody_descriptor_sha256": "REPLACE_WITH_64_HEX_SHA256_PRINTED_BY_CUSTODY_BUILDER",
@@ -48,9 +43,7 @@
     "wrap-allocation-witness",
     "veld_wt_allocate"
   ],
-  "allocation_checkpoint_command": [
-    "/REPLACE_WITH_MONOTONIC_WORM_CHECKPOINT_HOOK"
-  ],
+  "allocation_checkpoint_command": ["/REPLACE_WITH_MONOTONIC_WORM_CHECKPOINT_HOOK"],
   "consensus_reservation_command": [
     "/usr/bin/ssh",
     "-o",

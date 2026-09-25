@@ -61,11 +61,9 @@ struct BtcVeldPegGateState {
 // reached only after the existing finality profile has observed its qualified
 // validator set (minimum seven) for the required warm-up. `finality_live` then
 // controls only new mint exposure; it does not undo the activation latch.
-constexpr BtcVeldPegGateState DeriveBtcVeldPegGate(
-        bool launch_active,
-        bool finality_ever_active,
-        bool finality_live,
-        bool amm_continues_during_later_stall) noexcept {
+constexpr BtcVeldPegGateState DeriveBtcVeldPegGate(bool launch_active, bool finality_ever_active,
+                                                   bool finality_live,
+                                                   bool amm_continues_during_later_stall) noexcept {
     if (!launch_active || !finality_ever_active)
         return BtcVeldPegGateState{false, false, false};
 
@@ -77,4 +75,4 @@ constexpr BtcVeldPegGateState DeriveBtcVeldPegGate(
     };
 }
 
-}  // namespace veld
+} // namespace veld

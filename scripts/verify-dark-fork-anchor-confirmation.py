@@ -21,13 +21,11 @@ require(
     "peer-tip snapshot lacks an explicit trusted-anchor view",
 )
 require(
-    "conn->IsInbound() ||" in tcp
-    and "configured_anchors.count(conn->RemoteAddr()) == 0" in tcp,
+    "conn->IsInbound() ||" in tcp and "configured_anchors.count(conn->RemoteAddr()) == 0" in tcp,
     "trusted peer-tip view does not require outbound configured anchors",
 )
 require(
-    "SnapshotPeerTips(\n                        "
-    "/*configured_outbound_anchors_only=*/true)" in node,
+    "SnapshotPeerTips(\n                        /*configured_outbound_anchors_only=*/true)" in node,
     "mining does not request the trusted-anchor peer-tip view",
 )
 require(

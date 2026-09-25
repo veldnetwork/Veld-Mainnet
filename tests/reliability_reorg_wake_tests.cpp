@@ -9,8 +9,10 @@
 int main(int argc, char** argv) {
     using namespace veld;
     using namespace std::chrono_literals;
-    if (argc != 2 || std::filesystem::exists(argv[1])) return 2;
-    auto config = RegtestConfig(); config.port = 0;
+    if (argc != 2 || std::filesystem::exists(argv[1]))
+        return 2;
+    auto config = RegtestConfig();
+    config.port = 0;
     VeldNode node(config, argv[1]);
     node.SetQuietBoot(true);
     node.SetFullIbd(true);
@@ -19,12 +21,15 @@ int main(int argc, char** argv) {
     auto release = release_predicate.get_future().share();
     auto notifying = notify_attempted.get_future();
     std::atomic<bool> announced{false};
-    node.TestSetReorgWaitHooks([&] {
-        predicate_checked.set_value();
-        release.wait();
-    }, [&] {
-        if (!announced.exchange(true)) notify_attempted.set_value();
-    });
+    node.TestSetReorgWaitHooks(
+        [&] {
+            predicate_checked.set_value();
+            release.wait();
+        },
+        [&] {
+            if (!announced.exchange(true))
+                notify_attempted.set_value();
+        });
     node.Start();
     if (checked.wait_for(2s) != std::future_status::ready) {
         release_predicate.set_value();
@@ -43,7 +48,8 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(100ms);
     release_predicate.set_value();
     const bool completed = stopped.wait_for(2s) == std::future_status::ready;
-    if (!completed) node.TestNotifyReorg();
+    if (!completed)
+        node.TestNotifyReorg();
     stopped.get();
     node.TestSetReorgWaitHooks({}, {});
     if (!completed) {

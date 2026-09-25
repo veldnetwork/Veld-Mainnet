@@ -11,6 +11,7 @@ veld-keygen binary is available, so it never blocks a Python-only CI box.
 
   find veld-keygen: $VELD_KEYGEN, else ./veld-keygen beside this file, else on PATH.
 """
+
 import os
 import shutil
 import subprocess
@@ -39,8 +40,7 @@ def find_keygen():
 
 
 def run(keygen, args, env=None):
-    return subprocess.run([keygen] + args, capture_output=True, text=True,
-                          timeout=60, env=env)
+    return subprocess.run([keygen] + args, capture_output=True, text=True, timeout=60, env=env)
 
 
 def pubkey_hex(keygen, keyfile, env):
@@ -53,8 +53,9 @@ def pubkey_hex(keygen, keyfile, env):
 
 
 def canonical(**over):
-    p = sol.build_beat_payload(10 * sol.SATS, 6 * sol.SATS, 100000, tip=42,
-                               tip_hash="22" * 32, seq=7, ttl_secs=120)
+    p = sol.build_beat_payload(
+        10 * sol.SATS, 6 * sol.SATS, 100000, tip=42, tip_hash="22" * 32, seq=7, ttl_secs=120
+    )
     p.update(over)
     return sol.canonical_beat_bytes(p)
 
@@ -63,11 +64,14 @@ def main():
     # --- pure: canonical bytes are deterministic + exclude the sig envelope --------
     a = canonical()
     check("canonical_beat_bytes deterministic", a == canonical())
-    p = sol.build_beat_payload(10 * sol.SATS, 6 * sol.SATS, 100000,
-                               42, "22" * 32, 7, 120)
-    p2 = dict(p); p2["sig"] = "ab"; p2["sig_alg"] = "mldsa65"
-    check("canonical excludes sig envelope",
-          sol.canonical_beat_bytes(p) == sol.canonical_beat_bytes(p2))
+    p = sol.build_beat_payload(10 * sol.SATS, 6 * sol.SATS, 100000, 42, "22" * 32, 7, 120)
+    p2 = dict(p)
+    p2["sig"] = "ab"
+    p2["sig_alg"] = "mldsa65"
+    check(
+        "canonical excludes sig envelope",
+        sol.canonical_beat_bytes(p) == sol.canonical_beat_bytes(p2),
+    )
 
     keygen = find_keygen()
     if not keygen:
@@ -94,10 +98,12 @@ def main():
         with open(bf, "wb") as f:
             f.write(canonical())
         with open(bft, "wb") as f:
-            f.write(canonical(
-                backing_liability_sats=6 * sol.SATS - 1,
-                headroom_sats=sol.solvency_headroom(
-                    10 * sol.SATS, 6 * sol.SATS - 1, 100000)))
+            f.write(
+                canonical(
+                    backing_liability_sats=6 * sol.SATS - 1,
+                    headroom_sats=sol.solvency_headroom(10 * sol.SATS, 6 * sol.SATS - 1, 100000),
+                )
+            )
 
         s = run(keygen, ["sign-release", beatkey, bf, sf], env)
         check("sign-release produced a signature", s.returncode == 0 and os.path.exists(sf))

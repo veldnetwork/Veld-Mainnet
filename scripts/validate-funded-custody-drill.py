@@ -51,82 +51,151 @@ MAX_TX_BYTES = 4_000_000
 # to carry at least one trillion difficulty, however, prevents a fixture-style
 # easy-target chain from being presented as mainnet evidence while the exact
 # transaction Merkle proofs bind the custody transactions into that segment.
-BITCOIN_POW_LIMIT = int(
-    "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 16)
+BITCOIN_POW_LIMIT = int("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 16)
 MIN_MAINNET_EVIDENCE_DIFFICULTY = 1_000_000_000_000
-MAX_MAINNET_EVIDENCE_TARGET = (
-    BITCOIN_POW_LIMIT // MIN_MAINNET_EVIDENCE_DIFFICULTY)
+MAX_MAINNET_EVIDENCE_TARGET = BITCOIN_POW_LIMIT // MIN_MAINNET_EVIDENCE_DIFFICULTY
 NUMS_INTERNAL_KEY = bytes.fromhex(
-    "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0")
+    "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+)
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 XPUB_VERSION = bytes.fromhex("0488b21e")
 DESCRIPTOR_INPUT_CHARSET = (
     "0123456789()[],'/*abcdefgh@:$%{}IJKLMNOPQRSTUVWXYZ&+-.;<=>?!^_|~"
-    "ijklmnopqrstuvwxyzABCDEFGH`#\"\\ ")
+    "ijklmnopqrstuvwxyzABCDEFGH`#\"\\ "
+)
 DESCRIPTOR_CHECKSUM_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 KEY_EXPRESSION = re.compile(
     r"^\[([0-9a-f]{8})/86h/0h/0h\]"
-    r"(xpub[1-9A-HJ-NP-Za-km-z]{100,120})/0/\*$")
+    r"(xpub[1-9A-HJ-NP-Za-km-z]{100,120})/0/\*$"
+)
 
 PARENT_FIELDS = {
-    "schema", "statement", "result", "release_version", "source_commit",
-    "source_tree", "completed_at_utc", "bitcoin_network",
-    "descriptor_sha256", "manifest_sha256", "script_range",
-    "consensus_manifest_sha256", "consensus_script_range",
+    "schema",
+    "statement",
+    "result",
+    "release_version",
+    "source_commit",
+    "source_tree",
+    "completed_at_utc",
+    "bitcoin_network",
+    "descriptor_sha256",
+    "manifest_sha256",
+    "script_range",
+    "consensus_manifest_sha256",
+    "consensus_script_range",
     "bitcoin_core_chain_evidence_path",
     "bitcoin_core_chain_evidence_sha256",
     "threshold_spend_drills",
 }
 DRILL_FIELDS = {
-    "descriptor_index", "funded_sats", "script_pubkey_hex",
-    "three_of_five_signer_ids", "three_of_five_spend_txid",
+    "descriptor_index",
+    "funded_sats",
+    "script_pubkey_hex",
+    "three_of_five_signer_ids",
+    "three_of_five_spend_txid",
     "three_of_five_success_report_path",
-    "three_of_five_success_report_sha256", "two_of_five_signer_ids",
+    "three_of_five_success_report_sha256",
+    "two_of_five_signer_ids",
     "two_of_five_rejection_report_path",
     "two_of_five_rejection_report_sha256",
 }
 COMMON_FIELDS = {
-    "schema", "statement", "result", "release_version", "source_commit",
-    "source_tree", "completed_at_utc", "bitcoin_network",
-    "descriptor_sha256", "manifest_sha256", "descriptor_index",
-    "script_pubkey_hex", "funded_sats", "funding_txid", "funding_vout",
-    "funding_raw_transaction_hex", "funding_txoutproof_hex",
-    "funding_block_hash", "funding_confirmations", "spend_input_index",
-    "signer_ids", "signer_slots", "signature_sha256",
-    "tapleaf_script_hex", "control_block_hex",
+    "schema",
+    "statement",
+    "result",
+    "release_version",
+    "source_commit",
+    "source_tree",
+    "completed_at_utc",
+    "bitcoin_network",
+    "descriptor_sha256",
+    "manifest_sha256",
+    "descriptor_index",
+    "script_pubkey_hex",
+    "funded_sats",
+    "funding_txid",
+    "funding_vout",
+    "funding_raw_transaction_hex",
+    "funding_txoutproof_hex",
+    "funding_block_hash",
+    "funding_confirmations",
+    "spend_input_index",
+    "signer_ids",
+    "signer_slots",
+    "signature_sha256",
+    "tapleaf_script_hex",
+    "control_block_hex",
 }
 SUCCESS_FIELDS = COMMON_FIELDS | {
-    "spend_txid", "spend_raw_transaction_hex", "spend_txoutproof_hex",
-    "spend_block_hash", "spend_confirmations",
-    "testmempoolaccept_allowed", "testmempoolaccept_raw_json",
-    "testmempoolaccept_checked_at_utc", "broadcast_txid",
-    "broadcast_at_utc", "confirmed_at_utc",
+    "spend_txid",
+    "spend_raw_transaction_hex",
+    "spend_txoutproof_hex",
+    "spend_block_hash",
+    "spend_confirmations",
+    "testmempoolaccept_allowed",
+    "testmempoolaccept_raw_json",
+    "testmempoolaccept_checked_at_utc",
+    "broadcast_txid",
+    "broadcast_at_utc",
+    "confirmed_at_utc",
 }
 REJECTION_FIELDS = COMMON_FIELDS | {
-    "rejection_txid", "rejection_wtxid", "rejection_raw_transaction_hex",
-    "finalizepsbt_complete", "testmempoolaccept_allowed",
-    "testmempoolaccept_txid", "testmempoolaccept_wtxid", "reject_reason",
-    "testmempoolaccept_raw_json", "finalizepsbt_checked_at_utc",
-    "testmempoolaccept_checked_at_utc", "broadcast_attempted",
+    "rejection_txid",
+    "rejection_wtxid",
+    "rejection_raw_transaction_hex",
+    "finalizepsbt_complete",
+    "testmempoolaccept_allowed",
+    "testmempoolaccept_txid",
+    "testmempoolaccept_wtxid",
+    "reject_reason",
+    "testmempoolaccept_raw_json",
+    "finalizepsbt_checked_at_utc",
+    "testmempoolaccept_checked_at_utc",
+    "broadcast_attempted",
 }
 MANIFEST_FIELDS = {
-    "version", "descriptor", "descriptor_sha256", "range", "script_pubkeys",
+    "version",
+    "descriptor",
+    "descriptor_sha256",
+    "range",
+    "script_pubkeys",
 }
 CHAIN_EVIDENCE_FIELDS = {
-    "schema", "statement", "result", "bitcoin_network", "node_id",
-    "node_version", "captured_at_utc", "collector_version",
-    "bitcoin_cli_path", "bitcoin_cli_sha256", "bitcoind_path",
-    "bitcoind_sha256", "bitcoind_pid", "bitcoind_start_time_ticks",
-    "rpc_arguments_sha256", "getblockchaininfo", "headers", "txoutproofs",
+    "schema",
+    "statement",
+    "result",
+    "bitcoin_network",
+    "node_id",
+    "node_version",
+    "captured_at_utc",
+    "collector_version",
+    "bitcoin_cli_path",
+    "bitcoin_cli_sha256",
+    "bitcoind_path",
+    "bitcoind_sha256",
+    "bitcoind_pid",
+    "bitcoind_start_time_ticks",
+    "rpc_arguments_sha256",
+    "getblockchaininfo",
+    "headers",
+    "txoutproofs",
 }
 CHAIN_INFO_FIELDS = {
-    "chain", "blocks", "headers", "bestblockhash", "initialblockdownload",
+    "chain",
+    "blocks",
+    "headers",
+    "bestblockhash",
+    "initialblockdownload",
 }
 CHAIN_HEADER_FIELDS = {
-    "height", "requested_hash", "getblockheader_false_hex",
+    "height",
+    "requested_hash",
+    "getblockheader_false_hex",
 }
 CHAIN_PROOF_FIELDS = {
-    "txid", "block_hash", "gettxoutproof_hex",
+    "txid",
+    "block_hash",
+    "gettxoutproof_hex",
 }
 
 
@@ -185,8 +254,7 @@ def parse_time(value: object, label: str) -> dt.datetime:
     if not isinstance(value, str) or TIME.fullmatch(value) is None:
         fail(f"{label} is not canonical UTC seconds")
     try:
-        return dt.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=dt.timezone.utc)
+        return dt.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
     except ValueError as exc:
         fail(f"{label} is invalid: {exc}")
 
@@ -218,7 +286,7 @@ class Reader:
     def take(self, count: int) -> bytes:
         if count < 0 or self.offset + count > len(self.raw):
             fail("truncated Bitcoin serialization")
-        result = self.raw[self.offset:self.offset + count]
+        result = self.raw[self.offset : self.offset + count]
         self.offset += count
         return result
 
@@ -294,10 +362,9 @@ def parse_transaction(raw: bytes) -> Transaction:
         vout = int.from_bytes(reader.take(4), "little")
         script, _ = reader.vector(10_000)
         sequence = int.from_bytes(reader.take(4), "little")
-        item_raw = raw[start:reader.offset]
+        item_raw = raw[start : reader.offset]
         input_bytes.extend(item_raw)
-        inputs.append(TxInput(
-            prev_hash[::-1].hex(), vout, script, sequence, item_raw, []))
+        inputs.append(TxInput(prev_hash[::-1].hex(), vout, script, sequence, item_raw, []))
     output_count, output_prefix = reader.varint()
     if not 1 <= output_count <= 100_000:
         fail("transaction output count is invalid")
@@ -309,7 +376,7 @@ def parse_transaction(raw: bytes) -> Transaction:
         if value > 21_000_000 * 100_000_000:
             fail("transaction output value exceeds Bitcoin supply")
         script, _ = reader.vector(10_000)
-        item_raw = raw[start:reader.offset]
+        item_raw = raw[start : reader.offset]
         output_bytes.extend(item_raw)
         outputs.append(TxOutput(value, script, item_raw))
     if has_witness:
@@ -331,15 +398,18 @@ def parse_transaction(raw: bytes) -> Transaction:
         fail("transaction has trailing bytes")
     base = version_raw + bytes(input_bytes) + bytes(output_bytes) + locktime_raw
     return Transaction(
-        raw=raw, version=version,
-        locktime=int.from_bytes(locktime_raw, "little"), inputs=inputs,
-        outputs=outputs, txid=hash256(base)[::-1].hex(),
-        wtxid=hash256(raw)[::-1].hex(), has_witness=has_witness,
+        raw=raw,
+        version=version,
+        locktime=int.from_bytes(locktime_raw, "little"),
+        inputs=inputs,
+        outputs=outputs,
+        txid=hash256(base)[::-1].hex(),
+        wtxid=hash256(raw)[::-1].hex(),
+        has_witness=has_witness,
     )
 
 
-def verify_partial_merkle_proof(raw: bytes, wanted_txid: str,
-                                wanted_block_hash: str) -> None:
+def verify_partial_merkle_proof(raw: bytes, wanted_txid: str, wanted_block_hash: str) -> None:
     reader = Reader(raw)
     header = reader.take(80)
     total = int.from_bytes(reader.take(4), "little")
@@ -388,8 +458,7 @@ def verify_partial_merkle_proof(raw: bytes, wanted_txid: str,
                 matches.append(value)
             return value
         left = walk(level - 1, position * 2)
-        right = walk(level - 1, position * 2 + 1) \
-            if position * 2 + 1 < width(level - 1) else left
+        right = walk(level - 1, position * 2 + 1) if position * 2 + 1 < width(level - 1) else left
         if right == left and position * 2 + 1 < width(level - 1):
             fail("txoutproof contains a mutated merkle branch")
         return hash256(left + right)
@@ -615,8 +684,8 @@ def ckd_pub(point: Point, chain_code: bytes, index: int) -> tuple[Point, bytes]:
     if point is None or len(chain_code) != 32 or not 0 <= index < 0x80000000:
         fail("custody BIP32 public derivation input is invalid")
     digest = hmac.new(
-        chain_code, serialize_compressed(point) + index.to_bytes(4, "big"),
-        hashlib.sha512).digest()
+        chain_code, serialize_compressed(point) + index.to_bytes(4, "big"), hashlib.sha512
+    ).digest()
     tweak = int.from_bytes(digest[:32], "big")
     if tweak == 0 or tweak >= N:
         fail("custody BIP32 public derivation produced an invalid child")
@@ -629,8 +698,11 @@ def ckd_pub(point: Point, chain_code: bytes, index: int) -> tuple[Point, bytes]:
 def descriptor_polymod(symbols: list[int]) -> int:
     checksum = 1
     generators = (
-        0xF5DEE51989, 0xA9FDCA3312, 0x1BAB10E32D,
-        0x3706B1677A, 0x644D626FFD,
+        0xF5DEE51989,
+        0xA9FDCA3312,
+        0x1BAB10E32D,
+        0x3706B1677A,
+        0x644D626FFD,
     )
     for value in symbols:
         top = checksum >> 35
@@ -659,8 +731,8 @@ def descriptor_checksum(payload: str) -> str:
         symbols.append(groups[0] * 3 + groups[1])
     polymod = descriptor_polymod(symbols + [0] * 8) ^ 1
     return "".join(
-        DESCRIPTOR_CHECKSUM_CHARSET[(polymod >> (5 * (7 - index))) & 31]
-        for index in range(8))
+        DESCRIPTOR_CHECKSUM_CHARSET[(polymod >> (5 * (7 - index))) & 31] for index in range(8)
+    )
 
 
 def parse_custody_descriptor(descriptor: str) -> list[str]:
@@ -672,7 +744,7 @@ def parse_custody_descriptor(descriptor: str) -> list[str]:
     prefix = f"tr({NUMS_INTERNAL_KEY.hex()},multi_a(3,"
     if not payload.startswith(prefix) or not payload.endswith("))"):
         fail("custody descriptor is not exact tr(NUMS,multi_a(3,...))")
-    expressions = payload[len(prefix):-2].split(",")
+    expressions = payload[len(prefix) : -2].split(",")
     if len(expressions) != 5:
         fail("custody descriptor does not contain exactly five key expressions")
     xpub_payloads = []
@@ -711,7 +783,8 @@ def prepare_descriptor_branches(expressions: list[str]) -> list[tuple[Point, byt
 
 
 def descriptor_material_from_branches(
-    branches: list[tuple[Point, bytes]], index: int,
+    branches: list[tuple[Point, bytes]],
+    index: int,
 ) -> tuple[list[bytes], bytes, bytes, bytes]:
     keys = []
     for branch_point, branch_chain in branches:
@@ -721,9 +794,12 @@ def descriptor_material_from_branches(
         keys.append(child[0].to_bytes(32, "big"))
     if len(set(keys)) != 5:
         fail(f"custody descriptor derives duplicate keys at index {index}")
-    script = b"".join(
-        b"\x20" + key + bytes([0xAC if slot == 0 else 0xBA])
-        for slot, key in enumerate(keys)) + b"\x53\x9c"
+    script = (
+        b"".join(
+            b"\x20" + key + bytes([0xAC if slot == 0 else 0xBA]) for slot, key in enumerate(keys)
+        )
+        + b"\x53\x9c"
+    )
     internal = lift_x(NUMS_INTERNAL_KEY)
     if internal is None:
         fail("custody NUMS internal key is invalid")
@@ -740,14 +816,15 @@ def descriptor_material_from_branches(
 
 
 def descriptor_boundary_material(
-    expressions: list[str], index: int,
+    expressions: list[str],
+    index: int,
 ) -> tuple[list[bytes], bytes, bytes, bytes]:
-    return descriptor_material_from_branches(
-        prepare_descriptor_branches(expressions), index)
+    return descriptor_material_from_branches(prepare_descriptor_branches(expressions), index)
 
 
 def derive_operational_manifest(
-    descriptor: str, expressions: list[str],
+    descriptor: str,
+    expressions: list[str],
 ) -> tuple[list[str], dict[int, tuple[list[bytes], bytes, bytes, bytes]]]:
     cached = _MANIFEST_DERIVATION_CACHE.get(descriptor)
     if cached is not None:
@@ -773,8 +850,12 @@ def schnorr_verify(public_key: bytes, message: bytes, signature: bytes) -> bool:
     s = int.from_bytes(signature[32:], "big")
     if point is None or r >= P or s >= N:
         return False
-    challenge = int.from_bytes(tagged_hash(
-        "BIP0340/challenge", signature[:32] + public_key + message), "big") % N
+    challenge = (
+        int.from_bytes(
+            tagged_hash("BIP0340/challenge", signature[:32] + public_key + message), "big"
+        )
+        % N
+    )
     negated = (point[0], (-point[1]) % P)
     result = point_add(point_mul(s), point_mul(challenge, negated))
     return result is not None and result[1] % 2 == 0 and result[0] == r
@@ -786,7 +867,7 @@ def parse_multi_a(script: bytes) -> list[bytes]:
     for index in range(5):
         if offset + 34 > len(script) or script[offset] != 32:
             fail("custody tapscript is not canonical five-key multi_a")
-        key = script[offset + 1:offset + 33]
+        key = script[offset + 1 : offset + 33]
         opcode = script[offset + 33]
         if opcode != (0xAC if index == 0 else 0xBA):
             fail("custody tapscript has wrong CHECKSIG/CHECKSIGADD sequence")
@@ -801,8 +882,7 @@ def parse_multi_a(script: bytes) -> list[bytes]:
     return keys
 
 
-def verify_taproot_commitment(script_pubkey: bytes, script: bytes,
-                              control: bytes) -> bytes:
+def verify_taproot_commitment(script_pubkey: bytes, script: bytes, control: bytes) -> bytes:
     if len(script_pubkey) != 34 or script_pubkey[:2] != b"\x51\x20":
         fail("custody manifest output is not canonical P2TR")
     if len(control) < 33 or (len(control) - 33) % 32 or len(control) > 33 + 128 * 32:
@@ -817,42 +897,59 @@ def verify_taproot_commitment(script_pubkey: bytes, script: bytes,
     leaf = tagged_hash("TapLeaf", bytes([leaf_version]) + compact_size(len(script)) + script)
     merkle = leaf
     for offset in range(33, len(control), 32):
-        branch = control[offset:offset + 32]
+        branch = control[offset : offset + 32]
         merkle = tagged_hash("TapBranch", min(merkle, branch) + max(merkle, branch))
     tweak = int.from_bytes(tagged_hash("TapTweak", internal_key + merkle), "big")
     if tweak >= N:
         fail("Taproot tweak is outside the group order")
     output = point_add(point, point_mul(tweak))
-    if output is None or output[0].to_bytes(32, "big") != script_pubkey[2:] or \
-            output[1] & 1 != control[0] & 1:
+    if (
+        output is None
+        or output[0].to_bytes(32, "big") != script_pubkey[2:]
+        or output[1] & 1 != control[0] & 1
+    ):
         fail("Taproot control block/script do not commit to manifest output")
     return leaf
 
 
-def taproot_script_sighash(tx: Transaction, input_index: int, amount: int,
-                           script_pubkey: bytes, tapleaf_hash: bytes) -> bytes:
+def taproot_script_sighash(
+    tx: Transaction, input_index: int, amount: int, script_pubkey: bytes, tapleaf_hash: bytes
+) -> bytes:
     if len(tx.inputs) != 1 or input_index != 0:
         fail("custody drill transaction must have exactly one selected input")
     txin = tx.inputs[0]
     prevout = bytes.fromhex(txin.txid)[::-1] + txin.vout.to_bytes(4, "little")
     outputs = b"".join(item.raw for item in tx.outputs)
     sigmsg = (
-        b"\x00" + tx.version.to_bytes(4, "little", signed=True) +
-        tx.locktime.to_bytes(4, "little") + sha256(prevout) +
-        sha256(amount.to_bytes(8, "little")) +
-        sha256(compact_size(len(script_pubkey)) + script_pubkey) +
-        sha256(txin.sequence.to_bytes(4, "little")) + sha256(outputs) +
-        b"\x02" + input_index.to_bytes(4, "little") + tapleaf_hash +
-        b"\x00" + b"\xff\xff\xff\xff"
+        b"\x00"
+        + tx.version.to_bytes(4, "little", signed=True)
+        + tx.locktime.to_bytes(4, "little")
+        + sha256(prevout)
+        + sha256(amount.to_bytes(8, "little"))
+        + sha256(compact_size(len(script_pubkey)) + script_pubkey)
+        + sha256(txin.sequence.to_bytes(4, "little"))
+        + sha256(outputs)
+        + b"\x02"
+        + input_index.to_bytes(4, "little")
+        + tapleaf_hash
+        + b"\x00"
+        + b"\xff\xff\xff\xff"
     )
     return tagged_hash("TapSighash", b"\x00" + sigmsg)
 
 
-def validate_witness(tx: Transaction, input_index: int, amount: int,
-                     script_pubkey: bytes, report: dict[str, Any],
-                     wanted_signatures: int, expected_keys: list[bytes],
-                     expected_script: bytes, expected_control: bytes,
-                     operator_ids: list[str]) -> list[int]:
+def validate_witness(
+    tx: Transaction,
+    input_index: int,
+    amount: int,
+    script_pubkey: bytes,
+    report: dict[str, Any],
+    wanted_signatures: int,
+    expected_keys: list[bytes],
+    expected_script: bytes,
+    expected_control: bytes,
+    operator_ids: list[str],
+) -> list[int]:
     if not tx.has_witness or len(tx.inputs) != 1 or input_index != 0:
         fail("custody spend must be a one-input witness transaction")
     if tx.inputs[0].script_sig:
@@ -896,13 +993,11 @@ def validate_witness(tx: Transaction, input_index: int, amount: int,
     return [item[0] for item in ordered]
 
 
-def safe_subreport(root: Path, value: object, digest: object,
-                   label: str) -> dict[str, Any]:
+def safe_subreport(root: Path, value: object, digest: object, label: str) -> dict[str, Any]:
     if not isinstance(value, str) or "\\" in value:
         fail(f"{label} path is not canonical")
     pure = PurePosixPath(value)
-    if pure.is_absolute() or not pure.parts or any(
-            part in ("", ".", "..") for part in pure.parts):
+    if pure.is_absolute() or not pure.parts or any(part in ("", ".", "..") for part in pure.parts):
         fail(f"{label} path is unsafe")
     if not isinstance(digest, str) or HEX64.fullmatch(digest) is None:
         fail(f"{label} digest is not canonical")
@@ -960,56 +1055,71 @@ def target_to_compact(target: int) -> int:
 
 
 def validate_chain_evidence(
-    evidence: dict[str, Any], references: list[dict[str, Any]],
+    evidence: dict[str, Any],
+    references: list[dict[str, Any]],
     parent_completed_at: dt.datetime,
     maximum_target: int = MAX_MAINNET_EVIDENCE_TARGET,
 ) -> None:
     exact(evidence, CHAIN_EVIDENCE_FIELDS, "Bitcoin Core chain evidence")
-    if (evidence.get("schema") != 1 or evidence.get("statement") !=
-            "veld-bitcoin-core-mainnet-custody-chain-evidence-v1" or
-            evidence.get("result") != "PASS" or
-            evidence.get("bitcoin_network") != "main"):
+    if (
+        evidence.get("schema") != 1
+        or evidence.get("statement") != "veld-bitcoin-core-mainnet-custody-chain-evidence-v1"
+        or evidence.get("result") != "PASS"
+        or evidence.get("bitcoin_network") != "main"
+    ):
         fail("Bitcoin Core chain evidence schema/statement/result/network is invalid")
-    if (not isinstance(evidence.get("node_id"), str) or
-            IDENTITY.fullmatch(evidence["node_id"]) is None):
+    if (
+        not isinstance(evidence.get("node_id"), str)
+        or IDENTITY.fullmatch(evidence["node_id"]) is None
+    ):
         fail("Bitcoin Core chain evidence node_id is invalid")
-    if (not isinstance(evidence.get("node_version"), str) or
-            not 3 <= len(evidence["node_version"]) <= 128 or
-            re.search(r"(?:todo|tbd|placeholder|example)",
-                      evidence["node_version"], re.I)):
+    if (
+        not isinstance(evidence.get("node_version"), str)
+        or not 3 <= len(evidence["node_version"]) <= 128
+        or re.search(r"(?:todo|tbd|placeholder|example)", evidence["node_version"], re.I)
+    ):
         fail("Bitcoin Core chain evidence node_version is invalid")
-    if evidence.get("collector_version") != \
-            "collect-bitcoin-core-custody-evidence-v1":
+    if evidence.get("collector_version") != "collect-bitcoin-core-custody-evidence-v1":
         fail("Bitcoin Core chain evidence collector version is invalid")
     for field in ("bitcoin_cli_path", "bitcoind_path"):
-        if (not isinstance(evidence.get(field), str) or
-                not evidence[field].startswith("/") or
-                len(evidence[field]) > 4096 or "\x00" in evidence[field]):
+        if (
+            not isinstance(evidence.get(field), str)
+            or not evidence[field].startswith("/")
+            or len(evidence[field]) > 4096
+            or "\x00" in evidence[field]
+        ):
             fail(f"Bitcoin Core chain evidence {field} is invalid")
     for field in ("bitcoin_cli_sha256", "bitcoind_sha256", "rpc_arguments_sha256"):
-        if not isinstance(evidence.get(field), str) or HEX64.fullmatch(
-                evidence[field]) is None:
+        if not isinstance(evidence.get(field), str) or HEX64.fullmatch(evidence[field]) is None:
             fail(f"Bitcoin Core chain evidence {field} is invalid")
-    if (type(evidence.get("bitcoind_pid")) is not int or
-            evidence["bitcoind_pid"] <= 1 or
-            type(evidence.get("bitcoind_start_time_ticks")) is not int or
-            evidence["bitcoind_start_time_ticks"] <= 0):
+    if (
+        type(evidence.get("bitcoind_pid")) is not int
+        or evidence["bitcoind_pid"] <= 1
+        or type(evidence.get("bitcoind_start_time_ticks")) is not int
+        or evidence["bitcoind_start_time_ticks"] <= 0
+    ):
         fail("Bitcoin Core chain evidence daemon process identity is invalid")
     captured_at = parse_time(
-        evidence.get("captured_at_utc"), "Bitcoin Core chain evidence captured_at_utc")
+        evidence.get("captured_at_utc"), "Bitcoin Core chain evidence captured_at_utc"
+    )
     if captured_at > parent_completed_at:
         fail("Bitcoin Core chain evidence was captured after the parent report")
 
     info = exact(
-        evidence.get("getblockchaininfo"), CHAIN_INFO_FIELDS,
-        "Bitcoin Core getblockchaininfo result")
-    if (info.get("chain") != "main" or
-            info.get("initialblockdownload") is not False or
-            type(info.get("blocks")) is not int or info["blocks"] < 0 or
-            type(info.get("headers")) is not int or
-            info["headers"] != info["blocks"] or
-            not isinstance(info.get("bestblockhash"), str) or
-            HEX64.fullmatch(info["bestblockhash"]) is None):
+        evidence.get("getblockchaininfo"),
+        CHAIN_INFO_FIELDS,
+        "Bitcoin Core getblockchaininfo result",
+    )
+    if (
+        info.get("chain") != "main"
+        or info.get("initialblockdownload") is not False
+        or type(info.get("blocks")) is not int
+        or info["blocks"] < 0
+        or type(info.get("headers")) is not int
+        or info["headers"] != info["blocks"]
+        or not isinstance(info.get("bestblockhash"), str)
+        or HEX64.fullmatch(info["bestblockhash"]) is None
+    ):
         fail("Bitcoin Core getblockchaininfo does not show a synced main chain")
     best_height = info["blocks"]
 
@@ -1032,8 +1142,7 @@ def validate_chain_evidence(
             fail("Bitcoin Core retained headers are not exact contiguous heights")
         if not isinstance(wanted_hash, str) or HEX64.fullmatch(wanted_hash) is None:
             fail(f"Bitcoin Core header {position} requested hash is invalid")
-        if not isinstance(raw_value, str) or not re.fullmatch(
-                r"[0-9a-f]{160}", raw_value):
+        if not isinstance(raw_value, str) or not re.fullmatch(r"[0-9a-f]{160}", raw_value):
             fail(f"Bitcoin Core header {position} is not exact lowercase 80-byte hex")
         raw = bytes.fromhex(raw_value)
         calculated_hash = hash256(raw)[::-1].hex()
@@ -1050,13 +1159,17 @@ def validate_chain_evidence(
         if int.from_bytes(hash256(raw), "little") > target:
             fail("Bitcoin Core retained header does not satisfy its proof-of-work target")
         header_time = dt.datetime.fromtimestamp(
-            int.from_bytes(raw[68:72], "little"), tz=dt.timezone.utc)
+            int.from_bytes(raw[68:72], "little"), tz=dt.timezone.utc
+        )
         if header_time > captured_at + dt.timedelta(hours=2):
             fail("Bitcoin Core retained header timestamp is implausibly after capture")
         by_hash[calculated_hash] = (height, raw)
         previous_hash = calculated_hash
-    if first_height is None or first_height + len(records) - 1 != best_height or \
-            previous_hash != info["bestblockhash"]:
+    if (
+        first_height is None
+        or first_height + len(records) - 1 != best_height
+        or previous_hash != info["bestblockhash"]
+    ):
         fail("Bitcoin Core retained header segment does not end at the reported best block")
 
     proof_records = evidence.get("txoutproofs")
@@ -1068,9 +1181,14 @@ def validate_chain_evidence(
         txid = record.get("txid")
         block_hash = record.get("block_hash")
         proof_hex = record.get("gettxoutproof_hex")
-        if (not isinstance(txid, str) or HEX64.fullmatch(txid) is None or
-                not isinstance(block_hash, str) or HEX64.fullmatch(block_hash) is None or
-                not isinstance(proof_hex, str) or HEX.fullmatch(proof_hex) is None):
+        if (
+            not isinstance(txid, str)
+            or HEX64.fullmatch(txid) is None
+            or not isinstance(block_hash, str)
+            or HEX64.fullmatch(block_hash) is None
+            or not isinstance(proof_hex, str)
+            or HEX.fullmatch(proof_hex) is None
+        ):
             fail(f"Bitcoin Core txoutproof {position} is not canonical")
         if txid in proofs:
             fail("Bitcoin Core evidence duplicates a transaction proof")
@@ -1091,8 +1209,11 @@ def validate_chain_evidence(
         height, raw_header = by_hash[block_hash]
         minimum_height = min(minimum_height, height)
         derived_confirmations = best_height - height + 1
-        if type(confirmations) is not int or confirmations != derived_confirmations or \
-                confirmations < 6:
+        if (
+            type(confirmations) is not int
+            or confirmations != derived_confirmations
+            or confirmations < 6
+        ):
             fail("custody transaction confirmations differ from the retained best chain")
         if proofs.get(txid) != (block_hash, proof_hex):
             fail("custody transaction proof differs from the retained Bitcoin Core evidence")
@@ -1106,25 +1227,34 @@ def validate_chain_evidence(
 
 
 def parse_mempool_response(
-    raw_value: object, tx: Transaction, wanted_allowed: bool,
+    raw_value: object,
+    tx: Transaction,
+    wanted_allowed: bool,
     reported_reason: object | None = None,
 ) -> dict[str, Any]:
-    if not isinstance(raw_value, str) or not raw_value or len(raw_value) > 64 * 1024 or \
-            "\r" in raw_value or not raw_value.endswith("\n"):
+    if (
+        not isinstance(raw_value, str)
+        or not raw_value
+        or len(raw_value) > 64 * 1024
+        or "\r" in raw_value
+        or not raw_value.endswith("\n")
+    ):
         fail("testmempoolaccept raw JSON is not canonical retained output")
     try:
         value = json.loads(raw_value, object_pairs_hook=strict_object)
     except (ValueError, json.JSONDecodeError) as exc:
         fail(f"testmempoolaccept raw JSON cannot be parsed: {exc}")
-    canonical = json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
     if raw_value != canonical:
         fail("testmempoolaccept raw JSON is not canonical sorted JSON")
     if not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], dict):
         fail("testmempoolaccept raw JSON must contain exactly one result")
     result = value[0]
-    if result.get("txid") != tx.txid or result.get("wtxid") != tx.wtxid or \
-            result.get("allowed") is not wanted_allowed:
+    if (
+        result.get("txid") != tx.txid
+        or result.get("wtxid") != tx.wtxid
+        or result.get("allowed") is not wanted_allowed
+    ):
         fail("testmempoolaccept raw result differs from the exact transaction/verdict")
     if wanted_allowed:
         if "reject-reason" in result:
@@ -1135,46 +1265,71 @@ def parse_mempool_response(
         fail("testmempoolaccept reject reason differs from retained raw result")
     lowered = reason.lower()
     spent_or_conflict = (
-        "missingorspent", "missing input", "missing-input", "already spent",
-        "mempool-conflict", "txn-mempool-conflict", "conflict",
+        "missingorspent",
+        "missing input",
+        "missing-input",
+        "already spent",
+        "mempool-conflict",
+        "txn-mempool-conflict",
+        "conflict",
     )
     threshold_failure = (
-        "false/empty top stack", "finished with a false", "op_numequal",
+        "false/empty top stack",
+        "finished with a false",
+        "op_numequal",
     )
-    if any(marker in lowered for marker in spent_or_conflict) or \
-            not any(marker in lowered for marker in threshold_failure):
+    if any(marker in lowered for marker in spent_or_conflict) or not any(
+        marker in lowered for marker in threshold_failure
+    ):
         fail("2-of-5 rejection is not specifically a threshold-script failure")
     return result
 
 
-def common_report(report: dict[str, Any], parent: dict[str, Any],
-                  drill: dict[str, Any], statement: str,
-                  wanted_signatures: int) -> tuple[Transaction, int, bytes]:
-    if report.get("schema") != 1 or report.get("statement") != statement or \
-            report.get("result") != "PASS":
+def common_report(
+    report: dict[str, Any],
+    parent: dict[str, Any],
+    drill: dict[str, Any],
+    statement: str,
+    wanted_signatures: int,
+) -> tuple[Transaction, int, bytes]:
+    if (
+        report.get("schema") != 1
+        or report.get("statement") != statement
+        or report.get("result") != "PASS"
+    ):
         fail("custody subreport schema/statement/result is invalid")
     for field in (
-            "release_version", "source_commit", "source_tree",
-            "bitcoin_network", "descriptor_sha256", "manifest_sha256"):
+        "release_version",
+        "source_commit",
+        "source_tree",
+        "bitcoin_network",
+        "descriptor_sha256",
+        "manifest_sha256",
+    ):
         if report.get(field) != parent.get(field):
             fail(f"custody subreport {field} differs from parent")
     for field in ("descriptor_index", "script_pubkey_hex", "funded_sats"):
         if report.get(field) != drill.get(field):
             fail(f"custody subreport {field} differs from boundary entry")
-    if parse_time(report.get("completed_at_utc"), "subreport completed_at_utc") > \
-            parse_time(parent.get("completed_at_utc"), "parent completed_at_utc"):
+    if parse_time(report.get("completed_at_utc"), "subreport completed_at_utc") > parse_time(
+        parent.get("completed_at_utc"), "parent completed_at_utc"
+    ):
         fail("custody subreport completes after its parent")
     signer_ids = report.get("signer_ids")
     parent_ids = drill.get(
-        "three_of_five_signer_ids" if wanted_signatures == 3 else
-        "two_of_five_signer_ids")
-    if (not isinstance(signer_ids, list) or len(signer_ids) != wanted_signatures or
-            len(set(signer_ids)) != wanted_signatures or
-            any(IDENTITY.fullmatch(str(item)) is None for item in signer_ids) or
-            set(signer_ids) != set(parent_ids or [])):
+        "three_of_five_signer_ids" if wanted_signatures == 3 else "two_of_five_signer_ids"
+    )
+    if (
+        not isinstance(signer_ids, list)
+        or len(signer_ids) != wanted_signatures
+        or len(set(signer_ids)) != wanted_signatures
+        or any(IDENTITY.fullmatch(str(item)) is None for item in signer_ids)
+        or set(signer_ids) != set(parent_ids or [])
+    ):
         fail("custody subreport signer identities differ from parent")
     funding_raw = hex_bytes(
-        report.get("funding_raw_transaction_hex"), "funding_raw_transaction_hex")
+        report.get("funding_raw_transaction_hex"), "funding_raw_transaction_hex"
+    )
     funding = parse_transaction(funding_raw)
     if funding.txid != report.get("funding_txid"):
         fail("funding transaction txid differs from raw bytes")
@@ -1193,39 +1348,57 @@ def common_report(report: dict[str, Any], parent: dict[str, Any],
         fail("funding_block_hash is not canonical")
     verify_partial_merkle_proof(
         hex_bytes(report.get("funding_txoutproof_hex"), "funding_txoutproof_hex"),
-        funding.txid, block_hash)
+        funding.txid,
+        block_hash,
+    )
     return funding, funding_vout, script_pubkey
 
 
-def validate_success(report: dict[str, Any], parent: dict[str, Any],
-                     drill: dict[str, Any], expected_keys: list[bytes],
-                     expected_script: bytes, expected_control: bytes,
-                     operator_ids: list[str]) -> tuple[Transaction, list[int]]:
+def validate_success(
+    report: dict[str, Any],
+    parent: dict[str, Any],
+    drill: dict[str, Any],
+    expected_keys: list[bytes],
+    expected_script: bytes,
+    expected_control: bytes,
+    operator_ids: list[str],
+) -> tuple[Transaction, list[int]]:
     exact(report, SUCCESS_FIELDS, "3-of-5 success report")
     funding, funding_vout, script_pubkey = common_report(
-        report, parent, drill, "veld-mainnet-custody-3of5-success-v1", 3)
-    spend = parse_transaction(hex_bytes(
-        report.get("spend_raw_transaction_hex"), "spend_raw_transaction_hex"))
-    if spend.txid != report.get("spend_txid") or \
-            spend.txid != drill.get("three_of_five_spend_txid") or \
-            report.get("broadcast_txid") != spend.txid:
+        report, parent, drill, "veld-mainnet-custody-3of5-success-v1", 3
+    )
+    spend = parse_transaction(
+        hex_bytes(report.get("spend_raw_transaction_hex"), "spend_raw_transaction_hex")
+    )
+    if (
+        spend.txid != report.get("spend_txid")
+        or spend.txid != drill.get("three_of_five_spend_txid")
+        or report.get("broadcast_txid") != spend.txid
+    ):
         fail("3-of-5 spend txid differs across raw/report/parent/broadcast")
     index = report.get("spend_input_index")
-    if index != 0 or spend.inputs[0].txid != funding.txid or \
-            spend.inputs[0].vout != funding_vout:
+    if index != 0 or spend.inputs[0].txid != funding.txid or spend.inputs[0].vout != funding_vout:
         fail("3-of-5 spend does not consume the proved funding output")
     if sum(item.value for item in spend.outputs) >= report.get("funded_sats"):
         fail("3-of-5 spend does not pay a positive miner fee")
     signed_slots = validate_witness(
-        spend, index, report["funded_sats"], script_pubkey, report, 3,
-        expected_keys, expected_script, expected_control, operator_ids)
+        spend,
+        index,
+        report["funded_sats"],
+        script_pubkey,
+        report,
+        3,
+        expected_keys,
+        expected_script,
+        expected_control,
+        operator_ids,
+    )
     if report.get("testmempoolaccept_allowed") is not True:
         fail("3-of-5 report does not record pre-broadcast mempool acceptance")
-    parse_mempool_response(
-        report.get("testmempoolaccept_raw_json"), spend, True)
+    parse_mempool_response(report.get("testmempoolaccept_raw_json"), spend, True)
     mempool_at = parse_time(
-        report.get("testmempoolaccept_checked_at_utc"),
-        "3-of-5 testmempoolaccept_checked_at_utc")
+        report.get("testmempoolaccept_checked_at_utc"), "3-of-5 testmempoolaccept_checked_at_utc"
+    )
     broadcast_at = parse_time(report.get("broadcast_at_utc"), "3-of-5 broadcast_at_utc")
     confirmed_at = parse_time(report.get("confirmed_at_utc"), "3-of-5 confirmed_at_utc")
     completed_at = parse_time(report.get("completed_at_utc"), "3-of-5 completed_at_utc")
@@ -1233,80 +1406,126 @@ def validate_success(report: dict[str, Any], parent: dict[str, Any],
         fail("3-of-5 mempool/broadcast/confirmation timestamps are out of order")
     confirmations = report.get("spend_confirmations")
     block_hash = report.get("spend_block_hash")
-    if type(confirmations) is not int or confirmations < 6 or \
-            not isinstance(block_hash, str) or HEX64.fullmatch(block_hash) is None:
+    if (
+        type(confirmations) is not int
+        or confirmations < 6
+        or not isinstance(block_hash, str)
+        or HEX64.fullmatch(block_hash) is None
+    ):
         fail("3-of-5 spend has fewer than six confirmations or no canonical block")
     verify_partial_merkle_proof(
         hex_bytes(report.get("spend_txoutproof_hex"), "spend_txoutproof_hex"),
-        spend.txid, block_hash)
+        spend.txid,
+        block_hash,
+    )
     return spend, signed_slots
 
 
-def validate_rejection(report: dict[str, Any], parent: dict[str, Any],
-                       drill: dict[str, Any], success: Transaction,
-                       expected_keys: list[bytes], expected_script: bytes,
-                       expected_control: bytes,
-                       operator_ids: list[str]) -> tuple[list[int], dt.datetime]:
+def validate_rejection(
+    report: dict[str, Any],
+    parent: dict[str, Any],
+    drill: dict[str, Any],
+    success: Transaction,
+    expected_keys: list[bytes],
+    expected_script: bytes,
+    expected_control: bytes,
+    operator_ids: list[str],
+) -> tuple[list[int], dt.datetime]:
     exact(report, REJECTION_FIELDS, "2-of-5 rejection report")
     funding, funding_vout, script_pubkey = common_report(
-        report, parent, drill, "veld-mainnet-custody-2of5-rejection-v1", 2)
-    rejected = parse_transaction(hex_bytes(
-        report.get("rejection_raw_transaction_hex"),
-        "rejection_raw_transaction_hex"))
-    if rejected.txid != report.get("rejection_txid") or \
-            rejected.wtxid != report.get("rejection_wtxid") or \
-            rejected.txid != report.get("testmempoolaccept_txid") or \
-            rejected.wtxid != report.get("testmempoolaccept_wtxid"):
+        report, parent, drill, "veld-mainnet-custody-2of5-rejection-v1", 2
+    )
+    rejected = parse_transaction(
+        hex_bytes(report.get("rejection_raw_transaction_hex"), "rejection_raw_transaction_hex")
+    )
+    if (
+        rejected.txid != report.get("rejection_txid")
+        or rejected.wtxid != report.get("rejection_wtxid")
+        or rejected.txid != report.get("testmempoolaccept_txid")
+        or rejected.wtxid != report.get("testmempoolaccept_wtxid")
+    ):
         fail("2-of-5 txid/wtxid differs across raw/report/Core result")
     if rejected.txid == success.txid:
         fail("2-of-5 rejection reuses the successful transaction identity")
     index = report.get("spend_input_index")
-    if index != 0 or rejected.inputs[0].txid != funding.txid or \
-            rejected.inputs[0].vout != funding_vout:
+    if (
+        index != 0
+        or rejected.inputs[0].txid != funding.txid
+        or rejected.inputs[0].vout != funding_vout
+    ):
         fail("2-of-5 attempt does not consume the proved funding output")
     if sum(item.value for item in rejected.outputs) >= report.get("funded_sats"):
         fail("2-of-5 attempt does not pay a positive miner fee")
     signed_slots = validate_witness(
-        rejected, index, report["funded_sats"], script_pubkey, report, 2,
-        expected_keys, expected_script, expected_control, operator_ids)
+        rejected,
+        index,
+        report["funded_sats"],
+        script_pubkey,
+        report,
+        2,
+        expected_keys,
+        expected_script,
+        expected_control,
+        operator_ids,
+    )
     reason = report.get("reject_reason")
-    if not isinstance(reason, str) or not 3 <= len(reason) <= 512 or \
-            re.search(r"(?:todo|tbd|replace|placeholder|example)", reason, re.I):
+    if (
+        not isinstance(reason, str)
+        or not 3 <= len(reason) <= 512
+        or re.search(r"(?:todo|tbd|replace|placeholder|example)", reason, re.I)
+    ):
         fail("2-of-5 report has no canonical reject reason")
-    if (report.get("finalizepsbt_complete") is not False or
-            report.get("testmempoolaccept_allowed") is not False or
-            report.get("broadcast_attempted") is not False):
+    if (
+        report.get("finalizepsbt_complete") is not False
+        or report.get("testmempoolaccept_allowed") is not False
+        or report.get("broadcast_attempted") is not False
+    ):
         fail("2-of-5 report does not prove incomplete/rejected/non-broadcast state")
-    parse_mempool_response(
-        report.get("testmempoolaccept_raw_json"), rejected, False, reason)
+    parse_mempool_response(report.get("testmempoolaccept_raw_json"), rejected, False, reason)
     finalized_at = parse_time(
-        report.get("finalizepsbt_checked_at_utc"),
-        "2-of-5 finalizepsbt_checked_at_utc")
+        report.get("finalizepsbt_checked_at_utc"), "2-of-5 finalizepsbt_checked_at_utc"
+    )
     tested_at = parse_time(
-        report.get("testmempoolaccept_checked_at_utc"),
-        "2-of-5 testmempoolaccept_checked_at_utc")
+        report.get("testmempoolaccept_checked_at_utc"), "2-of-5 testmempoolaccept_checked_at_utc"
+    )
     completed_at = parse_time(report.get("completed_at_utc"), "2-of-5 completed_at_utc")
     if not finalized_at <= tested_at <= completed_at:
         fail("2-of-5 finalize/test/completion timestamps are out of order")
     return signed_slots, tested_at
 
 
-def validate(parent_path: Path, manifest_path: Path, consensus_manifest_path: Path,
-             evidence_root: Path, operator_ids: list[str],
-             maximum_chain_target: int = MAX_MAINNET_EVIDENCE_TARGET) -> None:
+def validate(
+    parent_path: Path,
+    manifest_path: Path,
+    consensus_manifest_path: Path,
+    evidence_root: Path,
+    operator_ids: list[str],
+    maximum_chain_target: int = MAX_MAINNET_EVIDENCE_TARGET,
+) -> None:
     parent, _ = load_json(parent_path, "funded custody drill report")
     exact(parent, PARENT_FIELDS, "funded custody drill report")
-    if (parent.get("schema") != 2 or parent.get("statement") !=
-            "veld-mainnet-funded-custody-threshold-drill-v2" or
-            parent.get("result") != "PASS" or parent.get("bitcoin_network") != "main"):
+    if (
+        parent.get("schema") != 2
+        or parent.get("statement") != "veld-mainnet-funded-custody-threshold-drill-v2"
+        or parent.get("result") != "PASS"
+        or parent.get("bitcoin_network") != "main"
+    ):
         fail("funded custody parent schema/statement/result/network is invalid")
     parse_time(parent.get("completed_at_utc"), "parent completed_at_utc")
-    for field in ("descriptor_sha256", "manifest_sha256",
-                  "consensus_manifest_sha256", "source_commit", "source_tree"):
+    for field in (
+        "descriptor_sha256",
+        "manifest_sha256",
+        "consensus_manifest_sha256",
+        "source_commit",
+        "source_tree",
+    ):
         if not isinstance(parent.get(field), str) or HEX64.fullmatch(parent[field]) is None:
             fail(f"funded custody parent {field} is not canonical")
-    if (len(operator_ids) != 5 or len(set(operator_ids)) != 5 or
-            any(IDENTITY.fullmatch(item) is None for item in operator_ids)):
+    if (
+        len(operator_ids) != 5
+        or len(set(operator_ids)) != 5
+        or any(IDENTITY.fullmatch(item) is None for item in operator_ids)
+    ):
         fail("exactly five distinct ordered ceremony operator identities are required")
 
     manifest, manifest_raw = load_json(manifest_path, "operational custody manifest")
@@ -1316,19 +1535,24 @@ def validate(parent_path: Path, manifest_path: Path, consensus_manifest_path: Pa
     if manifest.get("version") != 1 or manifest.get("range") != parent.get("script_range"):
         fail("operational custody manifest version/range differs from parent")
     descriptor = manifest.get("descriptor")
-    if not isinstance(descriptor, str) or hashlib.sha256(
-            descriptor.encode("utf-8")).hexdigest() != parent.get("descriptor_sha256") or \
-            manifest.get("descriptor_sha256") != parent.get("descriptor_sha256"):
+    if (
+        not isinstance(descriptor, str)
+        or hashlib.sha256(descriptor.encode("utf-8")).hexdigest() != parent.get("descriptor_sha256")
+        or manifest.get("descriptor_sha256") != parent.get("descriptor_sha256")
+    ):
         fail("operational custody descriptor differs from parent")
     expressions = parse_custody_descriptor(descriptor)
     scripts = manifest.get("script_pubkeys")
     script_range = manifest.get("range")
-    if (not isinstance(scripts, list) or not isinstance(script_range, list) or
-            script_range != [0, len(scripts) - 1] or len(scripts) != 11_000 or
-            len(set(map(str, scripts))) != len(scripts)):
+    if (
+        not isinstance(scripts, list)
+        or not isinstance(script_range, list)
+        or script_range != [0, len(scripts) - 1]
+        or len(scripts) != 11_000
+        or len(set(map(str, scripts))) != len(scripts)
+    ):
         fail("operational custody manifest is not exact unique [0,10999]")
-    derived_scripts, boundary_material = derive_operational_manifest(
-        descriptor, expressions)
+    derived_scripts, boundary_material = derive_operational_manifest(descriptor, expressions)
     for index, actual in enumerate(scripts):
         if not isinstance(actual, str) or re.fullmatch(r"5120[0-9a-f]{64}", actual) is None:
             fail(f"operational custody manifest script {index} is not canonical P2TR")
@@ -1336,22 +1560,27 @@ def validate(parent_path: Path, manifest_path: Path, consensus_manifest_path: Pa
             fail(f"operational custody manifest script {index} does not derive from descriptor")
 
     consensus, consensus_raw = load_json(
-        consensus_manifest_path, "consensus-prefix custody manifest")
+        consensus_manifest_path, "consensus-prefix custody manifest"
+    )
     exact(consensus, MANIFEST_FIELDS, "consensus-prefix custody manifest")
-    if hashlib.sha256(consensus_raw).hexdigest() != parent.get(
-            "consensus_manifest_sha256"):
+    if hashlib.sha256(consensus_raw).hexdigest() != parent.get("consensus_manifest_sha256"):
         fail("consensus-prefix custody manifest bytes differ from parent hash")
-    if (consensus.get("version") != 1 or consensus.get("range") != [0, 999] or
-            parent.get("consensus_script_range") != [0, 999] or
-            consensus.get("descriptor") != descriptor or
-            consensus.get("descriptor_sha256") != parent.get("descriptor_sha256") or
-            consensus.get("script_pubkeys") != scripts[:1000]):
+    if (
+        consensus.get("version") != 1
+        or consensus.get("range") != [0, 999]
+        or parent.get("consensus_script_range") != [0, 999]
+        or consensus.get("descriptor") != descriptor
+        or consensus.get("descriptor_sha256") != parent.get("descriptor_sha256")
+        or consensus.get("script_pubkeys") != scripts[:1000]
+    ):
         fail("consensus custody manifest is not the exact derived [0,999] prefix")
 
     chain_evidence = safe_subreport(
-        evidence_root, parent.get("bitcoin_core_chain_evidence_path"),
+        evidence_root,
+        parent.get("bitcoin_core_chain_evidence_path"),
         parent.get("bitcoin_core_chain_evidence_sha256"),
-        "Bitcoin Core chain evidence")
+        "Bitcoin Core chain evidence",
+    )
 
     drills = parent.get("threshold_spend_drills")
     if not isinstance(drills, list) or len(drills) != 3:
@@ -1373,14 +1602,15 @@ def validate(parent_path: Path, manifest_path: Path, consensus_manifest_path: Pa
         indices.append(index)
         if drill.get("script_pubkey_hex") != scripts[index]:
             fail(f"boundary drill {index} script differs from operational manifest")
-        expected_keys, expected_script, expected_control, expected_spk = \
-            boundary_material[index]
+        expected_keys, expected_script, expected_control, expected_spk = boundary_material[index]
         if expected_spk.hex() != scripts[index]:
             fail(f"boundary drill {index} manifest script does not derive from descriptor")
         if type(drill.get("funded_sats")) is not int or drill["funded_sats"] <= 0:
             fail(f"boundary drill {index} funding is invalid")
-        if not isinstance(drill.get("three_of_five_spend_txid"), str) or \
-                HEX64.fullmatch(drill["three_of_five_spend_txid"]) is None:
+        if (
+            not isinstance(drill.get("three_of_five_spend_txid"), str)
+            or HEX64.fullmatch(drill["three_of_five_spend_txid"]) is None
+        ):
             fail(f"boundary drill {index} success txid is invalid")
         success_path = drill.get("three_of_five_success_report_path")
         success_digest = drill.get("three_of_five_success_report_sha256")
@@ -1395,19 +1625,25 @@ def validate(parent_path: Path, manifest_path: Path, consensus_manifest_path: Pa
                 fail("custody subreports reuse an evidence digest")
             digests.add(str(value))
         success_report = safe_subreport(
-            evidence_root, success_path, success_digest,
-            f"boundary {index} 3-of-5 success report")
+            evidence_root, success_path, success_digest, f"boundary {index} 3-of-5 success report"
+        )
         rejection_report = safe_subreport(
-            evidence_root, reject_path, reject_digest,
-            f"boundary {index} 2-of-5 rejection report")
+            evidence_root, reject_path, reject_digest, f"boundary {index} 2-of-5 rejection report"
+        )
         for field in (
-                "funding_txid", "funding_vout", "funding_raw_transaction_hex",
-                "funding_txoutproof_hex", "funding_block_hash",
-                "funding_confirmations"):
+            "funding_txid",
+            "funding_vout",
+            "funding_raw_transaction_hex",
+            "funding_txoutproof_hex",
+            "funding_block_hash",
+            "funding_confirmations",
+        ):
             if rejection_report.get(field) != success_report.get(field):
                 fail(f"boundary {index} success/rejection funding {field} differs")
-        outpoint = (str(success_report.get("funding_txid")),
-                    int(success_report.get("funding_vout", -1)))
+        outpoint = (
+            str(success_report.get("funding_txid")),
+            int(success_report.get("funding_vout", -1)),
+        )
         if outpoint in funding_outpoints:
             fail("custody boundary drills reuse a funding outpoint")
         funding_outpoints.add(outpoint)
@@ -1418,43 +1654,60 @@ def validate(parent_path: Path, manifest_path: Path, consensus_manifest_path: Pa
         success_txids.add(success_txid)
         rejection_txids.add(rejection_txid)
         success, success_slots = validate_success(
-            success_report, parent, drill, expected_keys, expected_script,
-            expected_control, operator_ids)
+            success_report,
+            parent,
+            drill,
+            expected_keys,
+            expected_script,
+            expected_control,
+            operator_ids,
+        )
         rejection_slots, rejection_tested_at = validate_rejection(
-            rejection_report, parent, drill, success, expected_keys,
-            expected_script, expected_control, operator_ids)
-        if drill.get("three_of_five_signer_ids") != [
-                operator_ids[slot] for slot in success_slots]:
+            rejection_report,
+            parent,
+            drill,
+            success,
+            expected_keys,
+            expected_script,
+            expected_control,
+            operator_ids,
+        )
+        if drill.get("three_of_five_signer_ids") != [operator_ids[slot] for slot in success_slots]:
             fail(f"boundary drill {index} 3-of-5 signer IDs do not map to slots")
-        if drill.get("two_of_five_signer_ids") != [
-                operator_ids[slot] for slot in rejection_slots]:
+        if drill.get("two_of_five_signer_ids") != [operator_ids[slot] for slot in rejection_slots]:
             fail(f"boundary drill {index} 2-of-5 signer IDs do not map to slots")
-        if set(success_slots) & set(rejection_slots) or \
-                set(success_slots) | set(rejection_slots) != set(range(5)):
+        if set(success_slots) & set(rejection_slots) or set(success_slots) | set(
+            rejection_slots
+        ) != set(range(5)):
             fail(f"boundary drill {index} does not exercise all five disjoint signer slots")
         if rejection_tested_at >= parse_time(
-                success_report.get("broadcast_at_utc"), "3-of-5 broadcast_at_utc"):
+            success_report.get("broadcast_at_utc"), "3-of-5 broadcast_at_utc"
+        ):
             fail(f"boundary drill {index} tested 2-of-5 only after success broadcast")
-        chain_references.extend((
-            {
-                "txid": success_report["funding_txid"],
-                "block_hash": success_report["funding_block_hash"],
-                "proof_hex": success_report["funding_txoutproof_hex"],
-                "confirmations": success_report["funding_confirmations"],
-            },
-            {
-                "txid": success_report["spend_txid"],
-                "block_hash": success_report["spend_block_hash"],
-                "proof_hex": success_report["spend_txoutproof_hex"],
-                "confirmations": success_report["spend_confirmations"],
-            },
-        ))
+        chain_references.extend(
+            (
+                {
+                    "txid": success_report["funding_txid"],
+                    "block_hash": success_report["funding_block_hash"],
+                    "proof_hex": success_report["funding_txoutproof_hex"],
+                    "confirmations": success_report["funding_confirmations"],
+                },
+                {
+                    "txid": success_report["spend_txid"],
+                    "block_hash": success_report["spend_block_hash"],
+                    "proof_hex": success_report["spend_txoutproof_hex"],
+                    "confirmations": success_report["spend_confirmations"],
+                },
+            )
+        )
     if indices != [0, 1000, 10_999]:
         fail("custody boundary drills are not ordered exactly [0,1000,10999]")
     validate_chain_evidence(
-        chain_evidence, chain_references,
+        chain_evidence,
+        chain_references,
         parse_time(parent.get("completed_at_utc"), "parent completed_at_utc"),
-        maximum_chain_target)
+        maximum_chain_target,
+    )
 
 
 def main() -> int:
@@ -1464,9 +1717,13 @@ def main() -> int:
     parser.add_argument("--consensus-manifest", required=True, type=Path)
     parser.add_argument("--evidence-root", type=Path)
     parser.add_argument(
-        "--operator-id", action="append", required=True,
-        help=("ceremony operator identity in exact descriptor key-slot order; "
-              "repeat exactly five times"),
+        "--operator-id",
+        action="append",
+        required=True,
+        help=(
+            "ceremony operator identity in exact descriptor key-slot order; "
+            "repeat exactly five times"
+        ),
     )
     args = parser.parse_args()
     root = args.evidence_root or args.report.parent
@@ -1474,12 +1731,14 @@ def main() -> int:
         if not root.is_dir() or root.is_symlink():
             fail("evidence root must be a non-symlink directory")
         validate(
-            args.report, args.operational_manifest, args.consensus_manifest,
-            root, args.operator_id)
+            args.report, args.operational_manifest, args.consensus_manifest, root, args.operator_id
+        )
     except (OSError, ValidationError, UnicodeError) as exc:
         print(f"FUNDED-CUSTODY-SEMANTIC FAIL: {exc}", file=sys.stderr)
         return 1
-    print("FUNDED-CUSTODY-SEMANTIC OK: all 11,000 descriptor outputs, exact consensus prefix, high-work linked Bitcoin Core chain evidence, 3-of-5 spends, and pre-broadcast 2-of-5 threshold rejections verified")
+    print(
+        "FUNDED-CUSTODY-SEMANTIC OK: all 11,000 descriptor outputs, exact consensus prefix, high-work linked Bitcoin Core chain evidence, 3-of-5 spends, and pre-broadcast 2-of-5 threshold rejections verified"
+    )
     return 0
 
 

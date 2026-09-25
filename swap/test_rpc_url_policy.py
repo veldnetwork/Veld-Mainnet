@@ -26,7 +26,9 @@ class RpcUrlPolicyTests(unittest.TestCase):
         with mock.patch("swap.rpc_url_policy.subprocess.Popen") as launch:
             for timeout in (float("inf"), float("nan"), -1, True):
                 with self.assertRaisesRegex(RuntimeError, "timeout is invalid"):
-                    run_bounded_subprocess(["unused"], timeout=timeout, stdout_max=1024, stderr_max=1024)
+                    run_bounded_subprocess(
+                        ["unused"], timeout=timeout, stdout_max=1024, stderr_max=1024
+                    )
             with mock.patch("swap.rpc_url_policy.os.name", "unsupported"):
                 with self.assertRaisesRegex(RuntimeError, "POSIX bounded operator runtime"):
                     run_bounded_subprocess(["unused"], timeout=1, stdout_max=1024, stderr_max=1024)
@@ -37,9 +39,7 @@ class RpcUrlPolicyTests(unittest.TestCase):
             secret = Path(directory) / "rpc.token"
             secret.write_bytes(b"secret")
             secret.chmod(0o600)
-            self.assertEqual(
-                read_bounded_secret_file(str(secret), 6, "RPC token"),
-                b"secret")
+            self.assertEqual(read_bounded_secret_file(str(secret), 6, "RPC token"), b"secret")
             secret.chmod(0o640)
             with self.assertRaises(RuntimeError):
                 read_bounded_secret_file(str(secret), 6, "RPC token")
@@ -57,9 +57,7 @@ class RpcUrlPolicyTests(unittest.TestCase):
                 read_bounded_secret_file(str(secret), 5, "RPC token")
 
     def test_bounded_json_reader_rejects_oversize_duplicates_and_nonfinite(self):
-        self.assertEqual(
-            load_bounded_json_response(io.BytesIO(b'{"ok":true}'), 64),
-            {"ok": True})
+        self.assertEqual(load_bounded_json_response(io.BytesIO(b'{"ok":true}'), 64), {"ok": True})
         bad = (
             (b'{"a":1,"a":2}', 64),
             (b'{"a":NaN}', 64),
@@ -70,8 +68,7 @@ class RpcUrlPolicyTests(unittest.TestCase):
         for payload, maximum in bad:
             with self.subTest(payload=payload, maximum=maximum):
                 with self.assertRaises(ValueError):
-                    load_bounded_json_response(
-                        io.BytesIO(payload), maximum, "test response")
+                    load_bounded_json_response(io.BytesIO(payload), maximum, "test response")
 
     def test_plaintext_is_exact_loopback_only(self):
         for url in (
@@ -98,8 +95,8 @@ class RpcUrlPolicyTests(unittest.TestCase):
 
     def test_remote_https_rejects_url_secrets_and_ambient_suffixes(self):
         self.assertEqual(
-            validate_backend_rpc_url("https://rpc.example:443/veld"),
-            "https://rpc.example:443/veld")
+            validate_backend_rpc_url("https://rpc.example:443/veld"), "https://rpc.example:443/veld"
+        )
         for url in (
             "https://user:pass@rpc.example/",
             "https://rpc.example/?token=secret",
@@ -176,32 +173,45 @@ class RpcUrlPolicyTests(unittest.TestCase):
                 pass
 
         redirect = ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
-        redirect_thread = threading.Thread(target=redirect.serve_forever,
-                                           daemon=True)
+        redirect_thread = threading.Thread(target=redirect.serve_forever, daemon=True)
         redirect_thread.start()
         try:
             request = Request(
                 "http://127.0.0.1:%d/rpc" % redirect.server_port,
-                data=b"{}", headers={"Authorization": "Bearer secret"})
+                data=b"{}",
+                headers={"Authorization": "Bearer secret"},
+            )
             with self.assertRaisesRegex(HTTPError, "redirects are forbidden"):
                 open_rpc_request(request, timeout=2)
             self.assertEqual(Target.hits, 0)
 
             # A poisoned service environment must not route even a loopback RPC
             # request through an attacker-selected proxy.
-            with mock.patch.dict(os.environ, {
-                    "HTTP_PROXY": target_url, "http_proxy": target_url,
-                    "NO_PROXY": "", "no_proxy": ""}, clear=False):
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HTTP_PROXY": target_url,
+                    "http_proxy": target_url,
+                    "NO_PROXY": "",
+                    "no_proxy": "",
+                },
+                clear=False,
+            ):
                 request = Request(
                     "http://127.0.0.1:%d/rpc" % redirect.server_port,
-                    data=b"{}", headers={"Authorization": "Bearer secret"})
+                    data=b"{}",
+                    headers={"Authorization": "Bearer secret"},
+                )
                 with self.assertRaises(HTTPError):
                     open_rpc_request(request, timeout=2)
             self.assertEqual(Target.hits, 0)
         finally:
-            redirect.shutdown(); redirect.server_close()
-            target.shutdown(); target.server_close()
-            redirect_thread.join(timeout=2); target_thread.join(timeout=2)
+            redirect.shutdown()
+            redirect.server_close()
+            target.shutdown()
+            target.server_close()
+            redirect_thread.join(timeout=2)
+            target_thread.join(timeout=2)
 
     def test_requests_transport_never_follows_redirect_or_ambient_proxy(self):
         class Target(BaseHTTPRequestHandler):
@@ -233,40 +243,56 @@ class RpcUrlPolicyTests(unittest.TestCase):
                 pass
 
         redirect = ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
-        redirect_thread = threading.Thread(target=redirect.serve_forever,
-                                           daemon=True)
+        redirect_thread = threading.Thread(target=redirect.serve_forever, daemon=True)
         redirect_thread.start()
         try:
             rpc_url = "http://127.0.0.1:%d/rpc" % redirect.server_port
-            with mock.patch.dict(os.environ, {
-                    "HTTP_PROXY": target_url, "http_proxy": target_url,
-                    "NO_PROXY": "", "no_proxy": ""}, clear=False):
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HTTP_PROXY": target_url,
+                    "http_proxy": target_url,
+                    "NO_PROXY": "",
+                    "no_proxy": "",
+                },
+                clear=False,
+            ):
                 session = build_direct_requests_session(rpc_url)
                 self.assertFalse(session.trust_env)
                 response = session.post(rpc_url, data=b"{}")
             self.assertEqual(response.status_code, 307)
             self.assertEqual(Target.hits, 0)
         finally:
-            redirect.shutdown(); redirect.server_close()
-            target.shutdown(); target.server_close()
-            redirect_thread.join(timeout=2); target_thread.join(timeout=2)
+            redirect.shutdown()
+            redirect.server_close()
+            target.shutdown()
+            target.server_close()
+            redirect_thread.join(timeout=2)
+            target_thread.join(timeout=2)
 
     def test_all_funds_bearing_rpc_clients_share_the_transport_boundary(self):
         swap = Path(__file__).resolve().parent
         clients = (
-            "veld_mintd.py", "veld_btcrelayd.py", "veld_anchord.py", "veld_signerd.py",
-            "veld_redeemd.py", "veld_watchtowerd.py", "veld_wt_reserve.py",
-            "veld_wrapd.py", "veld_spvmint.py",
+            "veld_mintd.py",
+            "veld_btcrelayd.py",
+            "veld_anchord.py",
+            "veld_signerd.py",
+            "veld_redeemd.py",
+            "veld_watchtowerd.py",
+            "veld_wt_reserve.py",
+            "veld_wrapd.py",
+            "veld_spvmint.py",
         )
         for name in clients:
             with self.subTest(client=name):
                 source = (swap / name).read_text(encoding="utf-8")
                 self.assertTrue(
-                    "open_rpc_request(" in source or
-                    "build_direct_requests_session(" in source)
+                    "open_rpc_request(" in source or "build_direct_requests_session(" in source
+                )
                 self.assertTrue(
-                    "validate_backend_rpc_url" in source or
-                    "validate_loopback_http_rpc_url" in source)
+                    "validate_backend_rpc_url" in source
+                    or "validate_loopback_http_rpc_url" in source
+                )
 
 
 if __name__ == "__main__":

@@ -53,8 +53,8 @@ static_assert(SECURITY_STATE_MIGRATION_HEIGHT == 0);
 
 int main() {
     unsigned checks = 0;
-    for (uint64_t height : {uint64_t{0}, uint64_t{2879}, uint64_t{2880},
-                           uint64_t{3839}, uint64_t{3840}, uint64_t{3841}}) {
+    for (uint64_t height : {uint64_t{0}, uint64_t{2879}, uint64_t{2880}, uint64_t{3839},
+                            uint64_t{3840}, uint64_t{3841}}) {
 #ifdef VELD_PUBLIC_MAINNET
         const bool expected = height >= 3840;
 #else

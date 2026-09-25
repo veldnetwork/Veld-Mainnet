@@ -7,8 +7,7 @@ namespace veld {
 // Shared by consensus validation and mining proof routing. This is the
 // existing NMS interval: target < proof <= 4*target, refusing overflow.
 // Finding a proof in this interval alone does not establish chain eligibility.
-inline bool IsNmsProofInRange(const Hash256& proof,
-                              const CanonicalPowTarget& target) {
+inline bool IsNmsProofInRange(const Hash256& proof, const CanonicalPowTarget& target) {
     Hash256 upper{};
     uint32_t carry = 0;
     for (int i = 31; i >= 0; --i) {

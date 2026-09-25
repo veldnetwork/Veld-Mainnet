@@ -48,9 +48,7 @@ RACE_ROWS = [
 
 ROWS = MATRIX_ROWS + RACE_ROWS
 
-STARTUP_LISTENER_ROWS = {
-    "default_unknown", "node_running", "startup_replay", "datadir_identity"
-}
+STARTUP_LISTENER_ROWS = {"default_unknown", "node_running", "startup_replay", "datadir_identity"}
 
 ZERO_EFFECT_KEYS = [
     "internal_mining_admitted",
@@ -117,25 +115,15 @@ def fail(message: str) -> None:
 
 
 def source_assertions(root: Path) -> dict[str, bool]:
-    constants = (root / "include/core/constants.h").read_text(
-        encoding="utf-8"
-    )
+    constants = (root / "include/core/constants.h").read_text(encoding="utf-8")
     node = (root / "include/node/node.h").read_text(encoding="utf-8")
-    blockchain = (root / "include/core/blockchain.h").read_text(
-        encoding="utf-8"
-    )
+    blockchain = (root / "include/core/blockchain.h").read_text(encoding="utf-8")
     tcp = (root / "include/network/tcp.h").read_text(encoding="utf-8")
-    fixture = (
-        root / "tests/work_admission_process_fixture.cpp"
-    ).read_text(encoding="utf-8")
-    runtime = (
-        root / "include/network/public_testnet_runtime.h"
-    ).read_text(encoding="utf-8")
+    fixture = (root / "tests/work_admission_process_fixture.cpp").read_text(encoding="utf-8")
+    runtime = (root / "include/network/public_testnet_runtime.h").read_text(encoding="utf-8")
     node_main = (root / "src/veld-node.cpp").read_text(encoding="utf-8")
     start_pos = node.find("void Start()")
-    replay_complete_pos = node.find(
-        "startup_replay_complete_.store(true", start_pos
-    )
+    replay_complete_pos = node.find("startup_replay_complete_.store(true", start_pos)
     production_listener_pos = node.find(
         "tcp_server_ = std::make_unique<net::NodeServer>", replay_complete_pos
     )
@@ -157,34 +145,29 @@ def source_assertions(root: Path) -> dict[str, bool]:
             and "VELD_PUBLIC_RELEASE cannot be combined" in constants
         ),
         "fixture_requires_test_hooks": (
-            '#ifndef VELD_TEST_HOOKS' in fixture
-            and 'requires VELD_TEST_HOOKS' in fixture
+            '#ifndef VELD_TEST_HOOKS' in fixture and 'requires VELD_TEST_HOOKS' in fixture
         ),
         "fixture_rejects_public_profiles": (
             "defined(VELD_PUBLIC_RELEASE)" in fixture
             and "must never compile in a public profile" in fixture
         ),
         "all_test_state_is_guarded": (
-            "#ifdef VELD_TEST_HOOKS\n    std::atomic<bool> "
-            "test_work_force_tip_unknown_" in node
+            "#ifdef VELD_TEST_HOOKS\n    std::atomic<bool> test_work_force_tip_unknown_" in node
             and "test_work_local_runtime_open_" in node
         ),
         "submit_precommit_barrier_test_only": (
-            "#ifdef VELD_TEST_HOOKS\n    // Deterministic process-test barrier"
-            in blockchain
+            "#ifdef VELD_TEST_HOOKS\n    // Deterministic process-test barrier" in blockchain
             and "TestSetLocalWorkPreCommitBarrier" in blockchain
             and "test_local_work_pre_commit_barrier_();" in blockchain
         ),
         "p2p_outcome_counters_test_only": (
-            "#ifdef VELD_TEST_HOOKS\n    std::atomic<int>    "
-            "test_start_failure_stage_" in tcp
+            "#ifdef VELD_TEST_HOOKS\n    std::atomic<int>    test_start_failure_stage_" in tcp
             and "test_block_ingest_relay_calls_" in tcp
             and "test_block_ingest_penalty_calls_" in tcp
         ),
         "standalone_uses_production_broadcast_path": (
             "broadcast_op_return(host, shim.port(), validator.address" in fixture
-            and "standalone bound endorsement reaches one real mempool/gossip sink"
-            in fixture
+            and "standalone bound endorsement reaches one real mempool/gossip sink" in fixture
         ),
         "finality_uses_production_rpc_sink": (
             "submit_finality_vote(" in fixture
@@ -198,34 +181,26 @@ def source_assertions(root: Path) -> dict[str, bool]:
             and "altered total reaches no mempool or gossip sink" in fixture
         ),
         "standalone_rejects_validator_value_wraps": (
-            "registration output-wrap reproducer uses exact demonstrated values"
-            in fixture
-            and "oversized input is refused after both parents authenticate"
-            in fixture
-            and "malicious value proposal reaches no BuildScriptSig invocation"
-            in fixture
-            and "malicious value proposal reaches no sendrawtransaction request"
-            in fixture
-            and "malicious value proposal reaches no mempool or gossip artifact"
-            in fixture
+            "registration output-wrap reproducer uses exact demonstrated values" in fixture
+            and "oversized input is refused after both parents authenticate" in fixture
+            and "malicious value proposal reaches no BuildScriptSig invocation" in fixture
+            and "malicious value proposal reaches no sendrawtransaction request" in fixture
+            and "malicious value proposal reaches no mempool or gossip artifact" in fixture
         ),
         "production_listener_follows_replay_completion": (
             0 <= replay_complete_pos < production_listener_pos
         ),
         "publictest_expiry_is_immutable": (
-            'COMPILED_LEASE_NOT_AFTER_UTC =\n    "2026-08-30T18:00:00Z"'
-            in runtime
+            'COMPILED_LEASE_NOT_AFTER_UTC =\n    "2026-08-30T18:00:00Z"' in runtime
         ),
         "publictest_expiry_latches": (
-            "PermitOrLatchClosed" in runtime
-            and "public_testnet_expired_" in node
+            "PermitOrLatchClosed" in runtime and "public_testnet_expired_" in node
         ),
         "publictest_expiry_precedes_listeners": (
             0 <= publictest_terminal_pos < production_listener_pos
         ),
         "publictest_authority_precedes_node_construction": (
-            0 <= normal_authority_marker <= lease_admission_pos
-            < node_construction_pos
+            0 <= normal_authority_marker <= lease_admission_pos < node_construction_pos
         ),
     }
     for name, value in assertions.items():
@@ -245,8 +220,7 @@ def validate_row(row: str, data: dict, artifact_dir: Path) -> int:
         fail(f"{row}: suspiciously low assertion count {checks}")
 
     journals = sorted(
-        path.relative_to(artifact_dir).as_posix()
-        for path in artifact_dir.rglob("*.journal")
+        path.relative_to(artifact_dir).as_posix() for path in artifact_dir.rglob("*.journal")
     )
     if expected_closed:
         for key in ZERO_EFFECT_KEYS:
@@ -259,9 +233,7 @@ def validate_row(row: str, data: dict, artifact_dir: Path) -> int:
     else:
         if int(data.get("internal_mining_admitted", 0)) < 1:
             fail("open: internal mining never crossed authoritative predicate")
-        if int(data.get("internal_hashes", -1)) != 0 or int(
-            data.get("internal_progress", -1)
-        ) != 0:
+        if int(data.get("internal_hashes", -1)) != 0 or int(data.get("internal_progress", -1)) != 0:
             fail("open: deterministic pre-hash barrier allowed mining work")
         for key in OPEN_EXACT_ONE:
             if int(data.get(key, -1)) != 1:
@@ -276,8 +248,7 @@ def validate_row(row: str, data: dict, artifact_dir: Path) -> int:
         ]:
             if int(data.get(key, -1)) != 0:
                 fail(f"open: retained work artifact {key}")
-        expected = {"inproc-endorse.journal", "standalone-endorse.journal",
-                    "finality-vote.journal"}
+        expected = {"inproc-endorse.journal", "standalone-endorse.journal", "finality-vote.journal"}
         if {Path(item).name for item in journals} != expected:
             fail(f"open: exact durable journal set mismatch: {journals}")
 
@@ -293,31 +264,39 @@ def validate_row(row: str, data: dict, artifact_dir: Path) -> int:
             for key, value in expected.items():
                 if int(data.get(key, -1)) != value:
                     fail(f"{row}: expected {key}={value}, got {data.get(key)!r}")
-            if data.get("p2p_reject_tag") != "anchor_conflict" or data.get(
-                "p2p_disposition"
-            ) != "terminal_global_safety_refusal":
+            if (
+                data.get("p2p_reject_tag") != "anchor_conflict"
+                or data.get("p2p_disposition") != "terminal_global_safety_refusal"
+            ):
                 fail(f"{row}: terminal durable refusal was not classified exactly")
         else:
             for key in [
-                "p2p_add_calls", "p2p_durable_calls", "p2p_tip_advanced",
+                "p2p_add_calls",
+                "p2p_durable_calls",
+                "p2p_tip_advanced",
                 "p2p_relay_calls",
             ]:
                 if int(data.get(key, -1)) != 1:
                     fail(f"{row}: inbound P2P proof missing {key}=1")
-            if int(data.get("p2p_penalty_calls", -1)) != 0 or data.get(
-                "p2p_disposition"
-            ) != "advanced_local_gate_independent":
+            if (
+                int(data.get("p2p_penalty_calls", -1)) != 0
+                or data.get("p2p_disposition") != "advanced_local_gate_independent"
+            ):
                 fail(f"{row}: operational P2P disposition mismatch")
         expected_lifecycle = (
             "production_listener_not_open_until_startup_complete"
-            if row in STARTUP_LISTENER_ROWS else "listener_operational"
+            if row in STARTUP_LISTENER_ROWS
+            else "listener_operational"
         )
         if data.get("listener_lifecycle") != expected_lifecycle:
             fail(f"{row}: listener lifecycle classification mismatch")
     else:
         for key in [
-            "p2p_add_calls", "p2p_durable_calls", "p2p_tip_advanced",
-            "p2p_relay_calls", "p2p_penalty_calls",
+            "p2p_add_calls",
+            "p2p_durable_calls",
+            "p2p_tip_advanced",
+            "p2p_relay_calls",
+            "p2p_penalty_calls",
         ]:
             if int(data.get(key, -1)) != 0:
                 fail(f"{row}: unexpected extra P2P probe in {key}")
@@ -338,24 +317,27 @@ def validate_race_row(row: str, data: dict, artifact_dir: Path) -> int:
     if checks < minimum:
         fail(f"{row}: suspiciously low assertion count {checks}")
     retained = [
-        "cached_templates", "pending_tokens", "active_leases",
-        "active_remote_leases", "pending_broadcasts",
+        "cached_templates",
+        "pending_tokens",
+        "active_leases",
+        "active_remote_leases",
+        "pending_broadcasts",
     ]
     for key in retained:
         if int(data.get(key, -1)) != 0:
             fail(f"{row}: retained race artifact {key}={data.get(key)!r}")
     if int(data.get("barrier_calls", -1)) != (1 if acquired else 0):
         fail(f"{row}: real sink barrier count mismatch")
-    if int(data.get("close_blocked_before_release", -1)) != (
-        1 if acquired else 0
-    ):
+    if int(data.get("close_blocked_before_release", -1)) != (1 if acquired else 0):
         fail(f"{row}: close linearization proof mismatch")
 
     submit_keys = ["submit_add_calls", "submit_durable_calls", "block_broadcasts"]
     finality_keys = ["journal_calls", "signature_calls", "gossip_calls"]
     if expected_race == "finality":
         finality_keys += [
-            "sink_calls", "active_calls", "node_gossip_calls",
+            "sink_calls",
+            "active_calls",
+            "node_gossip_calls",
             "assembler_calls",
         ]
     for key in submit_keys:
@@ -375,9 +357,9 @@ def validate_race_row(row: str, data: dict, artifact_dir: Path) -> int:
             )
 
     journals = sorted(path.name for path in artifact_dir.rglob("*.journal"))
-    expected_journals = ["finality-race.journal"] if (
-        acquired and expected_race == "finality"
-    ) else []
+    expected_journals = (
+        ["finality-race.journal"] if (acquired and expected_race == "finality") else []
+    )
     if journals != expected_journals:
         fail(f"{row}: race journal artifact mismatch: {journals}")
     return checks
@@ -433,7 +415,8 @@ def run_matrix(fixture: Path, output: Path, timeout: int) -> list[dict]:
         data = json.loads(records[0])
         check_count = (
             validate_race_row(row, data, artifact_dir)
-            if row in RACE_ROWS else validate_row(row, data, artifact_dir)
+            if row in RACE_ROWS
+            else validate_row(row, data, artifact_dir)
         )
         results.append(
             {
@@ -455,9 +438,7 @@ def run_matrix(fixture: Path, output: Path, timeout: int) -> list[dict]:
     return results
 
 
-def run_publictest_expiry(
-    executable: Path, output: Path, timeout: int
-) -> dict:
+def run_publictest_expiry(executable: Path, output: Path, timeout: int) -> dict:
     artifact_dir = output / "rows" / "public_testnet_expiry"
     if artifact_dir.exists():
         shutil.rmtree(artifact_dir)
@@ -466,8 +447,11 @@ def run_publictest_expiry(
     started = time.time()
     process = subprocess.Popen(
         [
-            str(executable), "--datadir", str(datadir),
-            "--connect", "203.0.113.1:19333",
+            str(executable),
+            "--datadir",
+            str(datadir),
+            "--connect",
+            "203.0.113.1:19333",
         ],
         cwd=str(executable.parent),
         stdout=subprocess.PIPE,
@@ -482,9 +466,7 @@ def run_publictest_expiry(
     except subprocess.TimeoutExpired:
         process.kill()
         stdout, _ = process.communicate()
-        (output / "public_testnet_expiry.log").write_text(
-            stdout, encoding="utf-8"
-        )
+        (output / "public_testnet_expiry.log").write_text(stdout, encoding="utf-8")
         fail("public_testnet_expiry: process did not refuse startup boundedly")
     (output / "public_testnet_expiry.log").write_text(stdout, encoding="utf-8")
     expected = (
@@ -492,16 +474,16 @@ def run_publictest_expiry(
         "the public testnet has ended, or the local clock is invalid"
     )
     if process.returncode != 78:
-        fail(
-            "public_testnet_expiry: expected startup-refusal exit 78, "
-            f"got {process.returncode}"
-        )
+        fail(f"public_testnet_expiry: expected startup-refusal exit 78, got {process.returncode}")
     if expected not in stdout:
         fail("public_testnet_expiry: exact compiled-lease refusal missing")
-    datadir_files = sorted(
-        path.relative_to(datadir).as_posix()
-        for path in datadir.rglob("*") if path.is_file()
-    ) if datadir.exists() else []
+    datadir_files = (
+        sorted(
+            path.relative_to(datadir).as_posix() for path in datadir.rglob("*") if path.is_file()
+        )
+        if datadir.exists()
+        else []
+    )
     if datadir_files != ["network.identity"]:
         fail(
             "public_testnet_expiry: node-owned state appeared before lease "
@@ -524,7 +506,8 @@ def run_publictest_expiry(
         },
         "artifact_files": [
             path.relative_to(artifact_dir).as_posix()
-            for path in artifact_dir.rglob("*") if path.is_file()
+            for path in artifact_dir.rglob("*")
+            if path.is_file()
         ],
     }
 
@@ -561,13 +544,11 @@ def main() -> int:
         "row_count": len(results),
         "process_count": len(results),
         "distinct_observed_pids": len({row["pid"] for row in results}),
-        "pid_reuse_events": int(results[0].get(
-            "pid_reuse_events_in_matrix", 0)) if results else 0,
+        "pid_reuse_events": int(results[0].get("pid_reuse_events_in_matrix", 0)) if results else 0,
         "assertion_count": sum(int(row["checks"]) for row in results),
         "static_assertions": static,
         "p2p_operational_advance_rows": [
-            row for row in MATRIX_ROWS
-            if row not in {"open", "durable_state"}
+            row for row in MATRIX_ROWS if row not in {"open", "durable_state"}
         ],
         "p2p_terminal_global_safety_rows": ["durable_state"],
         "startup_listener_unavailable_rows": sorted(STARTUP_LISTENER_ROWS),

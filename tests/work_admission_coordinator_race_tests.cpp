@@ -27,8 +27,7 @@ Hash256 Filled(uint8_t value) {
     return out;
 }
 
-AdmissionCoordinator::Configuration ReadyConfiguration(
-        const AdmissionCoordinator& coordinator) {
+AdmissionCoordinator::Configuration ReadyConfiguration(const AdmissionCoordinator& coordinator) {
     const uint64_t close_epoch_before = coordinator.ObserveCloseEpoch();
     AdmissionCoordinator::Configuration configuration;
     auto& p = configuration.prerequisites;
@@ -49,8 +48,8 @@ AdmissionCoordinator::Configuration ReadyConfiguration(
     p.genesis_hash = Filled(0x11);
     p.profile_digest = Filled(0x22);
     configuration.permitted_paths.fill(true);
-    AdmissionCoordinator::BindCloseEpochSnapshot(
-        configuration, close_epoch_before, coordinator.ObserveCloseEpoch());
+    AdmissionCoordinator::BindCloseEpochSnapshot(configuration, close_epoch_before,
+                                                 coordinator.ObserveCloseEpoch());
     return configuration;
 }
 
@@ -95,18 +94,16 @@ AdmissionCoordinator::Limits Limits() {
 
 bool SameCoordinatorState(const AdmissionCoordinator::Snapshot& lhs,
                           const AdmissionCoordinator::Snapshot& rhs) {
-    return lhs.phase == rhs.phase &&
-        lhs.configured == rhs.configured &&
-        lhs.refusal == rhs.refusal &&
-        lhs.active_leases == rhs.active_leases &&
-        lhs.pending_remote_tokens == rhs.pending_remote_tokens &&
-        lhs.spent_remote_tokens == rhs.spent_remote_tokens &&
-        lhs.close_deadline == rhs.close_deadline &&
-        lhs.configuration_generation == rhs.configuration_generation &&
-        lhs.close_epoch == rhs.close_epoch;
+    return lhs.phase == rhs.phase && lhs.configured == rhs.configured &&
+           lhs.refusal == rhs.refusal && lhs.active_leases == rhs.active_leases &&
+           lhs.pending_remote_tokens == rhs.pending_remote_tokens &&
+           lhs.spent_remote_tokens == rhs.spent_remote_tokens &&
+           lhs.close_deadline == rhs.close_deadline &&
+           lhs.configuration_generation == rhs.configuration_generation &&
+           lhs.close_epoch == rhs.close_epoch;
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     using Coordinator = AdmissionCoordinator;
@@ -128,18 +125,14 @@ int main() {
         std::thread acquirer([&] {
             closed.wait();
             acquire_result = coordinator.AcquireLocal(
-                Path::SubmitBlock, BlockSubject(), std::nullopt, false,
-                Coordinator::Duration{10});
+                Path::SubmitBlock, BlockSubject(), std::nullopt, false, Coordinator::Duration{10});
         });
         closer.join();
         acquirer.join();
-        Check(close_result.fully_closed,
-              "close-wins transition has no predecessor lease");
-        Check(!acquire_result &&
-                  acquire_result.decision.refusal == Refusal::SyncIncomplete,
+        Check(close_result.fully_closed, "close-wins transition has no predecessor lease");
+        Check(!acquire_result && acquire_result.decision.refusal == Refusal::SyncIncomplete,
               "close-wins acquisition fails at closed state");
-        Check(coordinator.GetSnapshot().active_leases == 0,
-              "close-wins leaves no work artifact");
+        Check(coordinator.GetSnapshot().active_leases == 0, "close-wins leaves no work artifact");
     }
 
     // Concurrent preparation regression: T1 and T2
@@ -152,19 +145,16 @@ int main() {
         Coordinator coordinator(Limits(), Mint());
         const auto before_unbound = coordinator.GetSnapshot();
         Check(!coordinator.Open(Coordinator::Configuration{}).opened &&
-                  SameCoordinatorState(
-                      before_unbound, coordinator.GetSnapshot()),
+                  SameCoordinatorState(before_unbound, coordinator.GetSnapshot()),
               "zero-epoch default configuration fails before mutation");
         const auto t1_configuration = ReadyConfiguration(coordinator);
         const auto t2_stale_configuration = ReadyConfiguration(coordinator);
         Check(t1_configuration.close_epoch != 0 &&
-                  t1_configuration.close_epoch ==
-                      t2_stale_configuration.close_epoch,
+                  t1_configuration.close_epoch == t2_stale_configuration.close_epoch,
               "two preparers bind the same nonzero close epoch");
         Check(coordinator.Open(t1_configuration).opened,
               "two-preparer fixture opens at observed epoch");
-        const auto t1_decision = Evaluate(
-            BlockSubject(), t1_configuration.prerequisites);
+        const auto t1_decision = Evaluate(BlockSubject(), t1_configuration.prerequisites);
         Check(t1_decision.allowed && t1_decision.binding,
               "T1 safe snapshot produces exact prior binding");
         const auto open_snapshot = coordinator.GetSnapshot();
@@ -176,63 +166,51 @@ int main() {
             peer_close = coordinator.BeginClose(Refusal::PeerViewUnsafe);
             close_complete_promise.set_value();
         });
-        Check(close_complete.wait_for(std::chrono::seconds(2)) ==
-                  std::future_status::ready,
+        Check(close_complete.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
               "peer close reaches deterministic pre-transition barrier");
         peer_writer.join();
         const auto closed_snapshot = coordinator.GetSnapshot();
-        Check(peer_close.fully_closed &&
-                  closed_snapshot.phase == Coordinator::Phase::Closed &&
+        Check(peer_close.fully_closed && closed_snapshot.phase == Coordinator::Phase::Closed &&
                   closed_snapshot.close_epoch == open_snapshot.close_epoch + 1,
               "peer writer fully closes and advances close epoch");
 
         const auto before_stale_open = coordinator.GetSnapshot();
         const auto stale_open = coordinator.Open(t2_stale_configuration);
         const auto after_stale_open = coordinator.GetSnapshot();
-        Check(!stale_open.opened &&
-                  stale_open.error == Coordinator::Error::Closed &&
+        Check(!stale_open.opened && stale_open.error == Coordinator::Error::Closed &&
                   SameCoordinatorState(before_stale_open, after_stale_open),
               "stale T2 Open refuses before any coordinator mutation");
 
         uint64_t canonical_mutations = 0;
-        for (const Path path : {
-                 Path::InternalMining, Path::GetBlockTemplate,
-                 Path::SubmitBlock, Path::SynchronousGeneration}) {
-            auto successor = coordinator.AcquireLocal(
-                path, BlockSubject(), t1_decision.binding, true,
-                Coordinator::Duration{10});
-            if (successor && successor.lease &&
-                path != Path::GetBlockTemplate &&
+        for (const Path path : {Path::InternalMining, Path::GetBlockTemplate, Path::SubmitBlock,
+                                Path::SynchronousGeneration}) {
+            auto successor = coordinator.AcquireLocal(path, BlockSubject(), t1_decision.binding,
+                                                      true, Coordinator::Duration{10});
+            if (successor && successor.lease && path != Path::GetBlockTemplate &&
                 successor.lease->ClaimForCanonicalCommit()) {
                 ++canonical_mutations;
             }
-            Check(!successor,
-                  "stale reopen cannot enable any block-work path");
+            Check(!successor, "stale reopen cannot enable any block-work path");
         }
-        Check(canonical_mutations == 0 &&
-                  coordinator.GetSnapshot().active_leases == 0,
+        Check(canonical_mutations == 0 && coordinator.GetSnapshot().active_leases == 0,
               "T1 bound predecessor emits zero lease claim or mutation");
 
         // Close before the first sample is legitimate: both observations see
         // the new epoch, and a fresh safe configuration may reopen. Repeating
         // that same configuration while Open is idempotent.
         const auto fresh = ReadyConfiguration(coordinator);
-        Check(fresh.close_epoch == closed_snapshot.close_epoch &&
-                  coordinator.Open(fresh).opened,
+        Check(fresh.close_epoch == closed_snapshot.close_epoch && coordinator.Open(fresh).opened,
               "fresh post-close snapshot reopens legitimately");
         const auto fresh_open = coordinator.GetSnapshot();
         Check(coordinator.Open(fresh).opened &&
                   coordinator.GetSnapshot().configuration_generation ==
                       fresh_open.configuration_generation,
               "same-open-epoch stable Open is idempotent");
-        for (const Path path : {
-                 Path::InternalMining, Path::GetBlockTemplate,
-                 Path::SubmitBlock, Path::SynchronousGeneration}) {
-            auto allowed = coordinator.AcquireLocal(
-                path, BlockSubject(), std::nullopt, false,
-                Coordinator::Duration{10});
-            Check(allowed && allowed.lease,
-                  "fresh epoch preserves equivalent block-work paths");
+        for (const Path path : {Path::InternalMining, Path::GetBlockTemplate, Path::SubmitBlock,
+                                Path::SynchronousGeneration}) {
+            auto allowed = coordinator.AcquireLocal(path, BlockSubject(), std::nullopt, false,
+                                                    Coordinator::Duration{10});
+            Check(allowed && allowed.lease, "fresh epoch preserves equivalent block-work paths");
             allowed.lease->Release();
         }
 
@@ -240,19 +218,17 @@ int main() {
         // unsafe. Open also independently rejects its stale epoch.
         auto between_samples = ReadyConfiguration(coordinator);
         const uint64_t between_before = between_samples.close_epoch;
-        const auto between_close = coordinator.BeginClose(
-            Refusal::PeerViewUnsafe);
+        const auto between_close = coordinator.BeginClose(Refusal::PeerViewUnsafe);
         const uint64_t between_after = coordinator.ObserveCloseEpoch();
         Check(between_close.fully_closed &&
-                  !Coordinator::BindCloseEpochSnapshot(
-                      between_samples, between_before, between_after) &&
+                  !Coordinator::BindCloseEpochSnapshot(between_samples, between_before,
+                                                       between_after) &&
                   !between_samples.prerequisites.runtime_open &&
                   !between_samples.prerequisites.peer_view_safe,
               "close between samples marks configuration unsafe");
         const auto before_between_open = coordinator.GetSnapshot();
         Check(!coordinator.Open(between_samples).opened &&
-                  SameCoordinatorState(
-                      before_between_open, coordinator.GetSnapshot()),
+                  SameCoordinatorState(before_between_open, coordinator.GetSnapshot()),
               "between-sample stale Open has zero mutation");
 
         // A close after the second sample but before Open is caught by the
@@ -261,36 +237,29 @@ int main() {
         Check(coordinator.Open(ReadyConfiguration(coordinator)).opened,
               "between-sample fixture reopens from fresh epoch");
         const auto after_samples = ReadyConfiguration(coordinator);
-        const auto after_close = coordinator.BeginClose(
-            Refusal::PeerViewUnsafe);
+        const auto after_close = coordinator.BeginClose(Refusal::PeerViewUnsafe);
         const auto before_after_open = coordinator.GetSnapshot();
-        Check(after_close.fully_closed &&
-                  !coordinator.Open(after_samples).opened &&
-                  SameCoordinatorState(
-                      before_after_open, coordinator.GetSnapshot()),
+        Check(after_close.fully_closed && !coordinator.Open(after_samples).opened &&
+                  SameCoordinatorState(before_after_open, coordinator.GetSnapshot()),
               "close after samples invalidates delayed Open without mutation");
 
         // Shutdown cancellation advances the same epoch, revokes acquired
         // work, and leaves every pre-shutdown configuration unusable.
         Check(coordinator.Open(ReadyConfiguration(coordinator)).opened,
               "shutdown fixture reopens from fresh epoch");
-        const auto pre_shutdown_configuration =
-            ReadyConfiguration(coordinator);
-        auto pending = coordinator.AcquireLocal(
-            Path::SynchronousGeneration, BlockSubject(), std::nullopt, false,
-            Coordinator::Duration{10});
-        Check(pending && pending.lease,
-              "shutdown fixture acquires bounded local work");
+        const auto pre_shutdown_configuration = ReadyConfiguration(coordinator);
+        auto pending = coordinator.AcquireLocal(Path::SynchronousGeneration, BlockSubject(),
+                                                std::nullopt, false, Coordinator::Duration{10});
+        Check(pending && pending.lease, "shutdown fixture acquires bounded local work");
         const uint64_t before_cancel = coordinator.ObserveCloseEpoch();
         coordinator.CancelAndClose(Refusal::NodeNotRunning);
         const auto cancelled = coordinator.GetSnapshot();
-        Check(cancelled.close_epoch == before_cancel + 1 &&
-                  !pending.lease->IsLive() && cancelled.active_leases == 0,
+        Check(cancelled.close_epoch == before_cancel + 1 && !pending.lease->IsLive() &&
+                  cancelled.active_leases == 0,
               "shutdown cancel advances epoch and revokes work");
         const auto before_shutdown_stale = coordinator.GetSnapshot();
         Check(!coordinator.Open(pre_shutdown_configuration).opened &&
-                  SameCoordinatorState(
-                      before_shutdown_stale, coordinator.GetSnapshot()),
+                  SameCoordinatorState(before_shutdown_stale, coordinator.GetSnapshot()),
               "pre-shutdown snapshot cannot reopen or mutate state");
 
         // Every authoritative close call advances the epoch, including calls
@@ -306,14 +275,12 @@ int main() {
         unsafe.prerequisites.node_running = false;
         const uint64_t before_unsafe_open = coordinator.ObserveCloseEpoch();
         const auto unsafe_open = coordinator.Open(unsafe);
-        Check(!unsafe_open.opened &&
-                  unsafe_open.error == Coordinator::Error::Rejected &&
+        Check(!unsafe_open.opened && unsafe_open.error == Coordinator::Error::Rejected &&
                   coordinator.ObserveCloseEpoch() == before_unsafe_open + 1,
               "epoch-matched unsafe Open advances close epoch");
         const auto before_old_safe = coordinator.GetSnapshot();
         Check(!coordinator.Open(safe_before_unsafe).opened &&
-                  SameCoordinatorState(
-                      before_old_safe, coordinator.GetSnapshot()),
+                  SameCoordinatorState(before_old_safe, coordinator.GetSnapshot()),
               "unsafe Open invalidates older safe snapshot before mutation");
     }
 
@@ -327,8 +294,7 @@ int main() {
         std::promise<void> acquired_promise;
         std::shared_future<void> acquired = acquired_promise.get_future().share();
         std::promise<void> close_started_promise;
-        std::shared_future<void> close_started =
-            close_started_promise.get_future().share();
+        std::shared_future<void> close_started = close_started_promise.get_future().share();
         std::promise<void> release_promise;
         std::shared_future<void> release = release_promise.get_future().share();
         std::atomic<bool> acquired_ok{false};
@@ -336,17 +302,13 @@ int main() {
         Coordinator::CloseResult close_result;
 
         std::thread sink([&] {
-            auto attempt = coordinator.AcquireLocal(
-                Path::InternalMining, BlockSubject(), std::nullopt, false,
-                Coordinator::Duration{20});
-            acquired_ok.store(
-                attempt && attempt.lease->ClaimForSink(),
-                std::memory_order_release);
+            auto attempt = coordinator.AcquireLocal(Path::InternalMining, BlockSubject(),
+                                                    std::nullopt, false, Coordinator::Duration{20});
+            acquired_ok.store(attempt && attempt.lease->ClaimForSink(), std::memory_order_release);
             acquired_promise.set_value();
             close_started.wait();
-            remained_live.store(
-                attempt.lease && attempt.lease->IsLive(),
-                std::memory_order_release);
+            remained_live.store(attempt.lease && attempt.lease->IsLive(),
+                                std::memory_order_release);
             release.wait();
         });
         std::thread closer([&] {
@@ -355,23 +317,17 @@ int main() {
             close_started_promise.set_value();
         });
         close_started.wait();
-        Check(acquired_ok.load(std::memory_order_acquire),
-              "lease-wins sink claimed before close");
-        Check(!close_result.fully_closed &&
-                  close_result.completion_deadline.has_value(),
+        Check(acquired_ok.load(std::memory_order_acquire), "lease-wins sink claimed before close");
+        Check(!close_result.fully_closed && close_result.completion_deadline.has_value(),
               "lease-wins close is bounded while predecessor runs");
-        const uint64_t repeated_close_epoch =
-            coordinator.ObserveCloseEpoch();
-        const auto repeated_close = coordinator.BeginClose(
-            Refusal::SyncIncomplete);
+        const uint64_t repeated_close_epoch = coordinator.ObserveCloseEpoch();
+        const auto repeated_close = coordinator.BeginClose(Refusal::SyncIncomplete);
         Check(!repeated_close.fully_closed &&
-                  coordinator.ObserveCloseEpoch() ==
-                      repeated_close_epoch + 1 &&
+                  coordinator.ObserveCloseEpoch() == repeated_close_epoch + 1 &&
                   coordinator.GetSnapshot().active_leases == 1,
               "BeginClose while Closing advances epoch and preserves winner");
-        auto successor = coordinator.AcquireLocal(
-            Path::SubmitBlock, BlockSubject(), std::nullopt, false,
-            Coordinator::Duration{10});
+        auto successor = coordinator.AcquireLocal(Path::SubmitBlock, BlockSubject(), std::nullopt,
+                                                  false, Coordinator::Duration{10});
         Check(!successor && successor.error == Coordinator::Error::Closing,
               "lease-wins close rejects all successor work immediately");
         Check(coordinator.GetSnapshot().phase == Coordinator::Phase::Closing,
@@ -390,23 +346,17 @@ int main() {
     // forever. Advancing the monotonic clock to the capped deadline revokes it.
     {
         std::atomic<int64_t> now_ms{2000};
-        Coordinator coordinator(
-            Limits(), Mint(), [&] {
-                return Coordinator::TimePoint(
-                    Coordinator::Duration(
-                        now_ms.load(std::memory_order_acquire)));
-            });
-        Check(coordinator.Open(ReadyConfiguration(coordinator)).opened,
-              "deadline fixture opened");
-        auto lease = coordinator.AcquireLocal(
-            Path::SynchronousGeneration, BlockSubject(), std::nullopt, false,
-            Coordinator::Duration{10000});
-        Check(lease && lease.lease->ClaimForSink(),
-              "deadline fixture lease claimed");
-        const auto close = coordinator.BeginClose(
-            Refusal::DurableStateUnproven);
-        Check(!close.fully_closed && close.completion_deadline ==
-                  Coordinator::TimePoint(Coordinator::Duration{2025}),
+        Coordinator coordinator(Limits(), Mint(), [&] {
+            return Coordinator::TimePoint(
+                Coordinator::Duration(now_ms.load(std::memory_order_acquire)));
+        });
+        Check(coordinator.Open(ReadyConfiguration(coordinator)).opened, "deadline fixture opened");
+        auto lease = coordinator.AcquireLocal(Path::SynchronousGeneration, BlockSubject(),
+                                              std::nullopt, false, Coordinator::Duration{10000});
+        Check(lease && lease.lease->ClaimForSink(), "deadline fixture lease claimed");
+        const auto close = coordinator.BeginClose(Refusal::DurableStateUnproven);
+        Check(!close.fully_closed &&
+                  close.completion_deadline == Coordinator::TimePoint(Coordinator::Duration{2025}),
               "close deadline capped by local lease limit");
         now_ms.store(2024, std::memory_order_release);
         Check(coordinator.GetSnapshot().phase == Coordinator::Phase::Closing &&
@@ -426,25 +376,20 @@ int main() {
               "remote lease-wins fixture opened");
         const Subject finality = FinalitySubject();
         auto remote = coordinator.IssueRemoteSigningLease(
-            Path::FinalityVote, finality, std::nullopt, false,
-            Coordinator::Duration{30});
+            Path::FinalityVote, finality, std::nullopt, false, Coordinator::Duration{30});
         Check(static_cast<bool>(remote), "remote predecessor issued");
         const auto close = coordinator.BeginClose(Refusal::PeerViewUnsafe);
-        Check(!close.fully_closed,
-              "remote predecessor gives close a bounded deadline");
+        Check(!close.fully_closed, "remote predecessor gives close a bounded deadline");
         auto successor = coordinator.IssueRemoteSigningLease(
-            Path::FinalityVote, finality, std::nullopt, false,
-            Coordinator::Duration{10});
+            Path::FinalityVote, finality, std::nullopt, false, Coordinator::Duration{10});
         Check(!successor && successor.error == Coordinator::Error::Closing,
               "closing state issues no successor remote capability");
         auto consumed = coordinator.ConsumeRemoteSigningLease(
-            remote.grant->token, Path::FinalityVote, finality,
-            remote.grant->binding);
+            remote.grant->token, Path::FinalityVote, finality, remote.grant->binding);
         Check(consumed && consumed.lease->ClaimForSink(),
               "remote predecessor consumes once during bounded close");
-        auto replay = coordinator.ConsumeRemoteSigningLease(
-            remote.grant->token, Path::FinalityVote, finality,
-            remote.grant->binding);
+        auto replay = coordinator.ConsumeRemoteSigningLease(remote.grant->token, Path::FinalityVote,
+                                                            finality, remote.grant->binding);
         Check(!replay && replay.error == Coordinator::Error::TokenConsumed,
               "remote predecessor replay rejected during close");
         consumed.lease->Release();
@@ -457,18 +402,15 @@ int main() {
         Coordinator coordinator(Limits(), Mint());
         Check(coordinator.Open(ReadyConfiguration(coordinator)).opened,
               "emergency race fixture opened");
-        auto lease = coordinator.AcquireLocal(
-            Path::InternalMining, BlockSubject(), std::nullopt, false,
-            Coordinator::Duration{20});
-        Check(lease && lease.lease->ClaimForSink(),
-              "emergency race predecessor claimed");
+        auto lease = coordinator.AcquireLocal(Path::InternalMining, BlockSubject(), std::nullopt,
+                                              false, Coordinator::Duration{20});
+        Check(lease && lease.lease->ClaimForSink(), "emergency race predecessor claimed");
         coordinator.CancelAndClose(Refusal::SnapshotStateUntrusted);
         Check(!lease.lease->IsLive() &&
                   coordinator.GetSnapshot().phase == Coordinator::Phase::Closed,
               "emergency cancellation invalidates claimed predecessor");
     }
 
-    std::cout << "PASS work_admission_coordinator_race_tests checks="
-              << checks << "\n";
+    std::cout << "PASS work_admission_coordinator_race_tests checks=" << checks << "\n";
     return 0;
 }

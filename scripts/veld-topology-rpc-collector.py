@@ -34,9 +34,12 @@ ROLE_PRIORITY = {"node": 0, "miner": 1, "validator": 2}
 
 
 def valid_hash(value: object) -> bool:
-    return (isinstance(value, str) and len(value) == 64 and
-            all(ch in "0123456789abcdefABCDEF" for ch in value) and
-            value != "0" * 64)
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(ch in "0123456789abcdefABCDEF" for ch in value)
+        and value != "0" * 64
+    )
 
 
 def local_public_json(path: str) -> dict:
@@ -66,16 +69,24 @@ def reference_tips() -> dict[int, str]:
     try:
         page = local_public_json("/api/v1/blocks/latest/3")
         height, tip_hash, blocks = page.get("tip_height"), page.get("tip_hash"), page.get("blocks")
-        if (type(height) is not int or not 0 <= height <= 0xffffffff or
-                not valid_hash(tip_hash) or not isinstance(blocks, list) or
-                len(blocks) != min(height + 1, TIP_GRACE_BLOCKS + 1)):
+        if (
+            type(height) is not int
+            or not 0 <= height <= 0xFFFFFFFF
+            or not valid_hash(tip_hash)
+            or not isinstance(blocks, list)
+            or len(blocks) != min(height + 1, TIP_GRACE_BLOCKS + 1)
+        ):
             raise ValueError("invalid canonical block summary")
         tips = {}
         expected_hash = tip_hash.lower()
         for offset, block in enumerate(blocks):
-            if (not isinstance(block, dict) or type(block.get("height")) is not int or
-                    block["height"] != height - offset or not valid_hash(block.get("hash")) or
-                    block["hash"].lower() != expected_hash):
+            if (
+                not isinstance(block, dict)
+                or type(block.get("height")) is not int
+                or block["height"] != height - offset
+                or not valid_hash(block.get("hash"))
+                or block["hash"].lower() != expected_hash
+            ):
                 raise ValueError("noncanonical block summary")
             tips[block["height"]] = expected_hash
             previous = block.get("prev_hash")
@@ -86,8 +97,7 @@ def reference_tips() -> dict[int, str]:
     except (OSError, http.client.HTTPException, ValueError):
         stats = local_public_json("/api/stats")
         height, tip_hash = stats.get("height"), stats.get("best_block_hash")
-        if (type(height) is not int or not 0 <= height <= 0xffffffff or
-                not valid_hash(tip_hash)):
+        if type(height) is not int or not 0 <= height <= 0xFFFFFFFF or not valid_hash(tip_hash):
             raise ValueError("invalid canonical topology tip")
         return {height: tip_hash.lower()}
 
@@ -132,13 +142,22 @@ def run_source(source: dict, known_hosts: str, key_file: str) -> list[dict]:
     else:
         host = canonical_ip(source.get("host"))
         command = [
-            "ssh", "-T", "-i", key_file,
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=5",
-            "-o", "IdentitiesOnly=yes",
-            "-o", "StrictHostKeyChecking=yes",
-            "-o", f"UserKnownHostsFile={known_hosts}",
-            "--", f"root@{host}",
+            "ssh",
+            "-T",
+            "-i",
+            key_file,
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "-o",
+            "IdentitiesOnly=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            f"UserKnownHostsFile={known_hosts}",
+            "--",
+            f"root@{host}",
         ]
     completed = subprocess.run(
         command,
@@ -161,8 +180,7 @@ def reported_role(peer: dict) -> str | None:
     role = peer.get("role")
     if isinstance(role, str) and role in ROLE_PRIORITY:
         return role
-    if (not isinstance(services, int) or isinstance(services, bool) or
-            not 0 < services < (1 << 64)):
+    if not isinstance(services, int) or isinstance(services, bool) or not 0 < services < (1 << 64):
         return None
     if services & 0x10:
         return "validator"
@@ -177,13 +195,21 @@ def parse_identity(value: object) -> dict:
     node_id = value.get("id")
     role = value.get("role")
     role_index = value.get("role_index", 0)
-    if (not isinstance(node_id, int) or isinstance(node_id, bool) or
-            node_id <= 0 or node_id >= 1 << 64):
+    if (
+        not isinstance(node_id, int)
+        or isinstance(node_id, bool)
+        or node_id <= 0
+        or node_id >= 1 << 64
+    ):
         raise ValueError("identity has an invalid id")
     if role not in VALID_ROLES:
         raise ValueError("identity has an invalid role")
-    if (not isinstance(role_index, int) or isinstance(role_index, bool) or
-            role_index < 0 or role_index > 999):
+    if (
+        not isinstance(role_index, int)
+        or isinstance(role_index, bool)
+        or role_index < 0
+        or role_index > 999
+    ):
         raise ValueError("identity has an invalid role index")
     return {"id": node_id, "role": role, "role_index": role_index}
 
@@ -283,10 +309,13 @@ def collect(config: dict) -> tuple[dict, list[str]]:
                 tip_hash = peer.get("peer_tip_hash")
                 tip_age = peer.get("peer_tip_age_s")
                 tip_height = peer.get("peer_height")
-                if (valid_hash(tip_hash) and type(tip_age) is int and
-                        type(tip_height) is int and 0 <= tip_height <= 0xffffffff):
-                    tip_reports[identity["id"]].append(
-                        (tip_hash.lower(), tip_age, tip_height))
+                if (
+                    valid_hash(tip_hash)
+                    and type(tip_age) is int
+                    and type(tip_height) is int
+                    and 0 <= tip_height <= 0xFFFFFFFF
+                ):
+                    tip_reports[identity["id"]].append((tip_hash.lower(), tip_age, tip_height))
         except Exception as exc:
             failures.append(f"{name}: {exc}")
 
@@ -300,8 +329,11 @@ def collect(config: dict) -> tuple[dict, list[str]]:
     for node_id in local_ids:
         tip_reports[node_id].append((canonical[reference_height], 0, reference_height))
     active_tips = {
-        node_id: [height for tip_hash, age, height in reports
-                  if 0 <= age <= TIP_STALE_SECONDS and canonical.get(height) == tip_hash]
+        node_id: [
+            height
+            for tip_hash, age, height in reports
+            if 0 <= age <= TIP_STALE_SECONDS and canonical.get(height) == tip_hash
+        ]
         for node_id, reports in tip_reports.items()
     }
 
@@ -314,8 +346,10 @@ def collect(config: dict) -> tuple[dict, list[str]]:
             node["role_index"] = 0
         node["role"] = role
 
-    ordered = sorted((node for node in nodes.values() if active_tips.get(node["id"])),
-                     key=lambda item: (not item["reporting"], item["id"]))
+    ordered = sorted(
+        (node for node in nodes.values() if active_tips.get(node["id"])),
+        key=lambda item: (not item["reporting"], item["id"]),
+    )
     ordered = ordered[:MAX_NODES]
     kept = {node["id"] for node in ordered}
     edges = []
@@ -327,24 +361,28 @@ def collect(config: dict) -> tuple[dict, list[str]]:
         if pair in seen:
             continue
         seen.add(pair)
-        edges.append({
-            "a": pair[0],
-            "b": pair[1],
-            "confirmed": (peer_id, source_id) in directed_edges,
-        })
+        edges.append(
+            {
+                "a": pair[0],
+                "b": pair[1],
+                "confirmed": (peer_id, source_id) in directed_edges,
+            }
+        )
         if len(edges) >= MAX_EDGES:
             break
 
     public_nodes = []
     for node in ordered:
         tip_state = "exact" if reference_height in active_tips[node["id"]] else "differs"
-        public_nodes.append({
-            "id": node["id"],
-            "role": node["role"],
-            "role_index": node["role_index"],
-            "updated_at": node["updated_at"],
-            "tip_state": tip_state,
-        })
+        public_nodes.append(
+            {
+                "id": node["id"],
+                "role": node["role"],
+                "role_index": node["role_index"],
+                "updated_at": node["updated_at"],
+                "tip_state": tip_state,
+            }
+        )
     return {
         "schema": 1,
         "generated_at": now,

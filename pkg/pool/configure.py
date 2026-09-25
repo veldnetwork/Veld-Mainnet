@@ -5,6 +5,7 @@ Values describe the private candidate network. All chain and account identities
 are supplied explicitly. No mainnet endpoints, credentials or wallet defaults
 are embedded. Files remain disabled until their operator reviews the setup.
 """
+
 import argparse
 import ipaddress
 import json
@@ -32,7 +33,11 @@ def render(values):
     if any(type(p) is not int or not 1024 < p <= 65535 for p in ports) or len(set(ports)) != 3:
         raise ValueError('three distinct unprivileged ports required')
     listen = ipaddress.ip_address(values['listen'])
-    if listen.version != 4 or not (listen.is_loopback or listen.is_private) or listen.is_unspecified:
+    if (
+        listen.version != 4
+        or not (listen.is_loopback or listen.is_private)
+        or listen.is_unspecified
+    ):
         raise ValueError('explicit loopback or private IPv4 listener required')
     peer = values['peer'].split(':')
     if len(peer) != 2:
@@ -50,69 +55,125 @@ def render(values):
             raise ValueError('canonical P2PKH script required')
     if values['pool_script'] == values['fee_script']:
         raise ValueError('operator fee key must be separate from the pool identity')
-    backend = dict(enabled=False, binary=prefix+'/bin/veld-node', datadir=state+'/backend',
-        passphrase_file=config+'/private/backend.passphrase', rpc_token_file=state+'/rpc/token',
-        genesis=genesis, profile=values['profile'], p2p_port=values['p2p_port'],
-        rpc_port=values['rpc_port'], peers=[values['peer']])
-    network=values.get('runtime_network','mainnet')
-    if network not in ('mainnet','testnet','regtest'):
+    backend = dict(
+        enabled=False,
+        binary=prefix + '/bin/veld-node',
+        datadir=state + '/backend',
+        passphrase_file=config + '/private/backend.passphrase',
+        rpc_token_file=state + '/rpc/token',
+        genesis=genesis,
+        profile=values['profile'],
+        p2p_port=values['p2p_port'],
+        rpc_port=values['rpc_port'],
+        peers=[values['peer']],
+    )
+    network = values.get('runtime_network', 'mainnet')
+    if network not in ('mainnet', 'testnet', 'regtest'):
         raise ValueError('explicit runtime network required')
-    backend['runtime_network']=network
-    coordinator = dict(rpc_url='http://127.0.0.1:'+str(values['rpc_port']),
-        rpc_token_file=state+'/rpc/token', genesis=genesis, state_directory=state+'/core/work',
-        rollback_anchor=state+'/anchors/work/current.json', native_binary=prefix+'/bin/veld-pool-work',
-        pool_address=values['pool_address'], accounting_target='7'+'f'*63,
-        socket=state+'/ipc/coordinator.sock')
-    coordinator['payments'] = dict(state_directory=state+'/core/payments',
-        rollback_anchor=state+'/anchors/payments/current.json', native_binary=prefix+'/bin/veld-pool-payout',
-        pool_seed=config+'/private/pool.seed', fee_seed=config+'/private/fees.seed',
-        pool_script=values['pool_script'], fee_script=values['fee_script'],
-        fee_address=values['fee_address'], fee_units='100000')
+    backend['runtime_network'] = network
+    coordinator = dict(
+        rpc_url='http://127.0.0.1:' + str(values['rpc_port']),
+        rpc_token_file=state + '/rpc/token',
+        genesis=genesis,
+        state_directory=state + '/core/work',
+        rollback_anchor=state + '/anchors/work/current.json',
+        native_binary=prefix + '/bin/veld-pool-work',
+        pool_address=values['pool_address'],
+        accounting_target='7' + 'f' * 63,
+        socket=state + '/ipc/coordinator.sock',
+    )
+    coordinator['payments'] = dict(
+        state_directory=state + '/core/payments',
+        rollback_anchor=state + '/anchors/payments/current.json',
+        native_binary=prefix + '/bin/veld-pool-payout',
+        pool_seed=config + '/private/pool.seed',
+        fee_seed=config + '/private/fees.seed',
+        pool_script=values['pool_script'],
+        fee_script=values['fee_script'],
+        fee_address=values['fee_address'],
+        fee_units='100000',
+    )
     if values.get('comining', False):
-        coordinator['identity'] = dict(state_directory=state+'/core/identity',
-            rollback_anchor=state+'/anchors/identity/current.json', native_binary=prefix+'/bin/veld-pool-identity',
-            seed=config+'/private/pool.seed', script=values['pool_script'],
-            operator_funding_file=config+'/private/operator-funding.json', tier=1)
-    gateway = dict(host=str(listen), port=values['tls_port'], certificate=config+'/tls/certificate.pem',
-        private_key=config+'/tls/private-key.pem', coordinator_socket=state+'/ipc/coordinator.sock')
-    result=dict(backend=backend, coordinator=coordinator, gateway=gateway)
+        coordinator['identity'] = dict(
+            state_directory=state + '/core/identity',
+            rollback_anchor=state + '/anchors/identity/current.json',
+            native_binary=prefix + '/bin/veld-pool-identity',
+            seed=config + '/private/pool.seed',
+            script=values['pool_script'],
+            operator_funding_file=config + '/private/operator-funding.json',
+            tier=1,
+        )
+    gateway = dict(
+        host=str(listen),
+        port=values['tls_port'],
+        certificate=config + '/tls/certificate.pem',
+        private_key=config + '/tls/private-key.pem',
+        coordinator_socket=state + '/ipc/coordinator.sock',
+    )
+    result = dict(backend=backend, coordinator=coordinator, gateway=gateway)
     if values.get('admin_uid') is not None:
-        uid=values['admin_uid'];port=values.get('admin_port',24444);ceiling=values.get('approved_max_fee_ppm',0)
-        if type(uid) is not int or uid<=0:raise ValueError('non-root admin UID required')
-        if type(port) is not int or not 1024<port<=65535 or port in ports:raise ValueError('distinct admin port required')
-        if type(ceiling) is not int or not 0<=ceiling<=100000:raise ValueError('approved fee ceiling required')
-        coordinator['operator']=dict(socket=state+'/operator-ipc/operator.sock',uid=uid,max_fee_ppm=str(ceiling))
-        result['admin']=dict(host='127.0.0.1',port=port,certificate=config+'/admin/certificate.pem',
-            private_key=config+'/admin/private-key.pem',credential_file=config+'/admin/access.json',
-            operator_socket=coordinator['operator']['socket'])
+        uid = values['admin_uid']
+        port = values.get('admin_port', 24444)
+        ceiling = values.get('approved_max_fee_ppm', 0)
+        if type(uid) is not int or uid <= 0:
+            raise ValueError('non-root admin UID required')
+        if type(port) is not int or not 1024 < port <= 65535 or port in ports:
+            raise ValueError('distinct admin port required')
+        if type(ceiling) is not int or not 0 <= ceiling <= 100000:
+            raise ValueError('approved fee ceiling required')
+        coordinator['operator'] = dict(
+            socket=state + '/operator-ipc/operator.sock', uid=uid, max_fee_ppm=str(ceiling)
+        )
+        result['admin'] = dict(
+            host='127.0.0.1',
+            port=port,
+            certificate=config + '/admin/certificate.pem',
+            private_key=config + '/admin/private-key.pem',
+            credential_file=config + '/admin/access.json',
+            operator_socket=coordinator['operator']['socket'],
+        )
     return result
 
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ('prefix', 'state', 'config', 'genesis', 'profile', 'peer', 'listen',
-                 'pool-address', 'pool-script', 'fee-address', 'fee-script'):
-        parser.add_argument('--'+name, required=True)
+    for name in (
+        'prefix',
+        'state',
+        'config',
+        'genesis',
+        'profile',
+        'peer',
+        'listen',
+        'pool-address',
+        'pool-script',
+        'fee-address',
+        'fee-script',
+    ):
+        parser.add_argument('--' + name, required=True)
     for name in ('p2p-port', 'rpc-port', 'tls-port'):
-        parser.add_argument('--'+name, type=int, required=True)
+        parser.add_argument('--' + name, type=int, required=True)
     parser.add_argument('--comining', action='store_true')
-    parser.add_argument('--runtime-network',choices=('mainnet','testnet','regtest'),required=True)
+    parser.add_argument(
+        '--runtime-network', choices=('mainnet', 'testnet', 'regtest'), required=True
+    )
     parser.add_argument('--admin-user')
-    parser.add_argument('--admin-port',type=int,default=24444)
-    parser.add_argument('--approved-max-fee-ppm',type=int,default=0)
+    parser.add_argument('--admin-port', type=int, default=24444)
+    parser.add_argument('--approved-max-fee-ppm', type=int, default=0)
     args = parser.parse_args()
     if args.admin_user:
         import pwd
-        args.admin_uid=pwd.getpwnam(args.admin_user).pw_uid
+
+        args.admin_uid = pwd.getpwnam(args.admin_user).pw_uid
     configs = render(vars(args))
     output = Path(args.config)
     if output.exists():
         raise ValueError('configuration directory must be new; never overwrite an existing service')
     output.mkdir(parents=True, mode=0o700)
     for name, value in configs.items():
-        path = output/(name+'.json')
+        path = output / (name + '.json')
         with path.open('x') as file:
-            file.write(json.dumps(value, indent=2)+'\n')
+            file.write(json.dumps(value, indent=2) + '\n')
         path.chmod(0o600)
     print('CONFIGURED_OFFLINE: backend disabled; no keys, funding or connections created')
 

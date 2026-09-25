@@ -33,16 +33,18 @@ def environment(pid: int) -> bytes:
     return Path(f"/proc/{pid}/environ").read_bytes()
 
 
-def run_pipe(keygen: str, output: Path, payload: bytes,
-             env: dict[str, str], inspect: bool = False
-             ) -> tuple[subprocess.CompletedProcess[bytes], bytes, bytes]:
+def run_pipe(
+    keygen: str, output: Path, payload: bytes, env: dict[str, str], inspect: bool = False
+) -> tuple[subprocess.CompletedProcess[bytes], bytes, bytes]:
     read_fd, write_fd = os.pipe()
     try:
         process = subprocess.Popen(
-            [keygen, "from-seed", "--out", str(output),
-             "--seed-input-handle", str(read_fd)],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, env=env, pass_fds=(read_fd,),
+            [keygen, "from-seed", "--out", str(output), "--seed-input-handle", str(read_fd)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            pass_fds=(read_fd,),
         )
         inspected_command = command_line(process.pid) if inspect else b""
         inspected_environment = environment(process.pid) if inspect else b""
@@ -53,8 +55,7 @@ def run_pipe(keygen: str, output: Path, payload: bytes,
         os.close(write_fd)
         write_fd = -1
         stdout, stderr = process.communicate(timeout=60)
-        result = subprocess.CompletedProcess(
-            process.args, process.returncode, stdout, stderr)
+        result = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
         return result, inspected_command, inspected_environment
     finally:
         if read_fd >= 0:
@@ -63,8 +64,7 @@ def run_pipe(keygen: str, output: Path, payload: bytes,
             os.close(write_fd)
 
 
-def wait_for_prompt(process: subprocess.Popen[bytes], timeout: float = 20.0
-                    ) -> bytes:
+def wait_for_prompt(process: subprocess.Popen[bytes], timeout: float = 20.0) -> bytes:
     assert process.stderr is not None
     os.set_blocking(process.stderr.fileno(), False)
     transcript = bytearray()
@@ -98,15 +98,18 @@ def drain_master(master_fd: int) -> bytes:
     return bytes(output)
 
 
-def run_terminal(keygen: str, output: Path, typed: bytes,
-                 env: dict[str, str], inspect: bool = False
-                 ) -> tuple[int, bytes, bytes, bytes, bytes]:
+def run_terminal(
+    keygen: str, output: Path, typed: bytes, env: dict[str, str], inspect: bool = False
+) -> tuple[int, bytes, bytes, bytes, bytes]:
     master_fd, slave_fd = pty.openpty()
     original = termios.tcgetattr(slave_fd)
     process = subprocess.Popen(
         [keygen, "from-seed", "--out", str(output)],
-        stdin=slave_fd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env=env, close_fds=True,
+        stdin=slave_fd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        close_fds=True,
     )
     prompt = wait_for_prompt(process)
     hidden = termios.tcgetattr(slave_fd)
@@ -120,8 +123,13 @@ def run_terminal(keygen: str, output: Path, typed: bytes,
     os.close(master_fd)
     os.close(slave_fd)
     assert restored == original
-    return (process.returncode, stdout, prompt + stderr_tail, echoed,
-            inspected_command + b"\n" + inspected_environment)
+    return (
+        process.returncode,
+        stdout,
+        prompt + stderr_tail,
+        echoed,
+        inspected_command + b"\n" + inspected_environment,
+    )
 
 
 def main() -> int:
@@ -141,7 +149,8 @@ def main() -> int:
 
         success_path = root / "pipe-success.key"
         success, inspected_command, inspected_environment = run_pipe(
-            keygen, success_path, CANARY.encode("ascii"), env, inspect=True)
+            keygen, success_path, CANARY.encode("ascii"), env, inspect=True
+        )
         assert success.returncode == 0 and success_path.is_file()
         assert stat.S_IMODE(success_path.stat().st_mode) == 0o600
         assert CANARY.encode() not in success.stdout + success.stderr
@@ -170,11 +179,21 @@ def main() -> int:
         descriptor = os.open(regular, os.O_RDONLY)
         try:
             rejected = subprocess.run(
-                [keygen, "from-seed", "--out", str(root / "regular.key"),
-                 "--seed-input-handle", str(descriptor)],
-                pass_fds=(descriptor,), stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
-                timeout=30, check=False,
+                [
+                    keygen,
+                    "from-seed",
+                    "--out",
+                    str(root / "regular.key"),
+                    "--seed-input-handle",
+                    str(descriptor),
+                ],
+                pass_fds=(descriptor,),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                timeout=30,
+                check=False,
             )
         finally:
             os.close(descriptor)
@@ -184,7 +203,8 @@ def main() -> int:
 
         terminal_path = root / "terminal-success.key"
         rc, stdout, stderr, echoed, inspected = run_terminal(
-            keygen, terminal_path, CANARY.encode() + b"\n", env, inspect=True)
+            keygen, terminal_path, CANARY.encode() + b"\n", env, inspect=True
+        )
         assert rc == 0 and terminal_path.is_file()
         assert CANARY.encode() not in stdout + stderr + echoed + inspected
         assert b"from-seed" in inspected
@@ -193,7 +213,8 @@ def main() -> int:
         cancelled_path = root / "terminal-cancelled.key"
         partial = CANARY[:12].encode()
         rc, stdout, stderr, echoed, inspected = run_terminal(
-            keygen, cancelled_path, partial + b"\x03", env, inspect=True)
+            keygen, cancelled_path, partial + b"\x03", env, inspect=True
+        )
         assert rc == 2 and not cancelled_path.exists()
         assert b"seed import cancelled" in stderr
         assert partial not in stdout + stderr + echoed + inspected
@@ -201,8 +222,12 @@ def main() -> int:
 
         redirected = subprocess.run(
             [keygen, "from-seed", "--out", str(root / "redirected.key")],
-            input=b"", stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            env=env, timeout=30, check=False,
+            input=b"",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            timeout=30,
+            check=False,
         )
         assert redirected.returncode == 2
         assert b"hidden interactive terminal" in redirected.stderr
@@ -214,10 +239,13 @@ def main() -> int:
             ("--seed=" + legacy_canary, b"argument value suppressed"),
         ]:
             result = subprocess.run(
-                [keygen, "from-seed", argument, "--out",
-                 str(root / "legacy.key")],
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, env=env, timeout=30, check=False,
+                [keygen, "from-seed", argument, "--out", str(root / "legacy.key")],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                timeout=30,
+                check=False,
             )
             assert result.returncode == 2
             assert legacy_canary.encode() not in result.stdout + result.stderr
@@ -225,8 +253,13 @@ def main() -> int:
             checks += 3
 
         help_result = subprocess.run(
-            [keygen], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, env=env, timeout=30, check=False,
+            [keygen],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            timeout=30,
+            check=False,
         )
         assert help_result.returncode == 2
         assert b"--seed=" not in help_result.stderr

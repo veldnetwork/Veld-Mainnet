@@ -14,8 +14,7 @@ struct PageRange {
 
 // Check against the result count before multiplying a user-selected page.
 // Every returned endpoint is within [0, total], including an empty page.
-inline constexpr PageRange BoundedPageRange(size_t total, size_t page,
-                                            size_t per_page) noexcept {
+inline constexpr PageRange BoundedPageRange(size_t total, size_t page, size_t per_page) noexcept {
     const size_t width = std::max<size_t>(1, per_page);
     const size_t index = page == 0 ? 0 : page - 1;
     const size_t begin = index > total / width ? total : index * width;

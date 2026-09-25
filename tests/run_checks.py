@@ -70,8 +70,9 @@ def main():
     parser.add_argument("--suite", choices=[*SUITES, "all"], default="all")
     parser.add_argument("--list", action="store_true", help="list checks without running them")
     args = parser.parse_args()
-    paths = [path for name, paths in SUITES.items()
-             if args.suite in (name, "all") for path in paths]
+    paths = [
+        path for name, paths in SUITES.items() if args.suite in (name, "all") for path in paths
+    ]
     if args.list:
         print("\n".join(paths))
         return 0
@@ -82,14 +83,13 @@ def main():
     env["PYTHONUTF8"] = "1"
     failures = []
     for path in paths:
-        command = ([node] if path.endswith(".js") else [sys.executable, "-X", "utf8"])
+        command = [node] if path.endswith(".js") else [sys.executable, "-X", "utf8"]
         command.append(str(ROOT / path))
         if path == "tests/pqc_wasm_smoke.js":
             command.append(str(ROOT / "vendor/pqc/dilithium_wasm.js"))
         print(f"\nRunning {path}", flush=True)
         try:
-            result = subprocess.run(command, cwd=ROOT,
-                                    env=env, timeout=180, check=False)
+            result = subprocess.run(command, cwd=ROOT, env=env, timeout=180, check=False)
             if result.returncode:
                 failures.append(path)
         except (OSError, subprocess.TimeoutExpired) as exc:

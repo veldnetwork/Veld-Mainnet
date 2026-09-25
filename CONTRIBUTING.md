@@ -52,6 +52,11 @@ without mixing repository-wide formatting into functional patches. Do not
 format vendored code, generated cryptographic assets, or byte-pinned inputs;
 their exclusions are listed in `.clang-format-ignore` and `.editorconfig`.
 
+The [source-style check](docs/source-style.md) pins formatter versions and
+checks parsed content before accepting layout changes. Run it before opening
+a formatting pull request. Changes to behavior, comments or test expectations
+need their own review; they are not covered by formatting equivalence.
+
 Keep public technical documentation in `docs/` and describe tests in
 [tests/README.md](tests/README.md). Store build output, runtime data, credentials,
 and operator evidence outside the checkout. Update the changelog when a change

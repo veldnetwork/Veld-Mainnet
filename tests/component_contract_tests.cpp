@@ -24,13 +24,13 @@ int main(int argc, char** argv) {
     assert(hashes.TemplateHash(0) == first);
     // Independent fixed preimage, including LE32 sequence and input suffix.
     auto expected = [&](uint32_t index) {
-        std::vector<uint8_t> pre{2,0,0,0,7,0,0,0,2,0,0,0};
-        const auto seq = Hash256d(std::vector<uint8_t>{3,0,0,0,4,0,0,0});
-        const auto out = Hash256d(std::vector<uint8_t>{25,0,0,0,0,0,0,0,1,0x51});
+        std::vector<uint8_t> pre{2, 0, 0, 0, 7, 0, 0, 0, 2, 0, 0, 0};
+        const auto seq = Hash256d(std::vector<uint8_t>{3, 0, 0, 0, 4, 0, 0, 0});
+        const auto out = Hash256d(std::vector<uint8_t>{25, 0, 0, 0, 0, 0, 0, 0, 1, 0x51});
         pre.insert(pre.end(), seq.begin(), seq.end());
-        pre.insert(pre.end(), {1,0,0,0});
+        pre.insert(pre.end(), {1, 0, 0, 0});
         pre.insert(pre.end(), out.begin(), out.end());
-        pre.insert(pre.end(), {static_cast<uint8_t>(index),0,0,0});
+        pre.insert(pre.end(), {static_cast<uint8_t>(index), 0, 0, 0});
         return Hash256d(pre);
     };
     assert(first == expected(0) && second == expected(1));
@@ -71,7 +71,8 @@ int main(int argc, char** argv) {
 
     rpc_detail::RecentLookupProgress progress;
     progress.ObserveTip(10, "ordinary-tip", false);
-    for (uint64_t h = 10; h >= 3; --h) progress.MarkExamined(h);
+    for (uint64_t h = 10; h >= 3; --h)
+        progress.MarkExamined(h);
     assert(progress.Next() == 2);
     progress.ObserveTip(11, "ordinary-extension", true);
     assert(progress.Next() == 11);
@@ -99,7 +100,7 @@ int main(int argc, char** argv) {
             return 2;
         }
         const auto path = (std::filesystem::path(argv[1]) / "ordinary-data.bin").string();
-        std::vector<uint8_t> before{1,2,3}, after{4,5,6}, read;
+        std::vector<uint8_t> before{1, 2, 3}, after{4, 5, 6}, read;
         assert(sf::AtomicWriteNew(path, before, &error, true));
         assert(sf::AtomicWrite(path, after, &error, true));
         assert(sf::Read(path, read, &error, 16, true) == sf::ReadResult::Ok);
@@ -107,5 +108,6 @@ int main(int argc, char** argv) {
         // Remove only the exact ordinary fixture created above.
         assert(std::filesystem::remove(path));
     }
-    std::cout << "PASS: template compatibility, fresh contexts, bounded prevout ownership, private atomic replacement\n";
+    std::cout
+        << "PASS: template compatibility, fresh contexts, bounded prevout ownership, private atomic replacement\n";
 }

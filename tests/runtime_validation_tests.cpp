@@ -43,7 +43,8 @@ int main(int argc, char** argv) {
         decoded.round = vote.round;
         std::map<uint64_t, fq::EpochSnapshot> snapshots{{0, snapshot}};
         fq::EpochSnapshot other = snapshot;
-        other.epoch_id = 1; other.root.fill(0x22);
+        other.epoch_id = 1;
+        other.root.fill(0x22);
         snapshots.emplace(1, other);
         fq::QuorumCert resolved;
         assert(fq::ResolveDurableCarrierClaim(decoded, snapshots, resolved));
@@ -54,17 +55,22 @@ int main(int argc, char** argv) {
         assembler.RemoveFinalizedClaim(resolved);
         assert(assembler.PoolSize() == 0);
         assert(!fq::ResolveDurableCarrierClaim(decoded, snapshots, resolved));
-        decoded.epoch_id = 1; decoded.phase = fq::Phase::PREVOTE;
+        decoded.epoch_id = 1;
+        decoded.phase = fq::Phase::PREVOTE;
         assert(!fq::ResolveDurableCarrierClaim(decoded, snapshots, resolved));
     }
     {
         struct OrdinaryBodyStore {
-            size_t calls = 0; bool unavailable = false;
+            size_t calls = 0;
+            bool unavailable = false;
             Block GetBlock(uint64_t height, size_t limit) {
                 ++calls;
                 assert(limit == explorer::ExplorerHistoryBudget::BODY_LIMIT);
-                if (unavailable) throw std::runtime_error("ordinary missing body");
-                Block result; result.height = height; return result;
+                if (unavailable)
+                    throw std::runtime_error("ordinary missing body");
+                Block result;
+                result.height = height;
+                return result;
             }
         } store;
         explorer::ExplorerHistoryBudget shared;
@@ -72,9 +78,17 @@ int main(int argc, char** argv) {
         assert(shared.Read(store, 1).height == 1);
         store.unavailable = true;
         for (size_t i = 1; i < explorer::ExplorerHistoryBudget::MAX_READS; ++i) {
-            try { (void)shared.Read(store, i); assert(false); } catch (const std::runtime_error&) {}
+            try {
+                (void)shared.Read(store, i);
+                assert(false);
+            } catch (const std::runtime_error&) {
+            }
         }
-        try { (void)shared.Read(store, 9); assert(false); } catch (const std::runtime_error&) {}
+        try {
+            (void)shared.Read(store, 9);
+            assert(false);
+        } catch (const std::runtime_error&) {
+        }
         assert(store.calls == explorer::ExplorerHistoryBudget::MAX_READS);
         assert(shared.remaining_load_bytes == 0);
     }
@@ -103,10 +117,13 @@ int main(int argc, char** argv) {
     }
     Blockchain chain;
     const auto genesis = CreateGenesisBlock();
-    assert(chain.AddBlockDirect(genesis, true, true, false,
-        mining::PowAdmissionContext::Internal()).IsAccepted());
+    assert(chain.AddBlockDirect(genesis, true, true, false, mining::PowAdmissionContext::Internal())
+               .IsAccepted());
     size_t stake_checks = 0;
-    chain.SetStakeBlockValidatorFn([&](const Block&) { ++stake_checks; return true; });
+    chain.SetStakeBlockValidatorFn([&](const Block&) {
+        ++stake_checks;
+        return true;
+    });
     Mempool pool;
     Transaction ordinary;
     ordinary.inputs.resize(1);
@@ -145,11 +162,15 @@ int main(int argc, char** argv) {
     // confirmation context changes. Test hooks install only in-memory UTXOs.
     const std::vector<uint8_t> redeem{0x51};
     const auto hash = Hash160Compute(redeem.data(), redeem.size());
-    std::vector<uint8_t> covenant{0xa9,0x14};
-    covenant.insert(covenant.end(), hash.begin(), hash.end()); covenant.push_back(0x87);
+    std::vector<uint8_t> covenant{0xa9, 0x14};
+    covenant.insert(covenant.end(), hash.begin(), hash.end());
+    covenant.push_back(0x87);
     UTXO u;
-    u.tx_hash.fill(0x35); u.value = 2 * VELD_UNITS;
-    u.script_pubkey = covenant; u.block_height = 2; u.is_coinbase = false;
+    u.tx_hash.fill(0x35);
+    u.value = 2 * VELD_UNITS;
+    u.script_pubkey = covenant;
+    u.block_height = 2;
+    u.is_coinbase = false;
     chain.TestInjectUTXO(u);
     Transaction contextual;
     contextual.version = 2;
@@ -162,20 +183,27 @@ int main(int argc, char** argv) {
     assert(!chain.ValidateTransactionLocking(contextual, false, &permanent) && !permanent);
     Mempool contextual_pool;
     assert(contextual_pool.Add(contextual, MIN_TX_FEE, 0, chain) == Mempool::AddResult::INVALID);
-    u.block_height = 0; chain.TestEraseUTXO(u.tx_hash, 0); chain.TestInjectUTXO(u);
+    u.block_height = 0;
+    chain.TestEraseUTXO(u.tx_hash, 0);
+    chain.TestInjectUTXO(u);
     assert(chain.ValidateTransactionLocking(contextual, false, &permanent) && !permanent);
     assert(contextual_pool.Add(contextual, MIN_TX_FEE, 0, chain) == Mempool::AddResult::ACCEPTED);
-    UTXO auth = u; auth.tx_hash.fill(0x36);
-    auth.script_pubkey = {0x76, 0xa9, 0x14}; auth.script_pubkey.insert(auth.script_pubkey.end(), 20, 0x19);
-    auth.script_pubkey.insert(auth.script_pubkey.end(), {0x88, 0xac}); chain.TestInjectUTXO(auth);
-    auto unsigned_fixture = contextual; unsigned_fixture.inputs[0].prev_tx_hash = auth.tx_hash;
+    UTXO auth = u;
+    auth.tx_hash.fill(0x36);
+    auth.script_pubkey = {0x76, 0xa9, 0x14};
+    auth.script_pubkey.insert(auth.script_pubkey.end(), 20, 0x19);
+    auth.script_pubkey.insert(auth.script_pubkey.end(), {0x88, 0xac});
+    chain.TestInjectUTXO(auth);
+    auto unsigned_fixture = contextual;
+    unsigned_fixture.inputs[0].prev_tx_hash = auth.tx_hash;
     unsigned_fixture.inputs[0].script_sig.clear();
     unsigned_fixture.InvalidateTxIDCache();
     assert(!chain.ValidateTransactionLocking(unsigned_fixture, false, &permanent) && permanent);
 
     explorer::BlockExplorer explorer(chain, pool);
     auto route = [&](const std::string& path) {
-        return explorer.Route(explorer::HttpRequest::Parse("GET " + path + " HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+        return explorer.Route(
+            explorer::HttpRequest::Parse("GET " + path + " HTTP/1.1\r\nHost: localhost\r\n\r\n"));
     };
     const auto txid = HashToHex(genesis.transactions[0].GetTxID());
     const auto located = route("/tx/" + txid);
@@ -184,15 +212,19 @@ int main(int argc, char** argv) {
     assert(absent.body.find("not found in the recent 501-block window") != std::string::npos);
     const auto page = route("/api/v1/blocks/latest/1");
     assert(page.status_code == 200 && page.body.find("\"tx_count\":1") != std::string::npos);
-    assert(page.body.find("\"tip_hash\":\"" + HashToHex(genesis.GetHash()) + "\"") != std::string::npos);
+    assert(page.body.find("\"tip_hash\":\"" + HashToHex(genesis.GetHash()) + "\"") !=
+           std::string::npos);
     const auto pending = route("/mempool");
-    assert(pending.status_code == 200 && pending.body.find("200 of 201 pending") != std::string::npos);
+    assert(pending.status_code == 200 &&
+           pending.body.find("200 of 201 pending") != std::string::npos);
 
     {
         VeldNode node(MainnetConfig(), argv[1]);
         node.SetQuietBoot(true);
-        assert(node.GetChainMut().AddBlockDirect(genesis, true, true, false,
-            mining::PowAdmissionContext::Internal()).IsAccepted());
+        assert(
+            node.GetChainMut()
+                .AddBlockDirect(genesis, true, true, false, mining::PowAdmissionContext::Internal())
+                .IsAccepted());
         const auto page = node.TestReadRedeemPage();
         assert(page.find("\"final_height\":0") != std::string::npos);
         std::future<std::string> read;
@@ -201,7 +233,8 @@ int main(int argc, char** argv) {
         {
             auto transition = node.GetChain().AcquireConsensusTransitionGuard();
             read = std::async(std::launch::async, [&] {
-                started.set_value(); return node.TestReadRedeemPage();
+                started.set_value();
+                return node.TestReadRedeemPage();
             });
             ready.wait();
             assert(read.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout);
@@ -209,5 +242,6 @@ int main(int argc, char** argv) {
         assert(read.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
         assert(read.get() == page);
     }
-    std::cout << "PASS: epoch retirement identity; aggregate history budget; duplicate fast path; bounded summaries; contextual retry; Explorer controls; coherent payout-page read\n";
+    std::cout
+        << "PASS: epoch retirement identity; aggregate history budget; duplicate fast path; bounded summaries; contextual retry; Explorer controls; coherent payout-page read\n";
 }
