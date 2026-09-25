@@ -27,6 +27,8 @@ class JournalFiles(unittest.TestCase):
             root = Path(directory)
             unsafe = root / 'unsafe'
             unsafe.mkdir(mode=0o755)
+            unsafe.chmod(0o755)
+            self.assertEqual(unsafe.stat().st_mode & 0o777, 0o755)
             with self.assertRaises(Refused):
                 Journal(unsafe, root / 'anchors/current')
             safe = root / 'safe'
