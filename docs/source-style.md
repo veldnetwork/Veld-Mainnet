@@ -24,11 +24,13 @@ tool paths. Use a fresh output directory for each run; receipts are not overwrit
 ## Preservation checks
 
 C++ formatting retains the ordered raw token stream, including comments and
-literal spellings. Includes and using declarations are not sorted. Comments,
+literal spellings. Directive boundaries and function-like macro adjacency are
+checked separately from ordinary whitespace. Includes and using declarations are not sorted. Comments,
 string literals and generated cryptographic inputs are not rewritten.
 
 Python formatting retains the AST, type comments, literal values and ordered
-comments. A docstring whose value would change through indentation is restored.
+comments, including the statement attachment of type-ignore suppressions.
+A docstring whose value would change through indentation is restored.
 JavaScript formatting retains the parsed AST and ordered comments. JSON values
 and object member order are checked separately.
 

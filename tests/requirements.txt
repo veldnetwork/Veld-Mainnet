@@ -1,2 +1,4 @@
 # Portal dependency used by the CLI identity and pairing checks.
 cryptography==50.0.1
+# HTTP transport imported by the isolated pool and custody service tests.
+requests==2.34.2

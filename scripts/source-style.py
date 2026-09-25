@@ -94,7 +94,7 @@ def exclusion(name, pinned, patterns):
     return ""
 
 
-def cpp_tokens(path, compiler):
+def cpp_source(path, compiler):
     output = command(
         [
             compiler,
@@ -107,20 +107,79 @@ def cpp_tokens(path, compiler):
             str(path),
         ]
     ).stderr.decode()
-    tokens, end = [], 0
+    tokens, directives, end = [], [], 0
+    line_start, separated = True, True
+    directive_start, directive_code, macro_kind = None, [], None
     for match in RAW_TOKEN.finditer(output):
         if match.start() != end:
             raise ValueError("unparsed Clang raw-token output")
         end = match.end()
         kind, value, _ = match.groups()
         if kind == "unknown" and value.isspace():
+            # Clang removes escaped newlines before reporting raw-token spelling.
+            # An ordinary newline still terminates a preprocessing directive.
+            if "\n" in value:
+                if directive_start is not None:
+                    directives.append((directive_start, len(tokens), macro_kind))
+                directive_start, directive_code, macro_kind = None, [], None
+                line_start = True
+            separated = True
             continue
         if kind == "unknown":
             raise ValueError("unrecognized non-whitespace C++ token")
+        if kind != "comment":
+            if line_start and kind == "hash":
+                directive_start = len(tokens)
+            if directive_start is not None:
+                if len(directive_code) == 3 and directive_code[1] == ("raw_identifier", "define"):
+                    macro_kind = "function" if kind == "l_paren" and not separated else "object"
+                directive_code.append((kind, value))
+            line_start, separated = False, False
+        else:
+            # A comment separates a macro name from '(', even with no spaces.
+            separated = True
         tokens.append((kind, value))
     if end != len(output):
         raise ValueError("unparsed Clang raw-token trailer")
-    return tokens
+    if directive_start is not None:
+        directives.append((directive_start, len(tokens), macro_kind))
+    return tokens, directives
+
+
+def cpp_tokens(path, compiler):
+    return cpp_source(path, compiler)[0]
+
+
+def python_ignore_bindings(data):
+    """Bind suppression comments to statement paths, not physical line numbers."""
+    tree = ast.parse(data, type_comments=True)
+    statements = []
+
+    def visit(node, path):
+        if isinstance(node, ast.stmt):
+            statements.append((path, node.lineno, node.end_lineno))
+        for field, value in ast.iter_fields(node):
+            if isinstance(value, ast.AST):
+                visit(value, path + (field,))
+            elif isinstance(value, list):
+                for index, child in enumerate(value):
+                    if isinstance(child, ast.AST):
+                        visit(child, path + (field, index))
+
+    visit(tree, ())
+    bindings = []
+    for ignore in tree.type_ignores:
+        enclosing = [item for item in statements if item[1] <= ignore.lineno <= item[2]]
+        if enclosing:
+            path = max(enclosing, key=lambda item: len(item[0]))[0]
+            bindings.append((ignore.tag, "statement", path))
+        else:
+            following = [item for item in statements if item[1] > ignore.lineno]
+            path = (
+                min(following, key=lambda item: (item[1], len(item[0])))[0] if following else None
+            )
+            bindings.append((ignore.tag, "before", path))
+    return bindings
 
 
 def python_tree(data):
@@ -179,6 +238,8 @@ def python_format(before, name, ruff):
         after = after[:start] + literal + after[end:]
     if ast.dump(original) != ast.dump(python_tree(after)):
         raise ValueError("Python AST or type comment changed")
+    if python_ignore_bindings(before) != python_ignore_bindings(after):
+        raise ValueError("Python type-ignore statement binding changed")
 
     def comments(data):
         return [
@@ -360,7 +421,11 @@ def main():
     stage = output / "candidates"
     stage.mkdir()
     web_names = [
-        name for name in names if Path(name).suffix in WEB and not exclusion(name, pinned, patterns)
+        name
+        for name in names
+        if Path(name).suffix in WEB
+        and not (ROOT / name).is_symlink()
+        and not exclusion(name, pinned, patterns)
     ]
     manifest = output / "web-inputs.json"
     manifest.write_text(json.dumps(web_names))
@@ -394,10 +459,13 @@ def main():
                     data=before,
                 ).stdout
                 dest.write_bytes(after)
-                original = cpp_tokens(path, args.clang)
-                if original != cpp_tokens(dest, args.clang):
-                    raise ValueError("C++ raw tokens or comments changed")
-                result.update(gate="C++ raw tokens including comments", count=len(original))
+                original, directives = cpp_source(path, args.clang)
+                checked, checked_directives = cpp_source(dest, args.clang)
+                if original != checked or directives != checked_directives:
+                    raise ValueError("C++ tokens, comments or preprocessor boundaries changed")
+                result.update(
+                    gate="C++ tokens, comments, directives and macro kinds", count=len(original)
+                )
             elif suffix == ".py":
                 after = python_format(before, name, args.ruff)
                 result["gate"] = "Python AST, type comments, literal values and comment sequence"

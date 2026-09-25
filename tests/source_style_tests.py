@@ -52,6 +52,23 @@ class PreservationControls(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.python_candidate(b"x=1 # type: ignore[name]\n", b"x=1 # type: ignore[attr]\n")
 
+    def test_python_type_ignore_cannot_move_to_another_statement(self):
+        before = b"x=1 # type: ignore[assignment]\ny=2\n"
+        after = b"x=1\ny=2 # type: ignore[assignment]\n"
+        with self.assertRaisesRegex(ValueError, "binding"):
+            self.python_candidate(before, after)
+
+    def test_python_type_ignore_multiline_statement_keeps_binding(self):
+        before = b"x = (1 + 2) # type: ignore[assignment]\n"
+        after = b"x = (\n    1 + 2\n) # type: ignore[assignment]\n"
+        self.assertEqual(self.python_candidate(before, after), after)
+
+    def test_python_file_ignore_cannot_move_after_code(self):
+        before = b"# type: ignore[assignment]\nx=1\n"
+        after = b"x=1\n# type: ignore[assignment]\n"
+        with self.assertRaisesRegex(ValueError, "binding"):
+            self.python_candidate(before, after)
+
     def test_html_text_scripts_entities_and_void_spelling_are_preserved(self):
         before = '<meta charset="utf-8"><p>A &amp; B</p><script>let x = " a ";</script>'
         candidate = '<meta\n charset="utf-8" />\n<p> A &amp; B </p>\n<script>let x="a";</script>'
@@ -119,6 +136,36 @@ class PreservationControls(unittest.TestCase):
                 with self.subTest(changed=changed):
                     source.write_text(changed)
                     self.assertNotEqual(baseline, style.cpp_tokens(source, compiler))
+
+    def test_cpp_preprocessor_boundaries_and_macro_kind(self):
+        compiler = shutil.which('clang++')
+        self.assertIsNotNone(compiler)
+        cases = (
+            ('#define F(x) x\n', '#define F (x) x\n'),
+            ('#define X 1\nint y;\n', '#define X 1 int y;\n'),
+            ('#if X\nint y;\n#endif\n', '#if X int y;\n#endif\n'),
+            ('#define F(x) x\n', '#define F/**/(x) x\n'),
+        )
+        with tempfile.TemporaryDirectory(prefix='veld-directive-controls-') as directory:
+            source = Path(directory) / 'fixture.cpp'
+            for before, after in cases:
+                with self.subTest(before=before, after=after):
+                    source.write_text(before)
+                    original = style.cpp_source(source, compiler)
+                    source.write_text(after)
+                    self.assertNotEqual(original, style.cpp_source(source, compiler))
+
+    def test_cpp_escaped_newline_keeps_directive(self):
+        compiler = shutil.which('clang++')
+        self.assertIsNotNone(compiler)
+        before = '#define F(x) (x + 1)\nint y;\n'
+        after = '#define F(x) ' + '\\' + '\n    (x + 1)\nint y;\n'
+        with tempfile.TemporaryDirectory(prefix='veld-directive-controls-') as directory:
+            source = Path(directory) / 'fixture.cpp'
+            source.write_text(before)
+            original = style.cpp_source(source, compiler)
+            source.write_text(after)
+            self.assertEqual(original, style.cpp_source(source, compiler))
 
 
 if __name__ == '__main__':
