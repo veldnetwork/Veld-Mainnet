@@ -17,6 +17,8 @@ from .service import Server
 
 
 class GatewayKeepalive(unittest.TestCase):
+    proxy_mode = False
+
     def test_each_reused_connection_request_reauthenticates_and_failures_close(self):
         with tempfile.TemporaryDirectory(prefix="veld-keepalive-auth-") as temp:
             root = Path(temp)
@@ -55,16 +57,27 @@ class GatewayKeepalive(unittest.TestCase):
             self.assertEqual(ipc.request_queue_size, 64)
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ctx.load_cert_chain(root / "cert.pem", root / "key.pem")
-            gateway = Gateway(("127.0.0.1", 0), ctx, str(root / "co.sock"))
+            if self.proxy_mode:
+                ctx.load_verify_locations(cafile=str(root / "cert.pem"))
+                ctx.verify_mode = ssl.CERT_REQUIRED
+            gateway = Gateway(
+                ("127.0.0.1", 0),
+                ctx,
+                str(root / "co.sock"),
+                trusted_proxy=self.proxy_mode,
+            )
             threads = []
             for server in (ipc, gateway):
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 threads.append(thread)
+            client_context = ssl.create_default_context(cafile=str(root / "cert.pem"))
+            if self.proxy_mode:
+                client_context.load_cert_chain(root / "cert.pem", root / "key.pem")
             conn = http.client.HTTPSConnection(
                 "127.0.0.1",
                 gateway.server_port,
-                context=ssl.create_default_context(cafile=str(root / "cert.pem")),
+                context=client_context,
                 timeout=5,
             )
 
@@ -73,7 +86,11 @@ class GatewayKeepalive(unittest.TestCase):
                     "POST",
                     "/v1/account",
                     json.dumps(payload),
-                    {"Content-Type": "application/json", "Connection": "keep-alive"},
+                    {
+                        "Content-Type": "application/json",
+                        "Connection": "keep-alive",
+                        "X-Veld-Client-IP": "192.0.2.1",
+                    },
                 )
                 response = conn.getresponse()
                 body = json.loads(response.read())
@@ -115,6 +132,10 @@ class GatewayKeepalive(unittest.TestCase):
                 for thread in threads:
                     thread.join(timeout=5)
                 journal.close()
+
+
+class GatewayKeepaliveProxy(GatewayKeepalive):
+    proxy_mode = True
 
 
 if __name__ == "__main__":

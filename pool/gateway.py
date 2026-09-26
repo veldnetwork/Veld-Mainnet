@@ -2,6 +2,7 @@
 
 import argparse
 import http.server
+import ipaddress
 from pathlib import Path
 import socket
 import ssl
@@ -18,7 +19,15 @@ class Gateway(http.server.ThreadingHTTPServer):
     daemon_threads = True
     request_queue_size = 64
 
-    def __init__(self, bind, context, ipc):
+    def __init__(self, bind, context, ipc, trusted_proxy=False):
+        require(type(trusted_proxy) is bool, "proxy mode")
+        if trusted_proxy:
+            require(
+                context.verify_mode == ssl.CERT_REQUIRED
+                and ipaddress.ip_address(bind[0]).is_loopback,
+                "authenticated loopback proxy required",
+            )
+        self.trusted_proxy = trusted_proxy
         self.context, self.ipc = context, ipc
         self.slots = threading.BoundedSemaphore(64)
         self.rate_lock = threading.Lock()
@@ -26,7 +35,9 @@ class Gateway(http.server.ThreadingHTTPServer):
         super().__init__(bind, Handler)
 
     def process_request(self, request, address):
-        if not self.slots.acquire(False):
+        # Bound active handlers while allowing the kernel backlog to absorb a
+        # short burst. Immediate closure here loses the TLS handshake entirely.
+        if not self.slots.acquire(timeout=3):
             request.close()
             return
         try:
@@ -97,8 +108,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
 
     def do_GET(self):
+        try:
+            address = self.source_address()
+        except (Refused, ValueError):
+            self.reply(400, {"ok": False, "error": "invalid request", "retryable": False})
+            return
         if self.path == "/v1/public":
-            if not self.server.allow(self.client_address[0], "public"):
+            if not self.server.allow(address, "public"):
                 self.reply(429, {"ok": False, "error": "rate limit", "retryable": True})
                 return
             try:
@@ -122,7 +138,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path not in assets:
             self.reply(404, {"ok": False, "error": "not found", "retryable": False})
             return
-        if not self.server.allow(self.client_address[0], "page"):
+        if not self.server.allow(address, "page"):
             self.reply(429, {"ok": False, "error": "rate limit", "retryable": True})
             return
         name, content_type = assets[self.path]
@@ -182,6 +198,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if reuse:
             self.connection.settimeout(2)
 
+    def source_address(self):
+        if not self.server.trusted_proxy:
+            return self.client_address[0]
+        # Proxy mode requires a verified client certificate on every TLS
+        # connection. The configured proxy must overwrite this header.
+        values = self.headers.get_all("X-Veld-Client-IP", [])
+        require(len(values) == 1, "one proxy source address required")
+        value = values[0]
+        require(
+            0 < len(value) <= 45 and value == value.strip() and "%" not in value,
+            "proxy source address",
+        )
+        address = ipaddress.ip_address(value)
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+            address = address.ipv4_mapped
+        return str(address)
+
     def coordinator_request(self, action, payload):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
             connection.settimeout(15)
@@ -217,7 +250,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             )
             require(self.headers.get("Content-Type") == "application/json", "content type")
             action = self.path.rsplit("/", 1)[1]
-            if not self.server.allow(self.client_address[0], action):
+            if not self.server.allow(self.source_address(), action):
                 self.reply(429, {"ok": False, "error": "rate limit", "retryable": True})
                 return
             payload = decode(self.rfile.read(int(length)))
@@ -237,14 +270,26 @@ def main():
     parser.add_argument("--config", required=True)
     args = parser.parse_args()
     config = decode(read_private(args.config, 16384))
+    required = {"host", "port", "certificate", "private_key", "coordinator_socket"}
     require(
-        set(config) == {"host", "port", "certificate", "private_key", "coordinator_socket"},
+        required <= set(config) <= required | {"proxy_client_ca"},
         "gateway configuration",
     )
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(config["certificate"], config["private_key"])
-    with Gateway((config["host"], config["port"]), context, config["coordinator_socket"]) as server:
+    trusted_proxy = "proxy_client_ca" in config
+    if trusted_proxy:
+        context.load_verify_locations(
+            cadata=read_private(config["proxy_client_ca"], 16384).decode()
+        )
+        context.verify_mode = ssl.CERT_REQUIRED
+    with Gateway(
+        (config["host"], config["port"]),
+        context,
+        config["coordinator_socket"],
+        trusted_proxy=trusted_proxy,
+    ) as server:
 
         def shutdown(*_):
             threading.Thread(target=server.shutdown, daemon=True).start()
