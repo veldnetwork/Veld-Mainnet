@@ -69,11 +69,11 @@ def dispatch(pool, request):
 class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads=False
     # The gateway admits up to 64 connections; retain a bounded IPC backlog
-    # while up to 32 handlers work. The operator channel stays at four.
+    # and at most 64 handlers. The operator channel stays at four.
     request_queue_size=64
     def __init__(self,path,pool,operator_uid=None):
         if operator_uid is not None:self.request_queue_size=4
-        self.pool=pool;self.operator_uid=operator_uid;self.slots=threading.BoundedSemaphore(32 if operator_uid is None else 4)
+        self.pool=pool;self.operator_uid=operator_uid;self.slots=threading.BoundedSemaphore(64 if operator_uid is None else 4)
         self.notice_lock=threading.Lock();self.last_refusal_notice=None
         self.last_capacity_notice=None
         super().__init__(path,Handler)
@@ -90,10 +90,10 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
             self.last_refusal_notice=now
         print('pool request refused action='+action+' reason='+reason,file=sys.stderr,flush=True)
     def process_request(self,request,address):
-        # Briefly drain a burst into the existing bounded kernel backlog. Keep
-        # the same 16 worker / 4 operator handlers; do not spawn waiting threads
-        # or create an unbounded queue. Slow clients still hit their deadlines.
-        if not self.slots.acquire(timeout=.25 if self.operator_uid is None else 0):
+        # Let a short worker burst drain through the existing bounded backlog.
+        # Only the accept loop waits; this does not add handlers or a queue.
+        # Operator requests retain their immediate, separate admission bound.
+        if not self.slots.acquire(timeout=3 if self.operator_uid is None else 0):
             request.close()
             with self.notice_lock:
                 now=time.monotonic()
