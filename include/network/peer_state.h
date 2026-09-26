@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 
 namespace veld {
 namespace net {
@@ -19,7 +20,8 @@ namespace net {
 // wastes the serving peer's response budget and can leave the downloader idle
 // until that budget rolls over.
 inline constexpr size_t IBD_GETBLOCKS_BATCH_BLOCKS = 32;
-inline constexpr auto IBD_GETBLOCKS_RETRY_IDLE = std::chrono::seconds(10);
+inline constexpr auto IBD_GETBLOCKS_RETRY_IDLE = std::chrono::seconds(30);
+inline constexpr auto IBD_GETBLOCKS_BUSY_RETRY_LIMIT = std::chrono::seconds(60);
 
 struct PeerState {
     bool version_sent = true;
@@ -72,16 +74,53 @@ inline bool IbdGetBlocksRetryDue(PeerState& state, uint64_t canonical_height, Pe
            now - state.last_ibd_progress >= IBD_GETBLOCKS_RETRY_IDLE;
 }
 
-// Continue only after a complete batch of distinct, increasing, locally
-// validated bodies from this connection. Wire claims, queue admission and
-// another peer's chain progress cannot trigger prefetch. Keep a bounded send
-// cadence even when old, byte-exact known bodies validate cheaply.
-inline bool IbdGetBlocksContinuationDue(const PeerState& state, uint64_t validated_count,
-                                        PeerState::tp_t now) {
-    return validated_count >= state.ibd_requested_download_count &&
-           validated_count - state.ibd_requested_download_count >= IBD_GETBLOCKS_BATCH_BLOCKS &&
-           now - state.last_getblocks >= std::chrono::seconds(1);
+// Canonical batch continuation is shared across peers below. A per-peer
+// download cursor can advance on bodies already committed from another peer;
+// granting it a second continuation repeats the same suffix. Keep this path
+// solely for bounded idle recovery while validation remains in flight.
+inline bool IbdGetBlocksRequestDue(PeerState& state, uint64_t canonical_height,
+                                   bool validation_work_pending, PeerState::tp_t now) {
+    const bool retry = IbdGetBlocksRetryDue(state, canonical_height, now);
+    return retry && (!validation_work_pending ||
+                     now - state.last_getblocks >= IBD_GETBLOCKS_BUSY_RETRY_LIMIT);
 }
+
+// Canonical progress can be assembled from several serving peers, so no one
+// connection necessarily receives a complete 32-body response. Coalesce the
+// next-batch request across all peers instead of waiting for every peer's idle
+// retry. Only a successful enqueue consumes the batch slot. This gate is a
+// download scheduler hint; it does not trust a remote height or validate data.
+class IbdCanonicalBatchGate {
+  public:
+    explicit IbdCanonicalBatchGate(uint64_t canonical_height = 0,
+                                   PeerState::tp_t now = PeerState::tp_t{})
+        : last_requested_height_(canonical_height), last_request_at_(now) {}
+
+    template <typename Send>
+    bool TryContinue(uint64_t canonical_height, PeerState::tp_t now, Send&& send) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (canonical_height < last_requested_height_) {
+            last_requested_height_ = canonical_height;
+            last_request_at_ = now;
+            return false;
+        }
+        if (canonical_height - last_requested_height_ < IBD_GETBLOCKS_BATCH_BLOCKS ||
+            (last_request_at_ != PeerState::tp_t{} &&
+             now - last_request_at_ < std::chrono::seconds(1))) {
+            return false;
+        }
+        if (!send())
+            return false;
+        last_requested_height_ = canonical_height;
+        last_request_at_ = now;
+        return true;
+    }
+
+  private:
+    std::mutex mutex_;
+    uint64_t last_requested_height_{0};
+    PeerState::tp_t last_request_at_{};
+};
 
 using PeerStatePtr = std::shared_ptr<PeerState>;
 

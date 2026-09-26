@@ -2913,13 +2913,33 @@ private:
                    << "window_height=" << window_height_ << "\n"
                    << "window_maximized=" << (window_maximized_ ? 1 : 0)
                    << "\n";
-        const bool saved = !ec && !settings_load_failed_ &&
-            veld::node_gui::WriteStateText(path, output.str(), &error);
+        bool saved = false;
+        if (!ec && !settings_load_failed_) {
+            for (int attempt = 0; attempt < 4; ++attempt) {
+                error.clear();
+                if (veld::node_gui::WriteStateText(path, output.str(), &error)) {
+                    saved = true;
+                    break;
+                }
+                // A reader or scanner can hold the old file briefly during
+                // the atomic replacement. Retry only sharing-like failures;
+                // owner, ACL, path and write failures remain fail-closed.
+                if (attempt == 3 ||
+                    (error != "cannot safely inspect existing Windows target" &&
+                     error != "Windows could not save the settings file"))
+                    break;
+                Sleep(150);
+            }
+        }
         if (!saved && show_error && IsWindow(hwnd_)) {
-            MessageBoxW(hwnd_,
-                L"Veld could not confirm that your settings were saved. "
-                L"Check available disk space and close other Veld windows, "
-                L"then try again. Updates will wait until your settings can be saved.",
+            const wchar_t* detail = settings_load_failed_
+                ? L"Veld could not read its existing settings when it opened. "
+                  L"Close Veld completely and reopen it after clearing any file lock. "
+                  L"The existing settings were not overwritten."
+                : L"Veld could not confirm that your settings were saved. "
+                  L"Check available disk space and close other Veld windows, "
+                  L"then try again. Updates will wait until your settings can be saved.";
+            MessageBoxW(hwnd_, detail,
                 L"Veld settings could not be saved", MB_OK | MB_ICONERROR);
         }
         return saved;

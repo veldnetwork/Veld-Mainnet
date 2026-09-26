@@ -126,6 +126,16 @@ class Connection {
         return validated_download_count_;
     }
 
+    void NoteCanonicalContribution(const Hash256& hash, uint64_t height) {
+        std::lock_guard<std::mutex> lock(download_cursor_mutex_);
+        canonical_contribution_ = std::make_pair(hash, height);
+    }
+
+    std::optional<std::pair<Hash256, uint64_t>> LastCanonicalContribution() const {
+        std::lock_guard<std::mutex> lock(download_cursor_mutex_);
+        return canonical_contribution_;
+    }
+
     void NoteIbdGetBlocksRequest() {
         std::lock_guard<std::mutex> lock(download_cursor_mutex_);
         ibd_download_window_until_ = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -906,6 +916,7 @@ class Connection {
     std::optional<Hash256> download_fallback_cursor_;
     uint64_t download_cursor_height_{0};
     uint64_t validated_download_count_{0};
+    std::optional<std::pair<Hash256, uint64_t>> canonical_contribution_;
     std::chrono::steady_clock::time_point ibd_download_window_until_{};
 
     static uint64_t NextIdentity_() {
@@ -1175,7 +1186,8 @@ class NodeServer {
     NodeServer(uint16_t port, uint32_t magic, Blockchain& chain, Mempool& mempool)
         : port_(port), magic_(magic), chain_(chain), mempool_(mempool), running_(false),
           listen_fd_(veld::compat::kInvalidSocket), inbound_count_(0), outbound_count_(0),
-          max_inbound_connections_(::veld::MAX_PEER_CONNECTIONS) {}
+          max_inbound_connections_(::veld::MAX_PEER_CONNECTIONS),
+          ibd_batch_gate_(chain.Height(), PeerState::clock_t::now()) {}
 
     ~NodeServer() {
         Stop();
@@ -4545,6 +4557,14 @@ class NodeServer {
         RecordValidatedDownload_(connection, hash);
     }
 
+    void TestRecordCanonicalContribution(Connection& connection, const Hash256& hash) {
+        RecordCanonicalContribution_(connection, hash);
+    }
+
+    bool TestIbdContinuationPeerEligible(const Connection& connection) const {
+        return IbdContinuationPeerEligible_(connection, chain_.Height());
+    }
+
     IngestEnqueueResult TestEnqueueBlockIngest(Block blk, size_t wire_bytes,
                                                const std::string& source_key) {
         return EnqueueBlockIngest(std::move(blk), wire_bytes, source_key, nullptr);
@@ -6091,6 +6111,7 @@ class NodeServer {
     std::vector<uint8_t> my_comine_pubkey_;
     ComineSigner my_comine_signer_;
     std::atomic<bool> ibd_complete_flag_{false};
+    IbdCanonicalBatchGate ibd_batch_gate_;
     std::atomic<int64_t> last_tipsig_catchup_at_seconds_{0};
     uint64_t self_nonce_{0};
     static constexpr size_t VERSION_FETCH_HINT_MIN_SUPPORT = 2;
@@ -6447,6 +6468,7 @@ class NodeServer {
                                                   peer_work_stop_.get_token()));
             if (admission.IsAccepted()) {
                 RecordValidatedDownload_(conn, orphan.GetHash());
+                RecordCanonicalContribution_(conn, orphan.GetHash());
                 uint64_t h = chain_.Height();
                 RecordVerifiedPeerHeight_(entry.source, orphan.GetHash());
                 int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
@@ -6489,7 +6511,32 @@ class NodeServer {
             connection.RememberValidatedDownload(hash, *height);
     }
 
+    void RecordCanonicalContribution_(Connection& connection, const Hash256& hash) const {
+        // A known duplicate may advance a download cursor but did not supply
+        // new chain progress. Credit only a newly accepted canonical body.
+        if (!chain_.IsCanonicalBlock(hash))
+            return;
+        const auto height = chain_.GetKnownBlockHeightByHash(hash);
+        if (height)
+            connection.NoteCanonicalContribution(hash, *height);
+    }
+
+    bool IbdContinuationPeerEligible_(const Connection& connection,
+                                      uint64_t canonical_height) const {
+        if (!connection.HandshakeReady() || connection.IsInbound())
+            return false;
+        const auto contribution = connection.LastCanonicalContribution();
+        return contribution && contribution->second <= canonical_height &&
+               canonical_height - contribution->second < IBD_GETBLOCKS_BATCH_BLOCKS &&
+               chain_.IsCanonicalBlock(contribution->first);
+    }
+
     P2PMessage BuildChainLocatorGetBlocks(const Connection* connection = nullptr) const {
+        // The locally committed tip is the only safe primary locator. A
+        // validated body may be ahead of it (or on another branch); using
+        // that peer-specific download cursor can skip the missing parent and
+        // strand an otherwise healthy near-tip node.
+        (void)connection;
         PeerManager pm(magic_, chain_.Height());
         if (chain_.IsEmpty()) {
             Hash256 zero{};
@@ -6514,33 +6561,6 @@ class NodeServer {
         }
 
         const Hash256 tip = chain_.TipCopy().GetHash();
-        if (connection) {
-            const auto current_height = chain_.Height();
-            std::vector<Hash256> preferred;
-            for (const auto& cursor : connection->ValidatedDownloadCursors()) {
-                const auto height =
-                    cursor ? chain_.GetKnownBlockHeightByHash(*cursor) : std::nullopt;
-                if (cursor && height &&
-                    (*height >= current_height ||
-                     current_height - *height <= 2 * MAX_REORG_DEPTH) &&
-                    std::find(preferred.begin(), preferred.end(), *cursor) == preferred.end())
-                    preferred.push_back(*cursor);
-            }
-            if (!preferred.empty()) {
-                // Highest verified progress leads. A lower, recent verified
-                // body is a fallback for a peer changing branch; delayed
-                // duplicate batches cannot rewind the primary cursor. These
-                // two hints never change fork choice or peer work evidence.
-                if (std::find(preferred.begin(), preferred.end(), tip) == preferred.end())
-                    preferred.push_back(tip);
-                for (const auto& hash : extra)
-                    if (std::find(preferred.begin(), preferred.end(), hash) == preferred.end())
-                        preferred.push_back(hash);
-                const auto first = preferred.front();
-                preferred.erase(preferred.begin());
-                return pm.BuildGetBlocksMessage(first, preferred);
-            }
-        }
         return pm.BuildGetBlocksMessage(tip, extra);
     }
 
@@ -8221,7 +8241,19 @@ class NodeServer {
                 uint64_t now_ts = MonotonicSeconds();
                 const bool send_now = TakeKeyCooldown(tipsig_getblocks_at_, src_ip, 10, 600, 4096);
                 if (send_now) {
-                    conn.Send(BuildChainLocatorGetBlocks(&conn));
+                    if (!ibd_complete_flag_.load()) {
+                        const auto now = std::chrono::steady_clock::now();
+                        const auto downloaded = conn.ValidatedDownloadCount();
+                        if (IbdGetBlocksRequestDue(ps, chain_.Height(), PendingIbdValidationWork_(),
+                                                   now) &&
+                            conn.TrySend(BuildChainLocatorGetBlocks())) {
+                            ps.last_getblocks = now;
+                            ps.ibd_requested_download_count = downloaded;
+                            conn.NoteIbdGetBlocksRequest();
+                        }
+                    } else {
+                        conn.Send(BuildChainLocatorGetBlocks(&conn));
+                    }
                 }
 
                 const bool already_have_their_tip = known_tip_height.has_value();
@@ -8484,6 +8516,7 @@ class NodeServer {
                 return StepResult::Handled;
             if (admission.IsAccepted()) {
                 RecordValidatedDownload_(conn, new_block.GetHash());
+                RecordCanonicalContribution_(conn, new_block.GetHash());
                 uint64_t h = chain_.Height();
                 {
                     std::string peer_ip = conn.RemoteAddr();
@@ -9025,15 +9058,27 @@ class NodeServer {
                 std::chrono::duration_cast<std::chrono::milliseconds>(now - ps.last_getblocks)
                     .count();
             bool should_request = false;
+            bool continued_batch = false;
             if (in_ibd) {
-                should_request = IbdGetBlocksRetryDue(ps, chain_.Height(), now) ||
-                                 IbdGetBlocksContinuationDue(ps, downloaded, now);
+                should_request =
+                    IbdGetBlocksRequestDue(ps, chain_.Height(), PendingIbdValidationWork_(), now);
+                if (!conn.IsInbound()) {
+                    continued_batch = ibd_batch_gate_.TryContinue(chain_.Height(), now, [&] {
+                        return IbdContinuationPeerEligible_(conn, chain_.Height()) &&
+                               conn.TrySend(BuildChainLocatorGetBlocks());
+                    });
+                }
             } else {
                 if (ms_since_gb >= 5000)
                     should_request = true;
             }
-            if (should_request) {
-                if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
+            if (continued_batch) {
+                ps.last_getblocks = now;
+                ps.ibd_requested_download_count = downloaded;
+                conn.NoteIbdGetBlocksRequest();
+            } else if (should_request) {
+                if (conn.TrySend(in_ibd ? BuildChainLocatorGetBlocks()
+                                        : BuildChainLocatorGetBlocks(&conn))) {
                     ps.last_getblocks = now;
                     ps.ibd_requested_download_count = downloaded;
                     if (in_ibd)
@@ -9042,6 +9087,11 @@ class NodeServer {
             }
         }
         return false;
+    }
+
+    bool PendingIbdValidationWork_() {
+        std::lock_guard<std::mutex> lk(ingest_mtx_);
+        return ingest_normal_lane_.pending_jobs != 0;
     }
 
     bool HandOffNewPeerToWorker(const std::string& key, std::shared_ptr<Connection> conn,
@@ -10964,6 +11014,7 @@ class NodeServer {
             if (auto sc = job.sender_conn.lock()) {
                 const std::string peer_ip = sc->RemoteAddr();
                 RecordValidatedDownload_(*sc, job.new_block.GetHash());
+                RecordCanonicalContribution_(*sc, job.new_block.GetHash());
                 RecordVerifiedPeerHeight_(peer_ip, job.new_block.GetHash());
                 int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
                                     std::chrono::system_clock::now().time_since_epoch())
