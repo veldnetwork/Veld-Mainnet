@@ -49,6 +49,28 @@ int main() {
         }
         Mempool pool;
         net::NodeServer server(0, MAINNET_MAGIC, chain, pool);
+        const auto serving_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        Check(compat::IsValidSocket(serving_fd), "serving-peer fixture socket");
+        net::Connection serving(serving_fd, "127.0.0.8", 1);
+        serving.MarkHandshakeReady();
+        Check(!server.TestIbdContinuationPeerEligible(serving),
+              "handshake without accepted canonical work cannot claim continuation");
+        server.TestRememberValidatedDownload(serving, chain.GetBlock(319).GetHash());
+        Check(!server.TestIbdContinuationPeerEligible(serving),
+              "known canonical duplicate cannot claim the shared batch");
+        server.TestRecordCanonicalContribution(serving, chain.GetBlock(287).GetHash());
+        Check(!server.TestIbdContinuationPeerEligible(serving),
+              "old accepted work cannot repeatedly claim later batches");
+        server.TestRecordCanonicalContribution(serving, chain.GetBlock(289).GetHash());
+        Check(server.TestIbdContinuationPeerEligible(serving),
+              "recent accepted canonical sender may request the next batch");
+        const auto inbound_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        Check(compat::IsValidSocket(inbound_fd), "inbound-peer fixture socket");
+        net::Connection inbound(inbound_fd, "127.0.0.9", 1, true);
+        inbound.MarkHandshakeReady();
+        server.TestRecordCanonicalContribution(inbound, chain.GetBlock(319).GetHash());
+        Check(!server.TestIbdContinuationPeerEligible(inbound),
+              "inbound contribution does not bypass outbound continuation policy");
         auto response_frames = [&](const P2PMessage& request, const char* address) {
             const auto socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
             Check(compat::IsValidSocket(socket), "unconnected response queue socket");

@@ -126,6 +126,16 @@ class Connection {
         return validated_download_count_;
     }
 
+    void NoteCanonicalContribution(const Hash256& hash, uint64_t height) {
+        std::lock_guard<std::mutex> lock(download_cursor_mutex_);
+        canonical_contribution_ = std::make_pair(hash, height);
+    }
+
+    std::optional<std::pair<Hash256, uint64_t>> LastCanonicalContribution() const {
+        std::lock_guard<std::mutex> lock(download_cursor_mutex_);
+        return canonical_contribution_;
+    }
+
     void NoteIbdGetBlocksRequest() {
         std::lock_guard<std::mutex> lock(download_cursor_mutex_);
         ibd_download_window_until_ = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -906,6 +916,7 @@ class Connection {
     std::optional<Hash256> download_fallback_cursor_;
     uint64_t download_cursor_height_{0};
     uint64_t validated_download_count_{0};
+    std::optional<std::pair<Hash256, uint64_t>> canonical_contribution_;
     std::chrono::steady_clock::time_point ibd_download_window_until_{};
 
     static uint64_t NextIdentity_() {
@@ -4546,6 +4557,14 @@ class NodeServer {
         RecordValidatedDownload_(connection, hash);
     }
 
+    void TestRecordCanonicalContribution(Connection& connection, const Hash256& hash) {
+        RecordCanonicalContribution_(connection, hash);
+    }
+
+    bool TestIbdContinuationPeerEligible(const Connection& connection) const {
+        return IbdContinuationPeerEligible_(connection, chain_.Height());
+    }
+
     IngestEnqueueResult TestEnqueueBlockIngest(Block blk, size_t wire_bytes,
                                                const std::string& source_key) {
         return EnqueueBlockIngest(std::move(blk), wire_bytes, source_key, nullptr);
@@ -6449,6 +6468,7 @@ class NodeServer {
                                                   peer_work_stop_.get_token()));
             if (admission.IsAccepted()) {
                 RecordValidatedDownload_(conn, orphan.GetHash());
+                RecordCanonicalContribution_(conn, orphan.GetHash());
                 uint64_t h = chain_.Height();
                 RecordVerifiedPeerHeight_(entry.source, orphan.GetHash());
                 int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
@@ -6489,6 +6509,26 @@ class NodeServer {
         const auto tip = chain_.Height();
         if (height && (*height >= tip || tip - *height <= 2 * MAX_REORG_DEPTH))
             connection.RememberValidatedDownload(hash, *height);
+    }
+
+    void RecordCanonicalContribution_(Connection& connection, const Hash256& hash) const {
+        // A known duplicate may advance a download cursor but did not supply
+        // new chain progress. Credit only a newly accepted canonical body.
+        if (!chain_.IsCanonicalBlock(hash))
+            return;
+        const auto height = chain_.GetKnownBlockHeightByHash(hash);
+        if (height)
+            connection.NoteCanonicalContribution(hash, *height);
+    }
+
+    bool IbdContinuationPeerEligible_(const Connection& connection,
+                                      uint64_t canonical_height) const {
+        if (!connection.HandshakeReady() || connection.IsInbound())
+            return false;
+        const auto contribution = connection.LastCanonicalContribution();
+        return contribution && contribution->second <= canonical_height &&
+               canonical_height - contribution->second < IBD_GETBLOCKS_BATCH_BLOCKS &&
+               chain_.IsCanonicalBlock(contribution->first);
     }
 
     P2PMessage BuildChainLocatorGetBlocks(const Connection* connection = nullptr) const {
@@ -8476,6 +8516,7 @@ class NodeServer {
                 return StepResult::Handled;
             if (admission.IsAccepted()) {
                 RecordValidatedDownload_(conn, new_block.GetHash());
+                RecordCanonicalContribution_(conn, new_block.GetHash());
                 uint64_t h = chain_.Height();
                 {
                     std::string peer_ip = conn.RemoteAddr();
@@ -9023,7 +9064,8 @@ class NodeServer {
                     IbdGetBlocksRequestDue(ps, chain_.Height(), PendingIbdValidationWork_(), now);
                 if (!conn.IsInbound()) {
                     continued_batch = ibd_batch_gate_.TryContinue(chain_.Height(), now, [&] {
-                        return conn.TrySend(BuildChainLocatorGetBlocks());
+                        return IbdContinuationPeerEligible_(conn, chain_.Height()) &&
+                               conn.TrySend(BuildChainLocatorGetBlocks());
                     });
                 }
             } else {
@@ -10972,6 +11014,7 @@ class NodeServer {
             if (auto sc = job.sender_conn.lock()) {
                 const std::string peer_ip = sc->RemoteAddr();
                 RecordValidatedDownload_(*sc, job.new_block.GetHash());
+                RecordCanonicalContribution_(*sc, job.new_block.GetHash());
                 RecordVerifiedPeerHeight_(peer_ip, job.new_block.GetHash());
                 int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
                                     std::chrono::system_clock::now().time_since_epoch())
