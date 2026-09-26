@@ -26,6 +26,25 @@ struct GuiStateQualification {
         Check(app.SaveSettings(false),"payout and mode saved without enabling mining");
         NodeGuiApp restored(root);restored.LoadSettings();
         Check(restored.address_only_&&restored.AddressPayout()==address&&!restored.mining_enabled_,"payout and stopped preference survive restart");
+        // The reported save dialog can be reproduced when a short-lived
+        // Windows reader prevents atomic replacement of node-gui.conf. Verify
+        // the actual address-only save and a new app instance, not just the
+        // low-level file writer.
+        NodeGuiApp transient(root);transient.LoadSettings();
+        const auto next_address=veld::GenerateKeyPair(false).address;
+        const auto conf=root/L"node-gui.conf";
+        HANDLE held=CreateFileW(conf.c_str(),GENERIC_READ,FILE_SHARE_READ,
+                                nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        Check(held!=INVALID_HANDLE_VALUE,"disposable settings reader holds the old file");
+        std::thread release([held]{Sleep(225);CloseHandle(held);});
+        transient.SetAddressPayout(next_address);transient.address_only_=true;
+        const bool save_recovered=transient.SaveSettings(false);
+        release.join();
+        Check(save_recovered,"address-only save waits out a short file lock");
+        NodeGuiApp after_lock(root);after_lock.LoadSettings();
+        Check(after_lock.address_only_&&after_lock.AddressPayout()==next_address&&
+              !after_lock.mining_enabled_,"new app instance reads the updated payout with mining off");
+        Check(app.SaveSettings(false),"original disposable payout restored for remaining tests");
         const auto identity=app.RemoteIdentityFingerprint();
         Check(!identity.empty()&&!app.HasSessionUnlock(),"payout fingerprint requires no wallet unlock");
         uint64_t ack=0;const auto report=app.BuildMonitoringReport(LiveState{},ack);
@@ -84,6 +103,20 @@ struct GuiStateQualification {
         std::vector<BYTE> pixels(1050*1502*4);Check(GetDIBits(dc,bitmap,0,1502,pixels.data(),&info,DIB_RGB_COLORS)!=0,"native rendered pixels");
         BITMAPFILEHEADER file{};file.bfType=0x4d42;file.bfOffBits=sizeof(file)+sizeof(info.bmiHeader);file.bfSize=file.bfOffBits+DWORD(pixels.size());
         std::ofstream out(root/L"settings.bmp",std::ios::binary);out.write(reinterpret_cast<char*>(&file),sizeof(file));out.write(reinterpret_cast<char*>(&info.bmiHeader),sizeof(info.bmiHeader));out.write(reinterpret_cast<char*>(pixels.data()),pixels.size());out.close();
+        const int toggle_x=app.address_mode_toggle_.left+2;
+        const int toggle_y=app.address_mode_toggle_.top+2;
+        app.OnClick(toggle_x,toggle_y);
+        NodeGuiApp off_after_click(root);off_after_click.LoadSettings();
+        Check(!app.address_only_&&!off_after_click.address_only_,"native settings click turns address mode off durably");
+        HANDLE click_lock=CreateFileW(conf.c_str(),GENERIC_READ,FILE_SHARE_READ,
+                                      nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        Check(click_lock!=INVALID_HANDLE_VALUE,"native click lock fixture holds settings file");
+        std::thread click_release([click_lock]{Sleep(225);CloseHandle(click_lock);});
+        app.OnClick(toggle_x,toggle_y);
+        click_release.join();
+        NodeGuiApp on_after_click(root);on_after_click.LoadSettings();
+        Check(app.address_only_&&on_after_click.address_only_&&
+              on_after_click.AddressPayout()==address,"native settings click saves address mode across a transient lock and restart");
         SelectObject(dc,previous);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(app.hwnd_,window);DestroyWindow(app.hwnd_);app.hwnd_=nullptr;
         veld::WipeString(secret);veld::WipeString(again);
     }

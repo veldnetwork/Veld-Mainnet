@@ -1187,7 +1187,8 @@ public:
         : port_(port), magic_(magic), chain_(chain), mempool_(mempool)
         , running_(false), listen_fd_(veld::compat::kInvalidSocket)
         , inbound_count_(0), outbound_count_(0)
-        , max_inbound_connections_(::veld::MAX_PEER_CONNECTIONS) {}
+        , max_inbound_connections_(::veld::MAX_PEER_CONNECTIONS)
+        , ibd_batch_gate_(chain.Height(), PeerState::clock_t::now()) {}
 
     ~NodeServer() { Stop(); }
 
@@ -5955,6 +5956,7 @@ private:
     std::vector<uint8_t> my_comine_pubkey_;
     ComineSigner         my_comine_signer_;
     std::atomic<bool>    ibd_complete_flag_{false};
+    IbdCanonicalBatchGate ibd_batch_gate_;
     std::atomic<int64_t> last_tipsig_catchup_at_seconds_{0};
     uint64_t self_nonce_{0};
     static constexpr size_t VERSION_FETCH_HINT_MIN_SUPPORT = 2;
@@ -6353,6 +6355,11 @@ private:
 
     P2PMessage BuildChainLocatorGetBlocks(
             const Connection* connection = nullptr) const {
+        // The locally committed tip is the only safe primary locator. A
+        // validated body may be ahead of it (or on another branch); using
+        // that peer-specific download cursor can skip the missing parent and
+        // strand an otherwise healthy near-tip node.
+        (void)connection;
         PeerManager pm(magic_, chain_.Height());
         if (chain_.IsEmpty()) {
             Hash256 zero{}; zero.fill(0);
@@ -6371,32 +6378,6 @@ private:
         try { extra.push_back(chain_.GetBlock(0).GetHash()); } catch (...) {}
 
         const Hash256 tip = chain_.TipCopy().GetHash();
-        if (connection) {
-            const auto current_height = chain_.Height();
-            std::vector<Hash256> preferred;
-            for (const auto& cursor : connection->ValidatedDownloadCursors()) {
-                const auto height = cursor
-                    ? chain_.GetKnownBlockHeightByHash(*cursor) : std::nullopt;
-                if (cursor && height && (*height >= current_height ||
-                    current_height - *height <= 2 * MAX_REORG_DEPTH) &&
-                    std::find(preferred.begin(), preferred.end(), *cursor) == preferred.end())
-                    preferred.push_back(*cursor);
-            }
-            if (!preferred.empty()) {
-                // Highest verified progress leads. A lower, recent verified
-                // body is a fallback for a peer changing branch; delayed
-                // duplicate batches cannot rewind the primary cursor. These
-                // two hints never change fork choice or peer work evidence.
-                if (std::find(preferred.begin(), preferred.end(), tip) == preferred.end())
-                    preferred.push_back(tip);
-                for (const auto& hash : extra)
-                    if (std::find(preferred.begin(), preferred.end(), hash) == preferred.end())
-                        preferred.push_back(hash);
-                const auto first = preferred.front();
-                preferred.erase(preferred.begin());
-                return pm.BuildGetBlocksMessage(first, preferred);
-            }
-        }
         return pm.BuildGetBlocksMessage(tip, extra);
     }
 
@@ -8083,7 +8064,20 @@ private:
                 const bool send_now = TakeKeyCooldown(
                     tipsig_getblocks_at_, src_ip, 10, 600, 4096);
                 if (send_now) {
-                    conn.Send(BuildChainLocatorGetBlocks(&conn));
+                    if (!ibd_complete_flag_.load()) {
+                        const auto now = std::chrono::steady_clock::now();
+                        const auto downloaded = conn.ValidatedDownloadCount();
+                        if (IbdGetBlocksRequestDue(
+                                ps, chain_.Height(),
+                                PendingIbdValidationWork_(), now) &&
+                            conn.TrySend(BuildChainLocatorGetBlocks())) {
+                            ps.last_getblocks = now;
+                            ps.ibd_requested_download_count = downloaded;
+                            conn.NoteIbdGetBlocksRequest();
+                        }
+                    } else {
+                        conn.Send(BuildChainLocatorGetBlocks(&conn));
+                    }
                 }
 
                 const bool already_have_their_tip =
@@ -8928,15 +8922,27 @@ private:
             const auto downloaded = conn.ValidatedDownloadCount();
             auto ms_since_gb = std::chrono::duration_cast<std::chrono::milliseconds>(now - ps.last_getblocks).count();
             bool should_request = false;
+            bool continued_batch = false;
             if (in_ibd) {
-                should_request = IbdGetBlocksRetryDue(
-                    ps, chain_.Height(), now) ||
-                    IbdGetBlocksContinuationDue(ps, downloaded, now);
+                should_request = IbdGetBlocksRequestDue(
+                    ps, chain_.Height(),
+                    PendingIbdValidationWork_(), now);
+                if (!conn.IsInbound()) {
+                    continued_batch = ibd_batch_gate_.TryContinue(
+                        chain_.Height(), now, [&] {
+                            return conn.TrySend(BuildChainLocatorGetBlocks());
+                        });
+                }
             } else {
                 if (ms_since_gb >= 5000) should_request = true;
             }
-            if (should_request) {
-                if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
+            if (continued_batch) {
+                ps.last_getblocks = now;
+                ps.ibd_requested_download_count = downloaded;
+                conn.NoteIbdGetBlocksRequest();
+            } else if (should_request) {
+                if (conn.TrySend(in_ibd ? BuildChainLocatorGetBlocks()
+                                         : BuildChainLocatorGetBlocks(&conn))) {
                     ps.last_getblocks = now;
                     ps.ibd_requested_download_count = downloaded;
                     if (in_ibd) conn.NoteIbdGetBlocksRequest();
@@ -8944,6 +8950,11 @@ private:
             }
         }
         return false;
+    }
+
+    bool PendingIbdValidationWork_() {
+        std::lock_guard<std::mutex> lk(ingest_mtx_);
+        return ingest_normal_lane_.pending_jobs != 0;
     }
 
     bool HandOffNewPeerToWorker(const std::string& key,

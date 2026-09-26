@@ -27,7 +27,7 @@ class GatewayKeepalive(unittest.TestCase):
             pool=Coordinator(node,journal,None,'pool','f'*64)
             first=pool.register('x'*30);second=pool.register('y'*30)
             ipc=Server(str(root/'co.sock'),pool)
-            self.assertEqual(ipc.request_queue_size,32)
+            self.assertEqual(ipc.request_queue_size,64)
             ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);ctx.load_cert_chain(root/'cert.pem',root/'key.pem')
             gateway=Gateway(('127.0.0.1',0),ctx,str(root/'co.sock'))
             threads=[]

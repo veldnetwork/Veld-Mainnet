@@ -83,19 +83,19 @@ int main() {
         server.TestRememberValidatedDownload(connection, common);
         Check(connection.ValidatedDownloadCount() == 1,
               "exact duplicate cannot multiply continuation receipts");
-        Check(First(server.TestDownloadLocator(connection)) == common,
-              "validated shared-history batch must advance download locator");
+        Check(First(server.TestDownloadLocator(connection)) == chain.TipCopy().GetHash(),
+              "uncommitted download cursor cannot replace canonical locator");
         const auto late = chain.GetBlock(223).GetHash();
         server.TestRememberValidatedDownload(connection, late);
         Check(connection.ValidatedDownloadCount() == 1,
               "lower history cannot multiply continuation receipts");
         const auto continued = server.TestDownloadLocator(connection);
-        Check(First(continued) == common,
-              "late near-tip duplicate cannot rewind validated download progress");
+        Check(First(continued) == chain.TipCopy().GetHash(),
+              "late duplicate cannot rewind canonical locator");
         Hash256 second{};
         std::copy_n(continued.payload.begin() + 37, 32, second.begin());
-        Check(second == late,
-              "peer branch change retains one bounded lower continuation fallback");
+        Check(second == chain.GetBlock(chain.Height()-1).GetHash(),
+              "canonical ancestor remains the first fallback");
         // This focused fixture covers cursor ordering on locally indexed
         // bodies. Genuine fork validation is covered by native co-mining and
         // payment reorganization exercises, not synthetic PoW-free branches.
@@ -103,16 +103,16 @@ int main() {
         server.TestRememberValidatedDownload(connection,higher);
         Check(connection.ValidatedDownloadCount() == 2,
               "height jump counts one actual body rather than missing heights");
-        Check(First(server.TestDownloadLocator(connection))==higher,
-              "higher validated progress replaces lower shared-history cursor");
+        Check(First(server.TestDownloadLocator(connection))==chain.TipCopy().GetHash(),
+              "higher uncommitted body cannot skip canonical parents");
         server.TestRememberValidatedDownload(connection,common);
         const auto changed_branch=server.TestDownloadLocator(connection);
-        Check(First(changed_branch)==higher,"lower canonical duplicate preserves progress");
+        Check(First(changed_branch)==chain.TipCopy().GetHash(),"lower duplicate preserves canonical primary");
         std::copy_n(changed_branch.payload.begin()+37,32,second.begin());
-        Check(second==common,"highest cursor retains recent common-history fallback");
+        Check(second==chain.GetBlock(chain.Height()-1).GetHash(),"canonical parent remains fallback");
         server.TestRememberValidatedDownload(connection, chain.GetBlock(0).GetHash());
-        Check(First(server.TestDownloadLocator(connection)) == higher,
-              "ancient duplicate cannot rewind the bounded fork download");
+        Check(First(server.TestDownloadLocator(connection)) == chain.TipCopy().GetHash(),
+              "ancient duplicate cannot rewind canonical locator");
         Check(server.GetPeerHeightView().verified_height == 0,
               "download cursor never grants trusted peer-height evidence");
         const auto next_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -121,7 +121,7 @@ int main() {
               "reconnection cannot inherit continuation receipts");
         Check(First(server.TestDownloadLocator(replacement)) == chain.TipCopy().GetHash(),
               "reconnection owns a fresh cursor");
-        std::cout << "PASS bounded validated download continuation; synthetic headers, no network/PoW claim\n";
+        std::cout << "PASS canonical download locator despite peer download cursors; synthetic headers, no network/PoW claim\n";
     } catch (const std::exception& error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

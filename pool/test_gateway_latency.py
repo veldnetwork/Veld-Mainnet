@@ -130,14 +130,14 @@ def main():
             acquired=[]
             try:
                 while server.slots.acquire(False):acquired.append(True)
-                assert len(acquired)==32
+                assert len(acquired)==64
             finally:
                 for _ in acquired:server.slots.release()
             assert all(server.allow('qualification','register') for _ in range(4))
             assert not server.allow('qualification','register')
             assert all(server.allow('qualification','work') for _ in range(400))
             assert not server.allow('qualification','work')
-            report.update(status='PASS',concurrent_requests=64,connection_slots=32,
+            report.update(status='PASS',concurrent_requests=64,connection_slots=64,
                 maximum_response_integrity=True,malformed_input_refused=True,rate_limits_preserved=True)
         finally:
             for server,thread in services.values():server.shutdown();server.server_close();thread.join(timeout=5)

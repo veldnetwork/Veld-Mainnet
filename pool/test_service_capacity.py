@@ -19,7 +19,7 @@ class Capacity(unittest.TestCase):
             def health():
                 with lock:
                     active[0]+=1;peak[0]=max(peak[0],active[0])
-                    if active[0]==16:full.set()
+                    if active[0]==32:full.set()
                 try:
                     if not release.wait(3):raise RuntimeError('fixture deadline')
                     return {'fixture':True}
@@ -32,16 +32,16 @@ class Capacity(unittest.TestCase):
                     s.settimeout(3);s.connect(path);s.sendall(b'{"action":"health","payload":{}}\n')
                     with s.makefile('rb') as f:return json.loads(f.readline(16385))
             try:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=17) as ex:
-                    futures=[ex.submit(request) for _ in range(16)];self.assertTrue(full.wait(2))
+                with concurrent.futures.ThreadPoolExecutor(max_workers=33) as ex:
+                    futures=[ex.submit(request) for _ in range(32)];self.assertTrue(full.wait(3))
                     extra=ex.submit(request);time.sleep(.05);release.set()
                     self.assertTrue(all(f.result()['ok'] for f in futures+[extra]))
-                self.assertEqual(peak[0],16)
+                self.assertEqual(peak[0],32)
             finally:release.set();server.shutdown();server.server_close();t.join()
     def test_sustained_saturation_is_bounded_and_does_not_spawn_waiters(self):
         with tempfile.TemporaryDirectory() as d:
             server=Server(str(Path(d)/'ipc'),None)
-            for _ in range(16):self.assertTrue(server.slots.acquire(False))
+            for _ in range(32):self.assertTrue(server.slots.acquire(False))
             a,b=socket.socketpair()
             try:
                 start=time.monotonic();server.process_request(a,None);elapsed=time.monotonic()-start
@@ -49,7 +49,7 @@ class Capacity(unittest.TestCase):
                 b.settimeout(1);self.assertEqual(b.recv(1),b'')
             finally:
                 a.close();b.close()
-                for _ in range(16):server.slots.release()
+                for _ in range(32):server.slots.release()
                 server.server_close()
 
 if __name__=='__main__':unittest.main()

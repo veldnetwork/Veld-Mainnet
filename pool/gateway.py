@@ -14,9 +14,10 @@ from .public_status import public_status
 
 class Gateway(http.server.ThreadingHTTPServer):
     daemon_threads=True
+    request_queue_size=64
     def __init__(self,bind,context,ipc):
         self.context,self.ipc=context,ipc
-        self.slots=threading.BoundedSemaphore(32)
+        self.slots=threading.BoundedSemaphore(64)
         self.rate_lock=threading.Lock();self.rate={}
         super().__init__(bind,Handler)
     def process_request(self,request,address):
@@ -49,7 +50,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version='HTTP/1.1'
     # Coalesce bounded JSON headers/body into one TLS write. The standard HTTP
     # handler flushes at request completion; connections still close after it.
-    # At most 32 handlers exist, so these buffers consume at most 2 MiB.
+    # At most 64 handlers exist, so these buffers consume at most 4 MiB.
     wbufsize=64*1024
     server_version='VeldPool/1';sys_version=''
     def setup(self):

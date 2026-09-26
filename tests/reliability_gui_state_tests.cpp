@@ -26,6 +26,22 @@ struct GuiStateQualification {
         }
         return app.SaveSettings();
     }
+    static bool SaveAfterShortReadLock(const std::filesystem::path& dir) {
+        NodeGuiApp app(dir);
+        app.LoadSettings();
+        const auto conf = dir / L"node-gui.conf";
+        HANDLE held = CreateFileW(conf.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                                  nullptr);
+        assert(held != INVALID_HANDLE_VALUE);
+        std::thread release([held] {
+            Sleep(225);
+            CloseHandle(held);
+        });
+        const bool saved = app.SaveSettings(false);
+        release.join();
+        return saved;
+    }
 };
 
 void WriteFixture(const std::filesystem::path& path, const std::string& bytes) {
@@ -66,6 +82,8 @@ int main(int argc, char** argv) {
         assert(!GuiStateQualification::LoadSave(dir, true));
         assert(ReadTextBounded(conf) == saved);
     }
+    assert(GuiStateQualification::SaveAfterShortReadLock(dir));
+    assert(ReadTextBounded(conf) == saved);
     {
         FileLock unreadable(conf, 0);
         assert(!GuiStateQualification::LoadSave(dir, false));
