@@ -74,26 +74,6 @@ struct GuiStateQualification {
         Check(identity != app.RemoteIdentityFingerprint(),
               "payout changes invalidate update resume identity");
         app.SetAddressPayout(address);
-        app.address_only_ = true;
-        app.mining_enabled_ = false;
-        Check(app.SaveSettings(false), "payout and mode saved without enabling mining");
-        NodeGuiApp restored(root);
-        restored.LoadSettings();
-        Check(restored.address_only_ && restored.AddressPayout() == address &&
-                  !restored.mining_enabled_,
-              "payout and stopped preference survive restart");
-        const auto identity = app.RemoteIdentityFingerprint();
-        Check(!identity.empty() && !app.HasSessionUnlock(),
-              "payout fingerprint requires no wallet unlock");
-        uint64_t ack = 0;
-        const auto report = app.BuildMonitoringReport(LiveState{}, ack);
-        Check(report.find("\"unlock_key\":null") != std::string::npos &&
-                  !std::filesystem::exists(root / L"remote-unlock.dat"),
-              "portal offers ordinary start without a wallet passphrase exchange");
-        app.SetAddressPayout(veld::GenerateKeyPair(false).address);
-        Check(identity != app.RemoteIdentityFingerprint(),
-              "payout changes invalidate update resume identity");
-        app.SetAddressPayout(address);
         app.mining_enabled_ = true;
         app.full_ibd_choice_ = false;
         const auto command = app.NodeStartCommand();

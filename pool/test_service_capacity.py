@@ -41,9 +41,7 @@ class Capacity(unittest.TestCase):
 
             path = str(Path(d) / "ipc")
             server = Server(path, SimpleNamespace(health=health))
-            t = threading.Thread(
-                target=server.serve_forever, kwargs={"poll_interval": 0.02}
-            )
+            t = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02})
             t.start()
 
             def request():

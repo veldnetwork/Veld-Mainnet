@@ -157,8 +157,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if (
             self.command == "GET"
             and self.path == "/v1/public"
-            and origin
-            in ("https://explorer.veld.network", "https://portal.veld.network")
+            and origin in ("https://explorer.veld.network", "https://portal.veld.network")
         ):
             # Anonymous aggregates only. No credentials, private read or write
             # endpoints receive CORS permission. No arbitrary upstream URL.
@@ -213,14 +212,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             )
             length = self.headers["Content-Length"]
             require(
-                length.isdecimal()
-                and str(int(length)) == length
-                and 0 < int(length) <= 16384,
+                length.isdecimal() and str(int(length)) == length and 0 < int(length) <= 16384,
                 "body limit",
             )
-            require(
-                self.headers.get("Content-Type") == "application/json", "content type"
-            )
+            require(self.headers.get("Content-Type") == "application/json", "content type")
             action = self.path.rsplit("/", 1)[1]
             if not self.server.allow(self.client_address[0], action):
                 self.reply(429, {"ok": False, "error": "rate limit", "retryable": True})
@@ -229,9 +224,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             response = self.coordinator_request(action, payload)
             self.reply(200, response)
         except (Refused, ValueError):
-            self.reply(
-                400, {"ok": False, "error": "invalid request", "retryable": False}
-            )
+            self.reply(400, {"ok": False, "error": "invalid request", "retryable": False})
         except (OSError, TimeoutError):
             self.reply(
                 503,
@@ -245,16 +238,13 @@ def main():
     args = parser.parse_args()
     config = decode(read_private(args.config, 16384))
     require(
-        set(config)
-        == {"host", "port", "certificate", "private_key", "coordinator_socket"},
+        set(config) == {"host", "port", "certificate", "private_key", "coordinator_socket"},
         "gateway configuration",
     )
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(config["certificate"], config["private_key"])
-    with Gateway(
-        (config["host"], config["port"]), context, config["coordinator_socket"]
-    ) as server:
+    with Gateway((config["host"], config["port"]), context, config["coordinator_socket"]) as server:
 
         def shutdown(*_):
             threading.Thread(target=server.shutdown, daemon=True).start()

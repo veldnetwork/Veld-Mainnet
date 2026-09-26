@@ -80,9 +80,7 @@ class GatewayKeepalive(unittest.TestCase):
                 return response, body
 
             try:
-                response, body = request(
-                    dict(account=first["account"], token=first["view_token"])
-                )
+                response, body = request(dict(account=first["account"], token=first["view_token"]))
                 port = conn.sock.getsockname()[1]
                 self.assertTrue(body["ok"])
                 self.assertEqual(body["result"]["address"], "x" * 30)
@@ -94,9 +92,7 @@ class GatewayKeepalive(unittest.TestCase):
                 self.assertEqual(body["result"]["address"], "y" * 30)
                 # The previous account's valid credential cannot authorize the
                 # next account, even on the exact same authenticated TLS socket.
-                response, body = request(
-                    dict(account=first["account"], token=second["view_token"])
-                )
+                response, body = request(dict(account=first["account"], token=second["view_token"]))
                 self.assertFalse(body["ok"])
                 self.assertEqual(response.getheader("Connection"), "close")
                 self.assertIsNone(conn.sock)
@@ -108,9 +104,7 @@ class GatewayKeepalive(unittest.TestCase):
                 self.assertEqual(response.getheader("Connection"), "close")
                 self.assertIsNone(conn.sock)
                 # Failure on a reused connection cannot poison later valid use.
-                response, body = request(
-                    dict(account=first["account"], token=first["view_token"])
-                )
+                response, body = request(dict(account=first["account"], token=first["view_token"]))
                 self.assertTrue(body["ok"])
                 self.assertEqual(body["result"]["address"], "x" * 30)
             finally:

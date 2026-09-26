@@ -64,8 +64,7 @@ def main():
                 with lock:
                     received.append(body)
                 self.wfile.write(
-                    json.dumps(dict(ok=True, result={"echo": body["payload"]})).encode()
-                    + b"\n"
+                    json.dumps(dict(ok=True, result={"echo": body["payload"]})).encode() + b"\n"
                 )
 
         class IPCServer(socketserver.ThreadingUnixStreamServer):
@@ -108,9 +107,7 @@ def main():
                 )
                 response = conn.getresponse()
                 data = response.read(16385)
-                assert (
-                    len(data) <= 16384 and response.getheader("Connection") == "close"
-                )
+                assert len(data) <= 16384 and response.getheader("Connection") == "close"
                 assert response.getheader("Cache-Control") == "no-store"
                 assert response.getheader("Content-Type") == "application/json"
                 return response.status, json.loads(data), time.monotonic() - start
@@ -229,24 +226,14 @@ def main():
             assert status == 200 and value["result"]["echo"] == payload
             before = len(received)
             status, value, _ = request("candidate", b'{"x":1,"x":2}')
-            assert (
-                status == 400
-                and value["retryable"] is False
-                and len(received) == before
-            )
-            status, value, _ = request(
-                "candidate", b"{}", {"Content-Type": "text/plain"}
-            )
+            assert status == 400 and value["retryable"] is False and len(received) == before
+            status, value, _ = request("candidate", b"{}", {"Content-Type": "text/plain"})
             assert status == 400 and len(received) == before
             with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
-                responses = list(
-                    executor.map(lambda _: request("candidate"), range(64))
-                )
+                responses = list(executor.map(lambda _: request("candidate"), range(64)))
             assert all(status == 200 for status, _, _ in responses), {
                 "latency": report["cases"],
-                "responses": [
-                    (status, value) for status, value, _ in responses if status != 200
-                ],
+                "responses": [(status, value) for status, value, _ in responses if status != 200],
             }
             server = services["candidate"][0]
             # Existing admission limits remain exact and reusable.

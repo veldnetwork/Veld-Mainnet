@@ -49,9 +49,7 @@ def prepare_socket(path):
         try:
             probe.connect(str(path))
         except OSError as error:
-            require(
-                error.errno == errno.ECONNREFUSED, "cannot establish stale IPC state"
-            )
+            require(error.errno == errno.ECONNREFUSED, "cannot establish stale IPC state")
         else:
             raise Refused("IPC listener is still active")
     current = path.lstat()
@@ -77,17 +75,13 @@ def dispatch(pool, request):
         return pool.work(value["account"], value["token"], units(value["count"], 4096))
     if action == "submit":
         schema(value, ("account", "token", "lease", "nonce"))
-        return pool.submit(
-            value["account"], value["token"], value["lease"], value["nonce"]
-        )
+        return pool.submit(value["account"], value["token"], value["lease"], value["nonce"])
     if action == "account":
         schema(value, ("account", "token"))
         return pool.account(value["account"], value["token"])
     if action == "history":
         schema(value, ("account", "token", "before"))
-        return pool.history(
-            value["account"], value["token"], units(value["before"], (1 << 63) - 1)
-        )
+        return pool.history(value["account"], value["token"], units(value["before"], (1 << 63) - 1))
     raise Refused("unsupported action")
 
 
@@ -118,17 +112,10 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
             if action in ("health", "register", "work", "submit", "account", "history")
             else "other"
         )
-        reason = (
-            error.diagnostic
-            if isinstance(error, NodeRefused)
-            else "request_validation_failed"
-        )
+        reason = error.diagnostic if isinstance(error, NodeRefused) else "request_validation_failed"
         with self.notice_lock:
             now = time.monotonic()
-            if (
-                self.last_refusal_notice is not None
-                and now - self.last_refusal_notice < 30
-            ):
+            if self.last_refusal_notice is not None and now - self.last_refusal_notice < 30:
                 return
             self.last_refusal_notice = now
         print(
@@ -145,10 +132,7 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
             request.close()
             with self.notice_lock:
                 now = time.monotonic()
-                if (
-                    self.last_capacity_notice is None
-                    or now - self.last_capacity_notice >= 30
-                ):
+                if self.last_capacity_notice is None or now - self.last_capacity_notice >= 30:
                     self.last_capacity_notice = now
                     print(
                         "pool IPC capacity saturated; request closed",
@@ -177,9 +161,7 @@ class Handler(socketserver.StreamRequestHandler):
             if self.server.operator_uid is not None:
                 _, uid, _ = struct.unpack(
                     "3i",
-                    self.connection.getsockopt(
-                        socket.SOL_SOCKET, socket.SO_PEERCRED, 12
-                    ),
+                    self.connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12),
                 )
                 require(uid == self.server.operator_uid, "operator process identity")
             raw = self.rfile.readline(16385)
@@ -194,9 +176,7 @@ class Handler(socketserver.StreamRequestHandler):
                 require(operator is not None, "operator controls unavailable")
                 if request["action"] == "snapshot":
                     schema(request["payload"], ("before",))
-                    result = operator.snapshot(
-                        units(request["payload"]["before"], (1 << 63) - 1)
-                    )
+                    result = operator.snapshot(units(request["payload"]["before"], (1 << 63) - 1))
                 else:
                     result = operator.execute(
                         request["action"], request["payload"], request["actor"]
@@ -235,9 +215,7 @@ def maintain_once(pool, node, stop):
         except (OSError, RuntimeError, ValueError) as error:
             deferred.append(stage)
             detail = (
-                str(error)[:200]
-                if isinstance(error, (Refused, Busy))
-                else type(error).__name__
+                str(error)[:200] if isinstance(error, (Refused, Busy)) else type(error).__name__
             )
             notices = getattr(pool, "maintenance_notices", {})
             prior = notices.get(stage)
@@ -268,9 +246,7 @@ def maintain_once(pool, node, stop):
     if pool.identity or pool.payments:
         # Loss of the index after startup must pause all funds-bearing work,
         # while shares and independently checked income still reconcile.
-        safe = (
-            step("transaction index readiness", node.require_transaction_index) and safe
-        )
+        safe = step("transaction index readiness", node.require_transaction_index) and safe
     operator = getattr(pool, "operator", None)
     if safe and pool.identity:
         step(
@@ -329,8 +305,7 @@ def main():
         "socket",
     }
     require(
-        fields <= set(config)
-        and set(config) <= fields | {"payments", "identity", "operator"},
+        fields <= set(config) and set(config) <= fields | {"payments", "identity", "operator"},
         "coordinator configuration",
     )
     node = Node(config["rpc_url"], config["rpc_token_file"], config["genesis"])
@@ -370,13 +345,10 @@ def main():
             )
             schema(funding, ("chain", "script", "funding"))
             require(
-                funding["chain"] == node.genesis
-                and funding["script"] == settings["script"],
+                funding["chain"] == node.genesis and funding["script"] == settings["script"],
                 "operator funding chain/identity",
             )
-            identity_journal = Journal(
-                settings["state_directory"], settings["rollback_anchor"]
-            )
+            identity_journal = Journal(settings["state_directory"], settings["rollback_anchor"])
             pool.identity = Identity(
                 pool,
                 identity_journal,
@@ -402,9 +374,7 @@ def main():
                     "fee_units",
                 ),
             )
-            payment_journal = Journal(
-                settings["state_directory"], settings["rollback_anchor"]
-            )
+            payment_journal = Journal(settings["state_directory"], settings["rollback_anchor"])
             policy_run = subprocess.run(
                 [settings["native_binary"], "--policy"],
                 capture_output=True,

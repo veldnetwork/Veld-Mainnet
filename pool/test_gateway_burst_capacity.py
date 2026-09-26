@@ -88,9 +88,7 @@ class BurstCapacity(unittest.TestCase):
                         except Exception as error:
                             outcomes.append((type(error).__name__, str(error)[:80]))
                 expected = (200, {"ok": True, "result": {"fixture": True}})
-                failed = [
-                    (n, value) for n, value in enumerate(outcomes) if value != expected
-                ]
+                failed = [(n, value) for n, value in enumerate(outcomes) if value != expected]
                 self.assertFalse(failed, f"{len(failed)} of 35 failed: {failed}")
             finally:
                 gateway.shutdown()
