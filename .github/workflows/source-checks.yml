@@ -108,6 +108,16 @@ jobs:
         if: matrix.fixture == 'reliability_node_shutdown_tests'
         shell: msys2 {0}
         run: python tests/mining_monitor_shutdown_tests.py --cxx clang++
+      - name: Verify independent validation progress accounting
+        if: matrix.fixture == 'background_peer_liveness_tests'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          output=$(mktemp -d /tmp/veld-pow-progress.XXXXXXXX)
+          clang++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE \
+            -DVELD_PUBLIC_MAINNET -Iinclude -Ivendor/pqc -Ivendor/pqc/mldsa65 \
+            tests/ibd_pow_budget_tests.cpp -o "$output/progress.exe"
+          "$output/progress.exe"
       - name: Compile and exercise the native Windows fixture
         shell: msys2 {0}
         run: |
@@ -397,6 +407,14 @@ jobs:
       - name: Verify active mining cancellation
         if: matrix.fixture == 'reliability_node_shutdown_tests'
         run: python3 tests/mining_monitor_shutdown_tests.py --cxx c++
+      - name: Verify independent validation progress accounting
+        if: matrix.fixture == 'pow_reorg_admission_tests'
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE \
+            -DVELD_PUBLIC_MAINNET -Iinclude -Ivendor/pqc -Ivendor/pqc/mldsa65 \
+            tests/ibd_pow_budget_tests.cpp -o "$RUNNER_TEMP/pow-progress"
+          "$RUNNER_TEMP/pow-progress"
       - name: Verify private fixture exclusion from public profiles
         if: matrix.fixture == 'coinbase_cap_admission_tests'
         run: python3 tests/coinbase_fixture_profile_tests.py --compiler c++ --output-dir "$RUNNER_TEMP/coinbase-profiles"

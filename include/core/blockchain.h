@@ -5545,7 +5545,8 @@ class Blockchain {
         const auto credit_forward_pow = [&]() {
             if (!extends_current_tip || known_side_retry)
                 return;
-            forward_global_charge.CreditValidatedForwardBlock(derived_height);
+            forward_global_charge.CreditValidatedForwardBlock(derived_height,
+                                                              forward_pow_progress_);
             forward_source_charge.CreditValidatedForwardBlock(derived_height);
         };
         if (extends_current_tip && module_precommit_validator_) {
@@ -6669,6 +6670,7 @@ class Blockchain {
   private:
     std::atomic<uint64_t> staking_activation_units_{STAKING_ACTIVATION_SUPPLY};
     mutable std::shared_mutex chain_mutex_;
+    mining::ExpensivePowProgress forward_pow_progress_;
     mutable std::mutex block_connect_mutex_;
     std::atomic<uint64_t> atomic_height_{0};
     std::atomic<uint64_t> local_validation_ceiling_{0};

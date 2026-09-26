@@ -87,5 +87,38 @@ int main() {
     fresh.reset();
     Check(!old_charge.CreditValidatedForwardBlock(1), "old window cannot refund a new charge");
     Check(!rolling.TryAcquire(ExpensivePowUse::PeerBlock), "new window remains exhausted");
+
+    static_assert(!std::is_copy_constructible_v<ExpensivePowProgress>);
+    static_assert(!std::is_move_constructible_v<ExpensivePowProgress>);
+    auto& shared = GlobalExpensivePowBudget();
+    ExpensivePowProgress foreground, background;
+    auto credit = [&](uint64_t height, ExpensivePowProgress& progress) {
+        auto acquired = shared.TryAcquire(ExpensivePowUse::PeerBlock);
+        Check(acquired.has_value(), "shared production budget admits valid history");
+        auto charged = acquired->TakeForwardCharge();
+        acquired.reset();
+        Check(charged.CreditValidatedForwardBlock(height, progress),
+              "each local chainstate credits its own committed forward progress");
+        Check(!charged.CreditValidatedForwardBlock(height + 1, progress),
+              "scoped receipt remains single use");
+    };
+    credit(11773, foreground);
+    for (uint64_t height = 1; height <= 1000; ++height) {
+        credit(height, background);
+        if (height % 16 == 0)
+            credit(11773 + height, foreground);
+    }
+    for (unsigned i = 0; i < 32; ++i) {
+        auto acquired = shared.TryAcquire(ExpensivePowUse::PeerBlock);
+        Check(acquired.has_value(), "original global non-progress allowance remains");
+        auto charged = acquired->TakeForwardCharge();
+        acquired.reset();
+        Check(!charged.CreditValidatedForwardBlock(1000 - i, background),
+              "same-chain replay and rollback cannot mint progress credit");
+    }
+    Check(!shared.TryAcquire(ExpensivePowUse::PeerBlock),
+          "independent chainstates still share the original global rate limit");
+    Check(shared.TryAcquire(ExpensivePowUse::InternalMine).has_value(),
+          "background exhaustion does not consume the internal allowance");
     std::cout << "IBD_POW_BUDGET: PASS (" << checks << " checks)\n";
 }

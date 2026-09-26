@@ -59,6 +59,15 @@ struct ExpensivePowBudgetStats {
 class ExpensivePowBudget;
 class ExpensivePowCharge;
 
+// A locally owned chainstate's durable forward progress. Keep this object for
+// the chainstate's lifetime, including reorgs; peer messages cannot select or
+// reset it. Independent snapshot validation needs its own high-water mark.
+class ExpensivePowProgress {
+  private:
+    friend class ExpensivePowBudget;
+    std::atomic<uint64_t> credited_height_{0};
+};
+
 class ExpensivePowLease {
   public:
     ExpensivePowLease() = default;
@@ -153,14 +162,17 @@ class ExpensivePowBudget {
             charge = external_window_started_;
         return true;
     }
-    bool CreditForwardProgress_(std::chrono::steady_clock::time_point window,
-                                uint64_t height) noexcept {
+    bool CreditForwardProgress_(std::chrono::steady_clock::time_point window, uint64_t height,
+                                ExpensivePowProgress& progress) noexcept {
         std::lock_guard<std::mutex> lock(external_work_mutex_);
         // Reorgs, old history and repeated heights cannot replenish the work
         // envelope. An old charge must never refund work in a newer window.
-        if (height <= credited_forward_height_)
-            return false;
-        credited_forward_height_ = height;
+        uint64_t credited = progress.credited_height_.load(std::memory_order_acquire);
+        do {
+            if (height <= credited)
+                return false;
+        } while (!progress.credited_height_.compare_exchange_weak(
+            credited, height, std::memory_order_acq_rel, std::memory_order_acquire));
         if (window != external_window_started_ || external_starts_ == 0)
             return false;
         --external_starts_;
@@ -172,7 +184,7 @@ class ExpensivePowBudget {
     std::mutex external_work_mutex_;
     std::chrono::steady_clock::time_point external_window_started_;
     uint32_t external_starts_{0};
-    uint64_t credited_forward_height_{0};
+    ExpensivePowProgress default_forward_progress_;
     std::atomic<uint32_t> in_flight_{0};
     std::atomic<uint32_t> peak_{0};
     std::atomic<uint64_t> attempts_{0};
@@ -200,7 +212,12 @@ class ExpensivePowCharge {
     }
     bool CreditValidatedForwardBlock(uint64_t height) noexcept {
         auto* owner = std::exchange(owner_, nullptr);
-        return owner && owner->CreditForwardProgress_(window_, height);
+        return owner &&
+               owner->CreditForwardProgress_(window_, height, owner->default_forward_progress_);
+    }
+    bool CreditValidatedForwardBlock(uint64_t height, ExpensivePowProgress& progress) noexcept {
+        auto* owner = std::exchange(owner_, nullptr);
+        return owner && owner->CreditForwardProgress_(window_, height, progress);
     }
 
   private:
