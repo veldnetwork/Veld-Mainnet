@@ -70,6 +70,31 @@ int main() {
     using namespace veld;
     using namespace veld::mining;
 
+    {
+        auto history = MineFresh(0x81, 48);
+        Blockchain foreground, background;
+        Init(foreground);
+        Init(background);
+        for (auto* verifying : {&foreground, &background}) {
+            auto source_budget = std::make_shared<ExpensivePowBudget>(1, 8);
+            for (auto block : history) {
+                auto admitted = verifying->AddBlockDirect(
+                    block, false, true, false,
+                    PowAdmissionContext::Peer("192.0.2.1", source_budget));
+                Check(admitted.IsAccepted(),
+                      "independent chainstate commits beyond the global 32-block window");
+                if (!admitted.IsAccepted()) {
+                    std::cerr << "background progress refusal: " << Blockchain::GetLastRejectTag()
+                              << '\n';
+                    return 1;
+                }
+            }
+        }
+        Check(foreground.Height() == 48 && background.Height() == 48 &&
+                  foreground.TipCopy().GetHash() == background.TipCopy().GetHash(),
+              "independent fully validated histories reach identical tips");
+    }
+
     Blockchain chain;
     Init(chain);
     auto main_blocks = MineFresh(0x21, 4);
