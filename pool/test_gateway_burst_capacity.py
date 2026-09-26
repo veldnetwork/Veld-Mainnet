@@ -20,11 +20,27 @@ class BurstCapacity(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="veld-gateway-burst-") as temp:
             root = Path(temp)
             subprocess.run(
-                ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-                 "-days", "1", "-keyout", str(root / "key.pem"), "-out",
-                 str(root / "cert.pem"), "-subj", "/CN=localhost",
-                 "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"],
-                check=True, capture_output=True)
+                [
+                    "openssl",
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-nodes",
+                    "-days",
+                    "1",
+                    "-keyout",
+                    str(root / "key.pem"),
+                    "-out",
+                    str(root / "cert.pem"),
+                    "-subj",
+                    "/CN=localhost",
+                    "-addext",
+                    "subjectAltName=DNS:localhost,IP:127.0.0.1",
+                ],
+                check=True,
+                capture_output=True,
+            )
 
             class IPC(socketserver.StreamRequestHandler):
                 def handle(self):
@@ -43,19 +59,20 @@ class BurstCapacity(unittest.TestCase):
             context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.load_cert_chain(root / "cert.pem", root / "key.pem")
             gateway = Gateway(("127.0.0.1", 0), context, str(root / "ipc.sock"))
-            gateway_thread = threading.Thread(target=gateway.serve_forever,
-                                              daemon=True)
+            gateway_thread = threading.Thread(target=gateway.serve_forever, daemon=True)
             gateway_thread.start()
             trust = ssl.create_default_context(cafile=str(root / "cert.pem"))
             barrier = threading.Barrier(35)
 
             def request(_):
                 connection = http.client.HTTPSConnection(
-                    "127.0.0.1", gateway.server_port, context=trust, timeout=8)
+                    "127.0.0.1", gateway.server_port, context=trust, timeout=8
+                )
                 try:
                     barrier.wait(timeout=5)
-                    connection.request("POST", "/v1/work", b"{}",
-                                       {"Content-Type": "application/json"})
+                    connection.request(
+                        "POST", "/v1/work", b"{}", {"Content-Type": "application/json"}
+                    )
                     response = connection.getresponse()
                     return response.status, json.loads(response.read(16385))
                 finally:
@@ -71,8 +88,9 @@ class BurstCapacity(unittest.TestCase):
                         except Exception as error:
                             outcomes.append((type(error).__name__, str(error)[:80]))
                 expected = (200, {"ok": True, "result": {"fixture": True}})
-                failed = [(n, value) for n, value in enumerate(outcomes)
-                          if value != expected]
+                failed = [
+                    (n, value) for n, value in enumerate(outcomes) if value != expected
+                ]
                 self.assertFalse(failed, f"{len(failed)} of 35 failed: {failed}")
             finally:
                 gateway.shutdown()
