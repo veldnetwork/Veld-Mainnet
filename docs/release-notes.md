@@ -1,3 +1,9 @@
+## 3.2.8 - First sync and pool connection recovery
+
+- Initial sync continues requesting the canonical chain when a peer's download cursor runs ahead of the local header chain.
+- Address-only settings saves wait through short Windows file locks and retain the prior settings if a save cannot complete.
+- The pool gateway and private coordinator admit larger bounded request bursts.
+
 ## 3.2.7 - Address-only mining, startup and pool reliability
 
 - Solo mining can pay a chosen address without creating or unlocking a wallet
