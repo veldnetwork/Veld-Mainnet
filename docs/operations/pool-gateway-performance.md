@@ -9,11 +9,10 @@ credentials, resource errors, and normal legacy `Connection: close` requests
 close the connection as before.
 
 Each connection serves at most 16 responses and has a two-second idle timeout.
-The existing 32 gateway slots, 16 coordinator slots, per-action rates, body
-bounds, signature checks and durable accounting remain unchanged. The private
-coordinator's bounded kernel accept queue is 32 instead of Python's default
-five, so short scheduling bursts need not fail before an active handler can be
-admitted. Operator handlers and their queue remain capped at four.
+The gateway and coordinator each allow 64 active handlers and a 64-connection
+kernel accept queue. Admission waits up to three seconds for a handler before
+closing an overloaded connection. Operator handlers and their queue are capped
+at four. These bounds include retained idle connections.
 
 Small responses are buffered up to 64 KiB per handler and TCP_NODELAY is enabled.
 This avoids unnecessary small TLS writes and acknowledgement waits when using
@@ -34,12 +33,12 @@ upstream veld_pool_worker_backend {
 }
 ```
 
-For the existing authenticated worker API location, change only the upstream
-and explicit connection preference:
+For the authenticated worker API location:
 
 ```nginx
 proxy_pass https://veld_pool_worker_backend;
 proxy_set_header Connection keep-alive;
+proxy_next_upstream off;
 ```
 
 Retain HTTP/1.1, upstream certificate verification, the trusted CA, expected TLS
@@ -51,6 +50,32 @@ The cache is per nginx worker; two entries across four workers retain at most
 eight idle upstream connections. Active plus idle connections are still bounded
 by the gateway's existing slot cap. This setting is not an increase in the
 gateway's admission or verification capacity.
+
+## Client identity behind a tunnel
+
+A loopback tunnel gives every connection the same socket source address. Without
+authenticated forwarding, the gateway's 400-requests-per-ten-second action limit
+is shared by all miners. Configure `proxy_client_ca` in the private gateway JSON
+to trust a dedicated client-certificate authority, and bind the gateway to
+loopback. This mode requires a verified proxy client certificate for every TLS
+connection and exactly one valid `X-Veld-Client-IP` header on every request.
+
+In each proxied API location, including registration and public status, use:
+
+```nginx
+proxy_ssl_certificate /private/path/proxy-client.pem;
+proxy_ssl_certificate_key /private/path/proxy-client.key;
+proxy_set_header X-Veld-Client-IP $remote_addr;
+```
+
+The proxy must overwrite the header. If another edge proxy precedes nginx,
+restore the real client address only from explicitly trusted proxy networks.
+Retain verification of the gateway's server certificate, expected server name,
+and upstream CA. Keep the proxy client key restricted to the proxy service and
+track its expiration. Direct gateway mode ignores forwarded identity headers.
+
+The per-client action budget is 400 requests in ten seconds, with registration
+limited to four. The rate table is bounded to 4,096 active address/action pairs.
 
 ## Qualification
 
@@ -65,6 +90,13 @@ gateway's admission or verification capacity.
   actual TLS gateway and Unix IPC in an isolated namespace; checks existing
   one-request clients, upstream connection reuse, concurrent delivery and refusal
   of an incorrect upstream certificate identity. Requires nginx, openssl and ip.
+- `python3 -B -m unittest pool.test_gateway_sustained_capacity`: bounded burst
+  admission, independent client budgets, direct-header spoofing refusal, and
+  required client certificate and source-header validation.
+- `unshare --net -- python3 -B -m pool.test_gateway_proxy_identity`: native nginx
+  overwrites a forged identity, serves sustained traffic from 40 synthetic
+  clients through mutual TLS, and refuses missing client authentication or an
+  incorrect gateway certificate identity.
 
 These focused transport tests do not establish mining or payout E2E. Rebuild
 the pool with its normal production controller from the exact clean source.
