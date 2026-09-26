@@ -30,9 +30,8 @@ size_t g_checks = 0;
 void Check(bool condition, const char* expression, int line) {
     ++g_checks;
     if (!condition) {
-        throw std::runtime_error(
-            std::string("check failed: ") + expression + " at line " +
-            std::to_string(line));
+        throw std::runtime_error(std::string("check failed: ") + expression + " at line " +
+                                 std::to_string(line));
     }
 }
 
@@ -101,20 +100,22 @@ std::filesystem::path FixturePath(const std::string& name) {
         std::filesystem::current_path() / "tests" / "fixtures" / name,
     };
     for (const auto& candidate : candidates) {
-        if (std::filesystem::exists(candidate)) return candidate;
+        if (std::filesystem::exists(candidate))
+            return candidate;
     }
     throw std::runtime_error("missing selector fixture: " + name);
 }
 
 Transaction LoadTransactionFixture(const std::string& name) {
     std::ifstream input(FixturePath(name), std::ios::binary);
-    if (!input) throw std::runtime_error("failed to open fixture: " + name);
+    if (!input)
+        throw std::runtime_error("failed to open fixture: " + name);
     std::ostringstream contents;
     contents << input.rdbuf();
     std::string hex = contents.str();
-    hex.erase(std::remove_if(hex.begin(), hex.end(), [](unsigned char c) {
-        return std::isspace(c) != 0;
-    }), hex.end());
+    hex.erase(std::remove_if(hex.begin(), hex.end(),
+                             [](unsigned char c) { return std::isspace(c) != 0; }),
+              hex.end());
     const std::vector<uint8_t> bytes = veld::HexToBytes(hex);
     if (bytes.empty() || bytes.size() * 2 != hex.size())
         throw std::runtime_error("malformed fixture hex: " + name);
@@ -131,7 +132,8 @@ std::string Txid(const Transaction& tx) {
 
 bool Contains(const Block& block, const std::string& txid) {
     for (size_t i = 1; i < block.transactions.size(); ++i) {
-        if (Txid(block.transactions[i]) == txid) return true;
+        if (Txid(block.transactions[i]) == txid)
+            return true;
     }
     return false;
 }
@@ -151,12 +153,9 @@ void ExactPreservedThreeCandidateRegression() {
     static const std::string kC =
         "fd65154ba4c5134762ee833d3318f68cb2cbedaefa519b741524e510fc4e8370";
 
-    const Transaction a = LoadTransactionFixture(
-        "rsv_rtp1_inclusion_01_A.hex");
-    const Transaction b = LoadTransactionFixture(
-        "rsv_rtp1_inclusion_01_B.hex");
-    const Transaction c = LoadTransactionFixture(
-        "rsv_rtp1_inclusion_01_C.hex");
+    const Transaction a = LoadTransactionFixture("rsv_rtp1_inclusion_01_A.hex");
+    const Transaction b = LoadTransactionFixture("rsv_rtp1_inclusion_01_B.hex");
+    const Transaction c = LoadTransactionFixture("rsv_rtp1_inclusion_01_C.hex");
     CHECK(Txid(a) == kA);
     CHECK(Txid(b) == kB);
     CHECK(Txid(c) == kC);
@@ -169,11 +168,15 @@ void ExactPreservedThreeCandidateRegression() {
     const std::string payment_id = Txid(payment);
     const std::string mandatory_id = Txid(mandatory);
     const std::vector<std::pair<Transaction, uint64_t>> ordered{
-        {a, 100'000}, {b, 100'000}, {c, 100'000}, {payment, 700},
+        {a, 100'000},
+        {b, 100'000},
+        {c, 100'000},
+        {payment, 700},
     };
     const std::vector<Transaction> mandatory_txs{mandatory};
     std::vector<std::vector<uint8_t>> before;
-    for (const auto& entry : ordered) before.push_back(entry.first.Serialize());
+    for (const auto& entry : ordered)
+        before.push_back(entry.first.Serialize());
 
     size_t mandatory_observations = 0;
     auto preflight = [&](const Block& block) {
@@ -183,9 +186,8 @@ void ExactPreservedThreeCandidateRegression() {
         return !Contains(block, kA) && !Contains(block, kB);
     };
 
-    ConstructivePreflightSelection selected =
-        SelectConstructivePreflightCandidate(
-            Skeleton(), ordered, mandatory_txs, BuildCoinbase, preflight);
+    ConstructivePreflightSelection selected = SelectConstructivePreflightCandidate(
+        Skeleton(), ordered, mandatory_txs, BuildCoinbase, preflight);
 
     CHECK(selected.success);
     CHECK(selected.used_fallback);
@@ -201,8 +203,7 @@ void ExactPreservedThreeCandidateRegression() {
     CHECK(Contains(selected.candidate, kC));
     CHECK(Contains(selected.candidate, payment_id));
     CHECK(selected.retained_fees == 100'700);
-    CHECK(selected.candidate.transactions.front().TotalOutput() ==
-          5'100'700);
+    CHECK(selected.candidate.transactions.front().TotalOutput() == 5'100'700);
     CHECK(NonCoinbaseTxids(selected.candidate) ==
           std::vector<std::string>({kC, payment_id, mandatory_id}));
     CHECK(preflight(selected.candidate));
@@ -212,14 +213,13 @@ void ExactPreservedThreeCandidateRegression() {
 }
 
 void PriorityAndProtocolCases() {
-    const Transaction invalid_high =
-        MarkerTx("VELD_FRAUD|stale-fsp2", 0x10);
-    const Transaction valid_low =
-        MarkerTx("VELD_RSV1|valid-rtp1", 0x11);
+    const Transaction invalid_high = MarkerTx("VELD_FRAUD|stale-fsp2", 0x10);
+    const Transaction valid_low = MarkerTx("VELD_RSV1|valid-rtp1", 0x11);
     const std::string invalid_high_id = Txid(invalid_high);
     const std::string valid_low_id = Txid(valid_low);
     std::vector<std::pair<Transaction, uint64_t>> ordered{
-        {invalid_high, 900}, {valid_low, 100},
+        {invalid_high, 900},
+        {valid_low, 100},
     };
     const std::vector<Transaction> no_mandatory;
     auto selected = SelectConstructivePreflightCandidate(
@@ -236,8 +236,7 @@ void PriorityAndProtocolCases() {
     const std::string second_id = Txid(second);
     ordered = {{first, 500}, {second, 400}};
     selected = SelectConstructivePreflightCandidate(
-        Skeleton(), ordered, no_mandatory, BuildCoinbase,
-        [&](const Block& block) {
+        Skeleton(), ordered, no_mandatory, BuildCoinbase, [&](const Block& block) {
             return !(Contains(block, first_id) && Contains(block, second_id));
         });
     CHECK(selected.success);
@@ -253,9 +252,7 @@ void PriorityAndProtocolCases() {
     ordered = {{amm, 10}, {rtp, 1'000}};
     selected = SelectConstructivePreflightCandidate(
         Skeleton(), ordered, no_mandatory, BuildCoinbase,
-        [&](const Block& block) {
-            return !(Contains(block, amm_id) && Contains(block, rtp_id));
-        });
+        [&](const Block& block) { return !(Contains(block, amm_id) && Contains(block, rtp_id)); });
     CHECK(selected.success);
     CHECK(Contains(selected.candidate, amm_id));
     CHECK(!Contains(selected.candidate, rtp_id));
@@ -265,9 +262,7 @@ void PriorityAndProtocolCases() {
     ordered = {{invalid_amm, 2'000}, {rtp, 1'000}};
     selected = SelectConstructivePreflightCandidate(
         Skeleton(), ordered, no_mandatory, BuildCoinbase,
-        [&](const Block& block) {
-            return !Contains(block, invalid_amm_id);
-        });
+        [&](const Block& block) { return !Contains(block, invalid_amm_id); });
     CHECK(selected.success);
     CHECK(!Contains(selected.candidate, invalid_amm_id));
     CHECK(Contains(selected.candidate, rtp_id));
@@ -280,10 +275,8 @@ void PriorityAndProtocolCases() {
     const std::string child_id = Txid(child);
     ordered = {{parent, 10}, {child, 20}};
     selected = SelectConstructivePreflightCandidate(
-        Skeleton(), ordered, no_mandatory, BuildCoinbase,
-        [&](const Block& block) {
-            return NonCoinbaseTxids(block) ==
-                std::vector<std::string>({parent_id, child_id});
+        Skeleton(), ordered, no_mandatory, BuildCoinbase, [&](const Block& block) {
+            return NonCoinbaseTxids(block) == std::vector<std::string>({parent_id, child_id});
         });
     CHECK(selected.success);
     CHECK(!selected.used_fallback);
@@ -298,14 +291,11 @@ void PriorityAndProtocolCases() {
     ordered = {{mint, 30}, {add, 20}};
     selected = SelectConstructivePreflightCandidate(
         Skeleton(), ordered, no_mandatory, BuildCoinbase,
-        [&](const Block& block) {
-            return Contains(block, mint_id) == Contains(block, add_id);
-        });
+        [&](const Block& block) { return Contains(block, mint_id) == Contains(block, add_id); });
     CHECK(selected.success);
     CHECK(!selected.used_fallback);
     CHECK(selected.preflight_calls == 1);
-    CHECK(NonCoinbaseTxids(selected.candidate) ==
-          std::vector<std::string>({mint_id, add_id}));
+    CHECK(NonCoinbaseTxids(selected.candidate) == std::vector<std::string>({mint_id, add_id}));
 }
 
 void BaselineParityDeterminismAndBounds() {
@@ -316,7 +306,8 @@ void BaselineParityDeterminismAndBounds() {
     const std::string stateful_id = Txid(stateful);
     const std::string mandatory_id = Txid(mandatory);
     const std::vector<std::pair<Transaction, uint64_t>> ordered{
-        {ordinary, 7}, {stateful, 11},
+        {ordinary, 7},
+        {stateful, 11},
     };
     const std::vector<Transaction> mandatory_txs{mandatory};
 
@@ -326,8 +317,7 @@ void BaselineParityDeterminismAndBounds() {
     CHECK(!baseline_failure.success);
     CHECK(baseline_failure.used_fallback);
     CHECK(baseline_failure.preflight_calls == 2);
-    CHECK(baseline_failure.error ==
-          "non-stateful/mandatory baseline failed module preflight");
+    CHECK(baseline_failure.error == "non-stateful/mandatory baseline failed module preflight");
     CHECK(Contains(baseline_failure.candidate, ordinary_id));
     CHECK(!Contains(baseline_failure.candidate, stateful_id));
     CHECK(Contains(baseline_failure.candidate, mandatory_id));
@@ -343,37 +333,30 @@ void BaselineParityDeterminismAndBounds() {
     // This is the shared-helper determinism check. The production MineOnly
     // and getblocktemplate wrappers are exercised separately by the required
     // real-process gate with the same preserved transactions.
-    auto first_selection = SelectConstructivePreflightCandidate(
-        Skeleton(), ordered, mandatory_txs, BuildCoinbase,
-        restoring_preflight);
+    auto first_selection = SelectConstructivePreflightCandidate(Skeleton(), ordered, mandatory_txs,
+                                                                BuildCoinbase, restoring_preflight);
     auto second_selection = SelectConstructivePreflightCandidate(
-        Skeleton(), ordered, mandatory_txs, BuildCoinbase,
-        restoring_preflight);
+        Skeleton(), ordered, mandatory_txs, BuildCoinbase, restoring_preflight);
     CHECK(first_selection.success);
     CHECK(second_selection.success);
     CHECK(modeled_consensus_state == 73);
-    CHECK(first_selection.candidate.Serialize() ==
-          second_selection.candidate.Serialize());
-    CHECK(first_selection.retained_fees ==
-          second_selection.retained_fees);
-    CHECK(first_selection.retained_mempool ==
-          second_selection.retained_mempool);
-    CHECK(first_selection.preflight_calls ==
-          second_selection.preflight_calls);
+    CHECK(first_selection.candidate.Serialize() == second_selection.candidate.Serialize());
+    CHECK(first_selection.retained_fees == second_selection.retained_fees);
+    CHECK(first_selection.retained_mempool == second_selection.retained_mempool);
+    CHECK(first_selection.preflight_calls == second_selection.preflight_calls);
     CHECK(first_selection.preflight_calls == 3); // 2 + one stateful request
 
-    auto repeat = SelectConstructivePreflightCandidate(
-        Skeleton(), ordered, mandatory_txs, BuildCoinbase,
-        restoring_preflight);
-    CHECK(repeat.candidate.Serialize() ==
-          first_selection.candidate.Serialize());
-    CHECK(repeat.retained_mempool ==
-          first_selection.retained_mempool);
+    auto repeat = SelectConstructivePreflightCandidate(Skeleton(), ordered, mandatory_txs,
+                                                       BuildCoinbase, restoring_preflight);
+    CHECK(repeat.candidate.Serialize() == first_selection.candidate.Serialize());
+    CHECK(repeat.retained_mempool == first_selection.retained_mempool);
 
     size_t full_calls = 0;
-    auto fast = SelectConstructivePreflightCandidate(
-        Skeleton(), ordered, mandatory_txs, BuildCoinbase,
-        [&](const Block&) { ++full_calls; return true; });
+    auto fast = SelectConstructivePreflightCandidate(Skeleton(), ordered, mandatory_txs,
+                                                     BuildCoinbase, [&](const Block&) {
+                                                         ++full_calls;
+                                                         return true;
+                                                     });
     CHECK(fast.success);
     CHECK(!fast.used_fallback);
     CHECK(full_calls == 1);
@@ -388,9 +371,11 @@ void BaselineParityDeterminismAndBounds() {
         {stateful, 1},
     };
     size_t overflow_calls = 0;
-    auto overflow_result = SelectConstructivePreflightCandidate(
-        Skeleton(), overflow, mandatory_txs, BuildCoinbase,
-        [&](const Block&) { ++overflow_calls; return true; });
+    auto overflow_result = SelectConstructivePreflightCandidate(Skeleton(), overflow, mandatory_txs,
+                                                                BuildCoinbase, [&](const Block&) {
+                                                                    ++overflow_calls;
+                                                                    return true;
+                                                                });
     CHECK(!overflow_result.success);
     CHECK(overflow_result.error == "mempool fee accounting overflow");
     CHECK(overflow_calls == 0);
@@ -403,17 +388,13 @@ void SharedClassifierCases() {
         CHECK(MiningTxTouchesStatefulProtocol(
             MarkerTx(prefix + "payload", static_cast<uint8_t>(0x80 + family))));
         CHECK(!MiningTxTouchesStatefulProtocol(
-            MarkerTx("X" + prefix + "payload",
-                     static_cast<uint8_t>(0xa0 + family))));
+            MarkerTx("X" + prefix + "payload", static_cast<uint8_t>(0xa0 + family))));
     }
     CHECK(!MiningTxTouchesStatefulProtocol(OrdinaryTx(0xf0)));
-    CHECK(!MiningTxTouchesStatefulProtocol(
-        MarkerTx("VELD_DIST|ordinary-distribution", 0xf2)));
+    CHECK(!MiningTxTouchesStatefulProtocol(MarkerTx("VELD_DIST|ordinary-distribution", 0xf2)));
 
-    CHECK(MiningTxTouchesStatefulProtocol(
-        MarkerTx("VELD_RSV1|" + std::string(80, 'a'), 0xf3)));
-    CHECK(MiningTxTouchesStatefulProtocol(
-        MarkerTx("VELD_RSV1|" + std::string(300, 'b'), 0xf4)));
+    CHECK(MiningTxTouchesStatefulProtocol(MarkerTx("VELD_RSV1|" + std::string(80, 'a'), 0xf3)));
+    CHECK(MiningTxTouchesStatefulProtocol(MarkerTx("VELD_RSV1|" + std::string(300, 'b'), 0xf4)));
 
     Transaction malformed = MarkerTx("VELD_RSV1|payload", 0xf1);
     malformed.outputs[0].script_pubkey[1] += 1;
@@ -428,15 +409,12 @@ int main() {
         PriorityAndProtocolCases();
         BaselineParityDeterminismAndBounds();
         SharedClassifierCases();
-        std::cout << "PASS mining_preflight_selector_tests checks="
-                  << g_checks
+        std::cout << "PASS mining_preflight_selector_tests checks=" << g_checks
                   << " exact_case=31e1c780,9b5dffb8,fd65154b"
-                  << " fast_path_preflights=1 fallback_bound=2_plus_stateful"
-                  << '\n';
+                  << " fast_path_preflights=1 fallback_bound=2_plus_stateful" << '\n';
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "FAIL mining_preflight_selector_tests: "
-                  << error.what() << '\n';
+        std::cerr << "FAIL mining_preflight_selector_tests: " << error.what() << '\n';
         return 1;
     }
 }

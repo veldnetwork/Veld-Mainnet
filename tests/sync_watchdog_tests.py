@@ -1,4 +1,5 @@
 """Execute the shipping watchdog branch with an inert node in a local C++ harness."""
+
 from pathlib import Path
 import argparse
 import os

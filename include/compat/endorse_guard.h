@@ -54,7 +54,7 @@ class EndorseAntiEquivGuard {
 #else
         if (!sf::OpenParent(std::filesystem::path(path), false, parent_, &error_))
             return false;
-        struct stat parent_stat{};
+        struct stat parent_stat {};
         if (::fstat(parent_.fd, &parent_stat) != 0 || (parent_stat.st_mode & 0022))
             return Fail_("journal directory must not be writable by other users");
         fd_ = ::openat(parent_.fd, parent_.base.c_str(),
@@ -203,7 +203,8 @@ class EndorseAntiEquivGuard {
             ((uint64_t(now.nFileSizeHigh) << 32) | now.nFileSizeLow) != size_)
             return Fail_("journal changed while signing; signing stopped");
 #else
-        struct stat now{}, named{};
+        struct stat now {
+        }, named{};
         if (::fstat(fd_, &now) != 0 ||
             ::fstatat(parent_.fd, parent_.base.c_str(), &named, AT_SYMLINK_NOFOLLOW) != 0 ||
             now.st_dev != named.st_dev || now.st_ino != named.st_ino || now.st_nlink != 1 ||
@@ -225,6 +226,6 @@ class EndorseAntiEquivGuard {
 #else
     veld::channel::secure_file::ParentFd parent_;
     int fd_{-1};
-    struct stat identity_{};
+    struct stat identity_ {};
 #endif
 };

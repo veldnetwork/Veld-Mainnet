@@ -3,6 +3,7 @@
 A job controls lifetime and resources, not custody-key isolation. The caller
 must independently pin the executable and provide a constrained signing policy.
 """
+
 import ctypes
 from ctypes import wintypes as w
 import os
@@ -16,15 +17,22 @@ def run_managed(argv, input_raw, *, timeout, stdout_max, stderr_max, env=None):
         raise RuntimeError("managed Windows processes require Windows")
     import _winapi
     import msvcrt
-    if (not argv or not os.path.isabs(argv[0]) or not argv[0].lower().endswith(".exe") or
-            argv[0].startswith(("\\\\", "//"))):
+
+    if (
+        not argv
+        or not os.path.isabs(argv[0])
+        or not argv[0].lower().endswith(".exe")
+        or argv[0].startswith(("\\\\", "//"))
+    ):
         raise RuntimeError("managed worker requires an absolute local executable path")
     command = subprocess.list2cmdline(argv)
     if len(command) >= 32767:
         raise RuntimeError("managed worker command is oversized")
     environment = dict(os.environ if env is None else env)
-    if any(type(k) is not str or not k or "=" in k or "\0" in k or
-           type(v) is not str or "\0" in v for k, v in environment.items()):
+    if any(
+        type(k) is not str or not k or "=" in k or "\0" in k or type(v) is not str or "\0" in v
+        for k, v in environment.items()
+    ):
         raise RuntimeError("managed worker environment is malformed")
     if sum(len(k) + len(v) + 2 for k, v in environment.items()) >= 32767:
         raise RuntimeError("managed worker environment is oversized")
@@ -33,16 +41,33 @@ def run_managed(argv, input_raw, *, timeout, stdout_max, stderr_max, env=None):
     size = ctypes.c_size_t
 
     class BasicLimits(ctypes.Structure):
-        _fields_ = [("process_time", ctypes.c_int64), ("job_time", ctypes.c_int64),
-            ("flags", w.DWORD), ("minimum_working_set", size), ("maximum_working_set", size),
-            ("active_process_limit", w.DWORD), ("affinity", size), ("priority", w.DWORD), ("scheduling", w.DWORD)]
+        _fields_ = [
+            ("process_time", ctypes.c_int64),
+            ("job_time", ctypes.c_int64),
+            ("flags", w.DWORD),
+            ("minimum_working_set", size),
+            ("maximum_working_set", size),
+            ("active_process_limit", w.DWORD),
+            ("affinity", size),
+            ("priority", w.DWORD),
+            ("scheduling", w.DWORD),
+        ]
 
     class IoCounters(ctypes.Structure):
-        _fields_ = [(name, ctypes.c_uint64) for name in ("reads", "writes", "others", "read_bytes", "write_bytes", "other_bytes")]
+        _fields_ = [
+            (name, ctypes.c_uint64)
+            for name in ("reads", "writes", "others", "read_bytes", "write_bytes", "other_bytes")
+        ]
 
     class ExtendedLimits(ctypes.Structure):
-        _fields_ = [("basic", BasicLimits), ("io", IoCounters), ("process_memory", size),
-            ("job_memory", size), ("peak_process_memory", size), ("peak_job_memory", size)]
+        _fields_ = [
+            ("basic", BasicLimits),
+            ("io", IoCounters),
+            ("process_memory", size),
+            ("job_memory", size),
+            ("peak_process_memory", size),
+            ("peak_job_memory", size),
+        ]
 
     def api(name, result, *args):
         function = getattr(kernel, name)
@@ -90,7 +115,7 @@ def run_managed(argv, input_raw, *, timeout, stdout_max, stderr_max, env=None):
         try:
             offset = 0
             while offset < len(input_raw):
-                offset += os.write(fd, input_raw[offset:offset + 65536])
+                offset += os.write(fd, input_raw[offset : offset + 65536])
         except BrokenPipeError:
             pass
         except OSError as exc:
@@ -120,19 +145,35 @@ def run_managed(argv, input_raw, *, timeout, stdout_max, stderr_max, env=None):
         startup.wShowWindow = subprocess.SW_HIDE
         startup.hStdInput, startup.hStdOutput, startup.hStdError = inherited
         startup.lpAttributeList = {"handle_list": inherited}
-        process, thread, pid, tid = _winapi.CreateProcess(argv[0], command, None, None,
-            True, 0x4 | 0x08000000, environment, os.path.dirname(os.path.abspath(argv[0])), startup)
+        process, thread, pid, tid = _winapi.CreateProcess(
+            argv[0],
+            command,
+            None,
+            None,
+            True,
+            0x4 | 0x08000000,
+            environment,
+            os.path.dirname(os.path.abspath(argv[0])),
+            startup,
+        )
         if not assign(job, process):
             raise ctypes.WinError(ctypes.get_last_error())
         for handle in inherited:
             _winapi.CloseHandle(handle)
             handles.remove(handle)
-        for handle, mode in ((stdin_write, os.O_WRONLY), (stdout_read, os.O_RDONLY), (stderr_read, os.O_RDONLY)):
+        for handle, mode in (
+            (stdin_write, os.O_WRONLY),
+            (stdout_read, os.O_RDONLY),
+            (stderr_read, os.O_RDONLY),
+        ):
             fd = msvcrt.open_osfhandle(handle, mode | os.O_BINARY)
             handles.remove(handle)
             fds.append(fd)
-        work = [(writer, (fds[0],)), (reader, (fds[1], "stdout", stdout_max)),
-                (reader, (fds[2], "stderr", stderr_max))]
+        work = [
+            (writer, (fds[0],)),
+            (reader, (fds[1], "stdout", stdout_max)),
+            (reader, (fds[2], "stderr", stderr_max)),
+        ]
         for target, args in work:
             worker = threading.Thread(target=target, args=args, daemon=True)
             fd = fds.pop(0)
@@ -142,7 +183,7 @@ def run_managed(argv, input_raw, *, timeout, stdout_max, stderr_max, env=None):
                 os.close(fd)
                 raise
             threads.append(worker)
-        if resume(thread) == 0xffffffff:
+        if resume(thread) == 0xFFFFFFFF:
             raise ctypes.WinError(ctypes.get_last_error())
         _winapi.CloseHandle(thread)
         thread = None
@@ -159,8 +200,9 @@ def run_managed(argv, input_raw, *, timeout, stdout_max, stderr_max, env=None):
             raise subprocess.TimeoutExpired(argv, timeout)
         if failures:
             raise failures[0]
-        return subprocess.CompletedProcess(argv, returncode,
-            stdout=bytes(buffers["stdout"]), stderr=bytes(buffers["stderr"]))
+        return subprocess.CompletedProcess(
+            argv, returncode, stdout=bytes(buffers["stdout"]), stderr=bytes(buffers["stderr"])
+        )
     finally:
         terminate(job, 1)
         if process is not None:

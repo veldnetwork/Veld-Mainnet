@@ -1,4 +1,5 @@
 """Role changes must not invent peers, alter links, or expose addresses."""
+
 import copy
 import importlib.util
 import json
@@ -24,23 +25,46 @@ class AdvertisedRolesTests(unittest.TestCase):
         salt.write_bytes(b'topology-role-unit-test-only-salt')
         self.fleets = ['192.0.2.1', '192.0.2.2', '192.0.2.3']
         self.peers = ['198.51.100.' + str(i) for i in range(1, 7)]
-        known = {ip: {'id': i, 'role': 'fleet', 'role_index': i}
-                 for i, ip in enumerate(self.fleets, 1)}
-        known.update({ip: {'id': 100 + i, 'role': 'miner', 'role_index': i}
-                      for i, ip in enumerate(self.peers[:4], 1)})
-        self.config = {'salt_file': str(salt), 'known': known,
-                       'sources': [{'name': 'fleet-' + str(i), 'address': ip, 'local': i == 1}
-                                   for i, ip in enumerate(self.fleets, 1)],
-                       'key_file': 'unused', 'known_hosts': 'unused'}
+        known = {
+            ip: {'id': i, 'role': 'fleet', 'role_index': i} for i, ip in enumerate(self.fleets, 1)
+        }
+        known.update(
+            {
+                ip: {'id': 100 + i, 'role': 'miner', 'role_index': i}
+                for i, ip in enumerate(self.peers[:4], 1)
+            }
+        )
+        self.config = {
+            'salt_file': str(salt),
+            'known': known,
+            'sources': [
+                {'name': 'fleet-' + str(i), 'address': ip, 'local': i == 1}
+                for i, ip in enumerate(self.fleets, 1)
+            ],
+            'key_file': 'unused',
+            'known_hosts': 'unused',
+        }
 
     def collect(self, metadata=None, extra=None, reverse=False):
         def source(source, *_):
-            rows = [{'ip': ip, 'peer_tip_hash': 'a' * 64, 'peer_tip_age_s': 0, 'peer_height': 9250,
-                     **(metadata or {}).get(ip, {})}
-                    for ip in self.fleets + self.peers if ip != source['address']]
+            rows = [
+                {
+                    'ip': ip,
+                    'peer_tip_hash': 'a' * 64,
+                    'peer_tip_age_s': 0,
+                    'peer_height': 9250,
+                    **(metadata or {}).get(ip, {}),
+                }
+                for ip in self.fleets + self.peers
+                if ip != source['address']
+            ]
             rows.extend(copy.deepcopy(extra or []))
             return list(reversed(rows)) if reverse else rows
-        with patch.object(collector, 'run_source', source), patch.object(collector.time, 'time', return_value=1000):
+
+        with (
+            patch.object(collector, 'run_source', source),
+            patch.object(collector.time, 'time', return_value=1000),
+        ):
             view, failures = collector.collect(self.config)
         self.assertEqual(failures, [])
         return view
@@ -60,8 +84,12 @@ class AdvertisedRolesTests(unittest.TestCase):
             self.assertNotIn(ip, json.dumps(after))
 
     def test_unknown_node_stays_node(self):
-        after = self.collect({self.peers[4]: {'role': 'node', 'services': 1},
-                              self.peers[5]: {'role': 'miner', 'services': 9}})
+        after = self.collect(
+            {
+                self.peers[4]: {'role': 'node', 'services': 1},
+                self.peers[5]: {'role': 'miner', 'services': 9},
+            }
+        )
         self.assertEqual(sum(n['role'] == 'node' for n in after['nodes']), 1)
         self.assertEqual(sum(n['role'] == 'miner' for n in after['nodes']), 5)
 
@@ -73,10 +101,18 @@ class AdvertisedRolesTests(unittest.TestCase):
 
     def test_one_current_exporter_overrides_older_missing_reports(self):
         def source(source, *_):
-            return [{'ip': ip, 'peer_tip_hash': 'a' * 64, 'peer_tip_age_s': 0, 'peer_height': 9250,
-                     **({'role': 'miner', 'services': 9}
-                                if source['name'] == 'fleet-3' else {})}
-                    for ip in self.peers + self.fleets if ip != source['address']]
+            return [
+                {
+                    'ip': ip,
+                    'peer_tip_hash': 'a' * 64,
+                    'peer_tip_age_s': 0,
+                    'peer_height': 9250,
+                    **({'role': 'miner', 'services': 9} if source['name'] == 'fleet-3' else {}),
+                }
+                for ip in self.peers + self.fleets
+                if ip != source['address']
+            ]
+
         with patch.object(collector, 'run_source', source):
             after, failures = collector.collect(self.config)
         self.assertEqual(failures, [])
@@ -98,17 +134,28 @@ class AdvertisedRolesTests(unittest.TestCase):
         self.assertEqual(sum(n['role'] == 'miner' for n in after['nodes']), 5)
 
     def test_fleet_membership_is_only_configured(self):
-        after = self.collect({self.peers[4]: {'role': 'fleet', 'services': 32},
-                              self.fleets[0]: {'role': 'miner', 'services': 9}})
+        after = self.collect(
+            {
+                self.peers[4]: {'role': 'fleet', 'services': 32},
+                self.fleets[0]: {'role': 'miner', 'services': 9},
+            }
+        )
         self.assertEqual(sum(n['role'] == 'fleet' for n in after['nodes']), 3)
         self.assertEqual(sum(n['role'] == 'miner' for n in after['nodes']), 4)
 
     def test_metadata_and_service_validation(self):
-        for peer, expected in [({}, None), ({'services': True}, None),
-                               ({'services': -1}, None), ({'services': 2**64}, None),
-                               ({'services': '8'}, None), ({'role': []}, None),
-                               ({'services': 1}, 'node'), ({'services': 9}, 'miner'),
-                               ({'services': 25}, 'validator'), ({'role': 'miner'}, 'miner')]:
+        for peer, expected in [
+            ({}, None),
+            ({'services': True}, None),
+            ({'services': -1}, None),
+            ({'services': 2**64}, None),
+            ({'services': '8'}, None),
+            ({'role': []}, None),
+            ({'services': 1}, 'node'),
+            ({'services': 9}, 'miner'),
+            ({'services': 25}, 'validator'),
+            ({'role': 'miner'}, 'miner'),
+        ]:
             with self.subTest(peer=peer):
                 self.assertEqual(collector.reported_role(peer), expected)
 
@@ -116,8 +163,16 @@ class AdvertisedRolesTests(unittest.TestCase):
         def source(source, *_):
             if source['name'] != 'fleet-1':
                 raise RuntimeError('unavailable')
-            return [{'ip': self.peers[4], 'services': 9, 'peer_tip_hash': 'a' * 64,
-                     'peer_tip_age_s': 0, 'peer_height': 9250}]
+            return [
+                {
+                    'ip': self.peers[4],
+                    'services': 9,
+                    'peer_tip_hash': 'a' * 64,
+                    'peer_tip_age_s': 0,
+                    'peer_height': 9250,
+                }
+            ]
+
         with patch.object(collector, 'run_source', source):
             result, failures = collector.collect(self.config)
         self.assertEqual(len(failures), 2)

@@ -29,7 +29,7 @@
 namespace veld {
 
 class RedeemObligationIndex {
-public:
+  public:
     static constexpr const char* PREFIX = "btcvr:";
     // A completeness marker is metadata about this derived index, not an
     // obligation row.  Keeping it outside PREFIX makes every PREFIX scan a
@@ -79,12 +79,9 @@ public:
             const size_t vout_pos = txid_pos + 65;
             const size_t hash_pos = vout_pos + 11;
             if (key[txid_pos + 64] != ':' || key[vout_pos + 10] != ':' ||
-                !db::IsCanonicalHash256Text(
-                    std::string_view(key).substr(txid_pos, 64)) ||
-                !db::IsCanonicalHash256Text(
-                    std::string_view(key).substr(hash_pos, 64)) ||
-                !ParseFixedWidthUint32_(
-                    std::string_view(key).substr(vout_pos, 10)))
+                !db::IsCanonicalHash256Text(std::string_view(key).substr(txid_pos, 64)) ||
+                !db::IsCanonicalHash256Text(std::string_view(key).substr(hash_pos, 64)) ||
+                !ParseFixedWidthUint32_(std::string_view(key).substr(vout_pos, 10)))
                 return false;
             if (block_hash)
                 *block_hash = HexToHash(key.substr(hash_pos, 64));
@@ -97,26 +94,25 @@ public:
     // Add accepted rows to a caller-owned atomic batch.  Validation happens
     // in a private staging batch first, so a malformed late record cannot
     // leave half of its operations appended to the caller's transaction.
-    bool AppendAcceptedToBatch(
-            db::WriteBatch& destination, const Block& block,
-            const std::vector<TokenTransferRecord>& records) const {
+    bool AppendAcceptedToBatch(db::WriteBatch& destination, const Block& block,
+                               const std::vector<TokenTransferRecord>& records) const {
         db::WriteBatch staged;
         try {
             const Hash256 bh = block.GetHash();
             const std::string bh_hex = HashToHex(bh);
             for (const auto& r : records) {
-                if (!r.is_redeem || r.token_id != BTCVELD_TOKEN_ID ||
-                    r.txid.empty() || r.block_height != block.height)
+                if (!r.is_redeem || r.token_id != BTCVELD_TOKEN_ID || r.txid.empty() ||
+                    r.block_height != block.height)
                     return false;
                 if (!IsCanonicalRecord_(r))
                     return false;
                 const std::string key = Key(r, bh_hex);
-                if (!ValidateHeightKey(key, block.height)) return false;
+                if (!ValidateHeightKey(key, block.height))
+                    return false;
                 const std::string value = Encode(r, bh);
                 TokenTransferRecord decoded;
                 Hash256 decoded_hash{};
-                if (!Decode(value, decoded, decoded_hash) ||
-                    decoded_hash != bh ||
+                if (!Decode(value, decoded, decoded_hash) || decoded_hash != bh ||
                     Key(decoded, HashToHex(decoded_hash)) != key)
                     return false;
                 staged.Put(key, value);
@@ -124,8 +120,7 @@ public:
         } catch (...) {
             return false;
         }
-        destination.ops.insert(destination.ops.end(), staged.ops.begin(),
-                               staged.ops.end());
+        destination.ops.insert(destination.ops.end(), staged.ops.begin(), staged.ops.end());
         return true;
     }
 
@@ -134,20 +129,18 @@ public:
     // shorter replacement tip).  Every present key AND value must decode and
     // agree before any delete is appended; corruption therefore fails closed
     // without mutating the caller's batch.
-    bool AppendCanonicalHeightCleanupToBatch(
-            db::WriteBatch& destination, uint64_t height,
-            const std::optional<Hash256>& canonical_hash) const {
+    bool AppendCanonicalHeightCleanupToBatch(db::WriteBatch& destination, uint64_t height,
+                                             const std::optional<Hash256>& canonical_hash) const {
         db::WriteBatch staged;
         bool valid = true;
         try {
-            store_.Iterate(HeightPrefix(height),
-                [&](const std::string& key, const std::string& value) {
+            store_.Iterate(
+                HeightPrefix(height), [&](const std::string& key, const std::string& value) {
                     Hash256 key_hash{};
                     TokenTransferRecord record;
                     Hash256 value_hash{};
                     if (!ValidateHeightKey(key, height, &key_hash) ||
-                        !Decode(value, record, value_hash) ||
-                        !IsCanonicalRecord_(record) ||
+                        !Decode(value, record, value_hash) || !IsCanonicalRecord_(record) ||
                         record.block_height != height || value_hash != key_hash ||
                         Key(record, HashToHex(value_hash)) != key) {
                         valid = false;
@@ -160,23 +153,23 @@ public:
         } catch (...) {
             return false;
         }
-        if (!valid) return false;
-        destination.ops.insert(destination.ops.end(), staged.ops.begin(),
-                               staged.ops.end());
+        if (!valid)
+            return false;
+        destination.ops.insert(destination.ops.end(), staged.ops.begin(), staged.ops.end());
         return true;
     }
 
-    bool PutAccepted(const Block& block,
-                     const std::vector<TokenTransferRecord>& records) {
+    bool PutAccepted(const Block& block, const std::vector<TokenTransferRecord>& records) {
         db::WriteBatch batch;
-        if (!AppendAcceptedToBatch(batch, block, records)) return false;
+        if (!AppendAcceptedToBatch(batch, block, records))
+            return false;
         return batch.IsEmpty() || store_.Write(batch);
     }
 
-    Page ReadPage(const Blockchain& chain, const std::string& cursor,
-                  size_t requested_limit) {
+    Page ReadPage(const Blockchain& chain, const std::string& cursor, size_t requested_limit) {
         if (!cursor.empty() &&
-            (cursor.size() > 256 || cursor.compare(0, std::char_traits<char>::length(PREFIX), PREFIX) != 0))
+            (cursor.size() > 256 ||
+             cursor.compare(0, std::char_traits<char>::length(PREFIX), PREFIX) != 0))
             throw std::invalid_argument("invalid btcVELD redeem cursor");
         const size_t limit = std::max<size_t>(1, std::min(requested_limit, MAX_PAGE_SIZE));
 
@@ -191,48 +184,50 @@ public:
             // the zero hash for the caller to reject/retry rather than inventing
             // a snapshot identity.
         }
-        store_.IterateFrom(PREFIX, cursor,
-            [&](const std::string& key, const std::string& value) {
-                Item item;
-                item.key = key;
-                // This feed controls whether an accepted burn remains counted as
-                // unpaid backing liability.  A corrupt present row is never
-                // equivalent to absence: silently skipping it could manufacture
-                // mint headroom.  Key/value disagreement is likewise corruption,
-                // not a harmless stale-fork row.
-                if (!Decode(value, item.record, item.block_hash))
-                    throw std::runtime_error(
-                        "corrupt btcVELD redeem-index value");
-                if (Key(item.record, HashToHex(item.block_hash)) != key)
-                    throw std::runtime_error(
-                        "btcVELD redeem-index key/value mismatch");
-                if (item.record.block_height > out.tip) return true;
-                try {
-                    const Block canonical = chain.GetBlockUnlocked(item.record.block_height);
-                    if (canonical.GetHash() != item.block_hash) return true;
-                } catch (...) {
-                    throw std::runtime_error(
-                        "btcVELD redeem-index references a missing canonical height");
-                }
-                if (out.items.size() == limit) {
-                    out.has_more = true;
-                    return false;
-                }
-                out.items.push_back(std::move(item));
+        store_.IterateFrom(PREFIX, cursor, [&](const std::string& key, const std::string& value) {
+            Item item;
+            item.key = key;
+            // This feed controls whether an accepted burn remains counted as
+            // unpaid backing liability.  A corrupt present row is never
+            // equivalent to absence: silently skipping it could manufacture
+            // mint headroom.  Key/value disagreement is likewise corruption,
+            // not a harmless stale-fork row.
+            if (!Decode(value, item.record, item.block_hash))
+                throw std::runtime_error("corrupt btcVELD redeem-index value");
+            if (Key(item.record, HashToHex(item.block_hash)) != key)
+                throw std::runtime_error("btcVELD redeem-index key/value mismatch");
+            if (item.record.block_height > out.tip)
                 return true;
-            });
-        if (!out.items.empty()) out.next_cursor = out.items.back().key;
+            try {
+                const Block canonical = chain.GetBlockUnlocked(item.record.block_height);
+                if (canonical.GetHash() != item.block_hash)
+                    return true;
+            } catch (...) {
+                throw std::runtime_error(
+                    "btcVELD redeem-index references a missing canonical height");
+            }
+            if (out.items.size() == limit) {
+                out.has_more = true;
+                return false;
+            }
+            out.items.push_back(std::move(item));
+            return true;
+        });
+        if (!out.items.empty())
+            out.next_cursor = out.items.back().key;
         return out;
     }
 
-private:
+  private:
     db::KVStore& store_;
 
     static bool ParseFixedWidthUint32_(std::string_view text) noexcept {
-        if (text.size() != 10) return false;
+        if (text.size() != 10)
+            return false;
         uint64_t value = 0;
         for (const char c : text) {
-            if (c < '0' || c > '9') return false;
+            if (c < '0' || c > '9')
+                return false;
             value = value * 10 + static_cast<uint64_t>(c - '0');
         }
         return value <= std::numeric_limits<uint32_t>::max();
@@ -240,45 +235,50 @@ private:
 
     static bool IsCanonicalRecord_(const TokenTransferRecord& r) noexcept {
         return r.is_redeem && !r.is_mint && !r.is_burn && r.to.empty() &&
-               r.token_id == BTCVELD_TOKEN_ID && r.amount > 0 &&
-               db::IsCanonicalHash256Text(r.txid);
+               r.token_id == BTCVELD_TOKEN_ID && r.amount > 0 && db::IsCanonicalHash256Text(r.txid);
     }
 
-    static std::string Key(const TokenTransferRecord& r,
-                           const std::string& block_hash_hex) {
+    static std::string Key(const TokenTransferRecord& r, const std::string& block_hash_hex) {
         std::ostringstream k;
-        k << PREFIX << std::setw(20) << std::setfill('0') << r.block_height
-          << ':' << r.txid << ':' << std::setw(10) << std::setfill('0') << r.vout
-          << ':' << block_hash_hex;
+        k << PREFIX << std::setw(20) << std::setfill('0') << r.block_height << ':' << r.txid << ':'
+          << std::setw(10) << std::setfill('0') << r.vout << ':' << block_hash_hex;
         return k.str();
     }
 
     static void PutU32(std::string& out, uint32_t v) {
-        for (int i = 0; i < 4; ++i) out.push_back((char)((v >> (8 * i)) & 0xff));
+        for (int i = 0; i < 4; ++i)
+            out.push_back((char)((v >> (8 * i)) & 0xff));
     }
     static void PutU64(std::string& out, uint64_t v) {
-        for (int i = 0; i < 8; ++i) out.push_back((char)((v >> (8 * i)) & 0xff));
+        for (int i = 0; i < 8; ++i)
+            out.push_back((char)((v >> (8 * i)) & 0xff));
     }
     static void PutString(std::string& out, const std::string& s) {
-        if (s.size() > UINT32_MAX) throw std::length_error("redeem index field too large");
+        if (s.size() > UINT32_MAX)
+            throw std::length_error("redeem index field too large");
         PutU32(out, (uint32_t)s.size());
         out.append(s);
     }
     static bool GetU32(const std::string& in, size_t& p, uint32_t& v) {
-        if (p + 4 > in.size()) return false;
+        if (p + 4 > in.size())
+            return false;
         v = 0;
-        for (int i = 0; i < 4; ++i) v |= (uint32_t)(uint8_t)in[p++] << (8 * i);
+        for (int i = 0; i < 4; ++i)
+            v |= (uint32_t)(uint8_t)in[p++] << (8 * i);
         return true;
     }
     static bool GetU64(const std::string& in, size_t& p, uint64_t& v) {
-        if (p + 8 > in.size()) return false;
+        if (p + 8 > in.size())
+            return false;
         v = 0;
-        for (int i = 0; i < 8; ++i) v |= (uint64_t)(uint8_t)in[p++] << (8 * i);
+        for (int i = 0; i < 8; ++i)
+            v |= (uint64_t)(uint8_t)in[p++] << (8 * i);
         return true;
     }
     static bool GetString(const std::string& in, size_t& p, std::string& s) {
         uint32_t n = 0;
-        if (!GetU32(in, p, n) || n > 1024 * 1024 || p + n > in.size()) return false;
+        if (!GetU32(in, p, n) || n > 1024 * 1024 || p + n > in.size())
+            return false;
         s.assign(in.data() + p, n);
         p += n;
         return true;
@@ -303,23 +303,23 @@ private:
         return out;
     }
 
-    static bool Decode(const std::string& in, TokenTransferRecord& r,
-                       Hash256& bh) {
+    static bool Decode(const std::string& in, TokenTransferRecord& r, Hash256& bh) {
         size_t p = 0;
-        if (in.size() < 1 + bh.size() || (uint8_t)in[p++] != 1) return false;
+        if (in.size() < 1 + bh.size() || (uint8_t)in[p++] != 1)
+            return false;
         std::copy_n((const uint8_t*)in.data() + p, bh.size(), bh.begin());
         p += bh.size();
         uint32_t vout = 0;
         uint64_t amount = 0, height = 0;
-        if (!GetString(in, p, r.txid) || !GetU32(in, p, vout) ||
-            !GetString(in, p, r.token_id) || !GetString(in, p, r.from) ||
-            !GetString(in, p, r.to) || !GetU64(in, p, amount) ||
-            !GetU64(in, p, height) || !GetString(in, p, r.memo) ||
-            p + 3 != in.size() || amount > (uint64_t)INT64_MAX) return false;
+        if (!GetString(in, p, r.txid) || !GetU32(in, p, vout) || !GetString(in, p, r.token_id) ||
+            !GetString(in, p, r.from) || !GetString(in, p, r.to) || !GetU64(in, p, amount) ||
+            !GetU64(in, p, height) || !GetString(in, p, r.memo) || p + 3 != in.size() ||
+            amount > (uint64_t)INT64_MAX)
+            return false;
         r.vout = vout;
         r.amount = (int64_t)amount;
         r.block_height = height;
-        r.timestamp = 0;  // wall-clock metadata is not part of this index
+        r.timestamp = 0; // wall-clock metadata is not part of this index
         r.is_mint = in[p++] != 0;
         r.is_burn = in[p++] != 0;
         r.is_redeem = in[p++] != 0;

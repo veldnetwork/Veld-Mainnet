@@ -19,20 +19,18 @@ struct SnapshotManifest {
     std::string state_digest;
     std::string archive_format;
     std::string archive_file;
-    uint64_t    anchor_height = 0;
+    uint64_t anchor_height = 0;
     std::string anchor_hash;
-    uint64_t    height = 0;    // publisher tip the snapshot was cut at
-    std::string tip_hash;      // mandatory lowercase 64-hex hash at `height`
-    std::string sha256;        // lowercase 64-hex SHA-256 of the tarball
-    std::string genesis;       // mandatory lowercase 64-hex internal genesis id
+    uint64_t height = 0;  // publisher tip the snapshot was cut at
+    std::string tip_hash; // mandatory lowercase 64-hex hash at `height`
+    std::string sha256;   // lowercase 64-hex SHA-256 of the tarball
+    std::string genesis;  // mandatory lowercase 64-hex internal genesis id
     std::string published_at;
-    bool        syntax_valid = false;
+    bool syntax_valid = false;
 };
 
-inline constexpr const char* SNAPSHOT_MANIFEST_FORMAT =
-    "VELD_SNAPSHOT_MANIFEST_V2";
-inline constexpr const char* SNAPSHOT_ARCHIVE_FORMAT =
-    "leveldb-tar-gzip-v1";
+inline constexpr const char* SNAPSHOT_MANIFEST_FORMAT = "VELD_SNAPSHOT_MANIFEST_V2";
+inline constexpr const char* SNAPSHOT_ARCHIVE_FORMAT = "leveldb-tar-gzip-v1";
 
 // Parse the version-2 snapshot manifest.  This format is intentionally closed:
 // an unknown, duplicate, empty, whitespace-normalized, or out-of-order field
@@ -41,15 +39,14 @@ inline constexpr const char* SNAPSHOT_ARCHIVE_FORMAT =
 // clients.
 inline SnapshotManifest ParseSnapshotManifest(const std::string& text) {
     SnapshotManifest m;
-    if (text.empty() || text.back() != '\n' ||
-        text.find('\r') != std::string::npos ||
+    if (text.empty() || text.back() != '\n' || text.find('\r') != std::string::npos ||
         text.find('\0') != std::string::npos) {
         return m;
     }
     static constexpr const char* keys[] = {
-        "format", "network", "state_digest", "archive_format",
-        "archive_file", "genesis", "anchor_height", "anchor_hash",
-        "height", "tip_hash", "sha256", "published_at",
+        "format",       "network",  "state_digest",  "archive_format",
+        "archive_file", "genesis",  "anchor_height", "anchor_hash",
+        "height",       "tip_hash", "sha256",        "published_at",
     };
     size_t field = 0;
     size_t pos = 0;
@@ -61,45 +58,66 @@ inline SnapshotManifest ParseSnapshotManifest(const std::string& text) {
         pos = nl + 1;
         const size_t eq = line.find('=');
         if (eq == std::string::npos || eq == 0 || eq + 1 == line.size() ||
-            line.find_first_of(" \t") != std::string::npos ||
-            line.substr(0, eq) != keys[field]) {
+            line.find_first_of(" \t") != std::string::npos || line.substr(0, eq) != keys[field]) {
             return SnapshotManifest{};
         }
         const std::string value = line.substr(eq + 1);
         switch (field) {
-        case 0: m.format = value; break;
-        case 1: m.network = value; break;
-        case 2: m.state_digest = value; break;
-        case 3: m.archive_format = value; break;
-        case 4: m.archive_file = value; break;
-        case 5: m.genesis = value; break;
+        case 0:
+            m.format = value;
+            break;
+        case 1:
+            m.network = value;
+            break;
+        case 2:
+            m.state_digest = value;
+            break;
+        case 3:
+            m.archive_format = value;
+            break;
+        case 4:
+            m.archive_file = value;
+            break;
+        case 5:
+            m.genesis = value;
+            break;
         case 6:
             if (!ParseCanonicalUint64Text(value, m.anchor_height))
                 return SnapshotManifest{};
             break;
-        case 7: m.anchor_hash = value; break;
+        case 7:
+            m.anchor_hash = value;
+            break;
         case 8:
             if (!ParseCanonicalUint64Text(value, m.height))
                 return SnapshotManifest{};
             break;
-        case 9: m.tip_hash = value; break;
-        case 10: m.sha256 = value; break;
-        case 11: m.published_at = value; break;
-        default: return SnapshotManifest{};
+        case 9:
+            m.tip_hash = value;
+            break;
+        case 10:
+            m.sha256 = value;
+            break;
+        case 11:
+            m.published_at = value;
+            break;
+        default:
+            return SnapshotManifest{};
         }
         ++field;
     }
-    m.syntax_valid = field == std::size(keys) &&
-                     m.format == SNAPSHOT_MANIFEST_FORMAT &&
-                     m.archive_format == SNAPSHOT_ARCHIVE_FORMAT &&
-                     m.anchor_height > 0 && m.height >= m.anchor_height;
+    m.syntax_valid = field == std::size(keys) && m.format == SNAPSHOT_MANIFEST_FORMAT &&
+                     m.archive_format == SNAPSHOT_ARCHIVE_FORMAT && m.anchor_height > 0 &&
+                     m.height >= m.anchor_height;
     return m;
 }
 
 inline bool SnapshotManifestIsHex64(const std::string& s) {
-    if (s.size() != 64) return false;
+    if (s.size() != 64)
+        return false;
     for (char c : s)
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+            return false;
     return true;
 }
 
@@ -109,23 +127,28 @@ inline bool SnapshotManifestIsHex64(const std::string& s) {
 // identity field validate. `out` is populated only on success.
 inline bool VerifySignedSnapshotManifest(const std::vector<uint8_t>& manifest_bytes,
                                          const std::vector<uint8_t>& sig,
-                                         const Secp256k1PubKey&      pub,
-                                         SnapshotManifest&           out) {
+                                         const Secp256k1PubKey& pub, SnapshotManifest& out) {
     out = SnapshotManifest{};
-    if (manifest_bytes.empty()) return false;
-    if (!VerifyReleaseSignatureBytes(manifest_bytes, sig, pub)) return false;
-    SnapshotManifest m = ParseSnapshotManifest(
-        std::string(manifest_bytes.begin(), manifest_bytes.end()));
-    if (!m.syntax_valid) return false;
-    if (m.format != SNAPSHOT_MANIFEST_FORMAT ||
-        m.archive_format != SNAPSHOT_ARCHIVE_FORMAT ||
-        m.network.empty() || m.state_digest.empty() ||
-        m.archive_file.empty() || m.published_at.empty() ||
-        m.anchor_height == 0 || m.height < m.anchor_height) return false;
-    if (!SnapshotManifestIsHex64(m.tip_hash)) return false;
-    if (!SnapshotManifestIsHex64(m.sha256)) return false;
-    if (!SnapshotManifestIsHex64(m.genesis)) return false;
-    if (!SnapshotManifestIsHex64(m.anchor_hash)) return false;
+    if (manifest_bytes.empty())
+        return false;
+    if (!VerifyReleaseSignatureBytes(manifest_bytes, sig, pub))
+        return false;
+    SnapshotManifest m =
+        ParseSnapshotManifest(std::string(manifest_bytes.begin(), manifest_bytes.end()));
+    if (!m.syntax_valid)
+        return false;
+    if (m.format != SNAPSHOT_MANIFEST_FORMAT || m.archive_format != SNAPSHOT_ARCHIVE_FORMAT ||
+        m.network.empty() || m.state_digest.empty() || m.archive_file.empty() ||
+        m.published_at.empty() || m.anchor_height == 0 || m.height < m.anchor_height)
+        return false;
+    if (!SnapshotManifestIsHex64(m.tip_hash))
+        return false;
+    if (!SnapshotManifestIsHex64(m.sha256))
+        return false;
+    if (!SnapshotManifestIsHex64(m.genesis))
+        return false;
+    if (!SnapshotManifestIsHex64(m.anchor_hash))
+        return false;
     out = m;
     return true;
 }
@@ -136,7 +159,7 @@ inline bool VerifySignedSnapshotManifest(const std::vector<uint8_t>& manifest_by
 // valid signature authenticates the manifest; both keys are compile-time pinned.
 inline bool VerifySignedSnapshotManifestPinned(const std::vector<uint8_t>& manifest_bytes,
                                                const std::vector<uint8_t>& sig,
-                                               SnapshotManifest&           out) {
+                                               SnapshotManifest& out) {
     Secp256k1PubKey pub{};
     if (LoadPinnedSnapshotPubkey(pub) &&
         VerifySignedSnapshotManifest(manifest_bytes, sig, pub, out)) {
@@ -150,4 +173,4 @@ inline bool VerifySignedSnapshotManifestPinned(const std::vector<uint8_t>& manif
     return false;
 }
 
-}  // namespace veld
+} // namespace veld

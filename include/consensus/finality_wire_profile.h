@@ -13,11 +13,10 @@ namespace veld {
 namespace finality {
 namespace wire {
 
-constexpr size_t SIGNED_VOTE_BYTES =
-    4 + 8 + 32 + 1 + 4 + 8 + 32 + 8 + 32 +
-    ::veld::dilithium::PUBKEY_BYTES + ::veld::dilithium::SIG_MAX_BYTES;
+constexpr size_t SIGNED_VOTE_BYTES = 4 + 8 + 32 + 1 + 4 + 8 + 32 + 8 + 32 +
+                                     ::veld::dilithium::PUBKEY_BYTES +
+                                     ::veld::dilithium::SIG_MAX_BYTES;
 
-}  // namespace wire
-}  // namespace finality
-}  // namespace veld
-
+} // namespace wire
+} // namespace finality
+} // namespace veld

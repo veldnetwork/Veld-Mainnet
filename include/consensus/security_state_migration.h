@@ -9,7 +9,8 @@ namespace veld {
 #error "select one isolated migration schedule"
 #endif
 #if defined(VELD_SECURITY_STATE_MIGRATION_TEST_HEIGHT)
-#if !defined(VELD_TEST_HOOKS) || !defined(VELD_TEST_CHAIN_BUILD) || defined(VELD_PUBLIC_RELEASE) || defined(VELD_PUBLIC_MAINNET)
+#if !defined(VELD_TEST_HOOKS) || !defined(VELD_TEST_CHAIN_BUILD) ||                                \
+    defined(VELD_PUBLIC_RELEASE) || defined(VELD_PUBLIC_MAINNET)
 #error "state migration test height requires an isolated non-public test build"
 #endif
 inline constexpr uint64_t SECURITY_STATE_MIGRATION_HEIGHT =

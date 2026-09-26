@@ -13,21 +13,24 @@ int main(int argc, char** argv) {
     assert(argc == 2);
     Blockchain chain;
     const auto genesis = CreateGenesisBlock();
-    assert(chain.AddBlockDirect(genesis, true, true, false,
-        mining::PowAdmissionContext::Internal()).IsAccepted());
+    assert(chain.AddBlockDirect(genesis, true, true, false, mining::PowAdmissionContext::Internal())
+               .IsAccepted());
     const auto body_size = genesis.SerializedSize();
     assert(chain.GetBlock(0, body_size).GetHash() == genesis.GetHash());
     bool display_limited = false;
-    try { (void)chain.GetBlockByHash(genesis.GetHash(), body_size - 1); }
-    catch (const std::length_error&) { display_limited = true; }
+    try {
+        (void)chain.GetBlockByHash(genesis.GetHash(), body_size - 1);
+    } catch (const std::length_error&) {
+        display_limited = true;
+    }
     assert(display_limited);
     Mempool mempool;
     StorageEngine storage(argv[1], MAINNET_MAGIC);
     RpcServer rpc(chain, mempool, storage);
     const auto txid = HashToHex(genesis.transactions.at(0).GetTxID());
     auto call = [&](const char* method, const std::string& id) {
-        return rpc.Handle(std::string("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"") +
-            method + "\",\"params\":[\"" + id + "\"]}");
+        return rpc.Handle(std::string("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"") + method +
+                          "\",\"params\":[\"" + id + "\"]}");
     };
     assert(call("gettransactionrecent", txid).find("\"block_height\":0") != std::string::npos);
     assert(call("getrawtransaction", txid).find("\"raw_hex\"") != std::string::npos);
@@ -35,7 +38,8 @@ int main(int argc, char** argv) {
     rpc.SetTxIndexLookupFn([&](const std::string& id, uint64_t tip, const std::string& hash) {
         ++lookups;
         assert(tip == 0 && hash == HashToHex(genesis.GetHash()));
-        return RpcServer::TxIndexLookup{true, id == txid ? std::optional<uint64_t>(0) : std::nullopt};
+        return RpcServer::TxIndexLookup{true,
+                                        id == txid ? std::optional<uint64_t>(0) : std::nullopt};
     });
     assert(call("gettransactionrecent", txid).find("\"block_height\":0") != std::string::npos);
     assert(call("getrawtransaction", txid).find("\"raw_hex\"") != std::string::npos);
@@ -79,13 +83,14 @@ int main(int argc, char** argv) {
     staking.RestoreState(stake_state);
     const auto digest = staking.StakingDigest();
     auto prepare = [&](const char* method) {
-        return rpc.Handle(std::string("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"") +
-            method + "\",\"params\":[\"" + address + "\",\"1\"]}");
+        return rpc.Handle(std::string("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"") + method +
+                          "\",\"params\":[\"" + address + "\",\"1\"]}");
     };
     const auto first_stake = prepare("preparestake");
     assert(first_stake.find("\"unsigned_tx_hex\"") != std::string::npos);
     assert(prepare("preparestake") == first_stake);
-    auto pending_unstake = std::async(std::launch::async, [&] { return prepare("prepareunstake"); });
+    auto pending_unstake =
+        std::async(std::launch::async, [&] { return prepare("prepareunstake"); });
     const auto unstake = prepare("prepareunstake");
     assert(unstake.find("\"unsigned_tx_hex\"") != std::string::npos);
     assert(pending_unstake.get() == unstake);

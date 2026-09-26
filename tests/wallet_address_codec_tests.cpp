@@ -6,7 +6,8 @@ int main() {
     size_t checked = 0;
     auto require = [&](bool condition) {
         ++checked;
-        if (!condition) throw std::runtime_error("address codec contract failed");
+        if (!condition)
+            throw std::runtime_error("address codec contract failed");
     };
     for (uint8_t version : {0x46, 0x6f}) {
         for (uint8_t fill : {0, 1, 127, 255}) {

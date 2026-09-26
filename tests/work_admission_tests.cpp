@@ -58,34 +58,27 @@ Subject BlockSubject() {
     return subject;
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     const Prerequisites open = OpenPrerequisites();
     const Subject block = BlockSubject();
 
-    Check(!Evaluate(block, Prerequisites{}).allowed,
-          "all-default unknown state fails closed");
+    Check(!Evaluate(block, Prerequisites{}).allowed, "all-default unknown state fails closed");
 
     using Mutator = std::function<void(Prerequisites&)>;
     const std::vector<std::pair<Refusal, Mutator>> false_prerequisites{
         {Refusal::RoleDenied, [](auto& p) { p.role_permitted = false; }},
         {Refusal::NodeNotRunning, [](auto& p) { p.node_running = false; }},
-        {Refusal::StartupReplayIncomplete,
-         [](auto& p) { p.startup_replay_complete = false; }},
+        {Refusal::StartupReplayIncomplete, [](auto& p) { p.startup_replay_complete = false; }},
         {Refusal::IndependentValidationIncomplete,
          [](auto& p) { p.independent_validation_complete = false; }},
         {Refusal::SyncIncomplete, [](auto& p) { p.sync_complete = false; }},
-        {Refusal::SnapshotStateUntrusted,
-         [](auto& p) { p.snapshot_state_clean = false; }},
-        {Refusal::DurableStateUnproven,
-         [](auto& p) { p.durable_state_proven = false; }},
-        {Refusal::DatadirIdentityUnproven,
-         [](auto& p) { p.datadir_identity_valid = false; }},
-        {Refusal::CheckpointAnchorUnproven,
-         [](auto& p) { p.checkpoint_anchor_valid = false; }},
-        {Refusal::TipUnknown,
-         [](auto& p) { p.canonical_tip_known = false; }},
+        {Refusal::SnapshotStateUntrusted, [](auto& p) { p.snapshot_state_clean = false; }},
+        {Refusal::DurableStateUnproven, [](auto& p) { p.durable_state_proven = false; }},
+        {Refusal::DatadirIdentityUnproven, [](auto& p) { p.datadir_identity_valid = false; }},
+        {Refusal::CheckpointAnchorUnproven, [](auto& p) { p.checkpoint_anchor_valid = false; }},
+        {Refusal::TipUnknown, [](auto& p) { p.canonical_tip_known = false; }},
         {Refusal::RuntimeClosed, [](auto& p) { p.runtime_open = false; }},
         {Refusal::PeerViewUnsafe, [](auto& p) { p.peer_view_safe = false; }},
     };
@@ -93,61 +86,46 @@ int main() {
         Prerequisites p = open;
         mutate(p);
         const auto decision = Evaluate(block, p);
-        Check(!decision.allowed && decision.refusal == expected,
-              RefusalName(expected));
+        Check(!decision.allowed && decision.refusal == expected, RefusalName(expected));
     }
 
     const auto issued = Evaluate(block, open);
-    Check(issued.allowed && issued.binding.has_value(),
-          "all prerequisites open together");
-    Check(Evaluate(block, open, issued.binding, true).allowed,
-          "exact binding recheck succeeds");
-    Check(Evaluate(block, open, std::nullopt, true).refusal ==
-              Refusal::BindingMissing,
+    Check(issued.allowed && issued.binding.has_value(), "all prerequisites open together");
+    Check(Evaluate(block, open, issued.binding, true).allowed, "exact binding recheck succeeds");
+    Check(Evaluate(block, open, std::nullopt, true).refusal == Refusal::BindingMissing,
           "missing prior binding rejected");
 
     const std::string encoded = EncodeBinding(*issued.binding);
     const auto decoded = DecodeBinding(encoded);
-    Check(decoded && *decoded == *issued.binding,
-          "binding canonical round trip");
+    Check(decoded && *decoded == *issued.binding, "binding canonical round trip");
     std::string uppercase = encoded;
     uppercase.back() = 'A';
     Check(!DecodeBinding(uppercase), "uppercase binding rejected");
     Check(!DecodeBinding(encoded + "00"), "oversize binding rejected");
 
-    auto RejectTamper = [&](const std::function<void(Binding&)>& mutate,
-                            const char* label) {
+    auto RejectTamper = [&](const std::function<void(Binding&)>& mutate, const char* label) {
         Binding changed = *issued.binding;
         mutate(changed);
-        Check(Evaluate(block, open, changed, true).refusal ==
-                  Refusal::BindingMismatch,
-              label);
+        Check(Evaluate(block, open, changed, true).refusal == Refusal::BindingMismatch, label);
     };
     RejectTamper([](auto& b) { b.subject.purpose = Purpose::FinalityVote; },
                  "purpose tamper rejected");
-    RejectTamper([](auto& b) { ++b.subject.height; },
-                 "height tamper rejected");
-    RejectTamper([](auto& b) { b.subject.target_hash = Filled(0x44); },
-                 "target tamper rejected");
-    RejectTamper([](auto& b) { ++b.subject.parent_height; },
-                 "parent height tamper rejected");
+    RejectTamper([](auto& b) { ++b.subject.height; }, "height tamper rejected");
+    RejectTamper([](auto& b) { b.subject.target_hash = Filled(0x44); }, "target tamper rejected");
+    RejectTamper([](auto& b) { ++b.subject.parent_height; }, "parent height tamper rejected");
     RejectTamper([](auto& b) { b.subject.parent_hash = Filled(0x55); },
                  "parent hash tamper rejected");
     RejectTamper([](auto& b) { ++b.validation_generation; },
                  "validation generation tamper rejected");
-    RejectTamper([](auto& b) { ++b.network_magic; },
-                 "network magic tamper rejected");
-    RejectTamper([](auto& b) { b.genesis_hash = Filled(0x66); },
-                 "genesis tamper rejected");
-    RejectTamper([](auto& b) { b.profile_digest = Filled(0x77); },
-                 "profile tamper rejected");
+    RejectTamper([](auto& b) { ++b.network_magic; }, "network magic tamper rejected");
+    RejectTamper([](auto& b) { b.genesis_hash = Filled(0x66); }, "genesis tamper rejected");
+    RejectTamper([](auto& b) { b.profile_digest = Filled(0x77); }, "profile tamper rejected");
 
     Subject finality = block;
     finality.purpose = Purpose::FinalityVote;
     finality.height = 20;
     finality.target_hash = Filled(0x88);
-    Check(Evaluate(finality, open).allowed,
-          "historical canonical finality target shape accepted");
+    Check(Evaluate(finality, open).allowed, "historical canonical finality target shape accepted");
     finality.target_hash.fill(0);
     Check(Evaluate(finality, open).refusal == Refusal::SubjectNotCanonical,
           "zero finality target rejected");

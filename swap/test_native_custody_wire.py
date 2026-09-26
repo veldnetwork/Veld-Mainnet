@@ -10,10 +10,18 @@ def vector(value):
 
 def fixture(*, parents=(b"first", b"second"), members=(0, 2, 4)):
     unsigned = b"unsigned"
-    wire = (b"CIA1\x01" + bytes(6 * 32 + 2 * 8) + vector(b"destination") +
-        vector(b"refund") + bytes(8) + vector(unsigned) + bytes([len(parents)]) +
-        b"".join(vector(p) for p in parents) + bytes([len(members)]) +
-        b"".join(bytes([m]) + bytes(3309) for m in members))
+    wire = (
+        b"CIA1\x01"
+        + bytes(6 * 32 + 2 * 8)
+        + vector(b"destination")
+        + vector(b"refund")
+        + bytes(8)
+        + vector(unsigned)
+        + bytes([len(parents)])
+        + b"".join(vector(p) for p in parents)
+        + bytes([len(members)])
+        + b"".join(bytes([m]) + bytes(3309) for m in members)
+    )
     return wire, unsigned
 
 

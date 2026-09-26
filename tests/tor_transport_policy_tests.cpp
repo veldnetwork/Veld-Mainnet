@@ -19,8 +19,11 @@ int main(int argc, char** argv) {
     assert(argc == 2);
     veld::VeldNode node(veld::MainnetConfig(), argv[1]);
     bool empty_rejected = false;
-    try { node.ConfigureTorOnly(""); }
-    catch (const std::invalid_argument&) { empty_rejected = true; }
+    try {
+        node.ConfigureTorOnly("");
+    } catch (const std::invalid_argument&) {
+        empty_rejected = true;
+    }
     assert(empty_rejected);
     node.ConfigureTorOnly("ordinary-fixture.onion");
     veld::VeldNode::TestWorkAdmissionProcessState state;
@@ -29,8 +32,11 @@ int main(int argc, char** argv) {
     node.OracleSyncCheck();
     assert(veld::compat::test_transport_lookups == 0);
     bool late_rejected = false;
-    try { node.ConfigureTorOnly("replacement-fixture.onion"); }
-    catch (const std::logic_error&) { late_rejected = true; }
+    try {
+        node.ConfigureTorOnly("replacement-fixture.onion");
+    } catch (const std::logic_error&) {
+        late_rejected = true;
+    }
     assert(late_rejected);
     state.node_running = false;
     node.TestConfigureWorkAdmissionProcess(state);

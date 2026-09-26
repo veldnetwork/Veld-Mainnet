@@ -1,4 +1,5 @@
 """Owner-only process lock for the single-writer swap ledger."""
+
 import fcntl
 import os
 import stat
@@ -18,16 +19,17 @@ def acquire_instance_lock(store_path):
     fd = os.open(path, flags, 0o600)
     try:
         st = os.fstat(fd)
-        if (not stat.S_ISREG(st.st_mode) or st.st_nlink != 1
-                or st.st_uid != os.geteuid()
-                or stat.S_IMODE(st.st_mode) & 0o077):
-            raise RuntimeError(
-                "swapd instance lock is not an owner-only regular file")
+        if (
+            not stat.S_ISREG(st.st_mode)
+            or st.st_nlink != 1
+            or st.st_uid != os.geteuid()
+            or stat.S_IMODE(st.st_mode) & 0o077
+        ):
+            raise RuntimeError("swapd instance lock is not an owner-only regular file")
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise RuntimeError(
-                "another swapd process already owns this ledger") from exc
+            raise RuntimeError("another swapd process already owns this ledger") from exc
         os.ftruncate(fd, 0)
         os.write(fd, ("%d\n" % os.getpid()).encode("ascii"))
         os.fsync(fd)

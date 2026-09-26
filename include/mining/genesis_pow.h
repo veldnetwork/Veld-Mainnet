@@ -20,12 +20,12 @@ struct GenesisPowVerification {
 inline GenesisPowVerification VerifyGenesisPoW(const Block& genesis) {
     GenesisPowVerification result;
     if (genesis.height != 0 || genesis.header.version != 1 ||
-            !HashIsZero(genesis.header.prev_block_hash)) {
+        !HashIsZero(genesis.header.prev_block_hash)) {
         return result;
     }
-    result.target_valid = BlockHeader::DecodeBits(
-        genesis.header.bits, result.target);
-    if (!result.target_valid) return result;
+    result.target_valid = BlockHeader::DecodeBits(genesis.header.bits, result.target);
+    if (!result.target_valid)
+        return result;
     result.pow_hash = VeldHash(genesis.header.Serialize(), 0);
     result.dataset_ok = g_veldhash_last_dataset_ok();
     result.passed = result.dataset_ok && result.pow_hash < result.target;

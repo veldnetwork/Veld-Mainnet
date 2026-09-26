@@ -15,10 +15,11 @@ struct CoinbaseAllocation {
 
 // Fees recycle existing units. Only the effective subsidy consumes supply
 // headroom. Fee-only routing takes precedence over the periodic subsidy rule.
-inline std::optional<CoinbaseAllocation> ComputeCoinbaseAllocation(
-        uint64_t height, uint64_t base_subsidy,
-        uint64_t parent_supply, uint64_t authenticated_fees) noexcept {
-    if (parent_supply > MAX_SUPPLY_UNITS) return std::nullopt;
+inline std::optional<CoinbaseAllocation>
+ComputeCoinbaseAllocation(uint64_t height, uint64_t base_subsidy, uint64_t parent_supply,
+                          uint64_t authenticated_fees) noexcept {
+    if (parent_supply > MAX_SUPPLY_UNITS)
+        return std::nullopt;
     CoinbaseAllocation out;
     out.subsidy = std::min(base_subsidy, MAX_SUPPLY_UNITS - parent_supply);
     if (authenticated_fees > MAX_SUPPLY_UNITS - out.subsidy)

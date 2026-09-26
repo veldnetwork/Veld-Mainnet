@@ -32,12 +32,15 @@ def exact_json_bool(value, description):
 
 def bounded_json_int(value, description, minimum, maximum):
     """Return an exact, bounded JSON integer (``bool`` is not an integer here)."""
-    if (type(value) is not int or type(minimum) is not int
-            or type(maximum) is not int or minimum > maximum
-            or value < minimum or value > maximum):
-        raise RuntimeError(
-            "%s must be a JSON integer in [%d,%d]" %
-            (description, minimum, maximum))
+    if (
+        type(value) is not int
+        or type(minimum) is not int
+        or type(maximum) is not int
+        or minimum > maximum
+        or value < minimum
+        or value > maximum
+    ):
+        raise RuntimeError("%s must be a JSON integer in [%d,%d]" % (description, minimum, maximum))
     return value
 
 
@@ -49,28 +52,28 @@ def read_owner_file(path, maximum, description):
         raise RuntimeError("%s byte limit is invalid" % description)
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is None:
-        raise RuntimeError(
-            "platform lacks O_NOFOLLOW required for %s" % description)
+        raise RuntimeError("platform lacks O_NOFOLLOW required for %s" % description)
     fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_CLOEXEC", 0))
     try:
         metadata = os.fstat(fd)
-        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1
-                or metadata.st_uid != os.geteuid()
-                or stat.S_IMODE(metadata.st_mode) & 0o077):
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) & 0o077
+        ):
             raise RuntimeError(
-                "%s must be an owner-only regular file owned by the service user" %
-                description)
+                "%s must be an owner-only regular file owned by the service user" % description
+            )
         raw = os.read(fd, maximum + 1)
         if len(raw) > maximum:
-            raise RuntimeError(
-                "%s exceeds %d bytes" % (description, maximum))
+            raise RuntimeError("%s exceeds %d bytes" % (description, maximum))
         return raw
     finally:
         os.close(fd)
 
 
-def read_trust_root_file(path, maximum, description, *, trusted_uid=0,
-                         trusted_gid=None):
+def read_trust_root_file(path, maximum, description, *, trusted_uid=0, trusted_gid=None):
     """Read one immutable authority file owned outside the service account.
 
     Production installs these files as ``root:veldswap`` mode ``0440`` under
@@ -90,22 +93,24 @@ def read_trust_root_file(path, maximum, description, *, trusted_uid=0,
         raise RuntimeError("%s trusted GID is invalid" % description)
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is None:
-        raise RuntimeError(
-            "platform lacks O_NOFOLLOW required for %s" % description)
+        raise RuntimeError("platform lacks O_NOFOLLOW required for %s" % description)
     fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_CLOEXEC", 0))
     try:
         metadata = os.fstat(fd)
-        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1
-                or metadata.st_uid != trusted_uid
-                or metadata.st_gid != trusted_gid
-                or stat.S_IMODE(metadata.st_mode) != 0o440):
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or metadata.st_uid != trusted_uid
+            or metadata.st_gid != trusted_gid
+            or stat.S_IMODE(metadata.st_mode) != 0o440
+        ):
             raise RuntimeError(
                 "%s must be one root-authorized 0440 regular file for the "
-                "service group" % description)
+                "service group" % description
+            )
         raw = os.read(fd, maximum + 1)
         if len(raw) > maximum:
-            raise RuntimeError(
-                "%s exceeds %d bytes" % (description, maximum))
+            raise RuntimeError("%s exceeds %d bytes" % (description, maximum))
         return raw
     finally:
         os.close(fd)
@@ -174,8 +179,7 @@ def request_source(client_address, headers):
         raise RequestSourceError("Forwarded header is not accepted")
     if not trusted_local:
         if real_values or xff_values:
-            raise RequestSourceError(
-                "proxy source headers arrived from a non-local peer")
+            raise RequestSourceError("proxy source headers arrived from a non-local peer")
         return direct_ip.compressed
 
     if not real_values:
@@ -201,8 +205,15 @@ class SlidingWindowLimiter:
     O(table-size) sweep on every request.
     """
 
-    def __init__(self, limit, window_s, *, table_capacity=20_000,
-                 maintenance_budget=256, clock=time.monotonic):
+    def __init__(
+        self,
+        limit,
+        window_s,
+        *,
+        table_capacity=20_000,
+        maintenance_budget=256,
+        clock=time.monotonic,
+    ):
         if type(limit) is not int or limit <= 0:
             raise ValueError("rate limit must be a positive JSON integer")
         if type(window_s) is not int or window_s <= 0:
@@ -315,10 +326,12 @@ def strict_json_object(raw):
         return result
 
     try:
-        value = json.loads(bytes(raw).decode("utf-8"),
-                           object_pairs_hook=unique_object,
-                           parse_constant=reject_constant,
-                           parse_float=finite_float)
+        value = json.loads(
+            bytes(raw).decode("utf-8"),
+            object_pairs_hook=unique_object,
+            parse_constant=reject_constant,
+            parse_float=finite_float,
+        )
     except UnicodeDecodeError as exc:
         raise ValueError("request body is not UTF-8") from exc
     if not isinstance(value, dict):
@@ -326,8 +339,7 @@ def strict_json_object(raw):
     return value
 
 
-class BoundedThreadingTCPServer(socketserver.ThreadingMixIn,
-                                socketserver.TCPServer):
+class BoundedThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     """Threaded loopback server with a hard worker and request-read deadline."""
 
     allow_reuse_address = True
@@ -335,12 +347,18 @@ class BoundedThreadingTCPServer(socketserver.ThreadingMixIn,
     block_on_close = True
     request_queue_size = 64
 
-    def __init__(self, server_address, handler, *, max_workers,
-                 request_read_timeout_s, bind_and_activate=True):
+    def __init__(
+        self,
+        server_address,
+        handler,
+        *,
+        max_workers,
+        request_read_timeout_s,
+        bind_and_activate=True,
+    ):
         if type(max_workers) is not int or max_workers <= 0:
             raise ValueError("max_workers must be positive")
-        if (type(request_read_timeout_s) is not int
-                or request_read_timeout_s <= 0):
+        if type(request_read_timeout_s) is not int or request_read_timeout_s <= 0:
             raise ValueError("request_read_timeout_s must be positive")
         self._worker_slots = threading.BoundedSemaphore(max_workers)
         self._request_read_timeout_s = request_read_timeout_s
@@ -370,8 +388,7 @@ class BoundedThreadingTCPServer(socketserver.ThreadingMixIn,
             raise
 
     def process_request_thread(self, request, client_address):
-        timer = threading.Timer(
-            self._request_read_timeout_s, self._expire_request, (request,))
+        timer = threading.Timer(self._request_read_timeout_s, self._expire_request, (request,))
         timer.daemon = True
         with self._deadline_lock:
             self._read_deadlines[id(request)] = timer
@@ -394,4 +411,3 @@ class BoundedThreadingTCPServer(socketserver.ThreadingMixIn,
             timer = self._read_deadlines.pop(id(request), None)
         if timer is not None:
             timer.cancel()
-

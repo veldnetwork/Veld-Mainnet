@@ -12,6 +12,7 @@
   --veld-preview-green-dark:#7ED949;
   --veld-preview-gold:#f6b900;
   --veld-preview-mono:'SF Mono','Menlo','Cascadia Code','JetBrains Mono',ui-monospace,monospace;
+  --veld-preview-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;
   --bg:var(--veld-preview-bg)!important;
   --bg2:#0a0f0b!important;
   --surf:var(--veld-preview-panel)!important;
@@ -103,8 +104,7 @@ body::before{display:none!important}
 
 /* Desktop shell */
 @media(min-width:901px){
-  body{padding-left:235px!important;font-family:var(--veld-preview-mono)!important}
-  body *{font-family:var(--veld-preview-mono)!important}
+  body{padding-left:235px!important;font-family:var(--veld-preview-sans)!important}
   .side-nav{display:flex!important;width:235px!important;min-width:235px!important;box-sizing:border-box!important;padding:16px 8px!important;background:#101311!important;border-right:1px solid #343a35!important;gap:1px!important}
   html[data-theme="light"] .side-nav{background:#efefef!important}
   .side-nav .sn-logo{padding:8px 10px 16px!important;gap:11px!important}
@@ -598,5 +598,30 @@ html body .nav-bar .nb-tab .lb{
   animation:none!important;
 }
 
-html[data-theme="light"] body :is(.btn,.veld-btn,.btn-gold),html:not([data-theme="light"]) body :is(.btn,.veld-btn,.btn-gold){background:linear-gradient(#353940,#292c31)!important;color:#f2f3f5!important;border-color:#646b76!important;box-shadow:inset 0 1px #ffffff12!important}
-html[data-theme="light"] body :is(.btn,.veld-btn,.btn-gold):hover,html:not([data-theme="light"]) body :is(.btn,.veld-btn,.btn-gold):hover{background:#3b4048!important;border-color:#858e9a!important;color:#fff!important}
+/* Comfortable desktop reading type; retain mono only for identifiers and code. */
+@media(min-width:901px){
+  html body :is(h1,h2,h3,.ptitle,.card-title,.side-nav .sn-link,.side-nav .sn-logo .nm,.tbl th,.tbl td){
+    font-family:var(--veld-preview-sans)!important;
+  }
+  html body :is(code,pre,.mono,.hash,.addr,.txid),
+  html body .tbl td :is(.hash,.addr,.mono){
+    font-family:var(--veld-preview-mono)!important;
+  }
+  html body .side-nav .sn-link,
+  html body .side-nav .sn-link .lb,
+  html body .side-nav .sn-logo .nm{
+    font-family:var(--veld-preview-sans)!important;
+  }
+  html body :is(.hero .num,.tile .v,.stat .v,.stat-value){
+    font-family:var(--veld-preview-mono)!important;
+    font-variant-numeric:tabular-nums slashed-zero!important;
+  }
+  html body .hero{min-height:unset!important;padding:21px 25px 17px!important}
+  html body .hero .num{font-size:clamp(56px,6.2vw,72px)!important;line-height:1.05!important}
+  html body :is(.tile,.stat){min-height:104px!important;padding:14px 16px!important}
+}
+
+html:not([data-theme="light"]) body :is(.btn,.veld-btn,.btn-gold){background:linear-gradient(#353940,#292c31)!important;color:#f2f3f5!important;border-color:#646b76!important;box-shadow:inset 0 1px #ffffff12!important}
+html:not([data-theme="light"]) body :is(.btn,.veld-btn,.btn-gold):hover{background:#3b4048!important;border-color:#858e9a!important;color:#fff!important}
+html[data-theme="light"] body :is(.btn,.veld-btn,.btn-gold,.sidebar-btn,.mob-more-btn){background:#e9eaec!important;color:#172119!important;border-color:#b4b7bd!important;box-shadow:none!important}
+html[data-theme="light"] body :is(.btn,.veld-btn,.btn-gold,.sidebar-btn,.mob-more-btn):hover{background:#dfe3e0!important;color:#172119!important;border-color:#97a59b!important}

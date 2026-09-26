@@ -24,8 +24,8 @@ constexpr bool SHA384_DESTINATION_TEST_NETWORK = false;
 constexpr bool SHA384_DESTINATION_TEST_NETWORK = true;
 #endif
 
-inline DestinationCommitment384 PublicKeyCommitment384(
-        const uint8_t* public_key, size_t length, bool testnet = false) {
+inline DestinationCommitment384 PublicKeyCommitment384(const uint8_t* public_key, size_t length,
+                                                       bool testnet = false) {
     if (!public_key || length != 1952)
         throw std::invalid_argument("SHA-384 destination requires a complete ML-DSA-65 public key");
     // Fixed domain, scheme, format, chain and explicit payload length prevent
@@ -45,9 +45,9 @@ inline DestinationCommitment384 PublicKeyCommitment384(
     return digest;
 }
 
-template<size_t N>
-inline DestinationCommitment384 PublicKeyCommitment384(
-        const std::array<uint8_t, N>& public_key, bool testnet = false) {
+template <size_t N>
+inline DestinationCommitment384 PublicKeyCommitment384(const std::array<uint8_t, N>& public_key,
+                                                       bool testnet = false) {
     static_assert(N == 1952, "complete ML-DSA-65 public key required");
     return PublicKeyCommitment384(public_key.data(), N, testnet);
 }
@@ -64,15 +64,15 @@ inline bool IsSha384KeyScript(const std::vector<uint8_t>& script) noexcept {
 }
 
 inline bool MatchesSha384Key(const std::vector<uint8_t>& script,
-                            const std::array<uint8_t, 1952>& public_key,
-                            bool testnet = false) {
-    if (!IsSha384KeyScript(script)) return false;
+                             const std::array<uint8_t, 1952>& public_key, bool testnet = false) {
+    if (!IsSha384KeyScript(script))
+        return false;
     const auto digest = PublicKeyCommitment384(public_key, testnet);
     return std::equal(digest.begin(), digest.end(), script.begin() + 3);
 }
 
 inline std::string Sha384KeyAddress(const std::array<uint8_t, 1952>& public_key,
-                                   bool testnet = false) {
+                                    bool testnet = false) {
     const auto digest = PublicKeyCommitment384(public_key, testnet);
     std::vector<uint8_t> data = {testnet ? SHA384_DESTINATION_TESTNET : SHA384_DESTINATION_MAINNET};
     data.insert(data.end(), digest.begin(), digest.end());
@@ -83,12 +83,18 @@ inline std::string Sha384KeyAddress(const std::array<uint8_t, 1952>& public_key,
     for (auto byte : data) {
         unsigned carry = byte;
         for (auto& digit : digits) {
-            carry += 256u * digit; digit = carry % 58; carry /= 58;
+            carry += 256u * digit;
+            digit = carry % 58;
+            carry /= 58;
         }
-        while (carry) { digits.push_back(carry % 58); carry /= 58; }
+        while (carry) {
+            digits.push_back(carry % 58);
+            carry /= 58;
+        }
     }
     std::string address;
-    for (auto it = digits.rbegin(); it != digits.rend(); ++it) address += alphabet[*it];
+    for (auto it = digits.rbegin(); it != digits.rend(); ++it)
+        address += alphabet[*it];
     return address;
 }
 }

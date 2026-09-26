@@ -1,0 +1,79 @@
+name: Source build and service checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  services:
+    name: Pool and custody unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: |
+          python -m pip install --only-binary=:all: -r tests/requirements.txt
+      - name: Exercise service and permission fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 022
+          mkdir "$RUNNER_TEMP/service-results"
+          python -m unittest discover -s pool -t . -p 'test_*.py' -v 2>&1 | tee "$RUNNER_TEMP/service-results/pool.log"
+          python -m unittest discover -s swap -p 'test_*.py' -v 2>&1 | tee "$RUNNER_TEMP/service-results/custody.log"
+          (umask 077; python -m unittest pool.test_journal_files -v) 2>&1 | tee "$RUNNER_TEMP/service-results/private-permissions.log"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: service-test-results
+          path: ${{ runner.temp }}/service-results/
+          retention-days: 7
+          if-no-files-found: warn
+
+  linux-builds:
+    name: Unsigned Linux build (${{ matrix.role }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [node, desktop, keygen, validator, operator, fleet]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libleveldb-dev libssl-dev
+          python -m pip install --only-binary=:all: -r tests/requirements.txt
+      - name: Build the documented production profile without signing or deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash build/mainnet-v2-linux.sh '${{ matrix.role }}' "$RUNNER_TEMP/source-build"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: linux-${{ matrix.role }}-build-evidence
+          path: ${{ runner.temp }}/source-build/logs/
+          retention-days: 7
+          if-no-files-found: warn

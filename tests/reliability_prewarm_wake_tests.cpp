@@ -9,32 +9,37 @@
 int main(int argc, char** argv) {
     using namespace veld;
     using namespace std::chrono_literals;
-    if (argc != 2 || std::filesystem::exists(argv[1])) return 2;
-    auto config = RegtestConfig(); config.port = 0;
+    if (argc != 2 || std::filesystem::exists(argv[1]))
+        return 2;
+    auto config = RegtestConfig();
+    config.port = 0;
     VeldNode node(config, argv[1]);
     node.SetQuietBoot(true);
     node.SetFullIbd(true);
     node.Start();
     std::promise<void> predicate_checked, release_predicate, notify_attempted;
-    auto checked=predicate_checked.get_future();
-    auto release=release_predicate.get_future().share();
-    auto notifying=notify_attempted.get_future();
+    auto checked = predicate_checked.get_future();
+    auto release = release_predicate.get_future().share();
+    auto notifying = notify_attempted.get_future();
     std::atomic<bool> announced{false};
-    node.TestSetPrewarmWaitHooks([&] {
-        predicate_checked.set_value();
-        release.wait();
-    }, [&] {
-        if (!announced.exchange(true)) notify_attempted.set_value();
-    });
+    node.TestSetPrewarmWaitHooks(
+        [&] {
+            predicate_checked.set_value();
+            release.wait();
+        },
+        [&] {
+            if (!announced.exchange(true))
+                notify_attempted.set_value();
+        });
     node.PrewarmHashDataset();
-    if (checked.wait_for(2s)!=std::future_status::ready) {
+    if (checked.wait_for(2s) != std::future_status::ready) {
         release_predicate.set_value();
         node.Stop();
         node.TestSetPrewarmWaitHooks({}, {});
         return 3;
     }
-    auto stopped=std::async(std::launch::async, [&] { node.Stop(); });
-    if (notifying.wait_for(2s)!=std::future_status::ready) {
+    auto stopped = std::async(std::launch::async, [&] { node.Stop(); });
+    if (notifying.wait_for(2s) != std::future_status::ready) {
         release_predicate.set_value();
         node.TestNotifyPrewarm();
         stopped.get();
@@ -45,8 +50,9 @@ int main(int argc, char** argv) {
     // A correct notifier waits for the predicate mutex before sending it.
     std::this_thread::sleep_for(100ms);
     release_predicate.set_value();
-    const bool completed=stopped.wait_for(2s)==std::future_status::ready;
-    if (!completed) node.TestNotifyPrewarm(); // release the negative control
+    const bool completed = stopped.wait_for(2s) == std::future_status::ready;
+    if (!completed)
+        node.TestNotifyPrewarm(); // release the negative control
     stopped.get();
     node.TestSetPrewarmWaitHooks({}, {});
     if (!completed) {

@@ -1,4 +1,5 @@
 """Actual Windows handle/ACL checks using disposable, unprivileged fixtures."""
+
 import os
 from pathlib import Path
 import tempfile

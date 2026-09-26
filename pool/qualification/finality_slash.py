@@ -4,6 +4,7 @@ Only disposable lab keys deliberately sign conflicting claims. The ordinary
 managed validator's commitment journal is not bypassed or modified. This is
 called after the seven-bond finality/independent pool-carrier exercise.
 """
+
 from fractions import Fraction
 import json
 import subprocess
@@ -12,8 +13,25 @@ from ..protocol import encode, Refused
 from .progress import ValidationProgress
 
 
-def exercise(*, rpc, independent, node, observer, members, snapshot, target,
-             block, state, build, out, mine, sign, check, report, save):
+def exercise(
+    *,
+    rpc,
+    independent,
+    node,
+    observer,
+    members,
+    snapshot,
+    target,
+    block,
+    state,
+    build,
+    out,
+    mine,
+    sign,
+    check,
+    report,
+    save,
+):
     offender = members[-1]
     address = offender['address']
     reporter = members[-2]
@@ -27,13 +45,15 @@ def exercise(*, rpc, independent, node, observer, members, snapshot, target,
         return units(chain.call('getbalance', who)['balance_veld'])
 
     def record(chain=rpc):
-        return next(row for row in chain.call('getbondvaultinfo')['validators']
-                    if row['address'] == address)
+        return next(
+            row for row in chain.call('getbondvaultinfo')['validators'] if row['address'] == address
+        )
 
     def wait_chain():
         tip = rpc.call('getbestblockhash')
-        progress = ValidationProgress(independent.call('getblockcount'),
-                                      rpc.call('getblockcount'), time.monotonic())
+        progress = ValidationProgress(
+            independent.call('getblockcount'), rpc.call('getblockcount'), time.monotonic()
+        )
         while independent.call('getbestblockhash') != tip:
             assert node.poll() is None and observer.poll() is None
             progress.observe(independent.call('getblockcount'), time.monotonic())
@@ -45,27 +65,48 @@ def exercise(*, rpc, independent, node, observer, members, snapshot, target,
         observer.stdin.flush()
 
     def evidence():
-        return [row for row in rpc.call('listfinalityevidence', '0', '100')['evidence']
-                if row['pubkey_hex'] == offender['pubkey']]
+        return [
+            row
+            for row in rpc.call('listfinalityevidence', '0', '100')['evidence']
+            if row['pubkey_hex'] == offender['pubkey']
+        ]
 
     # The already funded sixth member has unused ordinary change for the
     # reporter fee. Its active bond and yield remain independently accounted.
-    check('equivocation reporter fee has separate spendable funding',
-          balance(reporter['address']) >= 100000)
+    check(
+        'equivocation reporter fee has separate spendable funding',
+        balance(reporter['address']) >= 100000,
+    )
     original = record()
     offender_before = balance(address)
     reporter_before = balance(reporter['address'])
-    check('equivocation target has the genuine full individual bond',
-          original['principal_held'] and units(original['bond_veld']) == 10000 * 100000000)
+    check(
+        'equivocation target has the genuine full individual bond',
+        original['principal_held'] and units(original['bond_veld']) == 10000 * 100000000,
+    )
     claims = []
     sibling = ('1' if block[0] != '1' else '2') + block[1:]
     for destination in (block, sibling):
-        intent = dict(epoch=str(snapshot['epoch']), set_root=snapshot['set_root'], phase='1',
-                      target_height=str(target), target_hash=destination,
-                      source_height='0', source_hash='0' * 64)
-        wire = subprocess.run([str(build/'pool-lab-sign'), str(offender['key']), 'finality'],
-                              input=encode(intent) + b'\n', capture_output=True,
-                              check=True, timeout=120).stdout.decode().strip()
+        intent = dict(
+            epoch=str(snapshot['epoch']),
+            set_root=snapshot['set_root'],
+            phase='1',
+            target_height=str(target),
+            target_hash=destination,
+            source_height='0',
+            source_hash='0' * 64,
+        )
+        wire = (
+            subprocess.run(
+                [str(build / 'pool-lab-sign'), str(offender['key']), 'finality'],
+                input=encode(intent) + b'\n',
+                capture_output=True,
+                check=True,
+                timeout=120,
+            )
+            .stdout.decode()
+            .strip()
+        )
         claims.append(wire)
     relay(claims[0])
     relay(claims[0])
@@ -77,35 +118,42 @@ def exercise(*, rpc, independent, node, observer, members, snapshot, target,
         assert node.poll() is None and observer.poll() is None
         if time.monotonic() >= deadline:
             raise TimeoutError('real P2P equivocation evidence intake')
-        time.sleep(.1)
+        time.sleep(0.1)
     rows = evidence()
     check('real authenticated peer intake stores one conflicting-vote proof', len(rows) == 1)
     evidence_id = rows[0]['evidence_id']
     pair = rpc.call('getfinalityevidence', evidence_id)
-    check('durable proof binds both exact signed votes',
-          {pair['vote_a_hex'], pair['vote_b_hex']} == set(claims))
-    (out/'equivocation-evidence.json').write_text(json.dumps(pair, indent=2) + '\n')
+    check(
+        'durable proof binds both exact signed votes',
+        {pair['vote_a_hex'], pair['vote_b_hex']} == set(claims),
+    )
+    (out / 'equivocation-evidence.json').write_text(json.dumps(pair, indent=2) + '\n')
     prepared = rpc.call('preparefinalityslash', reporter['address'], evidence_id)
     txid = sign(prepared, reporter['key'])
     slashed = record()
-    check('funded canonical slash removes only the equivocal member',
-          slashed['slashed_equivocation'] and slashed['slashed'] and
-          sum(bool(v['slashed']) for v in rpc.call('getbondvaultinfo')['validators']) == 1)
+    check(
+        'funded canonical slash removes only the equivocal member',
+        slashed['slashed_equivocation']
+        and slashed['slashed']
+        and sum(bool(v['slashed']) for v in rpc.call('getbondvaultinfo')['validators']) == 1,
+    )
     try:
         rpc.call('preparefinalityslash', reporter['address'], evidence_id)
     except Refused:
         pass
     else:
         raise AssertionError('same equivocation must not incur a second slash')
-    check('equivocation reporter paid only the canonical transaction fee',
-          reporter_before - balance(reporter['address']) == 100000)
+    check(
+        'equivocation reporter paid only the canonical transaction fee',
+        reporter_before - balance(reporter['address']) == 100000,
+    )
     boundary = slashed['settlement_boundary']
     assert boundary > rpc.call('getblockcount')
     unvested = units(slashed['yield_accrued_veld'])
     settlement_events = []
     burned = 0
     tag = b'VELD_BURN|FINALITY_EQUIVOCATION|v1'
-    expected_burn_script = (bytes([0x6a, len(tag)]) + tag).hex()
+    expected_burn_script = (bytes([0x6A, len(tag)]) + tag).hex()
 
     def capture_settlement():
         nonlocal burned
@@ -114,8 +162,12 @@ def exercise(*, rpc, independent, node, observer, members, snapshot, target,
             return
         current = rpc.call('getblock', rpc.call('getbestblockhash'))
         transactions = [rpc.call('gettransaction', tx, str(height)) for tx in current['tx']]
-        burned += sum(int(output['value_units']) for tx in transactions for output in tx['vout']
-                      if output['script_pubkey'] == expected_burn_script)
+        burned += sum(
+            int(output['value_units'])
+            for tx in transactions
+            for output in tx['vout']
+            if output['script_pubkey'] == expected_burn_script
+        )
         settlement_events.append(dict(height=height, transactions=transactions))
 
     while rpc.call('getblockcount') < boundary - 1:
@@ -124,29 +176,49 @@ def exercise(*, rpc, independent, node, observer, members, snapshot, target,
         if height % 120 == 0:
             report['equivocation_progress'] = dict(height=height, settlement_boundary=boundary)
             save()
-    check('equivocation principal remains held until canonical settlement',
-          record()['principal_held'] and balance(address) == offender_before)
+    check(
+        'equivocation principal remains held until canonical settlement',
+        record()['principal_held'] and balance(address) == offender_before,
+    )
     mine()
     capture_settlement()
-    check('equivocation returns no principal or unvested yield to the offender',
-          not record()['principal_held'] and balance(address) == offender_before and
-          units(record()['yield_accrued_veld']) == 0)
+    check(
+        'equivocation returns no principal or unvested yield to the offender',
+        not record()['principal_held']
+        and balance(address) == offender_before
+        and units(record()['yield_accrued_veld']) == 0,
+    )
     # The native boundary plan combines this offender's confiscated tranches
     # into one yield settlement. Principal and yield round separately.
-    (out/'equivocation-settlement.json').write_text(json.dumps(settlement_events, indent=2) + '\n')
+    (out / 'equivocation-settlement.json').write_text(
+        json.dumps(settlement_events, indent=2) + '\n'
+    )
     bounty = balance(reporter['address']) - (reporter_before - 100000)
-    check('equivocation bounty exactly matches principal and confiscated yield',
-          bounty == 2500 * 100000000 + unvested // 4)
-    check('equivocation burn plus bounty exactly accounts for all forfeited funds',
-          burned + bounty == 10000 * 100000000 + unvested)
+    check(
+        'equivocation bounty exactly matches principal and confiscated yield',
+        bounty == 2500 * 100000000 + unvested // 4,
+    )
+    check(
+        'equivocation burn plus bounty exactly accounts for all forfeited funds',
+        burned + bounty == 10000 * 100000000 + unvested,
+    )
     wait_chain()
-    check('independent native node agrees on equivocation balances and custody',
-          independent.call('getbondvaultinfo') == rpc.call('getbondvaultinfo') and
-          balance(address, independent) == balance(address) and
-          balance(reporter['address'], independent) == balance(reporter['address']))
-    report['equivocation'] = dict(evidence_id=evidence_id, slash_txid=txid,
-        settlement_height=boundary, offender=address, reporter=reporter['address'],
-        reporter_bounty_units=str(bounty), forfeited_yield_units=str(unvested),
+    check(
+        'independent native node agrees on equivocation balances and custody',
+        independent.call('getbondvaultinfo') == rpc.call('getbondvaultinfo')
+        and balance(address, independent) == balance(address)
+        and balance(reporter['address'], independent) == balance(reporter['address']),
+    )
+    report['equivocation'] = dict(
+        evidence_id=evidence_id,
+        slash_txid=txid,
+        settlement_height=boundary,
+        offender=address,
+        reporter=reporter['address'],
+        reporter_bounty_units=str(bounty),
+        forfeited_yield_units=str(unvested),
         burned_units=str(burned),
-        independent_state_match=True, actual_p2p_intake=True)
+        independent_state_match=True,
+        actual_p2p_intake=True,
+    )
     save()

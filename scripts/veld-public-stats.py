@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Serve current public stats with a coherent compact-target hashrate."""
+
 from collections import OrderedDict
 import http.client
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -26,8 +27,9 @@ class PublicBackendError(ValueError):
 def read_public(path):
     connection = http.client.HTTPConnection("127.0.0.1", BACKEND_PORT, timeout=2)
     try:
-        connection.request("GET", path, headers={
-            "Host": "explorer.veld.network", "Accept-Encoding": "identity"})
+        connection.request(
+            "GET", path, headers={"Host": "explorer.veld.network", "Accept-Encoding": "identity"}
+        )
         response = connection.getresponse()
         raw = response.read(MAX_RESPONSE + 1)
         if len(raw) > MAX_RESPONSE:
@@ -36,19 +38,37 @@ def read_public(path):
             value = json.loads(raw)
         except ValueError:
             if response.status != 200:
-                raise PublicBackendError(response.status, "public backend status " + str(response.status) + " for " + path)
+                raise PublicBackendError(
+                    response.status,
+                    "public backend status " + str(response.status) + " for " + path,
+                )
             raise
         if not isinstance(value, dict):
             raise ValueError("invalid public response")
         if response.status != 200:
-            raise PublicBackendError(response.status, str(value.get("error", "public backend unavailable")))
+            raise PublicBackendError(
+                response.status, str(value.get("error", "public backend unavailable"))
+            )
         return value
     finally:
         connection.close()
 
 
 BLOCK_PAGE_BUDGET_ERROR = "canonical block page unavailable or above display budget; use block RPC"
-BLOCK_FIELDS = ("height", "hash", "prev_hash", "time", "bits", "nonce", "merkle_root", "size", "tx_count", "reward_veld", "miner", "winner")
+BLOCK_FIELDS = (
+    "height",
+    "hash",
+    "prev_hash",
+    "time",
+    "bits",
+    "nonce",
+    "merkle_root",
+    "size",
+    "tx_count",
+    "reward_veld",
+    "miner",
+    "winner",
+)
 
 
 class SharedPublicReader:
@@ -63,7 +83,9 @@ class SharedPublicReader:
     def cached_block(self, height):
         if self.stats is None:
             return None
-        return self.blocks.get((self.stats.get("height"), self.stats.get("best_block_hash"), height))
+        return self.blocks.get(
+            (self.stats.get("height"), self.stats.get("best_block_hash"), height)
+        )
 
     def remember_blocks(self, values):
         if self.stats is None:
@@ -112,12 +134,16 @@ def validate_blocks(blocks, start, count):
     if not isinstance(blocks, list) or len(blocks) != count:
         raise ValueError("incomplete block page")
     for index, block in enumerate(blocks):
-        if not isinstance(block, dict) or type(block.get("height")) is not int or block["height"] != start - index:
+        if (
+            not isinstance(block, dict)
+            or type(block.get("height")) is not int
+            or block["height"] != start - index
+        ):
             raise ValueError("invalid block height")
         for key in ("hash", "prev_hash"):
             if not isinstance(block.get(key), str) or not re.fullmatch("[a-f0-9]{64}", block[key]):
                 raise ValueError("invalid block hash")
-        if type(block.get("time")) is not int or not 0 <= block["time"] <= 0xffffffff:
+        if type(block.get("time")) is not int or not 0 <= block["time"] <= 0xFFFFFFFF:
             raise ValueError("invalid block timestamp")
         if type(block.get("size")) is not int or not 0 < block["size"] <= 8000000:
             raise ValueError("invalid block size")
@@ -175,7 +201,12 @@ def bounded_block_page(read, start, count, clock=time.monotonic):
             half = length // 2
             return collect(height, half) + collect(height - half, length - half)
 
-    if type(start) is not int or not 0 <= start <= 1000000000 or type(count) is not int or not 1 <= count <= min(50, start + 1):
+    if (
+        type(start) is not int
+        or not 0 <= start <= 1000000000
+        or type(count) is not int
+        or not 1 <= count <= min(50, start + 1)
+    ):
         raise ValueError("invalid page bounds")
     return validate_blocks(collect(start, count), start, count)
 
@@ -186,7 +217,11 @@ class BlockPageCache:
         self.pages = OrderedDict()
 
     def tip(self, fresh=False):
-        stats = self.read.fresh_stats() if fresh and hasattr(self.read, "fresh_stats") else self.read("/api/stats")
+        stats = (
+            self.read.fresh_stats()
+            if fresh and hasattr(self.read, "fresh_stats")
+            else self.read("/api/stats")
+        )
         height, block_hash = stats.get("height"), stats.get("best_block_hash")
         if type(height) is not int or not 0 <= height <= 1000000000:
             raise ValueError("invalid tip height")
@@ -205,11 +240,21 @@ class BlockPageCache:
             self.pages.move_to_end(key)
             return self.pages[key]
         blocks = bounded_block_page(self.read, start, count)
-        if self.tip(fresh=True) != (tip_height, tip_hash) or (start == tip_height and blocks[0]["hash"] != tip_hash):
+        if self.tip(fresh=True) != (tip_height, tip_hash) or (
+            start == tip_height and blocks[0]["hash"] != tip_hash
+        ):
             raise PublicBackendError(409, "canonical chain changed during page assembly")
-        body = json.dumps({"tip_height": tip_height, "tip_hash": tip_hash,
-                           "start": start, "end": start + 1 - count, "blocks": blocks},
-                          separators=(",", ":"), allow_nan=False).encode()
+        body = json.dumps(
+            {
+                "tip_height": tip_height,
+                "tip_hash": tip_hash,
+                "start": start,
+                "end": start + 1 - count,
+                "blocks": blocks,
+            },
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode()
         if len(body) > 65536:
             raise ValueError("block page response budget exceeded")
         self.pages[key] = body
@@ -219,10 +264,10 @@ class BlockPageCache:
 
 
 def network_hashrate(bits, seconds):
-    if type(bits) is not int or not 0 < bits <= 0xffffffff or bits & 0x00800000:
+    if type(bits) is not int or not 0 < bits <= 0xFFFFFFFF or bits & 0x00800000:
         raise ValueError("invalid compact target")
     exponent = bits >> 24
-    mantissa = bits & 0x007fffff
+    mantissa = bits & 0x007FFFFF
     if not 3 <= exponent <= 32 or not mantissa:
         raise ValueError("invalid compact target")
     target = mantissa << (8 * (exponent - 3))
@@ -241,20 +286,24 @@ def observed_hashrate(blocks):
     work = 0
     for block in blocks[:-1]:
         bits = block.get('bits')
-        if type(bits) is not int or not 0 < bits <= 0xffffffff or bits & 0x00800000:
+        if type(bits) is not int or not 0 < bits <= 0xFFFFFFFF or bits & 0x00800000:
             raise ValueError('invalid compact target')
-        exponent, mantissa = bits >> 24, bits & 0x007fffff
-        target = mantissa >> (8 * (3-exponent)) if exponent <= 3 else mantissa << (8 * (exponent-3))
-        if not 0 < target <= (0x7fffff << (8 * 29)):
+        exponent, mantissa = bits >> 24, bits & 0x007FFFFF
+        target = (
+            mantissa >> (8 * (3 - exponent)) if exponent <= 3 else mantissa << (8 * (exponent - 3))
+        )
+        if not 0 < target <= (0x7FFFFF << (8 * 29)):
             raise ValueError('invalid target range')
-        size=(target.bit_length()+7)//8
-        compact=target << (8*(3-size)) if size<=3 else target >> (8*(size-3))
-        if compact & 0x800000: compact >>= 8; size += 1
+        size = (target.bit_length() + 7) // 8
+        compact = target << (8 * (3 - size)) if size <= 3 else target >> (8 * (size - 3))
+        if compact & 0x800000:
+            compact >>= 8
+            size += 1
         if compact | (size << 24) != bits:
             raise ValueError('noncanonical compact target')
         work += (1 << 256) // (target + 1)
-    seconds=max(b['time'] for b in blocks)-min(b['time'] for b in blocks)
-    return (work / seconds if seconds else None), len(blocks)-1, seconds
+    seconds = max(b['time'] for b in blocks) - min(b['time'] for b in blocks)
+    return (work / seconds if seconds else None), len(blocks) - 1, seconds
 
 
 class StatsCollector:
@@ -274,32 +323,51 @@ class StatsCollector:
                 raise ValueError("invalid tip")
             key = (height, tip)
             if stats.get('hashrate_method') == 'canonical_work_over_observed_time':
-                rate, count, seconds = (stats.get(k) for k in ('hashrate','hashrate_window_blocks','hashrate_window_seconds'))
-                if (stats.get('hashrate_sample_height') != height or type(count) is not int or not 0 <= count <= 144
-                    or type(seconds) is not int or not 0 <= seconds < 2**64
-                    or (rate is not None and (type(rate) not in (int,float) or not math.isfinite(rate) or rate <= 0))
-                    or (rate is not None and (not count or not seconds))):
+                rate, count, seconds = (
+                    stats.get(k)
+                    for k in ('hashrate', 'hashrate_window_blocks', 'hashrate_window_seconds')
+                )
+                if (
+                    stats.get('hashrate_sample_height') != height
+                    or type(count) is not int
+                    or not 0 <= count <= 144
+                    or type(seconds) is not int
+                    or not 0 <= seconds < 2**64
+                    or (
+                        rate is not None
+                        and (type(rate) not in (int, float) or not math.isfinite(rate) or rate <= 0)
+                    )
+                    or (rate is not None and (not count or not seconds))
+                ):
                     raise ValueError('invalid native hashrate estimate')
                 return dict(stats)
             if key == self.tip_key:
                 estimate = self.estimate
             else:
-                blocks = bounded_block_page(self.read, height, min(25,height+1))
+                blocks = bounded_block_page(self.read, height, min(25, height + 1))
                 block = blocks[0]
                 if not isinstance(block, dict):
                     raise ValueError("invalid block")
                 if block.get("height") != height or block.get("hash") != tip:
                     continue
                 estimate = observed_hashrate(blocks)
-                final = self.read.fresh_stats() if hasattr(self.read,'fresh_stats') else self.read('/api/stats')
-                if (final.get('height'),final.get('best_block_hash')) != key:
+                final = (
+                    self.read.fresh_stats()
+                    if hasattr(self.read, 'fresh_stats')
+                    else self.read('/api/stats')
+                )
+                if (final.get('height'), final.get('best_block_hash')) != key:
                     continue
             # Cache observed work only for this exact canonical tip, not height alone.
             self.tip_key, self.estimate = key, estimate
             result = dict(stats)
-            result.update(hashrate=estimate[0],hashrate_method='canonical_work_over_observed_time',
-                          hashrate_sample_height=height,hashrate_window_blocks=estimate[1],
-                          hashrate_window_seconds=estimate[2])
+            result.update(
+                hashrate=estimate[0],
+                hashrate_method='canonical_work_over_observed_time',
+                hashrate_sample_height=height,
+                hashrate_window_blocks=estimate[1],
+                hashrate_window_seconds=estimate[2],
+            )
             return result
         raise ValueError("chain changed during stats read")
 

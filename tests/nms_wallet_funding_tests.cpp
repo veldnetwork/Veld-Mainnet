@@ -14,13 +14,17 @@ int main(int argc, char** argv) {
     unsigned checks = 0;
     const auto check = [&](bool value, const char* message) {
         ++checks;
-        if (!value) throw std::runtime_error(message);
+        if (!value)
+            throw std::runtime_error(message);
     };
     try {
         check(argc == 2 && !std::filesystem::exists(argv[1]), "fresh fixture path required");
         Blockchain chain;
-        check(chain.AddBlockDirect(CreateGenesisBlock(), true, true, false,
-            mining::PowAdmissionContext::Internal()).IsAccepted(), "fixture genesis");
+        check(chain
+                  .AddBlockDirect(CreateGenesisBlock(), true, true, false,
+                                  mining::PowAdmissionContext::Internal())
+                  .IsAccepted(),
+              "fixture genesis");
         std::vector<uint8_t> script{0x76, 0xa9, 0x14};
         script.insert(script.end(), 20, 0x31);
         script.insert(script.end(), {0x88, 0xac});
@@ -31,11 +35,13 @@ int main(int argc, char** argv) {
         block.header.prev_block_hash = chain.TipCopy().GetHash();
         block.header.timestamp = chain.TipCopy().header.timestamp + TARGET_BLOCK_TIME;
         block.header.bits = chain.ComputeNextBits();
-        block.transactions.push_back(Blockchain::BuildCanonicalCoinbase(
-            block.height, chain.TotalSupplyUnits(), 0, script));
+        block.transactions.push_back(
+            Blockchain::BuildCanonicalCoinbase(block.height, chain.TotalSupplyUnits(), 0, script));
         block.UpdateMerkleRoot();
-        check(chain.AddBlockDirect(block, true, true, false,
-            mining::PowAdmissionContext::Internal()).IsAccepted(), "fixture first block");
+        check(
+            chain.AddBlockDirect(block, true, true, false, mining::PowAdmissionContext::Internal())
+                .IsAccepted(),
+            "fixture first block");
         Mempool pool;
         StorageEngine storage(argv[1], MAINNET_MAGIC);
         RpcServer rpc(chain, pool, storage);
@@ -58,8 +64,8 @@ int main(int argc, char** argv) {
         const auto usable = coin(3, required + DUST_THRESHOLD_UNITS);
         coin(4, 2000 * VELD_UNITS);
         StakingLedger::StateSnapshot snapshot;
-        snapshot.stakes[address].push_back(StakeRecord{
-            address, backing.value, 1, 10000, true, 1, backing.tx_hash, 0});
+        snapshot.stakes[address].push_back(
+            StakeRecord{address, backing.value, 1, 10000, true, 1, backing.tx_hash, 0});
         snapshot.total_stake = backing.value;
         staking.RestoreState(snapshot);
         auto transition = chain.AcquireConsensusTransitionGuard();
@@ -68,12 +74,13 @@ int main(int argc, char** argv) {
         check(state.staked_units == backing.value, "stake balance changed");
         check(state.immature_coinbase_units > 0, "immature reward fixture missing");
         check(state.selectable.size() == 3, "backed or immature output entered selectable set");
-        const auto* selected = mining::SelectNmsFundingOutput(
-            state.selectable, chain.Height(), state.spendable_units,
-            MIN_TX_FEE, MIN_TX_FEE, DUST_THRESHOLD_UNITS);
+        const auto* selected =
+            mining::SelectNmsFundingOutput(state.selectable, chain.Height(), state.spendable_units,
+                                           MIN_TX_FEE, MIN_TX_FEE, DUST_THRESHOLD_UNITS);
         check(selected && selected->tx_hash == usable.tx_hash, "usable funding was not selected");
         check(chain.GetUTXO(backing.tx_hash, 0).has_value() &&
-              staking.GetStake(address) == backing.value, "selection changed staked principal");
+                  staking.GetStake(address) == backing.value,
+              "selection changed staked principal");
         std::cout << "PASS nms_wallet_funding_tests checks=" << checks
                   << " read_only_fixture_state=true keys=0 signatures=0 submissions=0 network=0\n";
     } catch (const std::exception& error) {

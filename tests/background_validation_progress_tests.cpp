@@ -15,7 +15,8 @@ namespace fs = std::filesystem;
 unsigned checks = 0;
 void Require(bool ok, const char* message) {
     ++checks;
-    if (!ok) throw std::runtime_error(message);
+    if (!ok)
+        throw std::runtime_error(message);
 }
 int main(int argc, char** argv) {
     try {
@@ -30,7 +31,8 @@ int main(int argc, char** argv) {
 #endif
         VeldNode node(RegtestConfig(), root.string());
         Hash256 first{}, second{};
-        first.fill(0x41); second.fill(0x42);
+        first.fill(0x41);
+        second.fill(0x42);
         const auto marker = root / ".validated-background-prefix";
         const auto temporary = root / ".validated-background-prefix.new";
         std::string error;
@@ -46,8 +48,8 @@ int main(int argc, char** argv) {
         Require(!save(1, Hash256{}) && !fs::exists(marker), "zero tip persisted");
 #ifdef _WIN32
         // A concurrent callback can still own the old shared temporary name.
-        HANDLE concurrent = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0,
-            nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+        HANDLE concurrent = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                                        FILE_ATTRIBUTE_NORMAL, nullptr);
         Require(concurrent != INVALID_HANDLE_VALUE, "temporary collision fixture failed");
         const bool wrote = save(25, first);
         CloseHandle(concurrent);
@@ -65,8 +67,8 @@ int main(int argc, char** argv) {
         Require(restored && restored->first == 26 && restored->second == HashToHex(second),
                 "replacement did not preserve its matching height and hash");
 #ifdef _WIN32
-        HANDLE reader = CreateFileW(marker.c_str(), GENERIC_READ, FILE_SHARE_READ,
-            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        HANDLE reader = CreateFileW(marker.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
         Require(reader != INVALID_HANDLE_VALUE, "sharing fault fixture failed");
         const bool blocked = save(27, first);
         CloseHandle(reader);

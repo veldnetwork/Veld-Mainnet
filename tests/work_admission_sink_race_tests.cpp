@@ -52,8 +52,8 @@ Coordinator::Configuration Ready(const Coordinator& coordinator) {
     p.genesis_hash = Filled(0x11);
     p.profile_digest = Filled(0x22);
     configuration.permitted_paths.fill(true);
-    Coordinator::BindCloseEpochSnapshot(
-        configuration, close_epoch_before, coordinator.ObserveCloseEpoch());
+    Coordinator::BindCloseEpochSnapshot(configuration, close_epoch_before,
+                                        coordinator.ObserveCloseEpoch());
     return configuration;
 }
 
@@ -62,23 +62,23 @@ Subject SubjectFor(Path path) {
     subject.parent_height = 80;
     subject.parent_hash = Filled(0x33);
     switch (path) {
-        case Path::InternalMining:
-        case Path::GetBlockTemplate:
-        case Path::SubmitBlock:
-        case Path::SynchronousGeneration:
-            subject.purpose = Purpose::BlockProduction;
-            subject.height = 81;
-            break;
-        case Path::ValidatorEndorsement:
-            subject.purpose = Purpose::ValidatorEndorsement;
-            subject.height = 60;
-            subject.target_hash = Filled(0x44);
-            break;
-        case Path::FinalityVote:
-            subject.purpose = Purpose::FinalityVote;
-            subject.height = 40;
-            subject.target_hash = Filled(0x55);
-            break;
+    case Path::InternalMining:
+    case Path::GetBlockTemplate:
+    case Path::SubmitBlock:
+    case Path::SynchronousGeneration:
+        subject.purpose = Purpose::BlockProduction;
+        subject.height = 81;
+        break;
+    case Path::ValidatorEndorsement:
+        subject.purpose = Purpose::ValidatorEndorsement;
+        subject.height = 60;
+        subject.target_hash = Filled(0x44);
+        break;
+    case Path::FinalityVote:
+        subject.purpose = Purpose::FinalityVote;
+        subject.height = 40;
+        subject.target_hash = Filled(0x55);
+        break;
     }
     return subject;
 }
@@ -103,16 +103,14 @@ Coordinator::Limits Limits() {
     return limits;
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     // Every node-owned irreversible block sink uses this order in production:
     // transition sequencer -> lease claim -> commit/publication -> release.
-    for (const Path path : {Path::InternalMining, Path::SubmitBlock,
-                            Path::SynchronousGeneration}) {
+    for (const Path path : {Path::InternalMining, Path::SubmitBlock, Path::SynchronousGeneration}) {
         Coordinator coordinator(Limits(), Mint());
-        Check(coordinator.Open(Ready(coordinator)).opened,
-              "local sink fixture opened");
+        Check(coordinator.Open(Ready(coordinator)).opened, "local sink fixture opened");
         std::mutex transition;
         std::promise<void> claimed_promise;
         auto claimed = claimed_promise.get_future().share();
@@ -123,15 +121,12 @@ int main() {
 
         std::thread sink([&] {
             std::lock_guard<std::mutex> guard(transition);
-            auto attempt = coordinator.AcquireLocal(
-                path, SubjectFor(path), std::nullopt, false,
-                Coordinator::Duration{40});
-            Check(attempt && attempt.lease->ClaimForSink(),
-                  "local sink acquired and claimed");
+            auto attempt = coordinator.AcquireLocal(path, SubjectFor(path), std::nullopt, false,
+                                                    Coordinator::Duration{40});
+            Check(attempt && attempt.lease->ClaimForSink(), "local sink acquired and claimed");
             claimed_promise.set_value();
             release.wait();
-            Check(attempt.lease->IsLive(),
-                  "local sink remains live before bounded release");
+            Check(attempt.lease->IsLive(), "local sink remains live before bounded release");
             sink_effect.store(true, std::memory_order_release);
         });
         claimed.wait();
@@ -157,8 +152,7 @@ int main() {
     // deterministic pre- or post-close response, never a half-bound template.
     {
         Coordinator coordinator(Limits(), Mint());
-        Check(coordinator.Open(Ready(coordinator)).opened,
-              "GBT fixture opened");
+        Check(coordinator.Open(Ready(coordinator)).opened, "GBT fixture opened");
         std::mutex transition;
         std::promise<void> serializing_promise;
         auto serializing = serializing_promise.get_future().share();
@@ -168,8 +162,8 @@ int main() {
         std::atomic<bool> state_flipped{false};
         std::thread gbt([&] {
             std::lock_guard<std::mutex> guard(transition);
-            Check(Evaluate(SubjectFor(Path::GetBlockTemplate),
-                           Ready(coordinator).prerequisites).allowed,
+            Check(Evaluate(SubjectFor(Path::GetBlockTemplate), Ready(coordinator).prerequisites)
+                      .allowed,
                   "GBT final predicate open");
             serializing_promise.set_value();
             publish.wait();
@@ -194,19 +188,17 @@ int main() {
 
     // Remote validators must consume the pending bearer into a node-held
     // active lease before either journal/sign path starts.
-    for (const Path path : {Path::ValidatorEndorsement,
-                            Path::FinalityVote}) {
+    for (const Path path : {Path::ValidatorEndorsement, Path::FinalityVote}) {
         Coordinator coordinator(Limits(), Mint());
-        Check(coordinator.Open(Ready(coordinator)).opened,
-              "remote sink fixture opened");
+        Check(coordinator.Open(Ready(coordinator)).opened, "remote sink fixture opened");
         const Subject subject = SubjectFor(path);
-        auto pending = coordinator.IssueRemoteSigningLease(
-            path, subject, std::nullopt, false, Coordinator::Duration{60});
+        auto pending = coordinator.IssueRemoteSigningLease(path, subject, std::nullopt, false,
+                                                           Coordinator::Duration{60});
         Check(static_cast<bool>(pending), "pending remote grant issued");
         const auto close = coordinator.BeginClose(Refusal::PeerViewUnsafe);
         Check(!close.fully_closed, "pending remote grant owns predecessor slot");
-        auto active = coordinator.ConsumeRemoteSigningLease(
-            pending.grant->token, path, subject, pending.grant->binding);
+        auto active = coordinator.ConsumeRemoteSigningLease(pending.grant->token, path, subject,
+                                                            pending.grant->binding);
         Check(active && active.lease->IsLive(),
               "remote begin-signing consumes grant during Closing");
         std::atomic<bool> journal{false}, signature{false}, gossip{false};
@@ -228,39 +220,34 @@ int main() {
     // prevents the prerequisite transition from flipping underneath it.
     {
         std::atomic<int64_t> now_ms{1000};
-        Coordinator coordinator(
-            Limits(), Mint(), [&] {
-                return Coordinator::TimePoint(
-                    Coordinator::Duration(now_ms.load()));
-            });
-        Check(coordinator.Open(Ready(coordinator)).opened,
-              "over-deadline remote fixture opened");
+        Coordinator coordinator(Limits(), Mint(), [&] {
+            return Coordinator::TimePoint(Coordinator::Duration(now_ms.load()));
+        });
+        Check(coordinator.Open(Ready(coordinator)).opened, "over-deadline remote fixture opened");
         const Subject subject = SubjectFor(Path::FinalityVote);
         auto pending = coordinator.IssueRemoteSigningLease(
-            Path::FinalityVote, subject, std::nullopt, false,
-            Coordinator::Duration{60});
+            Path::FinalityVote, subject, std::nullopt, false, Coordinator::Duration{60});
         auto active = coordinator.ConsumeRemoteSigningLease(
-            pending.grant->token, Path::FinalityVote, subject,
-            pending.grant->binding);
-        Check(active && active.lease->deadline() ==
-                  Coordinator::TimePoint(Coordinator::Duration{1060}),
+            pending.grant->token, Path::FinalityVote, subject, pending.grant->binding);
+        Check(active &&
+                  active.lease->deadline() == Coordinator::TimePoint(Coordinator::Duration{1060}),
               "hard remote deadline fixed");
-        const auto operation_deadline =
-            active.lease->deadline() - Coordinator::Duration{15};
+        const auto operation_deadline = active.lease->deadline() - Coordinator::Duration{15};
         const auto close = coordinator.BeginClose(Refusal::SyncIncomplete);
         Check(!close.fully_closed, "over-deadline close waits hard lease");
         now_ms.store(1045);
         const bool operation_live =
-            Coordinator::TimePoint(Coordinator::Duration{now_ms.load()}) <
-                operation_deadline && active.lease->IsLive();
+            Coordinator::TimePoint(Coordinator::Duration{now_ms.load()}) < operation_deadline &&
+            active.lease->IsLive();
         std::atomic<uint64_t> signatures{0}, journals{0}, sinks{0};
         if (operation_live) {
             ++journals;
             ++signatures;
-            if (active.lease->ClaimForSink()) ++sinks;
+            if (active.lease->ClaimForSink())
+                ++sinks;
         }
-        Check(!operation_live && journals.load() == 0 &&
-                  signatures.load() == 0 && sinks.load() == 0,
+        Check(!operation_live && journals.load() == 0 && signatures.load() == 0 &&
+                  sinks.load() == 0,
               "operation cutoff emits no journal signature or sink effect");
         Check(coordinator.GetSnapshot().phase == Coordinator::Phase::Closing &&
                   active.lease->IsLive(),
@@ -275,13 +262,10 @@ int main() {
     // behind the callback's consensus-transition guard.
     {
         std::atomic<int64_t> now_ms{2000};
-        Coordinator coordinator(
-            Limits(), Mint(), [&] {
-                return Coordinator::TimePoint(
-                    Coordinator::Duration(now_ms.load()));
-            });
-        Check(coordinator.Open(Ready(coordinator)).opened,
-              "claimed overrun fixture opened");
+        Coordinator coordinator(Limits(), Mint(), [&] {
+            return Coordinator::TimePoint(Coordinator::Duration(now_ms.load()));
+        });
+        Check(coordinator.Open(Ready(coordinator)).opened, "claimed overrun fixture opened");
         std::mutex transition;
         std::promise<void> claimed_promise;
         auto claimed = claimed_promise.get_future().share();
@@ -290,11 +274,10 @@ int main() {
         std::atomic<bool> durable_effect{false};
         std::thread sink([&] {
             std::lock_guard<std::mutex> guard(transition);
-            auto attempt = coordinator.AcquireLocal(
-                Path::SubmitBlock, SubjectFor(Path::SubmitBlock),
-                std::nullopt, false, Coordinator::Duration{20});
-            Check(attempt && attempt.lease->ClaimForSink(),
-                  "claimed overrun sink started");
+            auto attempt =
+                coordinator.AcquireLocal(Path::SubmitBlock, SubjectFor(Path::SubmitBlock),
+                                         std::nullopt, false, Coordinator::Duration{20});
+            Check(attempt && attempt.lease->ClaimForSink(), "claimed overrun sink started");
             claimed_promise.set_value();
             finish.wait();
             durable_effect.store(true, std::memory_order_release);
@@ -317,7 +300,6 @@ int main() {
               "durable effect completes before state transition acquires lock");
     }
 
-    std::cout << "PASS work_admission_sink_race_tests checks="
-              << checks << "\n";
+    std::cout << "PASS work_admission_sink_race_tests checks=" << checks << "\n";
     return 0;
 }

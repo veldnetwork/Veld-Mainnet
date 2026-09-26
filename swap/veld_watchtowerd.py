@@ -33,6 +33,7 @@ the liability automatically.
 
   usage: veld_watchtowerd.py <config.json> [--loop <secs>] [--once]
 """
+
 import json
 import os
 import re
@@ -54,19 +55,24 @@ import veld_custody_binding as custody_binding  # noqa: E402
 import veld_redeem_liability as redeem_liability  # noqa: E402
 import veld_wt_reserve as witness_reserve  # noqa: E402
 from veld_chain_identity import parse_expected_chain, verify_expected_chain  # noqa: E402
-from rpc_url_policy import (load_bounded_json_file, load_bounded_json_response,
-                            open_direct_https_request, open_rpc_request,
-                            read_bounded_regular_file,
-                            read_bounded_secret_file,
-                            run_bounded_subprocess,
-                            strict_json_loads,
-                            validate_backend_rpc_url)  # noqa: E402
+from rpc_url_policy import (
+    load_bounded_json_file,
+    load_bounded_json_response,
+    open_direct_https_request,
+    open_rpc_request,
+    read_bounded_regular_file,
+    read_bounded_secret_file,
+    run_bounded_subprocess,
+    strict_json_loads,
+    validate_backend_rpc_url,
+)  # noqa: E402
 
 # Optional: derive custody addresses from the wallet's PUBLIC xpub descriptors so new
 # deposit addresses are tracked automatically (no hand-maintained address list). Only
 # public keys + a public explorer are used, so the custody box is never trusted.
 try:
     from bip_utils import Bip32Slip10Secp256k1, P2PKHAddr, P2WPKHAddr
+
     _HAVE_BIP_UTILS = True
 except Exception:
     _HAVE_BIP_UTILS = False
@@ -80,7 +86,8 @@ C5_TIP_HARD_SECONDS = 7_200
 
 
 _REMOTE_COMMAND_RE = re.compile(
-    r"(?:[A-Za-z0-9][A-Za-z0-9._-]*|/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+)\Z")
+    r"(?:[A-Za-z0-9][A-Za-z0-9._-]*|/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+)\Z"
+)
 
 
 def _validated_alert_argv(value):
@@ -103,9 +110,14 @@ def _validated_alert_argv(value):
         raise RuntimeError("alert_cmd must be null, an argv string list, or a simple string")
     if not argv or len(argv) > 64:
         raise RuntimeError("alert_cmd must contain 1..64 argv elements")
-    if any(not isinstance(arg, str) or not arg or len(arg) > 4096 or
-           "\x00" in arg or any(ord(ch) < 0x20 for ch in arg)
-           for arg in argv):
+    if any(
+        not isinstance(arg, str)
+        or not arg
+        or len(arg) > 4096
+        or "\x00" in arg
+        or any(ord(ch) < 0x20 for ch in arg)
+        for arg in argv
+    ):
         raise RuntimeError("alert_cmd contains an invalid argv element")
     if argv[0].startswith("-"):
         raise RuntimeError("alert_cmd executable must not begin with '-'")
@@ -116,7 +128,8 @@ def _validated_remote_command(value):
     """Constrain the command handed to ssh's remote shell to one literal name."""
     if not isinstance(value, str) or not _REMOTE_COMMAND_RE.fullmatch(value):
         raise RuntimeError(
-            "signer.remote_cmd must be one command name or absolute path without arguments")
+            "signer.remote_cmd must be one command name or absolute path without arguments"
+        )
     return value
 
 
@@ -124,8 +137,7 @@ def _atomic_write(path, text):
     """Durable atomic publication shared by sequence and witness beat state."""
     directory = os.path.dirname(os.path.abspath(path)) or "."
     os.makedirs(directory, mode=0o700, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".",
-                               suffix=".tmp", dir=directory)
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", suffix=".tmp", dir=directory)
     try:
         os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as out:
@@ -151,18 +163,18 @@ def _atomic_write(path, text):
 
 
 def log(m):
-    sys.stdout.write("%d  %s\n" % (int(time.time()), m)); sys.stdout.flush()
+    sys.stdout.write("%d  %s\n" % (int(time.time()), m))
+    sys.stdout.flush()
 
 
 def warn(m):
-    sys.stderr.write("%d  [WARN] %s\n" % (int(time.time()), m)); sys.stderr.flush()
+    sys.stderr.write("%d  [WARN] %s\n" % (int(time.time()), m))
+    sys.stderr.flush()
 
 
 def _config_int(value, field, minimum, maximum):
-    if (type(value) is not int or value < minimum or value > maximum):
-        raise RuntimeError(
-            "%s must be a JSON integer in [%d,%d]" %
-            (field, minimum, maximum))
+    if type(value) is not int or value < minimum or value > maximum:
+        raise RuntimeError("%s must be a JSON integer in [%d,%d]" % (field, minimum, maximum))
     return value
 
 
@@ -188,10 +200,13 @@ class Btc:
     """bitcoin-cli wrapper. The watchtower's bitcoind holds the custody wallet
     WATCH-ONLY (address/descriptor import) OR we scan a fixed address set - either
     way this box never holds a spend key; it only observes confirmed custody."""
+
     def __init__(self, cli_base, wallet):
-        if (not isinstance(cli_base, list) or not cli_base or
-                any(not isinstance(item, str) or not item or "\x00" in item
-                    for item in cli_base)):
+        if (
+            not isinstance(cli_base, list)
+            or not cli_base
+            or any(not isinstance(item, str) or not item or "\x00" in item for item in cli_base)
+        ):
             raise RuntimeError("btc.cli_base must be a non-empty argv string list")
         if wallet is not None and not isinstance(wallet, str):
             raise RuntimeError("btc.wallet must be a string")
@@ -199,12 +214,14 @@ class Btc:
 
     def call(self, method, *args):
         out = run_bounded_subprocess(
-            self.base + [method] + [str(a) for a in args], timeout=60,
-            stdout_max=MAX_CLI_OUTPUT_BYTES, stderr_max=1024 * 1024,
-            description="bitcoin-cli %s" % method)
+            self.base + [method] + [str(a) for a in args],
+            timeout=60,
+            stdout_max=MAX_CLI_OUTPUT_BYTES,
+            stderr_max=1024 * 1024,
+            description="bitcoin-cli %s" % method,
+        )
         if out.returncode != 0:
-            raise RuntimeError("bitcoin-cli %s: %s" %
-                               (method, out.stderr.strip()[:1000]))
+            raise RuntimeError("bitcoin-cli %s: %s" % (method, out.stderr.strip()[:1000]))
         s = out.stdout.strip()
         try:
             return strict_json_loads(s, "bitcoin-cli %s response" % method)
@@ -214,6 +231,7 @@ class Btc:
 
 class Veld:
     """veld-node JSON-RPC with a bearer token (read-only use: getbtcveldsupply)."""
+
     def __init__(self, url, token_file):
         self.url = validate_backend_rpc_url(url, "veld_rpc.url")
         if not isinstance(token_file, str) or not os.path.isabs(token_file):
@@ -223,8 +241,11 @@ class Veld:
 
     def _read_token(self):
         try:
-            token = read_bounded_secret_file(
-                self.token_file, 4096, "Veld RPC token").decode("ascii").strip()
+            token = (
+                read_bounded_secret_file(self.token_file, 4096, "Veld RPC token")
+                .decode("ascii")
+                .strip()
+            )
         except (OSError, UnicodeError, ValueError) as exc:
             raise RuntimeError("Veld RPC token is unavailable") from exc
         if not re.fullmatch(r"[0-9A-Fa-f]{64}", token):
@@ -232,14 +253,19 @@ class Veld:
         return token
 
     def rpc(self, method, params=None):
-        body = json.dumps({"jsonrpc": "2.0", "id": 1,
-                           "method": method, "params": params or []}).encode()
-        req = urllib.request.Request(self.url, data=body, headers={
-            "Authorization": "Bearer " + self._read_token(),
-            "Content-Type": "application/json"})
+        body = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or []}
+        ).encode()
+        req = urllib.request.Request(
+            self.url,
+            data=body,
+            headers={
+                "Authorization": "Bearer " + self._read_token(),
+                "Content-Type": "application/json",
+            },
+        )
         with open_rpc_request(req, timeout=20) as response:
-            r = load_bounded_json_response(
-                response, 32 * 1024 * 1024, "Veld RPC response")
+            r = load_bounded_json_response(response, 32 * 1024 * 1024, "Veld RPC response")
         if not isinstance(r, dict):
             raise RuntimeError("%s: malformed JSON-RPC envelope" % method)
         if r.get("error"):
@@ -247,8 +273,7 @@ class Veld:
         result = r.get("result")
         if isinstance(result, str):
             try:
-                result = strict_json_loads(
-                    result, "nested Veld RPC result")
+                result = strict_json_loads(result, "nested Veld RPC result")
             except ValueError:
                 pass
         return result
@@ -273,34 +298,45 @@ class Watchtower:
         # independent of the CUSTODY box (it reads the real BTC chain), which is all the
         # threat model needs, and avoids standing up a bitcoind for the pilot.
         self.btc_api = bc.get("api", "")
-        self.btc = (Btc(bc["cli_base"], bc.get("wallet", ""))
-                    if (not self.btc_api and bc.get("cli_base")) else None)
+        self.btc = (
+            Btc(bc["cli_base"], bc.get("wallet", ""))
+            if (not self.btc_api and bc.get("cli_base"))
+            else None
+        )
         if "production" in cfg and type(cfg["production"]) is not bool:
             raise RuntimeError("production must be the JSON boolean true or false")
         self.production = cfg.get("production", False)
-        self.k_confs = _config_int(
-            bc.get("confirmations", 6), "btc.confirmations", 1, 1_000_000)
+        self.k_confs = _config_int(bc.get("confirmations", 6), "btc.confirmations", 1, 1_000_000)
         self.tip_age_alert_secs = _config_int(
-            bc.get("tip_age_alert_secs") if self.production else
-            bc.get("tip_age_alert_secs", 10_800),
-            "btc.tip_age_alert_secs", 600, 86_400)
+            bc.get("tip_age_alert_secs")
+            if self.production
+            else bc.get("tip_age_alert_secs", 10_800),
+            "btc.tip_age_alert_secs",
+            600,
+            86_400,
+        )
         self.max_tip_age_secs = _config_int(
-            bc.get("max_tip_age_secs") if self.production else
-            bc.get("max_tip_age_secs", 21_600),
-            "btc.max_tip_age_secs", 600, 86_400)
+            bc.get("max_tip_age_secs") if self.production else bc.get("max_tip_age_secs", 21_600),
+            "btc.max_tip_age_secs",
+            600,
+            86_400,
+        )
         if self.tip_age_alert_secs >= self.max_tip_age_secs:
-            raise RuntimeError(
-                "btc.tip_age_alert_secs must be below btc.max_tip_age_secs")
+            raise RuntimeError("btc.tip_age_alert_secs must be below btc.max_tip_age_secs")
         if self.production and (
-                self.tip_age_alert_secs != C5_TIP_ALERT_SECONDS or
-                self.max_tip_age_secs != C5_TIP_HARD_SECONDS):
+            self.tip_age_alert_secs != C5_TIP_ALERT_SECONDS
+            or self.max_tip_age_secs != C5_TIP_HARD_SECONDS
+        ):
             raise RuntimeError(
                 "production Bitcoin freshness must use the configured "
-                "3600-second alert and 7200-second recovery-only limit")
+                "3600-second alert and 7200-second recovery-only limit"
+            )
         self.custody_addresses = cfg.get("custody_addresses") or []
-        if (not isinstance(self.custody_addresses, list) or
-                any(not isinstance(x, str) or not x for x in self.custody_addresses) or
-                len(set(self.custody_addresses)) != len(self.custody_addresses)):
+        if (
+            not isinstance(self.custody_addresses, list)
+            or any(not isinstance(x, str) or not x for x in self.custody_addresses)
+            or len(set(self.custody_addresses)) != len(self.custody_addresses)
+        ):
             raise RuntimeError("custody_addresses must be a unique string list")
         # Durable custody tracking: derive EVERY custody address from the wallet's
         # PUBLIC xpub descriptors (Bitcoin Core `listdescriptors` JSON) and gap-scan
@@ -310,10 +346,11 @@ class Watchtower:
         # every custody_rescan_secs; confirmed balances are re-summed every beat.
         self.custody_desc_file = cfg.get("custody_descriptors_file", "")
         self.gap_limit = _config_int(
-            cfg.get("custody_gap_limit", 20), "custody_gap_limit", 1, 100_000)
+            cfg.get("custody_gap_limit", 20), "custody_gap_limit", 1, 100_000
+        )
         self.rescan_secs = _config_int(
-            cfg.get("custody_rescan_secs", 180),
-            "custody_rescan_secs", 1, 31_536_000)
+            cfg.get("custody_rescan_secs", 180), "custody_rescan_secs", 1, 31_536_000
+        )
         self._branches = self._load_branches() if self.custody_desc_file else []
         self._used_cache = None
         self._scan_at = 0.0
@@ -321,21 +358,20 @@ class Watchtower:
         # margin_sats runs with a real buffer instead of exact break-even solvency.
         # 0.001 BTC; raise per expected BTC fee environment in the config.
         self.margin = _config_int(
-            cfg.get("margin_sats", 100_000), "margin_sats", 0, sol.MAX_WIRE_INT)
-        self.ttl = _config_int(
-            cfg.get("ttl_secs", 120), "ttl_secs", 1, sol.MAX_TTL_SECS)
+            cfg.get("margin_sats", 100_000), "margin_sats", 0, sol.MAX_WIRE_INT
+        )
+        self.ttl = _config_int(cfg.get("ttl_secs", 120), "ttl_secs", 1, sol.MAX_TTL_SECS)
         self.reads_before_halt = _config_int(
-            cfg.get("insolvent_reads_before_halt", 2),
-            "insolvent_reads_before_halt", 1, 1_000_000)
+            cfg.get("insolvent_reads_before_halt", 2), "insolvent_reads_before_halt", 1, 1_000_000
+        )
         sc = cfg["signer"]
         self.ssh_target = sc["ssh_target"]
         self.ssh_key = sc.get("ssh_key", "")
         if self.ssh_key:
             read_bounded_secret_file(
-                os.path.abspath(self.ssh_key), 1024 * 1024,
-                "watchtower SSH private key")
-        self.remote_cmd = _validated_remote_command(
-            sc.get("remote_cmd", "veld_wt_recv"))
+                os.path.abspath(self.ssh_key), 1024 * 1024, "watchtower SSH private key"
+            )
+        self.remote_cmd = _validated_remote_command(sc.get("remote_cmd", "veld_wt_recv"))
         # ML-DSA-sign every beat with a dedicated watchtower
         # key so the signer trusts the beat's CONTENTS, not just the file path. The
         # signer pins the matching pubkey and refuses unsigned beats in production.
@@ -349,9 +385,7 @@ class Watchtower:
             # validating the opened descriptor also closes a final-component
             # substitution race before each process invocation.
             self.beat_keyfile = os.path.abspath(self.beat_keyfile)
-            read_bounded_secret_file(
-                self.beat_keyfile, 1024 * 1024,
-                "watchtower beat signing key")
+            read_bounded_secret_file(self.beat_keyfile, 1024 * 1024, "watchtower beat signing key")
         self.alert_cmd = _validated_alert_argv(cfg.get("alert_cmd"))
         self.state_dir = cfg.get("state_dir", ".")
         if not os.path.isabs(self.state_dir):
@@ -363,12 +397,13 @@ class Watchtower:
             state_info = os.lstat(self.state_dir)
         except OSError as e:
             raise RuntimeError("state_dir unavailable: %s" % e)
-        if (stat.S_ISLNK(state_info.st_mode) or
-                not stat.S_ISDIR(state_info.st_mode) or
-                state_info.st_uid != os.geteuid() or
-                stat.S_IMODE(state_info.st_mode) != 0o700):
-            raise RuntimeError(
-                "state_dir must be a service-owned non-symlink mode-0700 directory")
+        if (
+            stat.S_ISLNK(state_info.st_mode)
+            or not stat.S_ISDIR(state_info.st_mode)
+            or state_info.st_uid != os.geteuid()
+            or stat.S_IMODE(state_info.st_mode) != 0o700
+        ):
+            raise RuntimeError("state_dir must be a service-owned non-symlink mode-0700 directory")
         self.seq = self._load_seq()
         self.insolvent_streak = 0
         self.halted = False
@@ -385,8 +420,7 @@ class Watchtower:
 
     @staticmethod
     def _regular_json(path):
-        return load_bounded_json_file(
-            path, 4 * 1024 * 1024, "custody SPK manifest")
+        return load_bounded_json_file(path, 4 * 1024 * 1024, "custody SPK manifest")
 
     def _configure_production_custody(self, btc_cfg, cfg):
         """Pin production custody to one local-Core watch-only descriptor wallet."""
@@ -397,42 +431,46 @@ class Watchtower:
         if self.custody_addresses:
             raise RuntimeError("production forbids supplemental custody addresses")
         try:
-            c1_policy, c1_policy_sha256 = (
-                witness_reserve._load_signed_c1_policy(cfg))
+            c1_policy, c1_policy_sha256 = witness_reserve._load_signed_c1_policy(cfg)
         except SystemExit as exc:
-            raise RuntimeError(
-                "production signed C1 capacity policy is invalid") from exc
+            raise RuntimeError("production signed C1 capacity policy is invalid") from exc
         range_end = cfg.get("public_descriptor_range_end")
-        if (type(range_end) is not int or
-                range_end != c1_policy["public_descriptor_range"][1]):
+        if type(range_end) is not int or range_end != c1_policy["public_descriptor_range"][1]:
             raise RuntimeError(
-                "production public_descriptor_range_end differs from signed C1 policy")
+                "production public_descriptor_range_end differs from signed C1 policy"
+            )
         binding = custody_binding.load_manifest(
             cfg.get("custody_spk_manifest_file"),
             cfg.get("custody_descriptor_sha256"),
             cfg.get("custody_manifest_sha256"),
             expected_range_end=range_end,
-            expected_consensus_manifest_sha256=cfg.get(
-                "custody_consensus_manifest_sha256"),
+            expected_consensus_manifest_sha256=cfg.get("custody_consensus_manifest_sha256"),
         )
         descriptor = binding["descriptor"]
         scripts = binding["script_pubkeys"]
         self._production_bitcoin_chain_identity()
         descriptor_info = self.btc.call("getdescriptorinfo", descriptor)
-        if (not isinstance(descriptor_info, dict) or
-                descriptor_info.get("hasprivatekeys") is not False or
-                descriptor_info.get("isrange") is not True):
+        if (
+            not isinstance(descriptor_info, dict)
+            or descriptor_info.get("hasprivatekeys") is not False
+            or descriptor_info.get("isrange") is not True
+        ):
             raise RuntimeError("production custody descriptor is private or non-ranged")
         wallet_descriptors = self.btc.call("listdescriptors", "true")
-        entries = (wallet_descriptors.get("descriptors")
-                   if isinstance(wallet_descriptors, dict) else None)
-        if (not isinstance(entries, list) or len(entries) != 1 or
-                entries[0].get("desc") != descriptor or
-                entries[0].get("internal") is not False or
-                entries[0].get("active") is not False or
-                entries[0].get("range") != binding["range"]):
+        entries = (
+            wallet_descriptors.get("descriptors") if isinstance(wallet_descriptors, dict) else None
+        )
+        if (
+            not isinstance(entries, list)
+            or len(entries) != 1
+            or entries[0].get("desc") != descriptor
+            or entries[0].get("internal") is not False
+            or entries[0].get("active") is not False
+            or entries[0].get("range") != binding["range"]
+        ):
             raise RuntimeError(
-                "watch-only wallet must contain exactly the pinned custody descriptor")
+                "watch-only wallet must contain exactly the pinned custody descriptor"
+            )
         custody_binding.verify_core_derivation(self.btc.call, binding)
         self.production_descriptor = descriptor
         self.production_spks = set(scripts)
@@ -449,17 +487,25 @@ class Watchtower:
         blocks = info.get("blocks")
         headers = info.get("headers")
         best = info.get("bestblockhash")
-        if (info.get("initialblockdownload") is not False or
-                type(blocks) is not int or type(headers) is not int or
-                blocks < 1 or headers != blocks or
-                not isinstance(best, str) or not sol.HASH256_RE.fullmatch(best)):
+        if (
+            info.get("initialblockdownload") is not False
+            or type(blocks) is not int
+            or type(headers) is not int
+            or blocks < 1
+            or headers != blocks
+            or not isinstance(best, str)
+            or not sol.HASH256_RE.fullmatch(best)
+        ):
             raise RuntimeError("production custody Bitcoin Core is in IBD/header lag")
         header = self.btc.call("getblockheader", best, "true")
         header_time = header.get("time") if isinstance(header, dict) else None
         now = int(time.time())
-        if (not isinstance(header, dict) or header.get("hash") != best or
-                type(header_time) is not int or
-                header_time > now + C5_TIP_HARD_SECONDS):
+        if (
+            not isinstance(header, dict)
+            or header.get("hash") != best
+            or type(header_time) is not int
+            or header_time > now + C5_TIP_HARD_SECONDS
+        ):
             raise RuntimeError("production custody Bitcoin Core tip is stale/incoherent")
         age = max(0, now - header_time)
         if age >= C5_TIP_HARD_SECONDS:
@@ -467,15 +513,15 @@ class Watchtower:
                 self._alert(
                     "C5 RECOVERY_ONLY: Bitcoin tip age %ds >= %ds; "
                     "new admissions are closed while lifecycle-only solvency "
-                    "heartbeats continue" %
-                    (age, C5_TIP_HARD_SECONDS))
+                    "heartbeats continue" % (age, C5_TIP_HARD_SECONDS)
+                )
             self.last_c5_phase = "RECOVERY_ONLY"
         elif age >= C5_TIP_ALERT_SECONDS:
             if self.last_c5_phase != "ALERT":
                 self._alert(
                     "C5 ALERT: Bitcoin tip age %ds >= %ds; full service "
-                    "remains enabled until %ds" %
-                    (age, C5_TIP_ALERT_SECONDS, C5_TIP_HARD_SECONDS))
+                    "remains enabled until %ds" % (age, C5_TIP_ALERT_SECONDS, C5_TIP_HARD_SECONDS)
+                )
             self.last_c5_phase = "ALERT"
         else:
             if self.last_c5_phase != "FRESH":
@@ -490,12 +536,14 @@ class Watchtower:
             custody_binding.verify_peg_identity(peg, self.production_binding)
             try:
                 compiled_k = sol._wire_uint(
-                    peg.get("spv_k_btc"), "compiled spv_k_btc", positive=True)
+                    peg.get("spv_k_btc"), "compiled spv_k_btc", positive=True
+                )
             except ValueError as exc:
                 raise RuntimeError("getpeginfo has invalid spv_k_btc: %s" % exc)
             if compiled_k != self.k_confs:
                 raise RuntimeError(
-                    "watchtower Bitcoin confirmations differ from compiled spv_k_btc")
+                    "watchtower Bitcoin confirmations differ from compiled spv_k_btc"
+                )
             if peg.get("token_id") != "btcVELD":
                 raise RuntimeError("getpeginfo returned the wrong peg token identity")
             self.compiled_spv_k_btc = compiled_k
@@ -512,7 +560,8 @@ class Watchtower:
         if not os.path.lexists(path):
             return 0
         raw = read_bounded_regular_file(
-            os.path.abspath(path), 128, "watchtower sequence", private=True)
+            os.path.abspath(path), 128, "watchtower sequence", private=True
+        )
         try:
             text = raw.decode("ascii").strip()
         except UnicodeDecodeError as exc:
@@ -560,16 +609,16 @@ class Watchtower:
             raise RuntimeError("compiled peg confirmation policy is unavailable")
         before = self._production_bitcoin_chain_identity()
         redeems = redeem_liability.read_canonical_redeems(
-            self.veld.rpc, tip, tip_hash, self.production_token_id)
+            self.veld.rpc, tip, tip_hash, self.production_token_id
+        )
         payouts = redeem_liability.scan_outgoing_payouts(self.btc.call)
         custody = self.read_custody()
         after = self._production_bitcoin_chain_identity()
         if after != before:
-            raise RuntimeError(
-                "Bitcoin tip changed while deriving custody/redemption liability")
+            raise RuntimeError("Bitcoin tip changed while deriving custody/redemption liability")
         liability, outstanding_sats, outstanding_count, released_count = (
-            redeem_liability.backing_liability(
-                supply, redeems, payouts, self.compiled_spv_k_btc))
+            redeem_liability.backing_liability(supply, redeems, payouts, self.compiled_spv_k_btc)
+        )
         self.last_liability_stats = {
             "canonical_redeems": len(redeems),
             "released_redeems": released_count,
@@ -590,8 +639,9 @@ class Watchtower:
         return a.rstrip("/")
 
     def _api_get(self, path):
-        req = urllib.request.Request(self._api_base() + path,
-                                     headers={"User-Agent": "veld-watchtowerd"})
+        req = urllib.request.Request(
+            self._api_base() + path, headers={"User-Agent": "veld-watchtowerd"}
+        )
         with open_direct_https_request(req, timeout=25) as r:
             raw = r.read(4 * 1024 * 1024 + 1)
         if len(raw) > 4 * 1024 * 1024:
@@ -606,13 +656,13 @@ class Watchtower:
         blockstream). Independent of the custody box (reads the real BTC chain). Sums
         UTXOs on the custody addresses that have >= k_confs confirmations."""
         if not self.custody_addresses:
-            return 0   # no custody address configured yet (pre-pilot) -> 0 sats locked
+            return 0  # no custody address configured yet (pre-pilot) -> 0 sats locked
         tip = int(self._api_get("/blocks/tip/height").strip())
         total = 0
         for a in self.custody_addresses:
             for u in strict_json_loads(
-                    self._api_get("/address/%s/utxo" % a),
-                    "public Bitcoin explorer UTXO response"):
+                self._api_get("/address/%s/utxo" % a), "public Bitcoin explorer UTXO response"
+            ):
                 st = u.get("status", {})
                 if not st.get("confirmed"):
                     continue
@@ -630,8 +680,8 @@ class Watchtower:
         if not _HAVE_BIP_UTILS:
             raise RuntimeError("custody_descriptors_file set but bip_utils is not installed")
         data = load_bounded_json_file(
-            os.path.abspath(self.custody_desc_file), MAX_DESCRIPTOR_BYTES,
-            "custody descriptors")
+            os.path.abspath(self.custody_desc_file), MAX_DESCRIPTOR_BYTES, "custody descriptors"
+        )
         if not isinstance(data, dict):
             raise RuntimeError("custody descriptors root must be an object")
         descriptors = data.get("descriptors", [])
@@ -660,16 +710,16 @@ class Watchtower:
         """Has this address ever received a tx? (so an emptied address doesn't stop the
         gap scan). Reads the real BTC chain via the explorer."""
         st = strict_json_loads(
-            self._api_get("/address/%s" % a),
-            "public Bitcoin explorer address response")
+            self._api_get("/address/%s" % a), "public Bitcoin explorer address response"
+        )
         return int(st.get("chain_stats", {}).get("tx_count", 0)) > 0
 
     def _addr_confirmed_sats(self, a, tip):
         """Confirmed UTXO value (sats) at >= k_confs for one address."""
         total = 0
         for u in strict_json_loads(
-                self._api_get("/address/%s/utxo" % a),
-                "public Bitcoin explorer UTXO response"):
+            self._api_get("/address/%s/utxo" % a), "public Bitcoin explorer UTXO response"
+        ):
             st = u.get("status", {})
             if st.get("confirmed") and (tip - int(st.get("block_height", tip)) + 1) >= self.k_confs:
                 total += int(u["value"])
@@ -679,7 +729,7 @@ class Watchtower:
         """Gap-limit scan of every derived branch; returns the set of USED custody
         addresses. Independent of the custody box (public xpubs + explorer only)."""
         used = set()
-        for (typ, xpub, change) in self._branches:
+        for typ, xpub, change in self._branches:
             node = Bip32Slip10Secp256k1.FromExtendedKey(xpub)
             gap = 0
             idx = 0
@@ -708,7 +758,7 @@ class Watchtower:
         for a in self._used_cache:
             seen.add(a)
             total += self._addr_confirmed_sats(a, tip)
-        for a in self.custody_addresses:          # dedup'd static supplement / fallback
+        for a in self.custody_addresses:  # dedup'd static supplement / fallback
             if a in seen:
                 continue
             total += self._addr_confirmed_sats(a, tip)
@@ -766,16 +816,18 @@ class Watchtower:
         pauses) rather than send an unsigned beat the signer would reject anyway."""
         if not self.beat_keyfile:
             return payload
-        read_bounded_secret_file(
-            self.beat_keyfile, 1024 * 1024,
-            "watchtower beat signing key")
+        read_bounded_secret_file(self.beat_keyfile, 1024 * 1024, "watchtower beat signing key")
         core = sol.canonical_beat_bytes(payload)
         env = dict(os.environ)
         if self.beat_passfile:
             try:
-                env["VELD_VAULT_PASSPHRASE"] = read_bounded_secret_file(
-                    os.path.abspath(self.beat_passfile), 4096,
-                    "watchtower beat passphrase").decode("utf-8").strip()
+                env["VELD_VAULT_PASSPHRASE"] = (
+                    read_bounded_secret_file(
+                        os.path.abspath(self.beat_passfile), 4096, "watchtower beat passphrase"
+                    )
+                    .decode("utf-8")
+                    .strip()
+                )
             except Exception as e:
                 raise RuntimeError("beat passphrase read failed: %s" % e)
         with tempfile.TemporaryDirectory() as td:
@@ -785,11 +837,17 @@ class Watchtower:
                 f.write(core)
             r = run_bounded_subprocess(
                 [self.keygen, "sign-release", self.beat_keyfile, bf, sf],
-                timeout=30, stdout_max=64 * 1024, stderr_max=64 * 1024,
-                description="watchtower beat signer", env=env)
+                timeout=30,
+                stdout_max=64 * 1024,
+                stderr_max=64 * 1024,
+                description="watchtower beat signer",
+                env=env,
+            )
             if r.returncode != 0:
-                raise RuntimeError("beat signing failed: "
-                                   + (r.stderr.strip()[:200] or "sign-release rc=%d" % r.returncode))
+                raise RuntimeError(
+                    "beat signing failed: "
+                    + (r.stderr.strip()[:200] or "sign-release rc=%d" % r.returncode)
+                )
             with open(sf, "rb") as f:
                 sig = f.read(1024 * 1024 + 1)
             if len(sig) > 1024 * 1024:
@@ -805,9 +863,13 @@ class Watchtower:
             cmd += ["-i", self.ssh_key]
         cmd += [self.ssh_target, self.remote_cmd]
         out = run_bounded_subprocess(
-            cmd, input_text=json.dumps(payload), timeout=45,
-            stdout_max=64 * 1024, stderr_max=64 * 1024,
-            description="watchtower signer push")
+            cmd,
+            input_text=json.dumps(payload),
+            timeout=45,
+            stdout_max=64 * 1024,
+            stderr_max=64 * 1024,
+            description="watchtower signer push",
+        )
         if out.returncode != 0:
             raise RuntimeError("signer push failed: " + out.stderr.strip()[:200])
         return out.stdout.strip()
@@ -819,12 +881,18 @@ class Watchtower:
                 # Alert hooks are intentionally operator-configurable programs,
                 # but they are not entitled to consume unbounded daemon memory.
                 out = run_bounded_subprocess(
-                    list(self.alert_cmd), input_text=msg, timeout=20,
-                    stdout_max=64 * 1024, stderr_max=64 * 1024,
-                    description="watchtower alert hook")
+                    list(self.alert_cmd),
+                    input_text=msg,
+                    timeout=20,
+                    stdout_max=64 * 1024,
+                    stderr_max=64 * 1024,
+                    description="watchtower alert hook",
+                )
                 if out.returncode != 0:
-                    warn("alert_cmd exited %d: %s" %
-                         (out.returncode, (out.stderr or "").strip()[:200]))
+                    warn(
+                        "alert_cmd exited %d: %s"
+                        % (out.returncode, (out.stderr or "").strip()[:200])
+                    )
             except Exception as e:
                 warn("alert_cmd failed: %s" % e)
 
@@ -840,17 +908,26 @@ class Watchtower:
         self._verify_production_veld_identity()
         self.seq += 1
         self._save_seq()
-        payload = sol.build_beat_payload(custody, supply, self.margin, tip, tip_hash,
-                                         self.seq, self.ttl,
-                                         backing_liability_sats=backing_liability)
+        payload = sol.build_beat_payload(
+            custody,
+            supply,
+            self.margin,
+            tip,
+            tip_hash,
+            self.seq,
+            self.ttl,
+            backing_liability_sats=backing_liability,
+        )
         signed = self._sign_payload(payload)
         self._push(signed)
         # Publish only a beat that the signer receiver accepted. The reservation
         # witness uses this same signed core and its own local expiry, so a signer
         # cannot reserve against a beat the independent watchtower did not send.
         local = sol.stamp_heartbeat(signed, time.time())
-        _atomic_write(self._current_beat_path(), json.dumps(
-            local, sort_keys=True, separators=(",", ":")) + "\n")
+        _atomic_write(
+            self._current_beat_path(),
+            json.dumps(local, sort_keys=True, separators=(",", ":")) + "\n",
+        )
         return payload
 
     # --- one monitoring cycle --------------------------------------------------
@@ -861,7 +938,8 @@ class Watchtower:
             supply, tip, tip_hash = self.read_supply()
             if self.production:
                 custody, backing_liability = self.read_production_backing_snapshot(
-                    supply, tip, tip_hash)
+                    supply, tip, tip_hash
+                )
             else:
                 custody = self.read_custody()
                 backing_liability = supply
@@ -878,16 +956,25 @@ class Watchtower:
             log("EMPTY peg (supply=0 custody=0) — no beat; signer stays paused")
             return "EMPTY"
 
-        headroom = sol.solvency_headroom(
-            custody, backing_liability, self.margin)
+        headroom = sol.solvency_headroom(custody, backing_liability, self.margin)
         if headroom < 0:
             self.insolvent_streak += 1
-            self._alert("INSOLVENT read %d/%d: liability=%d (supply=%d) + margin=%d > custody=%d (no beat)"
-                        % (self.insolvent_streak, self.reads_before_halt,
-                           backing_liability, supply, self.margin, custody))
+            self._alert(
+                "INSOLVENT read %d/%d: liability=%d (supply=%d) + margin=%d > custody=%d (no beat)"
+                % (
+                    self.insolvent_streak,
+                    self.reads_before_halt,
+                    backing_liability,
+                    supply,
+                    self.margin,
+                    custody,
+                )
+            )
             if self.insolvent_streak >= self.reads_before_halt and not self.halted:
-                self.push_halt("backing liability %d (supply %d) + margin %d > custody %d"
-                               % (backing_liability, supply, self.margin, custody))
+                self.push_halt(
+                    "backing liability %d (supply %d) + margin %d > custody %d"
+                    % (backing_liability, supply, self.margin, custody)
+                )
             return "INSOLVENT"
 
         self.insolvent_streak = 0
@@ -896,9 +983,10 @@ class Watchtower:
         except Exception as e:
             self._alert("solvent but beat push failed (signer will pause): %s" % e)
             return "PUSH_FAIL"
-        log("SOLVENT beat seq=%d custody=%d supply=%d liability=%d headroom=%d tip=%d/%s"
-            % (self.seq, custody, supply, backing_liability, headroom,
-               tip, tip_hash[:16]))
+        log(
+            "SOLVENT beat seq=%d custody=%d supply=%d liability=%d headroom=%d tip=%d/%s"
+            % (self.seq, custody, supply, backing_liability, headroom, tip, tip_hash[:16])
+        )
         return "SOLVENT"
 
 
@@ -912,24 +1000,27 @@ def main():
     if not args:
         die("usage: veld_watchtowerd.py <config.json> [--loop <secs>] [--once]")
     cfg = load_bounded_json_file(
-        os.path.abspath(args[0]), MAX_CONFIG_BYTES,
-        "watchtower configuration")
+        os.path.abspath(args[0]), MAX_CONFIG_BYTES, "watchtower configuration"
+    )
     if not isinstance(cfg, dict):
         die("configuration root must be an object")
     if "rtp1_service" in cfg:
         from rtp1_watchtower import Rtp1Watchtower
+
         wt = Rtp1Watchtower(cfg)
     else:
         wt = Watchtower(cfg)
 
     lock_path = os.path.join(wt.state_dir, "watchtowerd.lock")
-    lock_flags = (os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) |
-                  getattr(os, "O_CLOEXEC", 0))
+    lock_flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
     lock_fd = os.open(lock_path, lock_flags, 0o600)
     lock_info = os.fstat(lock_fd)
-    if (not stat.S_ISREG(lock_info.st_mode) or lock_info.st_nlink != 1 or
-            lock_info.st_uid != os.geteuid() or
-            stat.S_IMODE(lock_info.st_mode) & 0o022):
+    if (
+        not stat.S_ISREG(lock_info.st_mode)
+        or lock_info.st_nlink != 1
+        or lock_info.st_uid != os.geteuid()
+        or stat.S_IMODE(lock_info.st_mode) & 0o022
+    ):
         os.close(lock_fd)
         die("watchtower lock is not a trusted service-owned regular file", 69)
     os.fchmod(lock_fd, 0o600)
@@ -939,8 +1030,7 @@ def main():
     except OSError:
         die("another veld_watchtowerd holds the state lock", 69)
 
-    loop_secs = _config_int(
-        cfg.get("interval_secs", 30), "interval_secs", 1, 31_536_000)
+    loop_secs = _config_int(cfg.get("interval_secs", 30), "interval_secs", 1, 31_536_000)
     if "--loop" in args:
         try:
             loop_secs = int(args[args.index("--loop") + 1])
@@ -950,8 +1040,10 @@ def main():
             die("--loop interval is outside [1,31536000]")
     once = "--once" in args
 
-    log("watchtower start: margin=%d ttl=%d interval=%d halt_after=%d signer=%s"
-        % (wt.margin, wt.ttl, loop_secs, wt.reads_before_halt, wt.ssh_target))
+    log(
+        "watchtower start: margin=%d ttl=%d interval=%d halt_after=%d signer=%s"
+        % (wt.margin, wt.ttl, loop_secs, wt.reads_before_halt, wt.ssh_target)
+    )
     while True:
         result = "ERROR"
         try:

@@ -21,7 +21,7 @@ def empty_root():
 
 
 def _uint(value, field, maximum):
-    if (type(value) is not int or value < 0 or value > maximum):
+    if type(value) is not int or value < 0 or value > maximum:
         raise RuntimeError("%s is not a bounded non-negative integer" % field)
     return value
 
@@ -39,7 +39,7 @@ def _text(value, field, maximum):
 
 
 def _lp(raw):
-    if len(raw) > 0xffffffff:
+    if len(raw) > 0xFFFFFFFF:
         raise RuntimeError("redeem commitment field exceeds uint32 length")
     return struct.pack("<I", len(raw)) + raw
 
@@ -66,22 +66,21 @@ class RedeemCommitment:
             raise RuntimeError("redeem commitment row is not an object")
         txid = _text(row.get("txid"), "redeem txid", 64)
         block_hash_text = row.get("block_hash")
-        if (txid.decode("ascii", "strict") != row.get("txid") or
-                not HASH256_RE.fullmatch(row["txid"])):
+        if txid.decode("ascii", "strict") != row.get("txid") or not HASH256_RE.fullmatch(
+            row["txid"]
+        ):
             raise RuntimeError("redeem txid is not canonical lowercase hash256")
-        if (not isinstance(block_hash_text, str) or
-                not HASH256_RE.fullmatch(block_hash_text)):
+        if not isinstance(block_hash_text, str) or not HASH256_RE.fullmatch(block_hash_text):
             raise RuntimeError("redeem block_hash is not canonical lowercase hash256")
         block_hash = bytes.fromhex(block_hash_text)
-        vout = _uint(row.get("vout"), "redeem vout", 0xffffffff)
+        vout = _uint(row.get("vout"), "redeem vout", 0xFFFFFFFF)
         token = _text(row.get("token"), "redeem token", 32)
         source = _text(row.get("from"), "redeem source", 128)
         destination_account = _text(row.get("to"), "redeem to", 128)
         amount = _uint(row.get("amount_sats"), "redeem amount_sats", MAX_WIRE_INT)
         height = _uint(row.get("block"), "redeem block", MAX_WIRE_INT)
         memo = _text(row.get("memo"), "redeem memo", 512)
-        for field, expected in (("is_mint", False), ("is_burn", False),
-                                ("is_redeem", True)):
+        for field, expected in (("is_mint", False), ("is_burn", False), ("is_redeem", True)):
             if row.get(field) is not expected:
                 raise RuntimeError("redeem commitment row has invalid %s" % field)
         if token != b"btcVELD" or destination_account or amount == 0:
@@ -108,9 +107,9 @@ class RedeemCommitment:
         if self.count != advertised_count or self.root.hex() != advertised_root:
             raise RuntimeError(
                 "redeem index completeness commitment mismatch "
-                "(walked %d/%s, ledger %d/%s)" %
-                (self.count, self.root.hex(), advertised_count,
-                 advertised_root))
+                "(walked %d/%s, ledger %d/%s)"
+                % (self.count, self.root.hex(), advertised_count, advertised_root)
+            )
 
 
 def authority_for_rows(rows):
@@ -120,5 +119,4 @@ def authority_for_rows(rows):
     commitment = RedeemCommitment()
     for row in rows:
         commitment.add_rpc_row(row)
-    return {"redeem_count": commitment.count,
-            "redeem_root": commitment.root.hex()}
+    return {"redeem_count": commitment.count, "redeem_root": commitment.root.hex()}

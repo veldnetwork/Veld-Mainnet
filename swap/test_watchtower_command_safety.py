@@ -10,16 +10,23 @@ class WatchtowerCommandSafetyTests(unittest.TestCase):
     def test_alert_argv_array_is_preserved(self):
         self.assertEqual(
             wd._validated_alert_argv(["/usr/bin/logger", "--tag", "veld-wt"]),
-            ("/usr/bin/logger", "--tag", "veld-wt"))
+            ("/usr/bin/logger", "--tag", "veld-wt"),
+        )
 
     def test_legacy_simple_alert_string_is_split_without_a_shell(self):
         self.assertEqual(
             wd._validated_alert_argv('/usr/bin/logger --tag "veld watchtower"'),
-            ("/usr/bin/logger", "--tag", "veld watchtower"))
+            ("/usr/bin/logger", "--tag", "veld watchtower"),
+        )
 
     def test_alert_rejects_malformed_argv(self):
-        for value in ({"command": "logger"}, [], ["logger", "bad\narg"],
-                      ["-logger"], ["logger", "bad\x00arg"]):
+        for value in (
+            {"command": "logger"},
+            [],
+            ["logger", "bad\narg"],
+            ["-logger"],
+            ["logger", "bad\x00arg"],
+        ):
             with self.subTest(value=value):
                 with self.assertRaises(RuntimeError):
                     wd._validated_alert_argv(value)
@@ -28,23 +35,33 @@ class WatchtowerCommandSafetyTests(unittest.TestCase):
         watchtower = wd.Watchtower.__new__(wd.Watchtower)
         watchtower.alert_cmd = ("/usr/bin/logger", "--tag", "veld-wt")
         completed = subprocess.CompletedProcess([], 0, "", "")
-        with mock.patch.object(wd, "warn"), \
-                mock.patch.object(wd, "run_bounded_subprocess",
-                                  return_value=completed) as run:
+        with (
+            mock.patch.object(wd, "warn"),
+            mock.patch.object(wd, "run_bounded_subprocess", return_value=completed) as run,
+        ):
             watchtower._alert("hostile; $(touch /tmp/not-executed)")
         run.assert_called_once_with(
             ["/usr/bin/logger", "--tag", "veld-wt"],
-            input_text="hostile; $(touch /tmp/not-executed)", timeout=20,
-            stdout_max=64 * 1024, stderr_max=64 * 1024,
-            description="watchtower alert hook")
+            input_text="hostile; $(touch /tmp/not-executed)",
+            timeout=20,
+            stdout_max=64 * 1024,
+            stderr_max=64 * 1024,
+            description="watchtower alert hook",
+        )
 
     def test_remote_command_allows_literal_name_or_path_only(self):
-        self.assertEqual(wd._validated_remote_command("veld_wt_recv"),
-                         "veld_wt_recv")
-        self.assertEqual(wd._validated_remote_command("/opt/veld/veld_wt_recv.py"),
-                         "/opt/veld/veld_wt_recv.py")
-        for value in ("veld_wt_recv --unsafe", "veld_wt_recv;id", "$(id)",
-                      "../veld_wt_recv", "", None):
+        self.assertEqual(wd._validated_remote_command("veld_wt_recv"), "veld_wt_recv")
+        self.assertEqual(
+            wd._validated_remote_command("/opt/veld/veld_wt_recv.py"), "/opt/veld/veld_wt_recv.py"
+        )
+        for value in (
+            "veld_wt_recv --unsafe",
+            "veld_wt_recv;id",
+            "$(id)",
+            "../veld_wt_recv",
+            "",
+            None,
+        ):
             with self.subTest(value=value):
                 with self.assertRaises(RuntimeError):
                     wd._validated_remote_command(value)

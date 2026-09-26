@@ -15,7 +15,8 @@ namespace {
 size_t checks = 0;
 void Check(bool condition, const char* message) {
     ++checks;
-    if (!condition) throw std::runtime_error(message);
+    if (!condition)
+        throw std::runtime_error(message);
 }
 std::string PublicKey(const RealKeyPair& key) {
     return BytesToHex(std::vector<uint8_t>(key.public_key.begin(), key.public_key.end()));
@@ -48,14 +49,15 @@ int main() {
         Check(registry.SnapshotState().total_staked_units == 0, "bonds altered ordinary staking");
         const auto snapshot = [&](uint64_t epoch, bool six) {
             auto selected = state;
-            if (six) selected.validators.at(PublicKey(keys.back())).active = false;
+            if (six)
+                selected.validators.at(PublicKey(keys.back())).active = false;
             registry.RestoreState(selected);
             return fq::BuildEpochSnapshot(registry, epoch, fq::SnapshotHeightFor(epoch));
         };
         fq::FinalityState finality, replay;
         std::vector<fq::EpochSnapshot> history;
-        for (const auto [epoch, six] : std::vector<std::pair<uint64_t,bool>>{
-                {20,true}, {21,false}, {22,false}, {23,true}, {24,false}, {25,false}}) {
+        for (const auto [epoch, six] : std::vector<std::pair<uint64_t, bool>>{
+                 {20, true}, {21, false}, {22, false}, {23, true}, {24, false}, {25, false}}) {
             const auto current = snapshot(epoch, six);
             Check(fq::SnapshotWellFormed(current), "ordinary snapshot is not canonical");
             Check(fq::SnapshotQualifies(current) == !six, "seven-member threshold changed");
@@ -69,13 +71,14 @@ int main() {
             Check(prior != after, "new epoch was not committed to state");
             const bool active = epoch == 22 || epoch == 25;
             Check(finality.FinalityActive() == active, "consecutive warm-up changed");
-            const auto gate = DeriveBtcVeldPegGate(true, finality.finality_ever_active,
-                                                  active, true);
+            const auto gate =
+                DeriveBtcVeldPegGate(true, finality.finality_ever_active, active, true);
             Check(gate.MintAllowed() == active, "mint gate differs from finality state");
             Check(gate.RedeemAllowed() == (epoch >= 22), "activation latch or completion changed");
             history.push_back(current);
         }
-        for (const auto& current : history) Check(replay.OnEpochBoundary(current), "epoch replay failed");
+        for (const auto& current : history)
+            Check(replay.OnEpochBoundary(current), "epoch replay failed");
         Check(replay.Digest() == finality.Digest(), "replayed finality digest differs");
 
         const auto offender = PublicKey(keys.front());
@@ -85,8 +88,9 @@ int main() {
         constexpr uint64_t yield_units = 123456789;
         for (bool equivocation : {false, true}) {
             ValidatorRegistry slashed;
-            slashed.TestInjectBondYieldState(offender, keys.front().address, true,
-                slash_height, slash_height - 1, reporter, {{accrued_height, yield_units}}, equivocation);
+            slashed.TestInjectBondYieldState(offender, keys.front().address, true, slash_height,
+                                             slash_height - 1, reporter,
+                                             {{accrued_height, yield_units}}, equivocation);
             auto current = slashed.SnapshotState();
             current.security_upgrade_active = true;
             current.state_migration_active = SecurityStateMigrationActive(slash_height);
@@ -104,10 +108,12 @@ int main() {
             Check(principal.front().kind == kind && principal.front().slasher_address == reporter,
                   "slash type or reporter attribution differs");
             const auto yield_boundary = ValidatorRegistry::SlashSettlementBoundary(slash_height);
-            Check(slashed.GetBondYieldSettlements(yield_boundary - 1).empty(), "yield confiscated early");
+            Check(slashed.GetBondYieldSettlements(yield_boundary - 1).empty(),
+                  "yield confiscated early");
             const auto yield = slashed.GetBondYieldSettlements(yield_boundary);
             Check(yield.size() == 1 && yield.front().kind == kind &&
-                  yield.front().bond_units == yield_units && yield.front().slasher_address == reporter,
+                      yield.front().bond_units == yield_units &&
+                      yield.front().slasher_address == reporter,
                   "pending yield lost the slash type, amount or recipient");
             auto settled = slashed.SnapshotState();
             settled.validators.at(offender).principal_settled_at = boundary;
@@ -116,10 +122,13 @@ int main() {
             ValidatorRegistry restored;
             restored.RestoreState(settled);
             Check(restored.GetBondSettlements(boundary).empty() &&
-                  restored.GetBondYieldSettlements(yield_boundary).empty(),
+                      restored.GetBondYieldSettlements(yield_boundary).empty(),
                   "restored terminal state can schedule a second settlement");
-            Check(!restored.RegistrationPreparationError(offender, keys.front().address,
-                  boundary + 1, 0).empty(), "slashed key became eligible for registration");
+            Check(
+                !restored
+                     .RegistrationPreparationError(offender, keys.front().address, boundary + 1, 0)
+                     .empty(),
+                "slashed key became eligible for registration");
         }
         std::cout << "{\"status\":\"PASS\",\"checks\":" << checks
                   << ",\"scope\":\"component state, not funded admission or real operators\","

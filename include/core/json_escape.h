@@ -25,24 +25,39 @@ inline std::string EscapeStringBytes(std::string_view input) {
         out.push_back(HEX[c & 0x0f]);
     };
     auto continuation = [&](size_t index) {
-        return index < input.size() &&
-               (static_cast<uint8_t>(input[index]) & 0xc0U) == 0x80U;
+        return index < input.size() && (static_cast<uint8_t>(input[index]) & 0xc0U) == 0x80U;
     };
 
     for (size_t i = 0; i < input.size();) {
         const uint8_t c = static_cast<uint8_t>(input[i]);
         if (c < 0x80U) {
             switch (c) {
-                case '"':  out += "\\\""; break;
-                case '\\': out += "\\\\"; break;
-                case '\b': out += "\\b";  break;
-                case '\f': out += "\\f";  break;
-                case '\n': out += "\\n";  break;
-                case '\r': out += "\\r";  break;
-                case '\t': out += "\\t";  break;
-                default:
-                    if (c < 0x20U) append_u00(c);
-                    else out.push_back(static_cast<char>(c));
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\b':
+                out += "\\b";
+                break;
+            case '\f':
+                out += "\\f";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                if (c < 0x20U)
+                    append_u00(c);
+                else
+                    out.push_back(static_cast<char>(c));
             }
             ++i;
             continue;
@@ -62,11 +77,9 @@ inline std::string EscapeStringBytes(std::string_view input) {
             }
         } else if (c >= 0xf0U && c <= 0xf4U) {
             width = 4;
-            if (continuation(i + 1) && continuation(i + 2) &&
-                continuation(i + 3)) {
+            if (continuation(i + 1) && continuation(i + 2) && continuation(i + 3)) {
                 const uint8_t c1 = static_cast<uint8_t>(input[i + 1]);
-                valid = (c != 0xf0U || c1 >= 0x90U) &&
-                        (c != 0xf4U || c1 <= 0x8fU); // <= U+10ffff
+                valid = (c != 0xf0U || c1 >= 0x90U) && (c != 0xf4U || c1 <= 0x8fU); // <= U+10ffff
             }
         }
 

@@ -41,10 +41,10 @@ inline constexpr size_t MAX_FINALITY_MARKER_OUTPUTS = 235;
 // including the family delimiter '|'). Order is irrelevant; the count must fit
 // in the seen-mask (uint32_t) below.
 inline constexpr const char* const kStatefulMarkerFamilies[] = {
-    "VELD_TOKEN|",     // custodial btcVELD mint / transfer / redeem  (onchain_tokens)
-    "VELD_MSPV|",      // trust-min SPV mint                          (onchain_tokens)
+    "VELD_TOKEN|", // custodial btcVELD mint / transfer / redeem  (onchain_tokens)
+    "VELD_MSPV|",  // trust-min SPV mint                          (onchain_tokens)
 #if defined(VELD_PUBLIC_MAINNET) || defined(VELD_BTCVELD_REGTEST)
-    "VELD_RSV1|",      // rolling reserve transition                  (onchain_tokens)
+    "VELD_RSV1|", // rolling reserve transition                  (onchain_tokens)
 #endif
     "VELD_AMM|",       // pool swap / add / remove                    (amm_pool)
     "VELD_STAKE|",     // stake lock / unlock                         (staking)
@@ -67,12 +67,14 @@ static_assert(kNumStatefulMarkerFamilies <= 32,
 // (direct length <= 75, OP_PUSHDATA1 0x4C, OP_PUSHDATA2 0x4D) byte-for-byte so
 // this guard sees exactly what the per-family state machines see.
 inline std::string MarkerOpReturnPayload(const std::vector<uint8_t>& script_pubkey) {
-    if (script_pubkey.size() < 2 || script_pubkey[0] != 0x6A) return "";
+    if (script_pubkey.size() < 2 || script_pubkey[0] != 0x6A)
+        return "";
     size_t off = 1, plen = 0;
     if (script_pubkey[off] <= 75) {
         plen = script_pubkey[off++];
     } else if (script_pubkey[off] == 0x4C && script_pubkey.size() > off + 1) {
-        off++; plen = script_pubkey[off++];
+        off++;
+        plen = script_pubkey[off++];
     } else if (script_pubkey[off] == 0x4D && script_pubkey.size() > off + 2) {
         off++;
         plen = (size_t)script_pubkey[off] | ((size_t)script_pubkey[off + 1] << 8);
@@ -80,16 +82,16 @@ inline std::string MarkerOpReturnPayload(const std::vector<uint8_t>& script_pubk
     } else {
         return "";
     }
-    if (off + plen > script_pubkey.size()) return "";
+    if (off + plen > script_pubkey.size())
+        return "";
     return std::string(script_pubkey.begin() + off, script_pubkey.begin() + off + plen);
 }
 
 // Stateful token markers have one script encoding: the shortest push opcode,
 // no trailing bytes.  The generic decoder above is intentionally permissive
 // for display/legacy consumers, so consensus callers must ask this separately.
-inline bool IsCanonicalMarkerOpReturn(
-        const std::vector<uint8_t>& script_pubkey,
-        const std::string& payload) {
+inline bool IsCanonicalMarkerOpReturn(const std::vector<uint8_t>& script_pubkey,
+                                      const std::string& payload) {
     const size_t n = payload.size();
     if (script_pubkey.empty() || script_pubkey[0] != 0x6A || n > 0xFFFF)
         return false;
@@ -108,11 +110,9 @@ inline bool IsCanonicalMarkerOpReturn(
             return false;
     }
     return script_pubkey.size() == off + n &&
-           std::equal(payload.begin(), payload.end(),
-                      script_pubkey.begin() + (ptrdiff_t)off,
+           std::equal(payload.begin(), payload.end(), script_pubkey.begin() + (ptrdiff_t)off,
                       [](char payload_byte, uint8_t script_byte) {
-                          return static_cast<uint8_t>(
-                                     static_cast<unsigned char>(payload_byte)) ==
+                          return static_cast<uint8_t>(static_cast<unsigned char>(payload_byte)) ==
                                  script_byte;
                       });
 }
@@ -126,12 +126,11 @@ inline bool TxHasInvalidTokenMarkerSet(const Transaction& tx) {
     size_t token_markers = 0;
     for (const auto& out : tx.outputs) {
         const std::string payload = MarkerOpReturnPayload(out.script_pubkey);
-        if (payload.rfind("VELD_TOKEN|", 0) != 0 &&
-            payload.rfind("VELD_MSPV|", 0) != 0
+        if (payload.rfind("VELD_TOKEN|", 0) != 0 && payload.rfind("VELD_MSPV|", 0) != 0
 #if defined(VELD_PUBLIC_MAINNET) || defined(VELD_BTCVELD_REGTEST)
             && payload.rfind("VELD_RSV1|", 0) != 0
 #endif
-            )
+        )
             continue;
         if (++token_markers > 1 || out.value != 0 ||
             !IsCanonicalMarkerOpReturn(out.script_pubkey, payload))
@@ -166,9 +165,11 @@ inline bool TxUsesExternalValueProtocol(const Transaction& tx) {
     };
     for (const auto& out : tx.outputs) {
         const std::string payload = MarkerOpReturnPayload(out.script_pubkey);
-        if (payload.empty()) continue;
+        if (payload.empty())
+            continue;
         for (const char* prefix : kExternalValueFamilies) {
-            if (payload.rfind(prefix, 0) == 0) return true;
+            if (payload.rfind(prefix, 0) == 0)
+                return true;
         }
     }
     return false;
@@ -181,18 +182,20 @@ inline bool TxComposesMultipleProtocols(const Transaction& tx) {
     int distinct = 0;
     for (const auto& out : tx.outputs) {
         std::string payload = MarkerOpReturnPayload(out.script_pubkey);
-        if (payload.empty()) continue;
+        if (payload.empty())
+            continue;
         for (int f = 0; f < kNumStatefulMarkerFamilies; ++f) {
             if (payload.rfind(kStatefulMarkerFamilies[f], 0) == 0) {
                 if (!(seen_mask & (1u << f))) {
                     seen_mask |= (1u << f);
-                    if (++distinct >= 2) return true;
+                    if (++distinct >= 2)
+                        return true;
                 }
-                break;  // a payload belongs to at most one family
+                break; // a payload belongs to at most one family
             }
         }
     }
     return false;
 }
 
-}  // namespace veld
+} // namespace veld

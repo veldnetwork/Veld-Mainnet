@@ -7,6 +7,7 @@ inventory, a >MAX_REORG_DEPTH quiescence wait, and two cryptographic operator
 approvals.  The old file is retained byte-for-byte and resolved rows become audit
 tombstones; they are never silently deleted.
 """
+
 import argparse
 import hashlib
 import json
@@ -19,6 +20,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 import sys
+
 sys.path.insert(0, HERE)
 import veld_signerd as signer  # noqa: E402
 
@@ -77,8 +79,12 @@ def verify_approvals(artifact, policy, keygen):
             fail("approval policy operator is invalid")
         operator_id = item.get("operator_id")
         pubkey_file = item.get("pubkey_file")
-        if (not isinstance(operator_id, str) or not operator_id or
-                operator_id in allowed or not isinstance(pubkey_file, str)):
+        if (
+            not isinstance(operator_id, str)
+            or not operator_id
+            or operator_id in allowed
+            or not isinstance(pubkey_file, str)
+        ):
             fail("approval policy operator identity/path is invalid or duplicate")
         regular_bytes(os.path.abspath(pubkey_file))
         allowed[operator_id] = os.path.abspath(pubkey_file)
@@ -101,15 +107,22 @@ def verify_approvals(artifact, policy, keygen):
             if approval.get("statement_sha256") != statement_sha:
                 fail("approval is not bound to this reconciliation statement")
             signature_hex = approval.get("signature_hex")
-            if (not isinstance(signature_hex, str) or not signature_hex or
-                    len(signature_hex) % 2 or not re.fullmatch(r"[0-9a-f]+", signature_hex)):
+            if (
+                not isinstance(signature_hex, str)
+                or not signature_hex
+                or len(signature_hex) % 2
+                or not re.fullmatch(r"[0-9a-f]+", signature_hex)
+            ):
                 fail("approval signature is malformed")
             signature = os.path.join(td, "approval-%d.sig" % index)
             with open(signature, "wb") as output:
                 output.write(bytes.fromhex(signature_hex))
-            run = subprocess.run([keygen, "verify-release", "@" + allowed[operator_id],
-                                  message, signature], capture_output=True,
-                                 text=True, timeout=30)
+            run = subprocess.run(
+                [keygen, "verify-release", "@" + allowed[operator_id], message, signature],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
             if run.returncode != 0:
                 fail("operator approval signature is invalid: %s" % operator_id)
             seen.add(operator_id)
@@ -127,8 +140,10 @@ def validate_evidence(artifact, old_sha, old_state, approval_policy_sha=None):
         fail("reconciliation artifact kind/version is invalid")
     if artifact.get("old_state_sha256") != old_sha:
         fail("artifact is not bound to the exact old signer-state bytes")
-    if (approval_policy_sha is not None and
-            artifact.get("approval_policy_sha256") != approval_policy_sha):
+    if (
+        approval_policy_sha is not None
+        and artifact.get("approval_policy_sha256") != approval_policy_sha
+    ):
         fail("artifact is not bound to the pinned operator approval policy")
     if "mint_accounting" in old_state:
         fail("this tool accepts only pre-accounting legacy state")
@@ -147,8 +162,13 @@ def validate_evidence(artifact, old_sha, old_state, approval_policy_sha=None):
     wait = artifact.get("wait_evidence")
     if not isinstance(wait, dict):
         fail("wait_evidence is missing")
-    required_true = ("signer_halted", "minter_halted", "mint_mempool_empty",
-                     "minter_queue_empty", "witness_restore_halt_armed")
+    required_true = (
+        "signer_halted",
+        "minter_halted",
+        "mint_mempool_empty",
+        "minter_queue_empty",
+        "witness_restore_halt_armed",
+    )
     if any(wait.get(key) is not True for key in required_true):
         fail("quiescence/HALT evidence is incomplete")
     start = bounded_uint(wait.get("quiesced_height"), "quiesced_height")
@@ -186,19 +206,25 @@ def transform(old_state, artifact, artifact_sha, operator_ids, inventory):
             fail("resolved inventory does not match a retained legacy row")
         disposition = row.get("disposition")
         if disposition == "canonical_final":
-            txid = row.get("txid"); block_hash = row.get("block_hash")
+            txid = row.get("txid")
+            block_hash = row.get("block_hash")
             block_height = bounded_uint(row.get("block_height"), "resolved block_height")
-            if (not isinstance(txid, str) or not re.fullmatch(r"[0-9a-f]{64}", txid) or
-                    not isinstance(block_hash, str) or
-                    not re.fullmatch(r"[0-9a-f]{64}", block_hash) or
-                    tip_height - block_height <= signer.MAX_REORG_DEPTH):
+            if (
+                not isinstance(txid, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", txid)
+                or not isinstance(block_hash, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", block_hash)
+                or tip_height - block_height <= signer.MAX_REORG_DEPTH
+            ):
                 fail("canonical_final row lacks >MAX_REORG_DEPTH block evidence")
         elif disposition == "provably_invalidated":
             evidence = row.get("invalidation_evidence_sha256")
             if not isinstance(evidence, str) or not re.fullmatch(r"[0-9a-f]{64}", evidence):
                 fail("invalidated row lacks hashed external evidence")
         else:
-            fail("every legacy request must be final or provably invalidated; unresolved rows pause")
+            fail(
+                "every legacy request must be final or provably invalidated; unresolved rows pause"
+            )
         tombstone = dict(entry)
         tombstone.update(row)
         tombstones.append(tombstone)
@@ -209,24 +235,32 @@ def transform(old_state, artifact, artifact_sha, operator_ids, inventory):
     if not isinstance(floor, dict) or floor.get("sats") != extra_floor:
         fail("omitted journal floor does not match conservative legacy calculation")
     if extra_floor:
-        if (floor.get("disposition") != "resolved_inventory" or
-                not isinstance(floor.get("evidence_sha256"), str) or
-                not re.fullmatch(r"[0-9a-f]{64}", floor["evidence_sha256"])):
+        if (
+            floor.get("disposition") != "resolved_inventory"
+            or not isinstance(floor.get("evidence_sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", floor["evidence_sha256"])
+        ):
             fail("omitted legacy floor lacks two-approved inventory evidence")
 
-    result = {key: value for key, value in old_state.items()
-              if key not in ("signed", "total_signed", "mint_accounting")}
+    result = {
+        key: value
+        for key, value in old_state.items()
+        if key not in ("signed", "total_signed", "mint_accounting")
+    }
     result["signed"] = []
     result["mint_accounting"] = {
         "version": signer.MINT_ACCOUNTING_VERSION,
-        "pending": [], "confirmed": [],
+        "pending": [],
+        "confirmed": [],
     }
     result["legacy_reconciliation"] = {
         "version": ARTIFACT_VERSION,
         "old_state_sha256": artifact["old_state_sha256"],
         "artifact_sha256": artifact_sha,
         "canonical_tip": {"height": tip_height, "hash": tip_hash},
-        "supply_sats": supply, "custody_sats": custody, "margin_sats": margin,
+        "supply_sats": supply,
+        "custody_sats": custody,
+        "margin_sats": margin,
         "operator_ids": operator_ids,
         "resolved_tombstones": tombstones,
         "omitted_journal_floor_tombstone": floor,
@@ -244,25 +278,35 @@ def atomic_apply(state_path, old_bytes, new_state):
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(backup, flags, 0o600)
     try:
-        os.write(fd, old_bytes); os.fsync(fd)
+        os.write(fd, old_bytes)
+        os.fsync(fd)
     finally:
         os.close(fd)
     fd, tmp = tempfile.mkstemp(prefix="signer-state.reconciled.", dir=directory)
     try:
         os.fchmod(fd, 0o600)
         payload = (json.dumps(new_state, sort_keys=True, separators=(",", ":")) + "\n").encode()
-        os.write(fd, payload); os.fsync(fd); os.close(fd); fd = -1
+        os.write(fd, payload)
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
         if hashlib.sha256(regular_bytes(state_path, private=True)).hexdigest() != old_sha:
             fail("signer state changed during offline reconciliation")
-        os.replace(tmp, state_path); tmp = None
+        os.replace(tmp, state_path)
+        tmp = None
         dfd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try: os.fsync(dfd)
-        finally: os.close(dfd)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
     finally:
-        if fd >= 0: os.close(fd)
+        if fd >= 0:
+            os.close(fd)
         if tmp is not None:
-            try: os.unlink(tmp)
-            except FileNotFoundError: pass
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
     return backup
 
 
@@ -278,23 +322,32 @@ def main():
     old_bytes = regular_bytes(state_path, private=True)
     artifact_bytes = regular_bytes(os.path.abspath(args.artifact))
     policy_bytes = regular_bytes(os.path.abspath(args.approval_policy))
-    old_state = json.loads(old_bytes); artifact = json.loads(artifact_bytes)
+    old_state = json.loads(old_bytes)
+    artifact = json.loads(artifact_bytes)
     policy = json.loads(policy_bytes)
     old_sha = hashlib.sha256(old_bytes).hexdigest()
     policy_sha = hashlib.sha256(policy_bytes).hexdigest()
-    inventory = validate_evidence(
-        artifact, old_sha, old_state, approval_policy_sha=policy_sha)
+    inventory = validate_evidence(artifact, old_sha, old_state, approval_policy_sha=policy_sha)
     operators, ignored_statement_sha = verify_approvals(
-        artifact, policy, os.path.abspath(args.keygen))
+        artifact, policy, os.path.abspath(args.keygen)
+    )
     artifact_sha = hashlib.sha256(artifact_bytes).hexdigest()
     result = transform(old_state, artifact, artifact_sha, operators, inventory)
     if args.apply:
         backup = atomic_apply(state_path, old_bytes, result)
-        print(json.dumps({"status": "APPLIED", "backup": backup,
-                          "artifact_sha256": artifact_sha}, sort_keys=True))
+        print(
+            json.dumps(
+                {"status": "APPLIED", "backup": backup, "artifact_sha256": artifact_sha},
+                sort_keys=True,
+            )
+        )
     else:
-        print(json.dumps({"status": "VALID", "artifact_sha256": artifact_sha,
-                          "new_state": result}, sort_keys=True))
+        print(
+            json.dumps(
+                {"status": "VALID", "artifact_sha256": artifact_sha, "new_state": result},
+                sort_keys=True,
+            )
+        )
 
 
 if __name__ == "__main__":

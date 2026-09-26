@@ -1,4 +1,5 @@
 """Validation shared by checkpoint signing and atomic publication."""
+
 import hashlib
 import json
 import re
@@ -36,11 +37,28 @@ def parse(raw):
     require(isinstance(value, list) and 0 < len(value) <= 1000, 'Checkpoint list rejected')
     previous = 0
     for record in value:
-        require(isinstance(record, dict) and set(record) == {'height', 'hash', 'signed_at', 'sig'}, 'Checkpoint fields rejected')
-        require(type(record['height']) is int and previous < record['height'] < 2**64, 'Checkpoint height order rejected')
-        require(type(record['signed_at']) is int and 0 < record['signed_at'] <= int(time.time()) + 300, 'Checkpoint signing time rejected')
-        require(isinstance(record['hash'], str) and re.fullmatch('[0-9a-f]{64}', record['hash']) and int(record['hash'], 16) != 0, 'Checkpoint hash rejected')
-        require(isinstance(record['sig'], str) and re.fullmatch('[0-9a-f]{6618}', record['sig']), 'Checkpoint signature encoding rejected')
+        require(
+            isinstance(record, dict) and set(record) == {'height', 'hash', 'signed_at', 'sig'},
+            'Checkpoint fields rejected',
+        )
+        require(
+            type(record['height']) is int and previous < record['height'] < 2**64,
+            'Checkpoint height order rejected',
+        )
+        require(
+            type(record['signed_at']) is int and 0 < record['signed_at'] <= int(time.time()) + 300,
+            'Checkpoint signing time rejected',
+        )
+        require(
+            isinstance(record['hash'], str)
+            and re.fullmatch('[0-9a-f]{64}', record['hash'])
+            and int(record['hash'], 16) != 0,
+            'Checkpoint hash rejected',
+        )
+        require(
+            isinstance(record['sig'], str) and re.fullmatch('[0-9a-f]{6618}', record['sig']),
+            'Checkpoint signature encoding rejected',
+        )
         previous = record['height']
     return value
 
@@ -52,7 +70,10 @@ def encode(records):
 
 
 def preserves(before, after):
-    require(len(after) >= len(before) and after[:len(before)] == before, 'Published checkpoint history changed')
+    require(
+        len(after) >= len(before) and after[: len(before)] == before,
+        'Published checkpoint history changed',
+    )
 
 
 def append_only(before, after):
@@ -61,17 +82,32 @@ def append_only(before, after):
 
 
 def qualify(rows, requested=()):
-    require(len(rows) == 3 and len({r['host'] for r in rows}) == 3, 'Three distinct fleet observations required')
+    require(
+        len(rows) == 3 and len({r['host'] for r in rows}) == 3,
+        'Three distinct fleet observations required',
+    )
     now = time.time()
     for row in rows:
         require(0 <= now - row['unix_time'] <= 90, 'Fleet observation is stale')
         require(row['genesis'] == GENESIS, 'Fleet network mismatch')
         require(row['ibd_complete'] and row['historical_validated'], 'Fleet validation incomplete')
-        require(row['active'] and row['uptime_seconds'] >= MIN_DEPTH and row['pid_unchanged'], 'Fleet service unstable')
+        require(
+            row['active'] and row['uptime_seconds'] >= MIN_DEPTH and row['pid_unchanged'],
+            'Fleet service unstable',
+        )
         require(row['clock_synchronized'], 'Fleet clock unsynchronized')
-        require(row['fresh_outbound'] >= 2 and row['matching_outbound'] >= 2, 'Fleet peer quorum unavailable')
-        require(row['state_height'] == row['height'] and row['state_tip'] == row['tip'], 'Fleet state is incoherent')
-    require(len({(r['height'], r['tip'], r['state_digest']) for r in rows}) == 1, 'Fleet tip or state disagreement')
+        require(
+            row['fresh_outbound'] >= 2 and row['matching_outbound'] >= 2,
+            'Fleet peer quorum unavailable',
+        )
+        require(
+            row['state_height'] == row['height'] and row['state_tip'] == row['tip'],
+            'Fleet state is incoherent',
+        )
+    require(
+        len({(r['height'], r['tip'], r['state_digest']) for r in rows}) == 1,
+        'Fleet tip or state disagreement',
+    )
     for height in requested:
         hashes = {r['hashes'].get(str(height)) for r in rows}
         require(len(hashes) == 1 and None not in hashes, 'Historical block disagreement')
@@ -85,10 +121,18 @@ def candidate_height(tip):
 
 def bind_records(records, rows):
     for record in records:
-        require(all(r['hashes'].get(str(record['height'])) == record['hash'] for r in rows), 'Signed checkpoint disagrees with fleet history')
+        require(
+            all(r['hashes'].get(str(record['height'])) == record['hash'] for r in rows),
+            'Signed checkpoint disagrees with fleet history',
+        )
 
 
 def bind_candidate(height, block_hash, rows):
     tip = qualify(rows, [height])
-    require(height % INTERVAL == 0 and tip - height >= MIN_DEPTH, 'Checkpoint lacks confirmation depth')
-    require(all(r['hashes'][str(height)] == block_hash for r in rows), 'Checkpoint candidate disagrees with fleet')
+    require(
+        height % INTERVAL == 0 and tip - height >= MIN_DEPTH, 'Checkpoint lacks confirmation depth'
+    )
+    require(
+        all(r['hashes'][str(height)] == block_hash for r in rows),
+        'Checkpoint candidate disagrees with fleet',
+    )

@@ -14,10 +14,11 @@ size_t checks = 0;
 
 void Check(bool condition, const char* label) {
     ++checks;
-    if (!condition) throw std::runtime_error(std::string("FAIL: ") + label);
+    if (!condition)
+        throw std::runtime_error(std::string("FAIL: ") + label);
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     using namespace std::chrono_literals;
@@ -28,8 +29,7 @@ int main() {
 
     Check(IBD_GETBLOCKS_BATCH_BLOCKS == 32,
           "wire batch stays inside the per-source orphan frontier");
-    Check(IBD_GETBLOCKS_RETRY_IDLE == 30s,
-          "IBD retry idle interval is exact");
+    Check(IBD_GETBLOCKS_RETRY_IDLE == 30s, "IBD retry idle interval is exact");
 
     PeerState peer;
     const auto start = PeerState::tp_t{} + 1h;
@@ -45,13 +45,11 @@ int main() {
     peer.last_getblocks = start + 30s;
     Check(!IbdGetBlocksRetryDue(peer, 49, start + 31s),
           "canonical progress suppresses duplicate suffix requests");
-    Check(peer.ibd_observed_height == 49 &&
-              peer.last_ibd_progress == start + 31s,
+    Check(peer.ibd_observed_height == 49 && peer.last_ibd_progress == start + 31s,
           "canonical progress timestamp is recorded exactly");
 
     for (uint64_t height = 50; height <= 88; ++height) {
-        const auto now = start + 31s +
-            std::chrono::seconds((height - 49) * 2);
+        const auto now = start + 31s + std::chrono::seconds((height - 49) * 2);
         Check(!IbdGetBlocksRetryDue(peer, height, now),
               "continuous expensive validation never floods GETBLOCKS");
     }
@@ -63,8 +61,7 @@ int main() {
 
     using veld::net::IbdGetBlocksRequestDue;
     using veld::net::IBD_GETBLOCKS_BUSY_RETRY_LIMIT;
-    Check(IBD_GETBLOCKS_BUSY_RETRY_LIMIT == 60s,
-          "busy validation has a bounded retry limit");
+    Check(IBD_GETBLOCKS_BUSY_RETRY_LIMIT == 60s, "busy validation has a bounded retry limit");
     peer.last_getblocks = start;
     peer.last_ibd_progress = start;
     peer.ibd_observed_height = 48;
@@ -91,15 +88,17 @@ int main() {
     using veld::net::IbdCanonicalBatchGate;
     IbdCanonicalBatchGate batch_gate(100, start);
     unsigned sends = 0;
-    auto sent = [&] { ++sends; return true; };
+    auto sent = [&] {
+        ++sends;
+        return true;
+    };
     Check(!batch_gate.TryContinue(131, start + 2s, sent) && sends == 0,
           "split canonical progress below one batch cannot request early");
     Check(batch_gate.TryContinue(132, start + 2s, sent) && sends == 1,
           "aggregate canonical batch advances without a complete per-peer batch");
     Check(!batch_gate.TryContinue(132, start + 2s, sent) && sends == 1,
           "another peer cannot duplicate the same canonical batch request");
-    Check(!batch_gate.TryContinue(164, start + 3s,
-                                 [&] { return false; }),
+    Check(!batch_gate.TryContinue(164, start + 3s, [&] { return false; }),
           "failed enqueue does not consume aggregate continuation");
     Check(batch_gate.TryContinue(164, start + 3s, sent) && sends == 2,
           "another peer can retry a failed aggregate enqueue");
@@ -119,7 +118,8 @@ int main() {
             });
         });
     }
-    for (auto& contender : contenders) contender.join();
+    for (auto& contender : contenders)
+        contender.join();
     Check(concurrent_sends.load(std::memory_order_relaxed) == 1,
           "concurrent peer loops enqueue exactly one aggregate continuation");
 

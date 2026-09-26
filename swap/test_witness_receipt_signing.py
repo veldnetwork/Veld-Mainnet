@@ -19,20 +19,26 @@ class WitnessReceiptSigningTests(unittest.TestCase):
         self.password = self.root / "fixture-password"
         self.password.write_text("disposable fixture passphrase\n")
         self.password.chmod(0o600)
-        self.cfg = {"keygen": "/fixture/keygen", "signer": {
-            "beat_keyfile": str(self.key), "beat_passfile": str(self.password)}}
+        self.cfg = {
+            "keygen": "/fixture/keygen",
+            "signer": {"beat_keyfile": str(self.key), "beat_passfile": str(self.password)},
+        }
 
     def sign(self, signature_size=3309):
         def run(argv, **kwargs):
             self.assertEqual(kwargs["timeout"], 30)
             self.assertEqual(kwargs["stdout_max"], 65536)
             self.assertEqual(kwargs["stderr_max"], 65536)
-            self.assertEqual(kwargs["env"]["VELD_VAULT_PASSPHRASE"],
-                             "disposable fixture passphrase")
+            self.assertEqual(
+                kwargs["env"]["VELD_VAULT_PASSPHRASE"], "disposable fixture passphrase"
+            )
             Path(argv[-1]).write_bytes(b"s" * signature_size)
             return subprocess.CompletedProcess(argv, 0, "", "")
-        with mock.patch.object(witness.sol, "canonical_reservation_bytes", return_value=b"{}"), \
-                mock.patch.object(witness, "run_bounded_subprocess", side_effect=run):
+
+        with (
+            mock.patch.object(witness.sol, "canonical_reservation_bytes", return_value=b"{}"),
+            mock.patch.object(witness, "run_bounded_subprocess", side_effect=run),
+        ):
             return witness._sign_receipt({}, self.cfg)
 
     def test_complete_receipt_and_original_environment(self):
@@ -43,10 +49,15 @@ class WitnessReceiptSigningTests(unittest.TestCase):
         self.assertEqual(dict(os.environ), before)
 
     def test_missing_signature_is_refused(self):
-        with mock.patch.object(witness.sol, "canonical_reservation_bytes", return_value=b"{}"), \
-                mock.patch.object(witness, "run_bounded_subprocess",
-                    return_value=subprocess.CompletedProcess([], 0, "", "")), \
-                self.assertRaises(FileNotFoundError):
+        with (
+            mock.patch.object(witness.sol, "canonical_reservation_bytes", return_value=b"{}"),
+            mock.patch.object(
+                witness,
+                "run_bounded_subprocess",
+                return_value=subprocess.CompletedProcess([], 0, "", ""),
+            ),
+            self.assertRaises(FileNotFoundError),
+        ):
             witness._sign_receipt({}, self.cfg)
 
     def test_incomplete_signature_is_refused(self):
@@ -55,15 +66,19 @@ class WitnessReceiptSigningTests(unittest.TestCase):
 
     def test_unavailable_password_refuses_before_signing(self):
         self.password.unlink()
-        with mock.patch.object(witness, "run_bounded_subprocess") as run, \
-                self.assertRaises(SystemExit):
+        with (
+            mock.patch.object(witness, "run_bounded_subprocess") as run,
+            self.assertRaises(SystemExit),
+        ):
             witness._sign_receipt({}, self.cfg)
         run.assert_not_called()
 
     def test_empty_password_refuses_before_signing(self):
         self.password.write_text("\n")
-        with mock.patch.object(witness, "run_bounded_subprocess") as run, \
-                self.assertRaises(SystemExit):
+        with (
+            mock.patch.object(witness, "run_bounded_subprocess") as run,
+            self.assertRaises(SystemExit),
+        ):
             witness._sign_receipt({}, self.cfg)
         run.assert_not_called()
 

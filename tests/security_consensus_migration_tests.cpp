@@ -11,28 +11,36 @@
 // boundaries used by canonical rollback.
 using namespace veld;
 namespace fq = veld::finality::qc;
-Hash256 Tag(uint8_t b) { Hash256 h{}; h.fill(b); return h; }
+Hash256 Tag(uint8_t b) {
+    Hash256 h{};
+    h.fill(b);
+    return h;
+}
 int main() {
     constexpr uint64_t H = CONSENSUS_SECURITY_UPGRADE_HEIGHT;
     static_assert(H >= 2 * BOND_SETTLEMENT_INTERVAL);
     constexpr uint64_t epoch = H / fq::EPOCH_BLOCKS;
-    assert(!ConsensusSecurityUpgradeActive(H-1));
+    assert(!ConsensusSecurityUpgradeActive(H - 1));
     assert(ConsensusSecurityUpgradeActive(H));
-    assert(ConsensusSecurityUpgradeActive(H+1));
+    assert(ConsensusSecurityUpgradeActive(H + 1));
     for (const auto* op : {"DEREGISTER", "SLASH", "SLASH_EQUIV", "ENDORSE"}) {
-        assert(!ValidatorRegistry::RegistrationFloorPermits(true, op, H-1));
+        assert(!ValidatorRegistry::RegistrationFloorPermits(true, op, H - 1));
         assert(ValidatorRegistry::RegistrationFloorPermits(true, op, H));
-        assert(ValidatorRegistry::RegistrationFloorPermits(false, op, H-1));
+        assert(ValidatorRegistry::RegistrationFloorPermits(false, op, H - 1));
     }
     assert(!ValidatorRegistry::RegistrationFloorPermits(true, "REGISTER", H));
     assert(ValidatorRegistry::RegistrationFloorPermits(false, "REGISTER", H));
 
     const std::string pk(3904, '1');
     ValidatorRecord rec;
-    rec.pubkey_hex = pk; rec.address = "ordinary-fixture";
-    rec.registered_height = 1; rec.active = false;
-    rec.bond_custodial = true; rec.bond_units = MIN_VALIDATOR_STAKE;
-    rec.slashed = true; rec.slashed_at_height = H - 10;
+    rec.pubkey_hex = pk;
+    rec.address = "ordinary-fixture";
+    rec.registered_height = 1;
+    rec.active = false;
+    rec.bond_custodial = true;
+    rec.bond_units = MIN_VALIDATOR_STAKE;
+    rec.slashed = true;
+    rec.slashed_at_height = H - 10;
     ValidatorRegistry registry;
     ValidatorRegistry::StateSnapshot state;
     state.validators[pk] = rec;
@@ -47,8 +55,9 @@ int main() {
     assert(legacy_due >= H);
     assert(registry.GetBondSettlements(legacy_due).empty());
     assert(registry.CanAcceptSlashEvidence(pk, H - 10, H));
-    Block transition; transition.height = H;
-    assert(registry.ProcessBlock(transition, [](const auto&){return uint64_t{0};}));
+    Block transition;
+    transition.height = H;
+    assert(registry.ProcessBlock(transition, [](const auto&) { return uint64_t{0}; }));
     const auto migrated = registry.SnapshotState();
     assert(migrated.security_upgrade_active);
     assert(migrated.validators.at(pk).principal_settled_at == 0);
@@ -59,15 +68,17 @@ int main() {
     assert(registry.GetBondSettlements(due).size() == 1);
     assert(registry.GetBondSettlements(due - BOND_SETTLEMENT_INTERVAL).empty());
     assert(!registry.CanAcceptSlashEvidence(pk, due, due));
-    Block payment; payment.height = due;
-    assert(registry.ProcessBlock(payment, [](const auto&){return uint64_t{0};}));
+    Block payment;
+    payment.height = due;
+    assert(registry.ProcessBlock(payment, [](const auto&) { return uint64_t{0}; }));
     const auto paid_state = registry.SnapshotState();
-    assert(!paid_state.validators.count(pk) || paid_state.validators.at(pk).principal_settled_at == due);
+    assert(!paid_state.validators.count(pk) ||
+           paid_state.validators.at(pk).principal_settled_at == due);
     assert(registry.GetBondSettlements(due).empty());
     const auto after = registry.ValidatorsDigest();
     registry.RestoreState(migrated);
     assert(registry.GetBondSettlements(due).size() == 1);
-    assert(registry.ProcessBlock(payment, [](const auto&){return uint64_t{0};}));
+    assert(registry.ProcessBlock(payment, [](const auto&) { return uint64_t{0}; }));
     assert(registry.ValidatorsDigest() == after);
     registry.RestoreState(state);
     assert(registry.ValidatorsDigest() == before);
@@ -75,7 +86,7 @@ int main() {
     registry.RestoreState(state);
     assert(registry.GetBondSettlements(H).empty());
     assert(!registry.CanAcceptSlashEvidence(pk, 1, H));
-    assert(registry.ProcessBlock(transition, [](const auto&){return uint64_t{0};}));
+    assert(registry.ProcessBlock(transition, [](const auto&) { return uint64_t{0}; }));
     assert(registry.SnapshotState().validators.at(pk).principal_settled_at ==
            ValidatorRegistry::SlashSettlementBoundary(1));
 
@@ -90,10 +101,12 @@ int main() {
         boundary_state.finality_membership[slash_at / fq::EPOCH_BLOCKS] = membership;
         registry.RestoreState(boundary_state);
         const auto old_due = ValidatorRegistry::SlashSettlementBoundary(slash_at);
-        Block before_activation; before_activation.height = H - 1;
+        Block before_activation;
+        before_activation.height = H - 1;
         assert(registry.ProcessBlock(before_activation, [](const auto&) { return uint64_t{0}; }));
         const auto parent = registry.SnapshotState();
-        assert(!parent.security_upgrade_active && parent.validators.at(pk).principal_settled_at == 0);
+        assert(!parent.security_upgrade_active &&
+               parent.validators.at(pk).principal_settled_at == 0);
         assert(registry.ProcessBlock(transition, [](const auto&) { return uint64_t{0}; }));
         const auto active = registry.SnapshotState();
         assert(active.security_upgrade_active);
@@ -101,7 +114,8 @@ int main() {
         if (old_due >= H)
             assert(registry.GetBondLifecycleStatus(pk).settlement_boundary > old_due);
         const auto active_digest = registry.ValidatorsDigest();
-        Block after_activation; after_activation.height = H + 1;
+        Block after_activation;
+        after_activation.height = H + 1;
         assert(registry.ProcessBlock(after_activation, [](const auto&) { return uint64_t{0}; }));
         assert(registry.ValidatorsDigest() == active_digest);
         registry.RestoreState(parent);
@@ -147,19 +161,30 @@ int main() {
     Blockchain chain;
     StakingLedger staking;
     GovernanceEngine governance(chain, staking);
-    Proposal p; p.id = 1; p.title = "Ordinary proposal";
-    p.description = "A small lifecycle fixture"; p.proposer = "fixture";
-    p.created_at = H - 60; p.expires_at = H + 8000;
-    p.status = ProposalStatus::TIMELOCKED; p.timelock_until = H + 1000;
-    p.votes["fixture"] = VoteChoice::YES; p.votes_yes = 1;
+    Proposal p;
+    p.id = 1;
+    p.title = "Ordinary proposal";
+    p.description = "A small lifecycle fixture";
+    p.proposer = "fixture";
+    p.created_at = H - 60;
+    p.expires_at = H + 8000;
+    p.status = ProposalStatus::TIMELOCKED;
+    p.timelock_until = H + 1000;
+    p.votes["fixture"] = VoteChoice::YES;
+    p.votes_yes = 1;
     p.creation_identity = GovernanceEngine::ProposalCreationIdentity(Tag(5), 0);
     GovernanceEngine::StateSnapshot gs;
-    gs.next_id = 3; gs.proposals[1] = p;
-    Proposal terminal = p; terminal.id = 2; terminal.status = ProposalStatus::PASSED;
-    gs.proposals[2] = terminal; gs.last_vote_block["fixture:1"] = H - 2;
+    gs.next_id = 3;
+    gs.proposals[1] = p;
+    Proposal terminal = p;
+    terminal.id = 2;
+    terminal.status = ProposalStatus::PASSED;
+    gs.proposals[2] = terminal;
+    gs.last_vote_block["fixture:1"] = H - 2;
     governance.RestoreState(gs);
     const auto old_gov = governance.GovernanceDigest();
-    Block before_activation; before_activation.height = H - 1;
+    Block before_activation;
+    before_activation.height = H - 1;
     governance.ProcessBlock(before_activation, H - 1, false);
     assert(governance.GovernanceDigest() == old_gov);
     governance.ProcessBlock(transition, H, false);
@@ -181,7 +206,8 @@ int main() {
     const auto serialized = GovernanceEngine::SerializeProposal(round);
     assert(GovernanceEngine::DeserializeProposal(serialized, decoded));
     assert(GovernanceEngine::VoteIdentity(decoded) == identity);
-    auto next_round = decoded; ++next_round.vote_round_start;
+    auto next_round = decoded;
+    ++next_round.vote_round_start;
     assert(GovernanceEngine::VoteIdentity(next_round) != identity);
     auto incomplete = serialized;
     const auto version = incomplete.find("\"identity_version\":1");
@@ -189,10 +215,10 @@ int main() {
     incomplete.replace(version, std::string("\"identity_version\":1").size(),
                        "\"identity_version\":2");
     assert(!GovernanceEngine::DeserializeProposal(incomplete, decoded));
-    const auto bound_challenge = GovernanceEngine::BuildVoteChallenge(
-        1, VoteChoice::YES, H, identity);
-    assert(bound_challenge == GovernanceEngine::GovChainIdPrefix() +
-        "GOV_VOTE_V2:1:" + identity + ":yes:@" + std::to_string(H));
+    const auto bound_challenge =
+        GovernanceEngine::BuildVoteChallenge(1, VoteChoice::YES, H, identity);
+    assert(bound_challenge == GovernanceEngine::GovChainIdPrefix() + "GOV_VOTE_V2:1:" + identity +
+                                  ":yes:@" + std::to_string(H));
     assert(bound_challenge != GovernanceEngine::BuildVoteChallenge(1, VoteChoice::YES, H));
     const auto new_gov = governance.GovernanceDigest();
     governance.RestoreState(gs);
@@ -201,7 +227,8 @@ int main() {
     assert(governance.GovernanceDigest() == new_gov);
     governance.ProcessBlock(transition, H, false);
     assert(governance.GovernanceDigest() == new_gov);
-    Block after_activation; after_activation.height = H + 1;
+    Block after_activation;
+    after_activation.height = H + 1;
     governance.ProcessBlock(after_activation, H + 1, false);
     assert(governance.GovernanceDigest() == new_gov);
 
@@ -229,9 +256,10 @@ int main() {
     assert(!canonical.CandidateRetainsFinality(candidate, target_present));
     candidate = canonical;
     assert(!canonical.CandidateRetainsFinality(candidate,
-        [](uint64_t, const Hash256&){return false;}));
+                                               [](uint64_t, const Hash256&) { return false; }));
     auto legacy = canonical;
-    legacy.record.target = {H - 40, Tag(7)}; legacy.record.carrier = {H - 20, Tag(8)};
+    legacy.record.target = {H - 40, Tag(7)};
+    legacy.record.carrier = {H - 20, Tag(8)};
     assert(legacy.RequiredReorgAncestor() == H - 20);
     assert(!legacy.CandidateRetainsFinality(candidate, target_present));
     const auto finality_digest = canonical.Digest();
@@ -242,7 +270,9 @@ int main() {
     assert(candidate.Digest() != finality_digest);
     canonical.Reset();
     assert(!canonical.security_upgrade_active && canonical.AnchorAuthorizationRecord().IsNull());
-    std::cout << "PASS: consensus migration, terminal principal, registration-only floor, bound governance and finality retention controls H=" << H << '\n';
+    std::cout
+        << "PASS: consensus migration, terminal principal, registration-only floor, bound governance and finality retention controls H="
+        << H << '\n';
     std::cout << "module_digests=" << HashToHex(registry.ValidatorsDigest()) << ':'
               << HashToHex(new_gov) << ':' << HashToHex(finality_digest) << '\n';
 }

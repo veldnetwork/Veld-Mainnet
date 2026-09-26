@@ -24,19 +24,24 @@ USAGE (run on a host with a synced mainnet bitcoind):
 Paste the printed block over the `cp.height = ...` region of the #else branch in
 include/consensus/btcveld_spv_params.h, then rebuild ALL binaries for the release.
 """
+
 import os, sys, json, subprocess, hashlib
 
-CLI       = os.environ.get("BITCOIN_CLI", "bitcoin-cli").split()
-MIN_DEPTH = int(sys.argv[1]) if len(sys.argv) > 1 else 512   # burial safety margin
-FORCE_H   = os.environ.get("CHECKPOINT_HEIGHT")             # pin a height (validation)
+CLI = os.environ.get("BITCOIN_CLI", "bitcoin-cli").split()
+MIN_DEPTH = int(sys.argv[1]) if len(sys.argv) > 1 else 512  # burial safety margin
+FORCE_H = os.environ.get("CHECKPOINT_HEIGHT")  # pin a height (validation)
+
 
 def cli(*a):
     r = subprocess.run(CLI + list(a), capture_output=True, text=True)
     if r.returncode:
         sys.exit("bitcoin-cli %s failed: %s" % (a[0], r.stderr.strip()[:200]))
     s = r.stdout.strip()
-    try:    return json.loads(s)
-    except Exception: return s
+    try:
+        return json.loads(s)
+    except Exception:
+        return s
+
 
 chain = cli("getblockchaininfo")
 if isinstance(chain, dict) and chain.get("chain") != "main":
@@ -46,16 +51,16 @@ tip = int(cli("getblockcount"))
 if FORCE_H:
     boundary = int(FORCE_H)
 else:
-    boundary = ((tip - MIN_DEPTH) // 2016) * 2016          # latest buried retarget boundary
+    boundary = ((tip - MIN_DEPTH) // 2016) * 2016  # latest buried retarget boundary
 if boundary <= 0 or boundary % 2016 != 0:
     sys.exit("bad boundary %d (must be a positive multiple of 2016)" % boundary)
 depth = tip - boundary
 
-h    = cli("getblockhash", str(boundary))
-hdr  = cli("getblockheader", h)                            # {hash,time,bits,...} (display hash, BE)
-raw  = cli("getblockheader", h, "false")                   # raw 80-byte header hex
+h = cli("getblockhash", str(boundary))
+hdr = cli("getblockheader", h)  # {hash,time,bits,...} (display hash, BE)
+raw = cli("getblockheader", h, "false")  # raw 80-byte header hex
 disp = hdr["hash"]
-internal_le = bytes.fromhex(disp)[::-1].hex()              # cp.hash = INTERNAL (LE) block hash
+internal_le = bytes.fromhex(disp)[::-1].hex()  # cp.hash = INTERNAL (LE) block hash
 bits = int(hdr["bits"], 16)
 time_ = int(hdr["time"])
 

@@ -14,7 +14,8 @@ namespace {
 size_t checks = 0;
 void Check(bool ok, const char* message) {
     ++checks;
-    if (!ok) throw std::runtime_error(message);
+    if (!ok)
+        throw std::runtime_error(message);
 }
 
 struct Fixture {
@@ -25,15 +26,17 @@ struct Fixture {
     static constexpr uint64_t mono = 100000;
     static constexpr int64_t wall = 2000000;
 
-    Fixture() { server.TestSetClockSampleTime(mono, wall); }
+    Fixture() {
+        server.TestSetClockSampleTime(mono, wall);
+    }
 
-    std::shared_ptr<Connection> Add(const std::string& ip, int64_t offset,
-                                    bool inbound = false, bool anchor = true,
-                                    uint64_t sampled = mono) {
+    std::shared_ptr<Connection> Add(const std::string& ip, int64_t offset, bool inbound = false,
+                                    bool anchor = true, uint64_t sampled = mono) {
         const auto fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         Check(compat::IsValidSocket(fd), "fixture socket");
         auto peer = std::make_shared<Connection>(fd, ip, 8333, inbound);
-        if (anchor) Check(server.AddFleetAnchorIp(ip), "configured anchor");
+        if (anchor)
+            Check(server.AddFleetAnchorIp(ip), "configured anchor");
         peer->MarkVersionReceived();
         peer->MarkHandshakeReady();
         server.TestRegisterAdmittedConnection(ip + ':' + std::to_string(peers.size()), peer);

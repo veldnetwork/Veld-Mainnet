@@ -52,21 +52,19 @@ Coordinator::Configuration Ready(const Coordinator& coordinator) {
     p.genesis_hash = Filled(0x11);
     p.profile_digest = Filled(0x22);
     configuration.permitted_paths.fill(true);
-    Coordinator::BindCloseEpochSnapshot(
-        configuration, close_epoch_before, coordinator.ObserveCloseEpoch());
+    Coordinator::BindCloseEpochSnapshot(configuration, close_epoch_before,
+                                        coordinator.ObserveCloseEpoch());
     return configuration;
 }
 
-Coordinator::Configuration ReadyWithPeerView(
-        const Coordinator& coordinator,
-        const net::NodeServer& server) {
+Coordinator::Configuration ReadyWithPeerView(const Coordinator& coordinator,
+                                             const net::NodeServer& server) {
     const uint64_t close_epoch_before = coordinator.ObserveCloseEpoch();
     auto configuration = Ready(coordinator);
     const auto view = server.GetPeerHeightView();
-    configuration.prerequisites.peer_view_safe =
-        view.work_sequencer_wired && view.work_view_stable;
-    Coordinator::BindCloseEpochSnapshot(
-        configuration, close_epoch_before, coordinator.ObserveCloseEpoch());
+    configuration.prerequisites.peer_view_safe = view.work_sequencer_wired && view.work_view_stable;
+    Coordinator::BindCloseEpochSnapshot(configuration, close_epoch_before,
+                                        coordinator.ObserveCloseEpoch());
     return configuration;
 }
 
@@ -109,22 +107,21 @@ Coordinator::Limits Limits() {
     return limits;
 }
 
-std::shared_ptr<net::Connection> MakeConnection(
-        const std::string& ip, uint16_t port, bool inbound = false) {
+std::shared_ptr<net::Connection> MakeConnection(const std::string& ip, uint16_t port,
+                                                bool inbound = false) {
     const auto fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (!compat::IsValidSocket(fd)) return {};
+    if (!compat::IsValidSocket(fd))
+        return {};
     return std::make_shared<net::Connection>(fd, ip, port, inbound);
 }
 
 struct TransitionPermit {
-    explicit TransitionPermit(std::unique_lock<std::mutex> guard)
-        : guard(std::move(guard)) {}
+    explicit TransitionPermit(std::unique_lock<std::mutex> guard) : guard(std::move(guard)) {}
     std::unique_lock<std::mutex> guard;
 };
 
 bool WaitForCoordinatorClose(Coordinator& coordinator) {
-    const auto deadline = std::chrono::steady_clock::now() +
-        std::chrono::seconds(3);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while (std::chrono::steady_clock::now() < deadline) {
         if (coordinator.GetSnapshot().phase == Coordinator::Phase::Closed)
             return true;
@@ -134,28 +131,24 @@ bool WaitForCoordinatorClose(Coordinator& coordinator) {
     return false;
 }
 
-bool SameCoordinatorState(const Coordinator::Snapshot& lhs,
-                          const Coordinator::Snapshot& rhs) {
-    return lhs.phase == rhs.phase &&
-        lhs.configured == rhs.configured &&
-        lhs.refusal == rhs.refusal &&
-        lhs.active_leases == rhs.active_leases &&
-        lhs.pending_remote_tokens == rhs.pending_remote_tokens &&
-        lhs.spent_remote_tokens == rhs.spent_remote_tokens &&
-        lhs.close_deadline == rhs.close_deadline &&
-        lhs.configuration_generation == rhs.configuration_generation &&
-        lhs.close_epoch == rhs.close_epoch;
+bool SameCoordinatorState(const Coordinator::Snapshot& lhs, const Coordinator::Snapshot& rhs) {
+    return lhs.phase == rhs.phase && lhs.configured == rhs.configured &&
+           lhs.refusal == rhs.refusal && lhs.active_leases == rhs.active_leases &&
+           lhs.pending_remote_tokens == rhs.pending_remote_tokens &&
+           lhs.spent_remote_tokens == rhs.spent_remote_tokens &&
+           lhs.close_deadline == rhs.close_deadline &&
+           lhs.configuration_generation == rhs.configuration_generation &&
+           lhs.close_epoch == rhs.close_epoch;
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     compat::InitNetwork();
     Blockchain chain;
     Block genesis = CreateGenesisBlock();
-    Check(chain.AddBlockDirect(
-              genesis, true, false, false,
-              mining::PowAdmissionContext::Internal()).IsAccepted(),
+    Check(chain.AddBlockDirect(genesis, true, false, false, mining::PowAdmissionContext::Internal())
+              .IsAccepted(),
           "genesis fixture accepted");
     Mempool mempool;
     net::NodeServer server(0, MAINNET_MAGIC, chain, mempool);
@@ -169,13 +162,10 @@ int main() {
     server.TestMarkPeerHandshakeReady(peer_a);
     server.TestMarkPeerHandshakeReady(peer_b);
     auto initial = server.GetPeerHeightView();
-    Check(!initial.work_sequencer_wired,
-          "unwired peer view cannot authorize work");
-    Check(initial.distinct_version_ips == 2 &&
-              initial.distinct_outbound_sync_ips == 2,
+    Check(!initial.work_sequencer_wired, "unwired peer view cannot authorize work");
+    Check(initial.distinct_version_ips == 2 && initial.distinct_outbound_sync_ips == 2,
           "two exact outbound source generations visible");
-    Check(initial.outbound_sync_height == 110,
-          "outbound floor is second-highest exact source");
+    Check(initial.outbound_sync_height == 110, "outbound floor is second-highest exact source");
 
     // Exercise the production VERSION and VERACK handlers, not only the
     // focused mutation seams. The unsigned raw VERSION claim is invisible
@@ -190,8 +180,8 @@ int main() {
             coordinator.BeginClose(Refusal::PeerViewUnsafe);
             Check(WaitForCoordinatorClose(coordinator),
                   "production handshake transition closes boundedly");
-            auto permit = std::make_shared<TransitionPermit>(
-                std::unique_lock<std::mutex>(transition));
+            auto permit =
+                std::make_shared<TransitionPermit>(std::unique_lock<std::mutex>(transition));
             return std::static_pointer_cast<void>(permit);
         });
         auto peer = MakeConnection("10.20.0.3", 30103, false);
@@ -208,10 +198,8 @@ int main() {
               "VERSION publishes one exact source generation");
         Check(callbacks.load(std::memory_order_acquire) == 1,
               "VERSION mutation crossed sequencer exactly once");
-        server.TestDispatchPeerMessageWithState(
-            state, *peer, manager.BuildVerackMessage());
-        Check(state.version_acked && state.handshake_done,
-              "VERACK publishes handshake readiness");
+        server.TestDispatchPeerMessageWithState(state, *peer, manager.BuildVerackMessage());
+        Check(state.version_acked && state.handshake_done, "VERACK publishes handshake readiness");
         Check(callbacks.load(std::memory_order_acquire) == 2,
               "VERACK mutation crossed sequencer exactly once");
         server.TestFinalizePeerConnection("unused-production", peer);
@@ -226,33 +214,25 @@ int main() {
     // fail while no peer byte has yet changed.
     {
         Coordinator coordinator(Limits(), Mint());
-        const auto t1_configuration =
-            ReadyWithPeerView(coordinator, server);
-        const auto t2_stale_configuration =
-            ReadyWithPeerView(coordinator, server);
-        const auto t1_decision = Evaluate(
-            BlockSubject(), t1_configuration.prerequisites);
-        Check(t1_configuration.close_epoch ==
-                  t2_stale_configuration.close_epoch &&
+        const auto t1_configuration = ReadyWithPeerView(coordinator, server);
+        const auto t2_stale_configuration = ReadyWithPeerView(coordinator, server);
+        const auto t1_decision = Evaluate(BlockSubject(), t1_configuration.prerequisites);
+        Check(t1_configuration.close_epoch == t2_stale_configuration.close_epoch &&
                   t1_decision.allowed && t1_decision.binding,
               "two real peer snapshots prepare T1 and delayed T2");
-        Check(coordinator.Open(t1_configuration).opened,
-              "writer-first coordinator opened");
-        const auto t1_bound = net::NodeServer::BoundPeerWorkLifetimeMs(
-            server.GetPeerHeightView(), 100, 1);
-        Check(t1_bound.has_value(),
-              "T1 real peer lifetime bound succeeds before writer intent");
+        Check(coordinator.Open(t1_configuration).opened, "writer-first coordinator opened");
+        const auto t1_bound =
+            net::NodeServer::BoundPeerWorkLifetimeMs(server.GetPeerHeightView(), 100, 1);
+        Check(t1_bound.has_value(), "T1 real peer lifetime bound succeeds before writer intent");
         std::mutex transition;
         std::promise<void> close_started_promise;
         auto close_started = close_started_promise.get_future();
         server.SetPeerWorkViewTransitionFn([&]() {
-            const auto close = coordinator.BeginClose(
-                Refusal::PeerViewUnsafe);
-            Check(close.fully_closed,
-                  "writer-first close has no predecessor");
+            const auto close = coordinator.BeginClose(Refusal::PeerViewUnsafe);
+            Check(close.fully_closed, "writer-first close has no predecessor");
             close_started_promise.set_value();
-            auto permit = std::make_shared<TransitionPermit>(
-                std::unique_lock<std::mutex>(transition));
+            auto permit =
+                std::make_shared<TransitionPermit>(std::unique_lock<std::mutex>(transition));
             return std::static_pointer_cast<void>(permit);
         });
         std::unique_lock<std::mutex> hold_transition(transition);
@@ -261,30 +241,27 @@ int main() {
             server.TestRecordPeerSyncHeight(*peer_a, 200);
             writer_done.store(true, std::memory_order_release);
         });
-        Check(close_started.wait_for(std::chrono::seconds(2)) ==
-                  std::future_status::ready,
+        Check(close_started.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
               "writer-first close reached deterministic barrier");
         const auto pending = server.GetPeerHeightView();
-        Check(!pending.work_view_stable &&
-                  (pending.work_generation & 1U) == 0,
+        Check(!pending.work_view_stable && (pending.work_generation & 1U) == 0,
               "write intent refuses new work before odd publication");
         const auto before_stale_open = coordinator.GetSnapshot();
         const auto stale_open = coordinator.Open(t2_stale_configuration);
-        Check(!stale_open.opened &&
-                  stale_open.error == Coordinator::Error::Closed &&
-                  SameCoordinatorState(
-                      before_stale_open, coordinator.GetSnapshot()),
+        Check(!stale_open.opened && stale_open.error == Coordinator::Error::Closed &&
+                  SameCoordinatorState(before_stale_open, coordinator.GetSnapshot()),
               "actual peer close rejects delayed stale Open without mutation");
-        auto refused = coordinator.AcquireLocal(
-            Path::InternalMining, BlockSubject(), t1_decision.binding, true,
-            std::chrono::milliseconds(*t1_bound));
+        auto refused =
+            coordinator.AcquireLocal(Path::InternalMining, BlockSubject(), t1_decision.binding,
+                                     true, std::chrono::milliseconds(*t1_bound));
         uint64_t journal = 0;
         uint64_t signature = 0;
         uint64_t sink = 0;
         if (refused && refused.lease) {
             ++journal;
             ++signature;
-            if (refused.lease->ClaimForSink()) ++sink;
+            if (refused.lease->ClaimForSink())
+                ++sink;
         }
         Check(!refused && refused.error == Coordinator::Error::Closed,
               "writer-first refuses new local sink");
@@ -299,8 +276,7 @@ int main() {
               "post-write peer generation stable and wired");
         Check(after.outbound_sync_height == 120,
               "writer-first sync-height mutation published once");
-        Check(coordinator.Open(
-                  ReadyWithPeerView(coordinator, server)).opened,
+        Check(coordinator.Open(ReadyWithPeerView(coordinator, server)).opened,
               "fresh post-publication peer snapshot reopens legitimately");
     }
 
@@ -309,28 +285,22 @@ int main() {
     // irreversible sink effect.
     {
         Coordinator coordinator(Limits(), Mint());
-        Check(coordinator.Open(Ready(coordinator)).opened,
-              "local predecessor coordinator opened");
-        auto local = coordinator.AcquireLocal(
-            Path::SubmitBlock, BlockSubject(), std::nullopt, false,
-            std::chrono::milliseconds(800));
-        Check(local && local.lease->ClaimForSink(),
-              "local block predecessor claimed");
+        Check(coordinator.Open(Ready(coordinator)).opened, "local predecessor coordinator opened");
+        auto local = coordinator.AcquireLocal(Path::SubmitBlock, BlockSubject(), std::nullopt,
+                                              false, std::chrono::milliseconds(800));
+        Check(local && local.lease->ClaimForSink(), "local block predecessor claimed");
         std::mutex transition;
         std::promise<void> close_started_promise;
         auto close_started = close_started_promise.get_future();
         std::atomic<bool> close_wait_succeeded{false};
         server.SetPeerWorkViewTransitionFn([&]() {
-            const auto close = coordinator.BeginClose(
-                Refusal::PeerViewUnsafe);
-            Check(!close.fully_closed,
-                  "local predecessor makes peer writer wait");
+            const auto close = coordinator.BeginClose(Refusal::PeerViewUnsafe);
+            Check(!close.fully_closed, "local predecessor makes peer writer wait");
             close_started_promise.set_value();
-            close_wait_succeeded.store(
-                WaitForCoordinatorClose(coordinator),
-                std::memory_order_release);
-            auto permit = std::make_shared<TransitionPermit>(
-                std::unique_lock<std::mutex>(transition));
+            close_wait_succeeded.store(WaitForCoordinatorClose(coordinator),
+                                       std::memory_order_release);
+            auto permit =
+                std::make_shared<TransitionPermit>(std::unique_lock<std::mutex>(transition));
             return std::static_pointer_cast<void>(permit);
         });
         std::atomic<bool> writer_done{false};
@@ -342,20 +312,17 @@ int main() {
             writer_order = order.fetch_add(1) + 1;
             writer_done.store(true, std::memory_order_release);
         });
-        Check(close_started.wait_for(std::chrono::seconds(2)) ==
-                  std::future_status::ready,
+        Check(close_started.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
               "local predecessor close barrier reached");
         Check(!writer_done.load(std::memory_order_acquire),
               "local predecessor blocks peer publication");
-        Check(local.lease->IsLive(),
-              "claimed local predecessor remains live while Closing");
+        Check(local.lease->IsLive(), "claimed local predecessor remains live while Closing");
         sink_order = order.fetch_add(1) + 1;
         local.lease->Release();
         writer.join();
         Check(close_wait_succeeded.load(std::memory_order_acquire),
               "local predecessor close completed boundedly");
-        Check(sink_order < writer_order,
-              "local sink effect precedes peer mutation");
+        Check(sink_order < writer_order, "local sink effect precedes peer mutation");
     }
 
     // An abandoned predecessor cannot deadlock a peer transition. The
@@ -365,25 +332,19 @@ int main() {
         Coordinator::Limits short_limits = Limits();
         short_limits.max_local_lease = std::chrono::milliseconds(80);
         Coordinator coordinator(short_limits, Mint());
-        Check(coordinator.Open(Ready(coordinator)).opened,
-              "timeout coordinator opened");
-        auto abandoned = coordinator.AcquireLocal(
-            Path::SubmitBlock, BlockSubject(), std::nullopt, false,
-            std::chrono::milliseconds(80));
-        Check(abandoned && abandoned.lease,
-              "bounded abandoned predecessor acquired");
+        Check(coordinator.Open(Ready(coordinator)).opened, "timeout coordinator opened");
+        auto abandoned = coordinator.AcquireLocal(Path::SubmitBlock, BlockSubject(), std::nullopt,
+                                                  false, std::chrono::milliseconds(80));
+        Check(abandoned && abandoned.lease, "bounded abandoned predecessor acquired");
         std::mutex transition;
         std::atomic<bool> close_wait_succeeded{false};
         server.SetPeerWorkViewTransitionFn([&]() {
-            const auto close = coordinator.BeginClose(
-                Refusal::PeerViewUnsafe);
-            Check(!close.fully_closed,
-                  "abandoned predecessor initially delays writer");
-            close_wait_succeeded.store(
-                WaitForCoordinatorClose(coordinator),
-                std::memory_order_release);
-            auto permit = std::make_shared<TransitionPermit>(
-                std::unique_lock<std::mutex>(transition));
+            const auto close = coordinator.BeginClose(Refusal::PeerViewUnsafe);
+            Check(!close.fully_closed, "abandoned predecessor initially delays writer");
+            close_wait_succeeded.store(WaitForCoordinatorClose(coordinator),
+                                       std::memory_order_release);
+            auto permit =
+                std::make_shared<TransitionPermit>(std::unique_lock<std::mutex>(transition));
             return std::static_pointer_cast<void>(permit);
         });
         auto write = std::async(std::launch::async, [&] {
@@ -391,41 +352,34 @@ int main() {
             // the higher source is deliberately coalesced and needs no barrier.
             server.TestRecordPeerSyncHeight(*peer_a, 350);
         });
-        Check(write.wait_for(std::chrono::seconds(2)) ==
-                  std::future_status::ready,
+        Check(write.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
               "expired predecessor cannot deadlock peer writer");
         write.get();
         Check(close_wait_succeeded.load(std::memory_order_acquire),
               "expired predecessor closed before mutation");
-        Check(!abandoned.lease->IsLive(),
-              "abandoned predecessor is unusable after deadline");
+        Check(!abandoned.lease->IsLive(), "abandoned predecessor is unusable after deadline");
     }
 
     // Remote signer first: an exact pending bearer consumes during Closing,
     // then journal/sign/one-use sink complete before peer publication.
     {
         Coordinator coordinator(Limits(), Mint());
-        Check(coordinator.Open(Ready(coordinator)).opened,
-              "remote predecessor coordinator opened");
+        Check(coordinator.Open(Ready(coordinator)).opened, "remote predecessor coordinator opened");
         const Subject subject = FinalitySubject();
-        auto remote = coordinator.IssueRemoteSigningLease(
-            Path::FinalityVote, subject, std::nullopt, false,
-            std::chrono::milliseconds(1200));
-        Check(remote && remote.grant,
-              "remote predecessor bearer issued");
+        auto remote = coordinator.IssueRemoteSigningLease(Path::FinalityVote, subject, std::nullopt,
+                                                          false, std::chrono::milliseconds(1200));
+        Check(remote && remote.grant, "remote predecessor bearer issued");
         std::mutex transition;
         std::promise<void> close_started_promise;
         auto close_started = close_started_promise.get_future();
         server.SetPeerWorkViewTransitionFn([&]() {
-            const auto close = coordinator.BeginClose(
-                Refusal::PeerViewUnsafe);
-            Check(!close.fully_closed,
-                  "pending remote bearer makes peer writer wait");
+            const auto close = coordinator.BeginClose(Refusal::PeerViewUnsafe);
+            Check(!close.fully_closed, "pending remote bearer makes peer writer wait");
             close_started_promise.set_value();
             Check(WaitForCoordinatorClose(coordinator),
                   "remote predecessor completes before timeout");
-            auto permit = std::make_shared<TransitionPermit>(
-                std::unique_lock<std::mutex>(transition));
+            auto permit =
+                std::make_shared<TransitionPermit>(std::unique_lock<std::mutex>(transition));
             return std::static_pointer_cast<void>(permit);
         });
         std::atomic<uint64_t> order{0};
@@ -435,14 +389,11 @@ int main() {
             server.TestRecordPeerSyncHeight(*peer_b, 400);
             writer_order = order.fetch_add(1) + 1;
         });
-        Check(close_started.wait_for(std::chrono::seconds(2)) ==
-                  std::future_status::ready,
+        Check(close_started.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
               "remote predecessor close barrier reached");
-        auto active = coordinator.ConsumeRemoteSigningLease(
-            remote.grant->token, Path::FinalityVote, subject,
-            remote.grant->binding);
-        Check(active && active.lease->IsLive(),
-              "exact predecessor bearer consumes during Closing");
+        auto active = coordinator.ConsumeRemoteSigningLease(remote.grant->token, Path::FinalityVote,
+                                                            subject, remote.grant->binding);
+        Check(active && active.lease->IsLive(), "exact predecessor bearer consumes during Closing");
         bool journal = active.lease->IsLive();
         bool signature = active.lease->IsLive();
         bool sink = active.lease->ClaimForSink() && active.lease->IsLive();
@@ -451,11 +402,9 @@ int main() {
         sink_order = order.fetch_add(1) + 1;
         active.lease->Release();
         writer.join();
-        Check(sink_order < writer_order,
-              "remote signed sink precedes peer mutation");
-        auto replay = coordinator.ConsumeRemoteSigningLease(
-            remote.grant->token, Path::FinalityVote, subject,
-            remote.grant->binding);
+        Check(sink_order < writer_order, "remote signed sink precedes peer mutation");
+        auto replay = coordinator.ConsumeRemoteSigningLease(remote.grant->token, Path::FinalityVote,
+                                                            subject, remote.grant->binding);
         Check(!replay, "remote predecessor bearer remains one-use");
     }
 
@@ -470,13 +419,12 @@ int main() {
             coordinator.BeginClose(Refusal::PeerViewUnsafe);
             Check(WaitForCoordinatorClose(coordinator),
                   "non-predecessor peer transition closes boundedly");
-            auto permit = std::make_shared<TransitionPermit>(
-                std::unique_lock<std::mutex>(transition));
+            auto permit =
+                std::make_shared<TransitionPermit>(std::unique_lock<std::mutex>(transition));
             return std::static_pointer_cast<void>(permit);
         });
         const uint64_t before_verified = callbacks.load();
-        server.TestRecordVerifiedPeerHeight(
-            peer_a->RemoteAddr(), genesis.GetHash());
+        server.TestRecordVerifiedPeerHeight(peer_a->RemoteAddr(), genesis.GetHash());
         Check(callbacks.load() == before_verified,
               "genesis evidence keeps unchanged verified-height view unrevoked");
         Check(server.TestVerifiedPeerEvidenceCount() == 1,
@@ -499,21 +447,17 @@ int main() {
         const auto fresh = server.GetPeerHeightView();
         Check(fresh.freshness_valid_for_ms == 120000,
               "freshness deadline is conservative to coarse clock");
-        auto long_ttl = net::NodeServer::BoundPeerWorkLifetimeMs(
-            fresh, 200000, 1000);
-        Check(long_ttl && *long_ttl == 119000,
-              "all peer-bound work lifetimes end before expiry");
+        auto long_ttl = net::NodeServer::BoundPeerWorkLifetimeMs(fresh, 200000, 1000);
+        Check(long_ttl && *long_ttl == 119000, "all peer-bound work lifetimes end before expiry");
         server.TestSetPeerHeightClock(219);
         const auto margin = server.GetPeerHeightView();
         Check(margin.freshness_valid_for_ms == 1000,
               "one-second conservative freshness window exposed");
-        Check(!net::NodeServer::BoundPeerWorkLifetimeMs(
-                  margin, 5000, 1000),
+        Check(!net::NodeServer::BoundPeerWorkLifetimeMs(margin, 5000, 1000),
               "lease refused when freshness margin is insufficient");
         server.TestSetPeerHeightClock(221);
         const auto expired = server.GetPeerHeightView();
-        Check(expired.outbound_sync_height == 0 &&
-                  expired.freshness_valid_for_ms == UINT64_MAX,
+        Check(expired.outbound_sync_height == 0 && expired.freshness_valid_for_ms == UINT64_MAX,
               "expired outbound claim no longer influences work view");
     }
 
@@ -521,34 +465,27 @@ int main() {
     // contract. At the returned hard deadline the coordinator prunes the work
     // before journal/sign/sink code can emit an artifact.
     {
-        auto wall_ttl = VeldNode::BoundWallClockWorkLifetimeMs(
-            100, 105, 10000, 1000);
+        auto wall_ttl = VeldNode::BoundWallClockWorkLifetimeMs(100, 105, 10000, 1000);
         Check(wall_ttl && *wall_ttl == 3000,
               "wall-clock lifetime subtracts quantization and margin");
-        Check(!VeldNode::BoundWallClockWorkLifetimeMs(
-                  103, 105, 10000, 1000),
+        Check(!VeldNode::BoundWallClockWorkLifetimeMs(103, 105, 10000, 1000),
               "wall-clock work refused at insufficient margin");
         std::atomic<int64_t> now_ms{100000};
-        Coordinator coordinator(
-            Limits(), Mint(), [&] {
-                return Coordinator::TimePoint(
-                    Coordinator::Duration(now_ms.load()));
-            });
-        Check(coordinator.Open(Ready(coordinator)).opened,
-              "wall deadline coordinator opened");
-        auto pending = coordinator.IssueRemoteSigningLease(
-            Path::FinalityVote, FinalitySubject(), std::nullopt, false,
-            std::chrono::milliseconds(*wall_ttl));
-        Check(pending && pending.grant,
-              "wall-bounded remote grant issued");
+        Coordinator coordinator(Limits(), Mint(), [&] {
+            return Coordinator::TimePoint(Coordinator::Duration(now_ms.load()));
+        });
+        Check(coordinator.Open(Ready(coordinator)).opened, "wall deadline coordinator opened");
+        auto pending =
+            coordinator.IssueRemoteSigningLease(Path::FinalityVote, FinalitySubject(), std::nullopt,
+                                                false, std::chrono::milliseconds(*wall_ttl));
+        Check(pending && pending.grant, "wall-bounded remote grant issued");
         now_ms.store(103000);
         auto expired = coordinator.ConsumeRemoteSigningLease(
-            pending.grant->token, Path::FinalityVote, FinalitySubject(),
-            pending.grant->binding);
+            pending.grant->token, Path::FinalityVote, FinalitySubject(), pending.grant->binding);
         uint64_t artifacts = 0;
-        if (expired && expired.lease->IsLive()) ++artifacts;
-        Check(!expired && artifacts == 0,
-              "crossing wall deadline emits zero artifacts");
+        if (expired && expired.lease->IsLive())
+            ++artifacts;
+        Check(!expired && artifacts == 0, "crossing wall deadline emits zero artifacts");
     }
 
     // A configured callback failure never publishes unsequenced peer state and
@@ -557,19 +494,16 @@ int main() {
         const size_t sources_before = server.TestPeerWorkSourceCount();
         const size_t claims_before = server.TestPeerHeightClaimCount();
         const size_t sync_before = server.TestPeerSyncClaimCount();
-        server.SetPeerWorkViewTransitionFn([] {
-            return net::NodeServer::PeerWorkViewTransitionPermit{};
-        });
+        server.SetPeerWorkViewTransitionFn(
+            [] { return net::NodeServer::PeerWorkViewTransitionPermit{}; });
         auto failed_peer = MakeConnection("10.20.0.9", 30109, false);
         Check(failed_peer != nullptr, "failure-path peer allocated");
         net::PeerState failed_state;
         failed_state.version_sent = true;
         PeerManager manager(MAINNET_MAGIC, 0);
-        server.TestDispatchPeerMessageWithState(
-            failed_state, *failed_peer,
-            manager.BuildVersionMessage(999, 0x5058));
-        Check(!failed_state.their_version &&
-                  !failed_peer->VersionReceived(),
+        server.TestDispatchPeerMessageWithState(failed_state, *failed_peer,
+                                                manager.BuildVersionMessage(999, 0x5058));
+        Check(!failed_state.their_version && !failed_peer->VersionReceived(),
               "failed production VERSION stays unpublished");
         Check(server.TestPeerWorkSourceCount() == sources_before,
               "failed permit publishes no source");
@@ -583,8 +517,7 @@ int main() {
     }
 
     peer_b->Close();
-    std::cout << "PASS peer_work_view_race_tests checks="
-              << checks.load(std::memory_order_acquire)
+    std::cout << "PASS peer_work_view_race_tests checks=" << checks.load(std::memory_order_acquire)
               << " writer_first=1 local_predecessor=1 remote_predecessor=1"
               << " close_epoch_stale_reopen=1"
               << " version_verack=1 handshake_removal=1 verified_height=1"

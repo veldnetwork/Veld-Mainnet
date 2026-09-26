@@ -29,7 +29,8 @@ struct GuiStateQualification {
         restarted.LoadSettings();
         assert(!restarted.auto_update_enabled_);
     }
-    static std::filesystem::path Prepare(const std::filesystem::path& profile, const std::filesystem::path& root) {
+    static std::filesystem::path Prepare(const std::filesystem::path& profile,
+                                         const std::filesystem::path& root) {
         NodeGuiApp app(profile);
         Configure(app, root);
         assert(!app.PrepareUpdateResume());
@@ -55,7 +56,8 @@ struct GuiStateQualification {
         }
         return app.update_resume_pending_;
     }
-    static void DownloadFailure(const std::filesystem::path& profile, const std::filesystem::path& root) {
+    static void DownloadFailure(const std::filesystem::path& profile,
+                                const std::filesystem::path& root) {
         NodeGuiApp app(profile);
         Configure(app, root);
         app.state_.process_running = true;
@@ -72,7 +74,8 @@ struct GuiStateQualification {
         assert(app.next_auto_update_ > std::chrono::steady_clock::now() + std::chrono::minutes(59));
         assert(app.next_auto_update_ <= std::chrono::steady_clock::now() + std::chrono::hours(1));
     }
-    static void AutomaticCycle(const std::filesystem::path& profile, const std::filesystem::path& root) {
+    static void AutomaticCycle(const std::filesystem::path& profile,
+                               const std::filesystem::path& root) {
         NodeGuiApp app(profile);
         Configure(app, root);
         app.next_auto_update_ = std::chrono::steady_clock::now();
@@ -99,7 +102,8 @@ struct GuiStateQualification {
         assert(!app.automatic_install_pending_);
         assert(!app.update_resume_pending_ && !app.HasSessionUnlock());
     }
-    static void HourlyChecks(const std::filesystem::path& profile, const std::filesystem::path& root) {
+    static void HourlyChecks(const std::filesystem::path& profile,
+                             const std::filesystem::path& root) {
         NodeGuiApp app(profile);
         Configure(app, root);
         app.auto_update_enabled_.store(true);
@@ -121,8 +125,10 @@ struct GuiStateQualification {
             assert(GetExitCodeProcess(check, &exit_code) && exit_code == 0);
             app.OnUpdateProcessComplete(exit_code);
             assert(!app.automatic_install_pending_);
-            assert(app.next_auto_update_ > std::chrono::steady_clock::now() + std::chrono::minutes(59));
-            assert(app.next_auto_update_ <= std::chrono::steady_clock::now() + std::chrono::hours(1));
+            assert(app.next_auto_update_ >
+                   std::chrono::steady_clock::now() + std::chrono::minutes(59));
+            assert(app.next_auto_update_ <=
+                   std::chrono::steady_clock::now() + std::chrono::hours(1));
         }
         app.auto_update_enabled_.store(false);
         app.TickAutomaticUpdates(app.next_auto_update_ + std::chrono::hours(24));
@@ -132,7 +138,10 @@ struct GuiStateQualification {
 
 void Write(const std::filesystem::path& path, const std::string& text) {
     std::filesystem::create_directories(path.parent_path());
-    std::ofstream out(path, std::ios::binary); out << text; out.close(); assert(out.good());
+    std::ofstream out(path, std::ios::binary);
+    out << text;
+    out.close();
+    assert(out.good());
 }
 }
 
@@ -140,7 +149,9 @@ int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--consume") {
         const auto root = std::filesystem::absolute(argv[2]);
         return GuiStateQualification::Resume(root / L"private profile",
-            root / L"Install \u00e9 \u65e5\u672c\u8a9e") ? 0 : 1;
+                                             root / L"Install \u00e9 \u65e5\u672c\u8a9e")
+                   ? 0
+                   : 1;
     }
     assert(argc == 2);
     const auto root = std::filesystem::absolute(argv[1]);
@@ -166,23 +177,28 @@ int main(int argc, char** argv) {
         std::filesystem::remove_all(stage.parent_path());
         Write(install / L"update-last-result.json", "{\"status\":\"installed\"}");
     };
-    auto ticket = prepare(); commit();
+    auto ticket = prepare();
+    commit();
     assert(GuiStateQualification::Resume(profile, install));
     assert(!std::filesystem::exists(ticket));
     assert(!GuiStateQualification::Resume(profile, install));
     std::cout << "PASS update restart and single-use consumption\n";
-    ticket = prepare(); commit();
-    std::wstring command = L"\"" + ModulePath().wstring() + L"\" --consume \"" + root.wstring() + L"\"";
+    ticket = prepare();
+    commit();
+    std::wstring command =
+        L"\"" + ModulePath().wstring() + L"\" --consume \"" + root.wstring() + L"\"";
     std::vector<wchar_t> mutable_command(command.begin(), command.end());
     mutable_command.push_back(0);
-    STARTUPINFOW startup{}; startup.cb = sizeof(startup);
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
     assert(CreateProcessW(ModulePath().c_str(), mutable_command.data(), nullptr, nullptr, FALSE,
-        CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process));
+                          CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process));
     assert(WaitForSingleObject(process.hProcess, 15000) == WAIT_OBJECT_0);
     DWORD result = 1;
     assert(GetExitCodeProcess(process.hProcess, &result) && result == 0);
-    CloseHandle(process.hThread); CloseHandle(process.hProcess);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
     assert(!std::filesystem::exists(ticket));
     std::cout << "PASS protected unlock transfers to a fresh Windows process\n";
     ticket = prepare();
@@ -190,45 +206,62 @@ int main(int argc, char** argv) {
     Write(install / L"update-last-result.json", "{\"status\":\"failed\"}");
     assert(GuiStateQualification::Resume(profile, install));
     std::cout << "PASS verified rollback restart\n";
-    ticket = prepare(); commit();
+    ticket = prepare();
+    commit();
     Write(install / L"custom data" / L"miner.key", "different identity");
     assert(!GuiStateQualification::Resume(profile, install));
-    ticket = prepare(); commit();
+    ticket = prepare();
+    commit();
     Write(install / L"SHA256SUMS.txt", "unrelated signed release");
     assert(!GuiStateQualification::Resume(profile, install));
-    ticket = prepare(); commit();
+    ticket = prepare();
+    commit();
     Write(install / L"update-last-result.json", "{\"status\":\"recovery-required\"}");
     assert(!GuiStateQualification::Resume(profile, install));
     std::cout << "PASS changed identity, unrelated package and incomplete rollback rejected\n";
-    ticket = prepare(); commit();
-    auto bytes = ReadTextBounded(ticket); bytes[bytes.size()/2] ^= 1;
+    ticket = prepare();
+    commit();
+    auto bytes = ReadTextBounded(ticket);
+    bytes[bytes.size() / 2] ^= 1;
     assert(veld::node_gui::WriteStateText(ticket, bytes));
     assert(!GuiStateQualification::Resume(profile, install));
-    ticket = prepare(); commit();
+    ticket = prepare();
+    commit();
     veld::node_gui::UpdateResume expired;
-    assert(!veld::node_gui::ConsumeUpdateResume(ticket, veld::node_gui::UpdateInstallContext(install),
-        expired, static_cast<uint64_t>(std::time(nullptr)) + 3601));
+    assert(!veld::node_gui::ConsumeUpdateResume(
+        ticket, veld::node_gui::UpdateInstallContext(install), expired,
+        static_cast<uint64_t>(std::time(nullptr)) + 3601));
     assert(expired.passphrase.empty());
-    ticket = prepare(); commit();
+    ticket = prepare();
+    commit();
     veld::node_gui::UpdateResume wrong_install;
     assert(!veld::node_gui::ConsumeUpdateResume(ticket, L"other install", wrong_install,
-        static_cast<uint64_t>(std::time(nullptr))));
+                                                static_cast<uint64_t>(std::time(nullptr))));
     std::cout << "PASS tamper, expiry and cross-install rejection\n";
-    ticket = prepare(); commit();
-    HANDLE locked = CreateFileW(ticket.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    ticket = prepare();
+    commit();
+    HANDLE locked = CreateFileW(ticket.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                OPEN_EXISTING, 0, nullptr);
     assert(locked != INVALID_HANDLE_VALUE);
     assert(!GuiStateQualification::Resume(profile, install));
     assert(std::filesystem::exists(ticket));
     CloseHandle(locked);
     assert(GuiStateQualification::Resume(profile, install));
     std::cout << "PASS locked ticket fails closed and recovers\n";
-    Write(install / L"veld-update.ps1", "param($Mode,$InstallDir,$Distribution)\nWrite-Output '[update] FAILED: fixture download interrupted'\nexit 1\n");
+    Write(
+        install / L"veld-update.ps1",
+        "param($Mode,$InstallDir,$Distribution)\nWrite-Output '[update] FAILED: fixture download interrupted'\nexit 1\n");
     GuiStateQualification::DownloadFailure(profile, install);
-    std::cout << "PASS real updater child download failure leaves process and session running; retry delayed\n";
-    Write(install / L"veld-update.ps1", "param($Mode,$InstallDir,$Distribution)\nif($Mode -eq 'Check'){Write-Output 'Remote version: 3.1.11';exit 2}\nWrite-Output '[update] FAILED: interrupted fixture download'\nexit 1\n");
+    std::cout
+        << "PASS real updater child download failure leaves process and session running; retry delayed\n";
+    Write(
+        install / L"veld-update.ps1",
+        "param($Mode,$InstallDir,$Distribution)\nif($Mode -eq 'Check'){Write-Output 'Remote version: 3.1.11';exit 2}\nWrite-Output '[update] FAILED: interrupted fixture download'\nexit 1\n");
     GuiStateQualification::AutomaticCycle(profile, install);
-    std::cout << "PASS automatic check-to-install dispatch, opt-out, single in-flight operation and failure backoff; stopped node stays stopped\n";
+    std::cout
+        << "PASS automatic check-to-install dispatch, opt-out, single in-flight operation and failure backoff; stopped node stays stopped\n";
     Write(install / L"veld-update.ps1", "param($Mode,$InstallDir,$Distribution)\nexit 0\n");
     GuiStateQualification::HourlyChecks(profile, install);
-    std::cout << "PASS hourly check boundaries, repeated current-version checks, no concurrent check and opt-out\n";
+    std::cout
+        << "PASS hourly check boundaries, repeated current-version checks, no concurrent check and opt-out\n";
 }

@@ -74,6 +74,8 @@ jobs:
           - fixture: clock_drift_recovery_tests
             standalone: true
           - fixture: reliability_gui_state_tests
+          - fixture: windows_address_mining_tests
+          - fixture: windows_startup_settings_tests
           - fixture: windows_auto_update_tests
           - fixture: pool_monitor_tests
             standalone: true
@@ -272,6 +274,10 @@ jobs:
             fixture: coinbase_chain_integration_tests
             defines: '-DVELD_PROTOCOL_UPGRADE_TEST_HEIGHT=3840'
             members: ''
+          - name: address-only mining and wallet-mode isolation
+            fixture: address_only_node_tests
+            defines: '-DVELD_TEST_HOOKS=1'
+            members: ''
           - name: supply cap
             fixture: coinbase_cap_admission_tests
             members: ''
@@ -365,6 +371,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          umask 077
           objects=()
           index=0
           while IFS= read -r source; do
@@ -393,3 +400,32 @@ jobs:
       - name: Verify private fixture exclusion from public profiles
         if: matrix.fixture == 'coinbase_cap_admission_tests'
         run: python3 tests/coinbase_fixture_profile_tests.py --compiler c++ --output-dir "$RUNNER_TEMP/coinbase-profiles"
+
+  source-style:
+    name: Source formatting and preservation controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install pinned formatting tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: clang-format==18.1.8 ruff==0.11.13 tinycss2==1.5.1 webencodings==0.5.1
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/source-style-node" prettier@3.5.3
+      - name: Check source and mutation controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/source_style_tests.py
+          python scripts/source-style.py --output "$RUNNER_TEMP/source-style-results" \
+            --prettier "$RUNNER_TEMP/source-style-node/node_modules/prettier"

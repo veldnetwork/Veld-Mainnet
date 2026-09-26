@@ -23,8 +23,11 @@ class TokenRotationTests(unittest.TestCase):
         replacement.replace(self.path)
 
     def request_token(self):
-        with mock.patch.object(wd, "open_rpc_request", return_value=io.BytesIO(
-                b'{"jsonrpc":"2.0","id":1,"result":7,"error":null}')) as transport:
+        with mock.patch.object(
+            wd,
+            "open_rpc_request",
+            return_value=io.BytesIO(b'{"jsonrpc":"2.0","id":1,"result":7,"error":null}'),
+        ) as transport:
             self.assertEqual(self.client.rpc("getbtcveldsupply"), 7)
             return transport.call_args.args[0].get_header("Authorization")
 

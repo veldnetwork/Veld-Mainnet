@@ -48,9 +48,11 @@ inline uint64_t WindowId(uint64_t height) {
 // ~9.2e12 sats (~92,000 BTC), and the cap constant may grow with the
 // difficulty-tier ladder — never trust the product to fit 64 bits.
 inline int64_t WindowCeilingSats(int64_t custody_cap_sats) {
-    if (custody_cap_sats <= 0) return 0;
-    return (int64_t)(((unsigned __int128)(uint64_t)custody_cap_sats
-                      * BTCVELD_REDEEM_WINDOW_PPM_OF_CAP) / 1'000'000u);
+    if (custody_cap_sats <= 0)
+        return 0;
+    return (int64_t)(((unsigned __int128)(uint64_t)custody_cap_sats *
+                      BTCVELD_REDEEM_WINDOW_PPM_OF_CAP) /
+                     1'000'000u);
 }
 
 // Launch-live issuer and SPV mints share one redemption/custody domain. The
@@ -62,18 +64,19 @@ inline int64_t LaunchWindowCeilingSats() {
     static_assert(BTCVELD_SPV_MAX_CUSTODY_SATS <=
                       static_cast<uint64_t>(std::numeric_limits<int64_t>::max()),
                   "btcVELD shared custody ceiling must fit consensus int64 amounts");
-    return WindowCeilingSats(
-        static_cast<int64_t>(BTCVELD_SPV_MAX_CUSTODY_SATS));
+    return WindowCeilingSats(static_cast<int64_t>(BTCVELD_SPV_MAX_CUSTODY_SATS));
 }
 
 // Does `amount` fit the window's remaining budget? Overflow-safe (mirrors the
 // issuer mint-cap form: never computes redeemed + amount). Fail-closed on any
 // nonsense input.
 inline bool FitsWindow(int64_t redeemed_in_window, int64_t amount, int64_t ceiling) {
-    if (amount <= 0 || redeemed_in_window < 0 || ceiling <= 0) return false;
-    if (redeemed_in_window > ceiling) return false;
+    if (amount <= 0 || redeemed_in_window < 0 || ceiling <= 0)
+        return false;
+    if (redeemed_in_window > ceiling)
+        return false;
     return amount <= ceiling - redeemed_in_window;
 }
 
-}  // namespace redeemguard
-}  // namespace veld
+} // namespace redeemguard
+} // namespace veld

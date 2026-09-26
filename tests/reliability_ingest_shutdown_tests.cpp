@@ -35,32 +35,33 @@ int CheckStop(const std::filesystem::path& directory, bool background) {
         Block incoming;
         incoming.height = 1;
         incoming.header.nonce = 41;
-        observed = server->TestEnqueueBlockIngest(
-            incoming, 128, "127.0.0.1:12001");
+        observed = server->TestEnqueueBlockIngest(incoming, 128, "127.0.0.1:12001");
     }
     if (stopped.wait_for(std::chrono::seconds(2)) != std::future_status::ready)
         return 1;
     stopped.get();
-    if (observed != net::NodeServer::IngestEnqueueResult::Full) return 2;
+    if (observed != net::NodeServer::IngestEnqueueResult::Full)
+        return 2;
     node.Stop();
     Block after_stop;
     after_stop.height = 1;
     after_stop.header.nonce = 42;
     if (server->TestEnqueueBlockIngest(after_stop, 128, "127.0.0.1:12001") !=
-        net::NodeServer::IngestEnqueueResult::Full) return 3;
-    if (server->TestPendingBlockIngestCount() != 0 ||
-        server->TestPendingBlockIngestBytes() != 0) return 4;
+        net::NodeServer::IngestEnqueueResult::Full)
+        return 3;
+    if (server->TestPendingBlockIngestCount() != 0 || server->TestPendingBlockIngestBytes() != 0)
+        return 4;
     return 0;
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2 || std::filesystem::exists(argv[1])) return 10;
+    if (argc != 2 || std::filesystem::exists(argv[1]))
+        return 10;
     for (int i = 0; i < 4; ++i) {
-        const int result = CheckStop(
-            std::filesystem::path(argv[1]) / std::to_string(i), i % 2 != 0);
+        const int result =
+            CheckStop(std::filesystem::path(argv[1]) / std::to_string(i), i % 2 != 0);
         if (result) {
-            std::cerr << "FAIL shutdown admission round=" << i
-                      << " result=" << result << '\n';
+            std::cerr << "FAIL shutdown admission round=" << i << " result=" << result << '\n';
             return result;
         }
     }

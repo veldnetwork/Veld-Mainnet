@@ -28,19 +28,23 @@ struct BtcRelayDependencies {
 };
 
 inline int BtcRelayHexNibble(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
     return -1;
 }
 
-inline bool DecodeBtcRelayMarker(const std::string& marker,
-                                 std::vector<uint8_t>* raw) {
+inline bool DecodeBtcRelayMarker(const std::string& marker, std::vector<uint8_t>* raw) {
     static constexpr char PREFIX[] = "VELD_BHDR|";
     static constexpr size_t PREFIX_LEN = sizeof(PREFIX) - 1;
-    if (!raw || marker.rfind(PREFIX, 0) != 0) return false;
+    if (!raw || marker.rfind(PREFIX, 0) != 0)
+        return false;
     const size_t hex_len = marker.size() - PREFIX_LEN;
-    if ((hex_len & 1u) != 0) return false;
+    if ((hex_len & 1u) != 0)
+        return false;
     raw->clear();
     raw->reserve(hex_len / 2);
     for (size_t i = PREFIX_LEN; i < marker.size(); i += 2) {
@@ -55,15 +59,16 @@ inline bool DecodeBtcRelayMarker(const std::string& marker,
     return IsBtcHeaderOp(raw->data(), raw->size());
 }
 
-inline BtcRelayDependencies BtcRelayDependenciesForTransaction(
-        const Transaction& tx) {
+inline BtcRelayDependencies BtcRelayDependenciesForTransaction(const Transaction& tx) {
     BtcRelayDependencies deps;
     std::set<H256> earlier_in_transaction;
     for (const auto& out : tx.outputs) {
         const std::string marker = MarkerOpReturnPayload(out.script_pubkey);
-        if (marker.rfind("VELD_BHDR|", 0) != 0) continue;
+        if (marker.rfind("VELD_BHDR|", 0) != 0)
+            continue;
         std::vector<uint8_t> op;
-        if (!DecodeBtcRelayMarker(marker, &op)) continue;
+        if (!DecodeBtcRelayMarker(marker, &op))
+            continue;
         deps.has_relay = true;
         const size_t count = op[4];
         for (size_t i = 0; i < count; ++i) {
@@ -82,10 +87,11 @@ inline BtcRelayDependencies BtcRelayDependenciesForTransaction(
 // Returns false only for an in-candidate dependency cycle. Unknown parents are
 // deliberately left alone because they may already exist in consensus state.
 // On failure the input order is unchanged.
-inline bool StableDependencyOrderBtcHeaderTransactions(
-        std::vector<std::pair<Transaction, uint64_t>>& txs) {
+inline bool
+StableDependencyOrderBtcHeaderTransactions(std::vector<std::pair<Transaction, uint64_t>>& txs) {
     const size_t n = txs.size();
-    if (n < 2) return true;
+    if (n < 2)
+        return true;
 
     std::vector<BtcRelayDependencies> deps;
     deps.reserve(n);
@@ -101,7 +107,8 @@ inline bool StableDependencyOrderBtcHeaderTransactions(
     for (size_t consumer = 0; consumer < n; ++consumer) {
         for (const H256& required : deps[consumer].required_parents) {
             const auto found = providers.find(required);
-            if (found == providers.end()) continue;
+            if (found == providers.end())
+                continue;
             size_t provider = n;
             for (const size_t candidate : found->second) {
                 if (candidate != consumer) {
@@ -109,7 +116,8 @@ inline bool StableDependencyOrderBtcHeaderTransactions(
                     break;
                 }
             }
-            if (provider == n) continue;
+            if (provider == n)
+                continue;
             if (outgoing[provider].insert(consumer).second)
                 ++indegree[consumer];
         }
@@ -117,7 +125,8 @@ inline bool StableDependencyOrderBtcHeaderTransactions(
 
     std::priority_queue<size_t, std::vector<size_t>, std::greater<size_t>> ready;
     for (size_t i = 0; i < n; ++i)
-        if (indegree[i] == 0) ready.push(i);
+        if (indegree[i] == 0)
+            ready.push(i);
 
     std::vector<size_t> order;
     order.reserve(n);
@@ -126,22 +135,26 @@ inline bool StableDependencyOrderBtcHeaderTransactions(
         ready.pop();
         order.push_back(current);
         for (const size_t child : outgoing[current]) {
-            if (--indegree[child] == 0) ready.push(child);
+            if (--indegree[child] == 0)
+                ready.push(child);
         }
     }
-    if (order.size() != n) return false;
+    if (order.size() != n)
+        return false;
 
     bool changed = false;
     for (size_t i = 0; i < n; ++i)
         changed = changed || order[i] != i;
-    if (!changed) return true;
+    if (!changed)
+        return true;
 
     std::vector<std::pair<Transaction, uint64_t>> reordered;
     reordered.reserve(n);
-    for (const size_t index : order) reordered.push_back(txs[index]);
+    for (const size_t index : order)
+        reordered.push_back(txs[index]);
     txs.swap(reordered);
     return true;
 }
 
-}  // namespace btcspv
-}  // namespace veld
+} // namespace btcspv
+} // namespace veld

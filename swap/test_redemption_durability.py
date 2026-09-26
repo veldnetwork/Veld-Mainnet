@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """C-05/N-02/H-06 focused redemption durability regressions."""
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,8 +20,15 @@ BURN = {
 
 
 class MarkerBtc:
-    def __init__(self, burn=BURN, confirmations=3, wrong_amount=False,
-                 abandoned=False, no_marker=False, outgoing=True):
+    def __init__(
+        self,
+        burn=BURN,
+        confirmations=3,
+        wrong_amount=False,
+        abandoned=False,
+        no_marker=False,
+        outgoing=True,
+    ):
         self.burn = dict(burn)
         self.txid = "ef" * 32
         self.confirmations = confirmations
@@ -34,18 +42,31 @@ class MarkerBtc:
         if method == "listsinceblock":
             return {"transactions": [{"txid": self.txid}], "removed": []}
         if method == "gettransaction":
-            return {"hex": "deadbeef", "confirmations": self.confirmations,
-                    "abandoned": self.abandoned, "walletconflicts": [],
-                    "details": [{"category": "send" if self.outgoing else "receive"}]}
+            return {
+                "hex": "deadbeef",
+                "confirmations": self.confirmations,
+                "abandoned": self.abandoned,
+                "walletconflicts": [],
+                "details": [{"category": "send" if self.outgoing else "receive"}],
+            }
         if method == "decoderawtransaction":
-            outs = [{"value": rd.btc_str(self.burn["amount_sats"] + (1 if self.wrong_amount else 0)),
-                     "scriptPubKey": {"hex": self.burn["dest_btc_addr"]}}]
+            outs = [
+                {
+                    "value": rd.btc_str(self.burn["amount_sats"] + (1 if self.wrong_amount else 0)),
+                    "scriptPubKey": {"hex": self.burn["dest_btc_addr"]},
+                }
+            ]
             if not self.no_marker:
-                outs.append({"value": "0.00000000",
-                             "scriptPubKey": {"hex": rd.payout_marker_script(self.burn)}})
+                outs.append(
+                    {
+                        "value": "0.00000000",
+                        "scriptPubKey": {"hex": rd.payout_marker_script(self.burn)},
+                    }
+                )
             return {"vin": [], "vout": outs}
         if method == "sendrawtransaction":
-            self.broadcasts.append(args[0]); return self.txid
+            self.broadcasts.append(args[0])
+            return self.txid
         raise AssertionError("unexpected Bitcoin RPC %s" % method)
 
 
@@ -57,30 +78,44 @@ class FakeVeld:
         if method == "getblockhash":
             return BURN["burn_block_hash"] if self.canonical else "00" * 32
         if method == "gettransaction":
-            return {"txid": BURN["burn_txid"],
-                    "block_hash": BURN["burn_block_hash"]}
+            return {"txid": BURN["burn_txid"], "block_hash": BURN["burn_block_hash"]}
         raise AssertionError("unexpected Veld RPC %s" % method)
 
 
 class AgedOutRedeemFeed:
     """RPC shape emitted by the paginated derived obligation index."""
+
     def call(self, method, params=None):
         if method != "getbtcveldredeems":
             raise AssertionError("unexpected Veld RPC %s" % method)
         cursor = (params or [""])[0]
-        rows = [{
-            "txid": BURN["burn_txid"], "vout": BURN["opreturn_vout"],
-            "from": BURN["redeemer"], "to": "",
-            "amount_sats": BURN["amount_sats"],
-            "block": BURN["burn_height"], "memo": BURN["dest_btc_addr"],
-            "token": "btcVELD", "is_mint": False, "is_burn": False,
-            "is_redeem": True, "block_hash": BURN["burn_block_hash"],
-        }]
-        return {"tip": 2201, "tip_hash": "ee" * 32,
-                "final_height": 2201, "cursor": cursor,
-                "next_cursor": cursor, "has_more": False,
-                "page_limit": 512, "redeems": rows,
-                **rd.authority_for_rows(rows)}
+        rows = [
+            {
+                "txid": BURN["burn_txid"],
+                "vout": BURN["opreturn_vout"],
+                "from": BURN["redeemer"],
+                "to": "",
+                "amount_sats": BURN["amount_sats"],
+                "block": BURN["burn_height"],
+                "memo": BURN["dest_btc_addr"],
+                "token": "btcVELD",
+                "is_mint": False,
+                "is_burn": False,
+                "is_redeem": True,
+                "block_hash": BURN["burn_block_hash"],
+            }
+        ]
+        return {
+            "tip": 2201,
+            "tip_hash": "ee" * 32,
+            "final_height": 2201,
+            "cursor": cursor,
+            "next_cursor": cursor,
+            "has_more": False,
+            "page_limit": 512,
+            "redeems": rows,
+            **rd.authority_for_rows(rows),
+        }
 
 
 class RedemptionDurabilityTests(unittest.TestCase):
@@ -115,12 +150,18 @@ class RedemptionDurabilityTests(unittest.TestCase):
 
     def test_coordinator_rejects_a_whole_deleted_index_row(self):
         first = {
-            "txid": BURN["burn_txid"], "vout": BURN["opreturn_vout"],
-            "from": BURN["redeemer"], "to": "",
+            "txid": BURN["burn_txid"],
+            "vout": BURN["opreturn_vout"],
+            "from": BURN["redeemer"],
+            "to": "",
             "amount_sats": BURN["amount_sats"],
-            "block": BURN["burn_height"], "memo": BURN["dest_btc_addr"],
-            "token": "btcVELD", "is_mint": False, "is_burn": False,
-            "is_redeem": True, "block_hash": BURN["burn_block_hash"],
+            "block": BURN["burn_height"],
+            "memo": BURN["dest_btc_addr"],
+            "token": "btcVELD",
+            "is_mint": False,
+            "is_burn": False,
+            "is_redeem": True,
+            "block_hash": BURN["burn_block_hash"],
         }
         deleted = dict(first)
         deleted["txid"] = "ac" * 32
@@ -130,15 +171,18 @@ class RedemptionDurabilityTests(unittest.TestCase):
             def call(self, method, params=None):
                 cursor = (params or [""])[0]
                 return {
-                    "tip": 2201, "tip_hash": "ee" * 32,
-                    "final_height": 2201, "cursor": cursor,
-                    "next_cursor": cursor, "has_more": False,
-                    "page_limit": 512, "redeems": [first],
+                    "tip": 2201,
+                    "tip_hash": "ee" * 32,
+                    "final_height": 2201,
+                    "cursor": cursor,
+                    "next_cursor": cursor,
+                    "has_more": False,
+                    "page_limit": 512,
+                    "redeems": [first],
                     **authority,
                 }
 
-        with self.assertRaisesRegex(
-                RuntimeError, "completeness commitment mismatch"):
+        with self.assertRaisesRegex(RuntimeError, "completeness commitment mismatch"):
             rd.fetch_from_node(MissingRowFeed())
 
     def test_restart_and_concurrent_ingest_are_idempotent(self):
@@ -149,11 +193,13 @@ class RedemptionDurabilityTests(unittest.TestCase):
             s2.ingest([BURN], 101, 101)
             self.assertEqual(len(s1.all_records()), 1)
             self.assertEqual(len(s2.all_records()), 1)
-            s1.close(); s2.close()
+            s1.close()
+            s2.close()
 
     def test_split_brain_signers_commit_first_transaction_only(self):
         with tempfile.TemporaryDirectory() as td:
-            s1 = self.make_store(td); s1.ingest([BURN], 300, 300)
+            s1 = self.make_store(td)
+            s1.ingest([BURN], 300, 300)
             s2 = self.make_store(td)
             rid = rd.redeem_id(BURN)
             inputs = [("11" * 32, 0)]
@@ -164,12 +210,15 @@ class RedemptionDurabilityTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "different payout"):
                 s2.commit_signing_proposal(rid, "bb00", [("22" * 32, 1)])
             self.assertEqual(s1.get_record(rid)["raw_tx_hex"], "aa00")
-            s1.close(); s2.close()
+            s1.close()
+            s2.close()
 
     def test_same_outpoint_with_changed_obligation_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
-            s = self.make_store(td); s.ingest([BURN], 100, 100)
-            changed = dict(BURN); changed["amount_sats"] += 1
+            s = self.make_store(td)
+            s.ingest([BURN], 100, 100)
+            changed = dict(BURN)
+            changed["amount_sats"] += 1
             with self.assertRaisesRegex(RuntimeError, "changed redemption identity"):
                 s.ingest([changed], 101, 101)
             self.assertEqual(s.all_records()[0]["amount_sats"], BURN["amount_sats"])
@@ -179,10 +228,12 @@ class RedemptionDurabilityTests(unittest.TestCase):
         # No fulfilled JSON, intent log, or prior DB record is needed for the
         # idempotency decision: re-observe the burn, then recover from Bitcoin.
         with tempfile.TemporaryDirectory() as td:
-            s = self.make_store(td); s.ingest([BURN], 300, 300)
+            s = self.make_store(td)
+            s.ingest([BURN], 300, 300)
             btc = MarkerBtc(confirmations=6)
-            c = rd.RedeemCoordinator({"change_addr": "change", "payout_signing": {}},
-                                     s, btc, FakeVeld())
+            c = rd.RedeemCoordinator(
+                {"change_addr": "change", "payout_signing": {}}, s, btc, FakeVeld()
+            )
             c.reconcile_bitcoin_authority()
             row = s.all_records()[0]
             self.assertEqual(row["status"], "paid")
@@ -191,19 +242,24 @@ class RedemptionDurabilityTests(unittest.TestCase):
 
     def test_fresh_authority_refuses_legacy_mature_unmarked_burn(self):
         with tempfile.TemporaryDirectory() as td:
-            s = self.make_store(td); s.ingest([BURN], 300, 300)
+            s = self.make_store(td)
+            s.ingest([BURN], 300, 300)
             with self.assertRaisesRegex(RuntimeError, "mature unmarked burn"):
                 rd.guard_fresh_authority(s, MarkerBtc(no_marker=True), 300)
             self.assertEqual(s.get_record(rd.redeem_id(BURN))["status"], "observed")
             s.close()
 
     def test_exact_reorg_depth_is_not_payout_final(self):
-        self.assertFalse(rd.clears_veld_reorg_horizon(
-            BURN["burn_height"] + rd.MAX_REORG_DEPTH,
-            BURN["burn_height"]))
-        self.assertTrue(rd.clears_veld_reorg_horizon(
-            BURN["burn_height"] + rd.MAX_REORG_DEPTH + 1,
-            BURN["burn_height"]))
+        self.assertFalse(
+            rd.clears_veld_reorg_horizon(
+                BURN["burn_height"] + rd.MAX_REORG_DEPTH, BURN["burn_height"]
+            )
+        )
+        self.assertTrue(
+            rd.clears_veld_reorg_horizon(
+                BURN["burn_height"] + rd.MAX_REORG_DEPTH + 1, BURN["burn_height"]
+            )
+        )
 
     def test_runtime_consensus_depth_must_match_payout_policy(self):
         class ChainInfo:
@@ -215,37 +271,42 @@ class RedemptionDurabilityTests(unittest.TestCase):
                     raise AssertionError(method)
                 return {"max_reorg_depth": self.depth}
 
-        self.assertEqual(rd.require_consensus_reorg_depth(
-            ChainInfo(rd.MAX_REORG_DEPTH)), rd.MAX_REORG_DEPTH)
+        self.assertEqual(
+            rd.require_consensus_reorg_depth(ChainInfo(rd.MAX_REORG_DEPTH)), rd.MAX_REORG_DEPTH
+        )
         with self.assertRaisesRegex(RuntimeError, "differs from connected consensus"):
-            rd.require_consensus_reorg_depth(
-                ChainInfo(rd.MAX_REORG_DEPTH + 1))
+            rd.require_consensus_reorg_depth(ChainInfo(rd.MAX_REORG_DEPTH + 1))
 
     def test_fresh_authority_accepts_mature_burn_with_bitcoin_marker(self):
         with tempfile.TemporaryDirectory() as td:
-            s = self.make_store(td); s.ingest([BURN], 300, 300)
+            s = self.make_store(td)
+            s.ingest([BURN], 300, 300)
             rd.guard_fresh_authority(s, MarkerBtc(confirmations=2), 300)
             s.close()
 
     def test_stale_restore_cannot_demote_paid_marker_or_repay(self):
         with tempfile.TemporaryDirectory() as td:
-            s = self.make_store(td); s.ingest([BURN], 300, 300)
+            s = self.make_store(td)
+            s.ingest([BURN], 300, 300)
             s.transition(rd.redeem_id(BURN), "observed", note="simulated stale restore")
             btc = MarkerBtc(confirmations=2)
-            rd.RedeemCoordinator({"change_addr": "change", "payout_signing": {}},
-                                 s, btc, FakeVeld()).reconcile_bitcoin_authority()
+            rd.RedeemCoordinator(
+                {"change_addr": "change", "payout_signing": {}}, s, btc, FakeVeld()
+            ).reconcile_bitcoin_authority()
             self.assertEqual(s.all_records()[0]["status"], "paid")
             self.assertEqual(btc.broadcasts, [])
             s.close()
 
     def test_bitcoin_reorg_rebroadcasts_exact_same_transaction(self):
         with tempfile.TemporaryDirectory() as td:
-            s = self.make_store(td); s.ingest([BURN], 300, 300)
+            s = self.make_store(td)
+            s.ingest([BURN], 300, 300)
             rid = rd.redeem_id(BURN)
             s.transition(rid, "paid", payout_txid="ef" * 32, raw_tx_hex="deadbeef")
             btc = MarkerBtc(confirmations=0)
-            rd.RedeemCoordinator({"change_addr": "change", "payout_signing": {}},
-                                 s, btc, FakeVeld()).reconcile_bitcoin_authority()
+            rd.RedeemCoordinator(
+                {"change_addr": "change", "payout_signing": {}}, s, btc, FakeVeld()
+            ).reconcile_bitcoin_authority()
             self.assertEqual(btc.broadcasts, ["deadbeef"])
             self.assertEqual(s.all_records()[0]["status"], "paid")
             s.close()
@@ -271,28 +332,46 @@ class RedemptionDurabilityTests(unittest.TestCase):
 
     def test_paid_veld_burn_reorg_is_fatal(self):
         with tempfile.TemporaryDirectory() as td:
-            s = self.make_store(td); s.ingest([BURN], 300, 300)
+            s = self.make_store(td)
+            s.ingest([BURN], 300, 300)
             s.transition(rd.redeem_id(BURN), "paid", payout_txid="ef" * 32)
-            c = rd.RedeemCoordinator({"change_addr": "change", "payout_signing": {}},
-                                     s, MarkerBtc(confirmations=5), FakeVeld(canonical=False))
+            c = rd.RedeemCoordinator(
+                {"change_addr": "change", "payout_signing": {}},
+                s,
+                MarkerBtc(confirmations=5),
+                FakeVeld(canonical=False),
+            )
             with self.assertRaisesRegex(RuntimeError, "lost canonical finality"):
                 c.reconcile_bitcoin_authority()
             s.close()
 
-    def test_single_wallet_requires_explicit_development_override(self):
-        with self.assertRaisesRegex(RuntimeError, "disabled"):
+    def test_single_wallet_mode_is_refused(self):
+        with self.assertRaisesRegex(RuntimeError, "fixed 3-of-5 threshold mode"):
             rd.sign_payout(MarkerBtc(), "00", {}, {"mode": "single_wallet_dev"})
 
     def test_threshold_requires_independent_quorum(self):
         with self.assertRaisesRegex(RuntimeError, "exactly 3-of-5"):
-            rd.sign_payout(MarkerBtc(), "00", {},
-                           {"mode": "threshold_psbt", "threshold": 1,
-                            "signers": [{"id": "a", "command": ["false"]}]})
+            rd.sign_payout(
+                MarkerBtc(),
+                "00",
+                {},
+                {
+                    "mode": "threshold_psbt",
+                    "threshold": 1,
+                    "signers": [{"id": "a", "command": ["false"]}],
+                },
+            )
         with self.assertRaisesRegex(RuntimeError, "exactly 3-of-5"):
-            rd.sign_payout(MarkerBtc(), "00", {},
-                           {"mode": "threshold_psbt", "threshold": 2,
-                            "signers": [{"id": x, "command": ["false", x]}
-                                        for x in "abcd"]})
+            rd.sign_payout(
+                MarkerBtc(),
+                "00",
+                {},
+                {
+                    "mode": "threshold_psbt",
+                    "threshold": 2,
+                    "signers": [{"id": x, "command": ["false", x]} for x in "abcd"],
+                },
+            )
 
     def test_marker_is_full_outpoint_and_standard_size(self):
         marker = rd.payout_marker(BURN)

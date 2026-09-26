@@ -46,35 +46,78 @@ def make_certificates(root: pathlib.Path) -> tuple[pathlib.Path, ...]:
     )
     run_checked(
         [
-            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-            "-days", "1", "-subj", "/CN=Veld Test CA",
-            "-keyout", str(ca_key), "-out", str(ca_cert),
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "1",
+            "-subj",
+            "/CN=Veld Test CA",
+            "-keyout",
+            str(ca_key),
+            "-out",
+            str(ca_cert),
         ],
         root,
     )
     run_checked(
         [
-            "openssl", "req", "-newkey", "rsa:2048", "-nodes",
-            "-subj", "/CN=localhost",
-            "-keyout", str(leaf_key), "-out", str(leaf_csr),
+            "openssl",
+            "req",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-subj",
+            "/CN=localhost",
+            "-keyout",
+            str(leaf_key),
+            "-out",
+            str(leaf_csr),
         ],
         root,
     )
     run_checked(
         [
-            "openssl", "x509", "-req", "-days", "1",
-            "-in", str(leaf_csr), "-CA", str(ca_cert),
-            "-CAkey", str(ca_key), "-CAcreateserial",
-            "-extfile", str(extensions), "-out", str(leaf_cert),
+            "openssl",
+            "x509",
+            "-req",
+            "-days",
+            "1",
+            "-in",
+            str(leaf_csr),
+            "-CA",
+            str(ca_cert),
+            "-CAkey",
+            str(ca_key),
+            "-CAcreateserial",
+            "-extfile",
+            str(extensions),
+            "-out",
+            str(leaf_cert),
         ],
         root,
     )
     run_checked(
         [
-            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-            "-days", "1", "-subj", "/CN=localhost",
-            "-addext", "subjectAltName=DNS:localhost",
-            "-keyout", str(self_key), "-out", str(self_cert),
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "1",
+            "-subj",
+            "/CN=localhost",
+            "-addext",
+            "subjectAltName=DNS:localhost",
+            "-keyout",
+            str(self_key),
+            "-out",
+            str(self_cert),
         ],
         root,
     )
@@ -123,9 +166,7 @@ class OneShotTlsServer:
                 raw.close()
                 return
             with self.context.wrap_socket(raw, server_side=True) as peer:
-                if self.behavior in {
-                    "post-handshake-stall", "write-stall", "shutdown"
-                }:
+                if self.behavior in {"post-handshake-stall", "write-stall", "shutdown"}:
                     time.sleep(1.5)
                     return
                 self._read_request(peer)
@@ -133,10 +174,7 @@ class OneShotTlsServer:
                     peer.sendall(b"HTTP/1.1 200 OK\r\nContent-Len")
                     time.sleep(1.5)
                 elif self.behavior == "body-stall":
-                    peer.sendall(
-                        b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\n"
-                        b"partial"
-                    )
+                    peer.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\npartial")
                     time.sleep(1.5)
                 elif self.behavior == "trickle":
                     for byte in b"HTTP/1.1 200 OK\r\nContent-Length: 20":
@@ -144,8 +182,10 @@ class OneShotTlsServer:
                         time.sleep(0.04)
                 elif self.behavior == "abrupt-eof":
                     response = (
-                        b"HTTP/1.1 200 OK\r\nContent-Length: " +
-                        str(len(BODY)).encode("ascii") + b"\r\n\r\n" + BODY
+                        b"HTTP/1.1 200 OK\r\nContent-Length: "
+                        + str(len(BODY)).encode("ascii")
+                        + b"\r\n\r\n"
+                        + BODY
                     )
                     peer.sendall(response)
                     descriptor = peer.detach()
@@ -164,8 +204,10 @@ class OneShotTlsServer:
                         peer.sendall(chunk)
                 elif self.behavior == "complete":
                     peer.sendall(
-                        b"HTTP/1.1 200 OK\r\nContent-Length: " +
-                        str(len(BODY)).encode("ascii") + b"\r\n\r\n" + BODY
+                        b"HTTP/1.1 200 OK\r\nContent-Length: "
+                        + str(len(BODY)).encode("ascii")
+                        + b"\r\n\r\n"
+                        + BODY
                     )
                     peer.unwrap()
                 else:
@@ -222,9 +264,7 @@ def exercise(
 ) -> tuple[int, str]:
     server = OneShotTlsServer(cert, key, behavior)
     server.start()
-    elapsed, result = run_client(
-        binary, behavior, host, server.port, deadline_ms, ca
-    )
+    elapsed, result = run_client(binary, behavior, host, server.port, deadline_ms, ca)
     if elapsed > 2000:
         raise AssertionError(f"{behavior} exceeded bounded runtime: {elapsed}ms")
     if server.error is not None:
@@ -266,19 +306,13 @@ def main() -> int:
                 raise AssertionError(f"{behavior}: deadline fired too early")
             checks += 1
 
-        elapsed, result = run_client(
-            binary, "resolver-busy", "localhost", 9, 350, ca
-        )
+        elapsed, result = run_client(binary, "resolver-busy", "localhost", 9, 350, ca)
         require(result, "total deadline exceeded", "resolver concurrency")
         if elapsed < 200 or elapsed > 2000:
-            raise AssertionError(
-                f"resolver concurrency deadline was not bounded: {elapsed}ms"
-            )
+            raise AssertionError(f"resolver concurrency deadline was not bounded: {elapsed}ms")
         checks += 1
 
-        elapsed, result = exercise(
-            binary, cert, key, ca, "shutdown", deadline_ms=1200
-        )
+        elapsed, result = exercise(binary, cert, key, ca, "shutdown", deadline_ms=1200)
         require(result, "interrupted by shutdown", "shutdown")
         if elapsed > 700:
             raise AssertionError(f"shutdown interruption was slow: {elapsed}ms")
@@ -296,16 +330,11 @@ def main() -> int:
         require(result, "response too large", "oversized response")
         checks += 1
 
-        _, result = exercise(
-            binary, cert, key, ca, "complete", host="127.0.0.1",
-            deadline_ms=1200
-        )
+        _, result = exercise(binary, cert, key, ca, "complete", host="127.0.0.1", deadline_ms=1200)
         require(result, "certificate or hostname verification failed", "hostname mismatch")
         checks += 1
 
-        _, result = exercise(
-            binary, self_cert, self_key, None, "complete", deadline_ms=1200
-        )
+        _, result = exercise(binary, self_cert, self_key, None, "complete", deadline_ms=1200)
         require(result, "certificate or hostname verification failed", "self signed")
         checks += 1
 
@@ -321,8 +350,7 @@ def main() -> int:
         checks += 1
 
     print(
-        "PASS linux_tls_deadline_test "
-        f"checks={checks} deadline_ms=350 private_material_retained=0"
+        f"PASS linux_tls_deadline_test checks={checks} deadline_ms=350 private_material_retained=0"
     )
     return 0
 

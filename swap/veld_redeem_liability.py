@@ -20,13 +20,9 @@ from decimal import Decimal, InvalidOperation
 import re
 
 try:
-    from .veld_redeem_commitment import (RedeemCommitment,
-                                         authority_for_rows,
-                                         parse_page_authority)
+    from .veld_redeem_commitment import RedeemCommitment, authority_for_rows, parse_page_authority
 except ImportError:  # direct-script execution
-    from veld_redeem_commitment import (RedeemCommitment,
-                                        authority_for_rows,
-                                        parse_page_authority)
+    from veld_redeem_commitment import RedeemCommitment, authority_for_rows, parse_page_authority
 
 
 SATS = 100_000_000
@@ -39,10 +35,16 @@ HEX_RE = re.compile(r"^(?:[0-9a-f]{2})+$")
 
 
 def _uint(value, field, positive=False, maximum=MAX_WIRE_INT):
-    if (isinstance(value, bool) or not isinstance(value, int) or value < 0 or
-            value > maximum or (positive and value == 0)):
-        raise RuntimeError("%s is not a bounded %sinteger" %
-                           (field, "positive " if positive else "non-negative "))
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value < 0
+        or value > maximum
+        or (positive and value == 0)
+    ):
+        raise RuntimeError(
+            "%s is not a bounded %sinteger" % (field, "positive " if positive else "non-negative ")
+        )
     return value
 
 
@@ -82,7 +84,7 @@ def _normalize_redeem(row, expected_token_id, snapshot_tip):
 
     txid = _hash256(row.get("txid"), "redeem txid")
     block_hash = _hash256(row.get("block_hash"), "redeem block_hash")
-    vout = _uint(row.get("vout"), "redeem vout", maximum=0xffffffff)
+    vout = _uint(row.get("vout"), "redeem vout", maximum=0xFFFFFFFF)
     amount = _uint(row.get("amount_sats"), "redeem amount_sats", positive=True)
     height = _uint(row.get("block"), "redeem block")
     if height > snapshot_tip:
@@ -91,9 +93,11 @@ def _normalize_redeem(row, expected_token_id, snapshot_tip):
     if not isinstance(redeemer, str) or not (1 <= len(redeemer) <= 128):
         raise RuntimeError("redeem source identity is malformed")
     destination = row.get("memo")
-    if (not isinstance(destination, str) or
-            not re.fullmatch(r"(?:[0-9a-fA-F]{2})+", destination) or
-            len(destination) > 100):
+    if (
+        not isinstance(destination, str)
+        or not re.fullmatch(r"(?:[0-9a-fA-F]{2})+", destination)
+        or len(destination) > 100
+    ):
         raise RuntimeError("redeem destination script is not canonical bounded hex")
     return {
         "burn_txid": txid,
@@ -106,8 +110,7 @@ def _normalize_redeem(row, expected_token_id, snapshot_tip):
     }
 
 
-def read_canonical_redeems(veld_call, expected_tip, expected_tip_hash,
-                           expected_token_id="btcVELD"):
+def read_canonical_redeems(veld_call, expected_tip, expected_tip_hash, expected_token_id="btcVELD"):
     """Walk one exact Veld obligation snapshot, rejecting pagination ambiguity."""
     expected_tip = _uint(expected_tip, "expected Veld tip")
     expected_tip_hash = _hash256(expected_tip_hash, "expected Veld tip_hash")
@@ -125,16 +128,16 @@ def read_canonical_redeems(veld_call, expected_tip, expected_tip_hash,
         page = veld_call("getbtcveldredeems", [cursor, str(PAGE_LIMIT)])
         if not isinstance(page, dict):
             raise RuntimeError("getbtcveldredeems returned no object")
-        if (_uint(page.get("tip"), "redeem page tip") != expected_tip or
-                _hash256(page.get("tip_hash"), "redeem page tip_hash") !=
-                expected_tip_hash):
+        if (
+            _uint(page.get("tip"), "redeem page tip") != expected_tip
+            or _hash256(page.get("tip_hash"), "redeem page tip_hash") != expected_tip_hash
+        ):
             raise RuntimeError("redeem page is not bound to the supply snapshot tip")
         page_authority = parse_page_authority(page)
         if authority is None:
             authority = page_authority
         elif page_authority != authority:
-            raise RuntimeError(
-                "redeem count/root authority changed between pages")
+            raise RuntimeError("redeem count/root authority changed between pages")
         final_height = _uint(page.get("final_height"), "redeem final_height")
         if final_height > expected_tip:
             raise RuntimeError("redeem final_height exceeds its snapshot tip")
@@ -157,13 +160,14 @@ def read_canonical_redeems(veld_call, expected_tip, expected_tip_hash,
             outpoint = (record["burn_txid"], record["opreturn_vout"])
             if outpoint in seen_outpoints:
                 raise RuntimeError("redeem pagination repeated a burn outpoint")
-            order_key = (record["burn_height"], record["burn_txid"],
-                         record["opreturn_vout"],
-                         record["burn_block_hash"])
-            if (previous_order_key is not None and
-                    order_key <= previous_order_key):
-                raise RuntimeError(
-                    "redeem pagination is not in canonical index order")
+            order_key = (
+                record["burn_height"],
+                record["burn_txid"],
+                record["opreturn_vout"],
+                record["burn_block_hash"],
+            )
+            if previous_order_key is not None and order_key <= previous_order_key:
+                raise RuntimeError("redeem pagination is not in canonical index order")
             previous_order_key = order_key
             seen_outpoints.add(outpoint)
             records.append(record)
@@ -198,11 +202,14 @@ def _marker_identity(script_hex):
     if not isinstance(script_hex, str) or not HEX_RE.fullmatch(script_hex):
         raise RuntimeError("Bitcoin output script is not canonical lowercase hex")
     raw = bytes.fromhex(script_hex)
-    if not raw or raw[0] != 0x6a:
+    if not raw or raw[0] != 0x6A:
         return None
     canonical_len = 2 + len(PAYOUT_MARKER_MAGIC) + 32 + 4
-    if (len(raw) == canonical_len and raw[1] == 41 and
-            raw[2:2 + len(PAYOUT_MARKER_MAGIC)] == PAYOUT_MARKER_MAGIC):
+    if (
+        len(raw) == canonical_len
+        and raw[1] == 41
+        and raw[2 : 2 + len(PAYOUT_MARKER_MAGIC)] == PAYOUT_MARKER_MAGIC
+    ):
         data = raw[2:]
         return data[5:37].hex(), int.from_bytes(data[37:41], "big")
     # A payout-domain prefix in an alternate push form, wrong version, partial
@@ -252,8 +259,12 @@ def scan_outgoing_payouts(btc_call):
             continue
 
         raw_hex = info.get("hex")
-        if (not isinstance(raw_hex, str) or not raw_hex or
-                not re.fullmatch(r"[0-9a-f]+", raw_hex) or len(raw_hex) % 2):
+        if (
+            not isinstance(raw_hex, str)
+            or not raw_hex
+            or not re.fullmatch(r"[0-9a-f]+", raw_hex)
+            or len(raw_hex) % 2
+        ):
             raise RuntimeError("outgoing wallet transaction has malformed raw hex")
         decoded = btc_call("decoderawtransaction", raw_hex)
         if not isinstance(decoded, dict):
@@ -284,13 +295,17 @@ def scan_outgoing_payouts(btc_call):
             raise RuntimeError("outgoing payout transaction has multiple markers")
 
         confirmations = info.get("confirmations")
-        if (isinstance(confirmations, bool) or not isinstance(confirmations, int) or
-                confirmations < 0 or confirmations > MAX_WIRE_INT):
+        if (
+            isinstance(confirmations, bool)
+            or not isinstance(confirmations, int)
+            or confirmations < 0
+            or confirmations > MAX_WIRE_INT
+        ):
             raise RuntimeError("marker-bearing payout has invalid/conflicted confirmations")
         conflicts = info.get("walletconflicts", [])
-        if (not isinstance(conflicts, list) or
-                any(not isinstance(x, str) or not HASH256_RE.fullmatch(x)
-                    for x in conflicts)):
+        if not isinstance(conflicts, list) or any(
+            not isinstance(x, str) or not HASH256_RE.fullmatch(x) for x in conflicts
+        ):
             raise RuntimeError("marker-bearing payout has malformed wallet conflicts")
         if info.get("abandoned") is True or conflicts:
             raise RuntimeError("marker-bearing payout is abandoned or conflicted")
@@ -309,8 +324,9 @@ def scan_outgoing_payouts(btc_call):
 def backing_liability(supply_sats, redeems, payouts, required_confirmations):
     """Return (total liability, outstanding sats/count, released count)."""
     supply = _uint(supply_sats, "live btcVELD supply")
-    required = _uint(required_confirmations, "required payout confirmations",
-                     positive=True, maximum=1_000_000)
+    required = _uint(
+        required_confirmations, "required payout confirmations", positive=True, maximum=1_000_000
+    )
     if not isinstance(redeems, (list, tuple)) or not isinstance(payouts, dict):
         raise RuntimeError("redemption liability inputs have invalid types")
 
@@ -338,8 +354,7 @@ def backing_liability(supply_sats, redeems, payouts, required_confirmations):
                     paid += value_sats
             if paid != record.get("amount_sats"):
                 raise RuntimeError("payout marker has wrong destination or amount")
-            confirmations = _uint(
-                payout.get("confirmations"), "payout confirmations")
+            confirmations = _uint(payout.get("confirmations"), "payout confirmations")
             released = confirmations >= required
         if released:
             released_count += 1
@@ -352,5 +367,4 @@ def backing_liability(supply_sats, redeems, payouts, required_confirmations):
 
     if supply > MAX_WIRE_INT - outstanding_sats:
         raise RuntimeError("total btcVELD backing liability overflows")
-    return (supply + outstanding_sats, outstanding_sats,
-            outstanding_count, released_count)
+    return (supply + outstanding_sats, outstanding_sats, outstanding_count, released_count)

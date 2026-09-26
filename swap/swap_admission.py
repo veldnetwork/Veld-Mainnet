@@ -6,6 +6,7 @@ the wrap service owns durable per-principal and global accounting. Keeping
 the two layers separate makes the cryptographic contract independently
 testable without importing (and starting) the production service.
 """
+
 import hashlib
 import os
 import re
@@ -33,15 +34,17 @@ _SIG = re.compile(r"[0-9a-f]{6618}")
 
 
 def _strict_request_values(coin, amount, H_hex, foreign_pub, veld_pub):
-    if (not isinstance(coin, str) or not re.fullmatch(r"[A-Z0-9]{1,8}", coin)):
+    if not isinstance(coin, str) or not re.fullmatch(r"[A-Z0-9]{1,8}", coin):
         raise ValueError("quote admission request body is malformed")
     if type(amount) is not int or amount <= 0 or amount > 9_223_372_036_854_775_807:
         raise ValueError("quote admission request body is malformed")
     if not isinstance(H_hex, str) or not _HEX64.fullmatch(H_hex):
         raise ValueError("quote admission request body is malformed")
-    if (not isinstance(foreign_pub, str)
-            or len(foreign_pub) > 512
-            or not _FOREIGN_PUB.fullmatch(foreign_pub)):
+    if (
+        not isinstance(foreign_pub, str)
+        or len(foreign_pub) > 512
+        or not _FOREIGN_PUB.fullmatch(foreign_pub)
+    ):
         raise ValueError("quote admission request body is malformed")
     if not isinstance(veld_pub, str) or not _VELD_PUB.fullmatch(veld_pub):
         raise ValueError("quote admission request body is malformed")
@@ -54,16 +57,22 @@ def canonical_request_body(coin, amount, H_hex, foreign_pub, veld_pub):
     field-boundary ambiguity without depending on JSON serializer behavior.
     """
     _strict_request_values(coin, amount, H_hex, foreign_pub, veld_pub)
-    return b"\x00".join((
-        b"VELD-SWAP-QUOTE-BODY-v2", coin.encode("ascii"),
-        str(amount).encode("ascii"), H_hex.encode("ascii"),
-        foreign_pub.encode("ascii"), veld_pub.encode("ascii"),
-    ))
+    return b"\x00".join(
+        (
+            b"VELD-SWAP-QUOTE-BODY-v2",
+            coin.encode("ascii"),
+            str(amount).encode("ascii"),
+            H_hex.encode("ascii"),
+            foreign_pub.encode("ascii"),
+            veld_pub.encode("ascii"),
+        )
+    )
 
 
 def request_hash(coin, amount, H_hex, foreign_pub, veld_pub):
-    return hashlib.sha256(canonical_request_body(
-        coin, amount, H_hex, foreign_pub, veld_pub)).digest()
+    return hashlib.sha256(
+        canonical_request_body(coin, amount, H_hex, foreign_pub, veld_pub)
+    ).digest()
 
 
 def signature_message(beacon_hex, nonce_hex, canonical_body):
@@ -77,14 +86,18 @@ def signature_message(beacon_hex, nonce_hex, canonical_body):
     # Hash256d(exact message bytes).  The tuple below therefore has one exact
     # browser/server representation and binds the full request body, not merely
     # a caller-supplied digest.
-    return (b"VELD-SWAP-QUOTE-ADMISSION-v2\x00"
-            + beacon_hex.encode("ascii") + b"\x00"
-            + nonce_hex.encode("ascii") + b"\x00" + canonical_body)
+    return (
+        b"VELD-SWAP-QUOTE-ADMISSION-v2\x00"
+        + beacon_hex.encode("ascii")
+        + b"\x00"
+        + nonce_hex.encode("ascii")
+        + b"\x00"
+        + canonical_body
+    )
 
 
 def principal_hash(public_key_hex):
-    if (not isinstance(public_key_hex, str)
-            or not _VELD_PUB.fullmatch(public_key_hex)):
+    if not isinstance(public_key_hex, str) or not _VELD_PUB.fullmatch(public_key_hex):
         raise ValueError("quote admission principal public key is malformed")
     return hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()
 
@@ -95,13 +108,14 @@ def has_leading_zero_bits(digest, bits):
     if type(bits) is not int or bits < 1 or bits > 256:
         return False
     whole, partial = divmod(bits, 8)
-    return (digest[:whole] == b"\x00" * whole
-            and (partial == 0
-                 or digest[whole] >> (8 - partial) == 0))
+    return digest[:whole] == b"\x00" * whole and (
+        partial == 0 or digest[whole] >> (8 - partial) == 0
+    )
 
 
 class AdmissionBeacon:
     """One unpredictable process-local beacon per exact 600-second epoch."""
+
     def __init__(self, epoch_seconds=ADMISSION_EPOCH_SECONDS, random_bytes=os.urandom):
         if type(epoch_seconds) is not int or epoch_seconds != ADMISSION_EPOCH_SECONDS:
             raise ValueError("swap admission epoch must be exactly 600 seconds")
@@ -122,8 +136,8 @@ class AdmissionBeacon:
                 if not isinstance(entropy, bytes) or len(entropy) != 32:
                     raise RuntimeError("swap admission entropy source failed")
                 self._beacon = hashlib.sha256(
-                    b"VELD-SWAP-EPOCH-BEACON-v2\x00"
-                    + epoch.to_bytes(8, "big") + entropy).digest()
+                    b"VELD-SWAP-EPOCH-BEACON-v2\x00" + epoch.to_bytes(8, "big") + entropy
+                ).digest()
                 self._epoch = epoch
             return {
                 "version": ADMISSION_VERSION,
@@ -143,32 +157,37 @@ class AdmissionBeacon:
             }
 
 
-def verify_mldsa65_with_keygen(public_key_hex, message, signature_hex,
-                               keygen_path):
+def verify_mldsa65_with_keygen(public_key_hex, message, signature_hex, keygen_path):
     """Verify with the release's own ML-DSA implementation, fail closed."""
-    if (not isinstance(keygen_path, str) or not os.path.isabs(keygen_path)
-            or "\x00" in keygen_path):
+    if not isinstance(keygen_path, str) or not os.path.isabs(keygen_path) or "\x00" in keygen_path:
         raise RuntimeError("admission verifier path must be absolute")
     try:
         info = os.stat(keygen_path, follow_symlinks=False)
     except OSError as exc:
         raise RuntimeError("admission verifier is unavailable") from exc
-    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
-            or info.st_mode & 0o022 or not info.st_mode & 0o111):
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or info.st_nlink != 1
+        or info.st_mode & 0o022
+        or not info.st_mode & 0o111
+    ):
         raise RuntimeError("admission verifier executable is unsafe")
-    if (not isinstance(public_key_hex, str)
-            or len(public_key_hex) != MLDSA65_PUBLIC_KEY_HEX_CHARS
-            or not _VELD_PUB.fullmatch(public_key_hex)
-            or not isinstance(signature_hex, str)
-            or len(signature_hex) != MLDSA65_SIGNATURE_HEX_CHARS
-            or not _SIG.fullmatch(signature_hex)
-            or not isinstance(message, bytes) or not message):
+    if (
+        not isinstance(public_key_hex, str)
+        or len(public_key_hex) != MLDSA65_PUBLIC_KEY_HEX_CHARS
+        or not _VELD_PUB.fullmatch(public_key_hex)
+        or not isinstance(signature_hex, str)
+        or len(signature_hex) != MLDSA65_SIGNATURE_HEX_CHARS
+        or not _SIG.fullmatch(signature_hex)
+        or not isinstance(message, bytes)
+        or not message
+    ):
         return False
     with tempfile.TemporaryDirectory(prefix="veld-swap-admission-") as root:
-        paths = [os.path.join(root, name) for name in (
-            "principal.pub", "request.bin", "request.sig")]
-        payloads = [public_key_hex.encode("ascii") + b"\n", message,
-                    bytes.fromhex(signature_hex)]
+        paths = [
+            os.path.join(root, name) for name in ("principal.pub", "request.bin", "request.sig")
+        ]
+        payloads = [public_key_hex.encode("ascii") + b"\n", message, bytes.fromhex(signature_hex)]
         for path, payload in zip(paths, payloads):
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "wb") as out:
@@ -177,14 +196,26 @@ def verify_mldsa65_with_keygen(public_key_hex, message, signature_hex,
                 os.fsync(out.fileno())
         result = run_bounded_subprocess(
             [keygen_path, "verify-release", "@" + paths[0], paths[1], paths[2]],
-            timeout=5, stdout_max=4096, stderr_max=4096,
-            description="swap admission ML-DSA verifier")
+            timeout=5,
+            stdout_max=4096,
+            stderr_max=4096,
+            description="swap admission ML-DSA verifier",
+        )
         return result.returncode == 0
 
 
-def verify_admission(body, coin, amount, H_hex, foreign_pub, veld_pub,
-                     beacon_authority, signature_verifier, now=None,
-                     pow_bits=ADMISSION_POW_BITS):
+def verify_admission(
+    body,
+    coin,
+    amount,
+    H_hex,
+    foreign_pub,
+    veld_pub,
+    beacon_authority,
+    signature_verifier,
+    now=None,
+    pow_bits=ADMISSION_POW_BITS,
+):
     """Verify current beacon, exact 24-bit PoW, and signed principal tuple."""
     if not isinstance(body, dict):
         raise ValueError("quote admission proof is malformed")
@@ -192,15 +223,18 @@ def verify_admission(body, coin, amount, H_hex, foreign_pub, veld_pub,
     beacon_hex = body.get("admission_beacon")
     nonce_hex = body.get("admission_nonce")
     signature_hex = body.get("admission_signature")
-    if (beacon_hex != current["beacon"]
-            or not isinstance(nonce_hex, str) or not _NONCE.fullmatch(nonce_hex)
-            or not isinstance(signature_hex, str) or not _SIG.fullmatch(signature_hex)):
+    if (
+        beacon_hex != current["beacon"]
+        or not isinstance(nonce_hex, str)
+        or not _NONCE.fullmatch(nonce_hex)
+        or not isinstance(signature_hex, str)
+        or not _SIG.fullmatch(signature_hex)
+    ):
         raise ValueError("quote admission proof is malformed or not current")
-    canonical = canonical_request_body(
-        coin, amount, H_hex, foreign_pub, veld_pub)
+    canonical = canonical_request_body(coin, amount, H_hex, foreign_pub, veld_pub)
     digest = hashlib.sha256(
-        bytes.fromhex(beacon_hex) + bytes.fromhex(nonce_hex)
-        + hashlib.sha256(canonical).digest()).digest()
+        bytes.fromhex(beacon_hex) + bytes.fromhex(nonce_hex) + hashlib.sha256(canonical).digest()
+    ).digest()
     if not has_leading_zero_bits(digest, pow_bits):
         raise ValueError("quote admission proof does not meet difficulty")
     message = signature_message(beacon_hex, nonce_hex, canonical)

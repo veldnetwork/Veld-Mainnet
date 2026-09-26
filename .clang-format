@@ -7,3 +7,7 @@ NamespaceIndentation: None
 DerivePointerAlignment: false
 PointerAlignment: Left
 AllowShortFunctionsOnASingleLine: Empty
+ReflowComments: false
+FixNamespaceComments: false
+BreakStringLiterals: false
+SortUsingDeclarations: Never

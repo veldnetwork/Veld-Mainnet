@@ -25,8 +25,7 @@ from typing import Any
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 HEX160 = re.compile(r"^[0-9a-f]{160}$")
 IDENTITY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{2,127}$")
-POW_LIMIT = int(
-    "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 16)
+POW_LIMIT = int("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 16)
 MAX_EVIDENCE_TARGET = POW_LIMIT // 1_000_000_000_000
 COLLECTOR_VERSION = "collect-bitcoin-core-custody-evidence-v1"
 
@@ -60,8 +59,7 @@ def parse_json(raw: str, label: str) -> Any:
 
 
 def canonical_bytes(value: object) -> bytes:
-    return json.dumps(
-        value, sort_keys=True, indent=2, ensure_ascii=True).encode("utf-8") + b"\n"
+    return json.dumps(value, sort_keys=True, indent=2, ensure_ascii=True).encode("utf-8") + b"\n"
 
 
 def sha256_file(path: Path) -> str:
@@ -118,14 +116,21 @@ def daemon_identity(pid: int, daemon: Path) -> tuple[int, int]:
             fail("bitcoind command line is not UTF-8")
     lowered = [item.lower() for item in decoded[1:]]
     forbidden = (
-        "-regtest", "-testnet", "-testnet4", "-signet", "-chain=regtest",
-        "-chain=test", "-chain=testnet4", "-chain=signet",
+        "-regtest",
+        "-testnet",
+        "-testnet4",
+        "-signet",
+        "-chain=regtest",
+        "-chain=test",
+        "-chain=testnet4",
+        "-chain=signet",
     )
-    if any(item == marker or item.startswith(marker + "=")
-           for item in lowered for marker in forbidden):
+    if any(
+        item == marker or item.startswith(marker + "=") for item in lowered for marker in forbidden
+    ):
         fail("bitcoind PID command line selects a non-main network")
     try:
-        tail = stat_text[stat_text.rfind(")") + 2:].split()
+        tail = stat_text[stat_text.rfind(")") + 2 :].split()
         start_time_ticks = int(tail[19])
     except (ValueError, IndexError):
         fail("cannot parse bitcoind process start time")
@@ -136,13 +141,26 @@ def validate_rpc_args(values: list[str]) -> list[str]:
     result = []
     seen = set()
     for value in values:
-        if (not isinstance(value, str) or len(value) > 4096 or
-                any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)):
+        if (
+            not isinstance(value, str)
+            or len(value) > 4096
+            or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
+        ):
             fail("bitcoin-cli RPC argument contains unsafe text")
         name, separator, setting = value.partition("=")
-        if name not in {
-                "-datadir", "-conf", "-rpcconnect", "-rpcport",
-                "-rpccookiefile", "-rpcclienttimeout"} or not separator or not setting:
+        if (
+            name
+            not in {
+                "-datadir",
+                "-conf",
+                "-rpcconnect",
+                "-rpcport",
+                "-rpccookiefile",
+                "-rpcclienttimeout",
+            }
+            or not separator
+            or not setting
+        ):
             fail(f"bitcoin-cli RPC argument is not allowed: {name}")
         if name in seen:
             fail(f"bitcoin-cli RPC argument is duplicated: {name}")
@@ -164,11 +182,16 @@ class Rpc:
         try:
             result = subprocess.run(
                 [str(self.cli), *self.arguments, method, *arguments],
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, text=True, timeout=120, check=False,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=120,
+                check=False,
                 env={
                     "HOME": os.environ.get("HOME", "/nonexistent"),
-                    "LANG": "C", "LC_ALL": "C",
+                    "LANG": "C",
+                    "LC_ALL": "C",
                 },
             )
         except (OSError, subprocess.SubprocessError) as exc:
@@ -187,15 +210,17 @@ class Rpc:
 def exact_chain_info(value: object) -> dict[str, Any]:
     if not isinstance(value, dict):
         fail("getblockchaininfo did not return an object")
-    required = ("chain", "blocks", "headers", "bestblockhash",
-                "initialblockdownload")
-    if (value.get("chain") != "main" or
-            type(value.get("blocks")) is not int or value["blocks"] < 0 or
-            type(value.get("headers")) is not int or
-            value["headers"] != value["blocks"] or
-            not isinstance(value.get("bestblockhash"), str) or
-            HEX64.fullmatch(value["bestblockhash"]) is None or
-            value.get("initialblockdownload") is not False):
+    required = ("chain", "blocks", "headers", "bestblockhash", "initialblockdownload")
+    if (
+        value.get("chain") != "main"
+        or type(value.get("blocks")) is not int
+        or value["blocks"] < 0
+        or type(value.get("headers")) is not int
+        or value["headers"] != value["blocks"]
+        or not isinstance(value.get("bestblockhash"), str)
+        or HEX64.fullmatch(value["bestblockhash"]) is None
+        or value.get("initialblockdownload") is not False
+    ):
         fail("Bitcoin Core is not a fully synced mainnet node")
     return {key: value[key] for key in required}
 
@@ -221,8 +246,7 @@ def verify_header(raw_hex: str, wanted_hash: str) -> bytes:
     if bits & 0x00800000 or word == 0:
         fail("Bitcoin header compact target is negative or zero")
     target = word >> (8 * (3 - size)) if size <= 3 else word << (8 * (size - 3))
-    if (target <= 0 or target > MAX_EVIDENCE_TARGET or
-            target_to_compact(target) != bits):
+    if target <= 0 or target > MAX_EVIDENCE_TARGET or target_to_compact(target) != bits:
         fail("Bitcoin header target is non-canonical or below the evidence floor")
     if int.from_bytes(hash256(raw), "little") > target:
         fail("Bitcoin header does not satisfy proof of work")
@@ -253,36 +277,50 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
     daemon = pinned_binary(args.bitcoind, args.bitcoind_sha256, "bitcoind")
     pid, start_ticks = daemon_identity(args.bitcoind_pid, daemon)
     rpc_args = validate_rpc_args(args.rpc_arg)
-    if len(args.txid) != 6 or len(set(args.txid)) != 6 or any(
-            HEX64.fullmatch(item) is None for item in args.txid):
+    if (
+        len(args.txid) != 6
+        or len(set(args.txid)) != 6
+        or any(HEX64.fullmatch(item) is None for item in args.txid)
+    ):
         fail("exactly six distinct lowercase custody transaction IDs are required")
     if IDENTITY.fullmatch(args.node_id or "") is None:
         fail("node-id is not canonical")
     rpc = Rpc(cli, rpc_args)
     before = exact_chain_info(rpc.json("getblockchaininfo"))
     network = rpc.json("getnetworkinfo")
-    if (not isinstance(network, dict) or type(network.get("version")) is not int or
-            network["version"] <= 0 or not isinstance(network.get("subversion"), str) or
-            not 1 <= len(network["subversion"]) <= 100):
+    if (
+        not isinstance(network, dict)
+        or type(network.get("version")) is not int
+        or network["version"] <= 0
+        or not isinstance(network.get("subversion"), str)
+        or not 1 <= len(network["subversion"]) <= 100
+    ):
         fail("getnetworkinfo did not return a canonical node version")
 
     references = []
     for txid in args.txid:
-        proof_hex = rpc.call(
-            "gettxoutproof", json.dumps([txid], separators=(",", ":")))
+        proof_hex = rpc.call("gettxoutproof", json.dumps([txid], separators=(",", ":")))
         if not re.fullmatch(r"(?:[0-9a-f]{2}){80,}", proof_hex):
             fail(f"gettxoutproof for {txid} is not canonical hex")
         block_hash = hash256(bytes.fromhex(proof_hex)[:80])[::-1].hex()
         verbose = rpc.json("getblockheader", block_hash, "true")
-        if (not isinstance(verbose, dict) or verbose.get("hash") != block_hash or
-                type(verbose.get("height")) is not int or verbose["height"] < 0 or
-                type(verbose.get("confirmations")) is not int or
-                verbose["confirmations"] < 6):
+        if (
+            not isinstance(verbose, dict)
+            or verbose.get("hash") != block_hash
+            or type(verbose.get("height")) is not int
+            or verbose["height"] < 0
+            or type(verbose.get("confirmations")) is not int
+            or verbose["confirmations"] < 6
+        ):
             fail(f"custody transaction {txid} is not six-deep in the best chain")
-        references.append({
-            "txid": txid, "block_hash": block_hash,
-            "height": verbose["height"], "proof_hex": proof_hex,
-        })
+        references.append(
+            {
+                "txid": txid,
+                "block_hash": block_hash,
+                "height": verbose["height"],
+                "proof_hex": proof_hex,
+            }
+        )
     minimum_height = min(item["height"] for item in references)
     if before["blocks"] - minimum_height + 1 > 1000:
         fail("custody block-to-tip segment exceeds the 1,000-header evidence bound")
@@ -298,10 +336,13 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         raw = verify_header(raw_hex, block_hash)
         if previous_hash is not None and raw[4:36][::-1].hex() != previous_hash:
             fail("Bitcoin Core header snapshot is not hash-linked")
-        headers.append({
-            "height": height, "requested_hash": block_hash,
-            "getblockheader_false_hex": raw_hex,
-        })
+        headers.append(
+            {
+                "height": height,
+                "requested_hash": block_hash,
+                "getblockheader_false_hex": raw_hex,
+            }
+        )
         raw_by_hash[block_hash] = raw
         previous_hash = block_hash
 
@@ -315,7 +356,8 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         repeated = rpc.call(
             "gettxoutproof",
             json.dumps([reference["txid"]], separators=(",", ":")),
-            reference["block_hash"])
+            reference["block_hash"],
+        )
         if repeated != reference["proof_hex"]:
             fail("custody transaction proof changed during evidence collection; retry")
         if repeated[:160] != raw_by_hash[reference["block_hash"]].hex():
@@ -323,14 +365,16 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         confirmations = before["blocks"] - reference["height"] + 1
         if confirmations < 6:
             fail("custody transaction lost six-confirmation depth during collection")
-        proofs.append({
-            "txid": reference["txid"], "block_hash": reference["block_hash"],
-            "gettxoutproof_hex": repeated,
-        })
+        proofs.append(
+            {
+                "txid": reference["txid"],
+                "block_hash": reference["block_hash"],
+                "gettxoutproof_hex": repeated,
+            }
+        )
     if daemon_identity(pid, daemon)[1] != start_ticks:
         fail("bitcoind process identity changed during evidence collection; retry")
-    if sha256_file(cli) != args.bitcoin_cli_sha256 or \
-            sha256_file(daemon) != args.bitcoind_sha256:
+    if sha256_file(cli) != args.bitcoin_cli_sha256 or sha256_file(daemon) != args.bitcoind_sha256:
         fail("pinned Bitcoin Core executable bytes changed during collection")
 
     return {
@@ -340,8 +384,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         "bitcoin_network": "main",
         "node_id": args.node_id,
         "node_version": f"version={network['version']};subversion={network['subversion']}",
-        "captured_at_utc": dt.datetime.now(dt.timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"),
+        "captured_at_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "collector_version": COLLECTOR_VERSION,
         "bitcoin_cli_path": str(cli),
         "bitcoin_cli_sha256": args.bitcoin_cli_sha256,
@@ -376,7 +419,8 @@ def main() -> int:
         return 1
     print(
         "BITCOIN-CUSTODY-CHAIN-COLLECT OK: pinned native mainnet Core, "
-        "stable tip, six proofs, and contiguous high-work headers captured")
+        "stable tip, six proofs, and contiguous high-work headers captured"
+    )
     return 0
 
 

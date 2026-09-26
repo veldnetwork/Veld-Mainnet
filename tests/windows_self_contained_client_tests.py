@@ -29,8 +29,7 @@ check(
     "Windows build lacks the post-link DLL-import refusal",
 )
 check(
-    re.search(r"libc\\\+\\\+.*libleveldb.*\\\.dll", build, re.IGNORECASE | re.DOTALL)
-    is not None,
+    re.search(r"libc\\\+\\\+.*libleveldb.*\\\.dll", build, re.IGNORECASE | re.DOTALL) is not None,
     "post-link refusal does not cover libc++ and LevelDB DLL imports",
 )
 
@@ -74,13 +73,21 @@ for staged in (
     'cp "$src/pkg/tor-setup.ps1" "$output/tor-setup.ps1"',
 ):
     check(staged in build, f"GUI build does not stage {staged}")
-check('"%VELD_WINDOWED%" --node' in launcher and '--clearnet' not in launcher,
-      "Windows launcher must preserve the user's saved network preference")
-check("veld-reachability.ps1" not in launcher,
-      "minimal GUI launcher still requires the optional reachability helper")
-check("bin\\veld-node-gui.exe" not in launcher,
-      "minimal GUI launcher still requires a duplicate GUI executable")
-check('arg == L"--clearnet"' in gui and "force_clearnet_ = true" in gui,
-      "GUI does not honor the clearnet launcher override")
+check(
+    '"%VELD_WINDOWED%" --node' in launcher and '--clearnet' not in launcher,
+    "Windows launcher must preserve the user's saved network preference",
+)
+check(
+    "veld-reachability.ps1" not in launcher,
+    "minimal GUI launcher still requires the optional reachability helper",
+)
+check(
+    "bin\\veld-node-gui.exe" not in launcher,
+    "minimal GUI launcher still requires a duplicate GUI executable",
+)
+check(
+    'arg == L"--clearnet"' in gui and "force_clearnet_ = true" in gui,
+    "GUI does not honor the clearnet launcher override",
+)
 
 print(f"PASS windows_self_contained_client_tests checks={checks}")

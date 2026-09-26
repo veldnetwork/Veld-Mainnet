@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """BTC-header relay frontier-ordering regressions."""
+
 import json
 import os
 import stat
@@ -55,10 +56,9 @@ class RelayFrontierTests(unittest.TestCase):
         r.resubmit_secs = 600
         r.state_path = str(Path(td) / "relay_state.json")
         r.state = {"submitted_tip": 0, "submitted_at": 0}
-        r.raw_header = lambda height: bytes([height & 0xff]) * 80
+        r.raw_header = lambda height: bytes([height & 0xFF]) * 80
         r.posts = []
-        r.post_batch = lambda first, headers: (
-            r.posts.append((first, len(headers))) or ("ab" * 32))
+        r.post_batch = lambda first, headers: (r.posts.append((first, len(headers))) or ("ab" * 32))
         return r
 
     def test_only_one_consensus_frontier_can_be_outstanding(self):
@@ -80,8 +80,7 @@ class RelayFrontierTests(unittest.TestCase):
     def test_timed_out_frontier_reposts_from_consensus_best(self):
         with tempfile.TemporaryDirectory() as td:
             r = self.make_relay(td)
-            r.state = {"submitted_tip": 100,
-                       "submitted_at": time.time() - r.resubmit_secs - 1}
+            r.state = {"submitted_tip": 100, "submitted_at": time.time() - r.resubmit_secs - 1}
             r.run_once()
             self.assertEqual(r.posts, [(1, 100)])
             self.assertEqual(r.state["submitted_tip"], 100)
@@ -90,11 +89,13 @@ class RelayFrontierTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             r = self.make_relay(td)
             txid = "ab" * 32
-            r.state = {"submitted_tip": 100,
-                       "submitted_at": time.time() - r.resubmit_secs - 1,
-                       "submitted_start": 1,
-                       "submitted_txid": txid,
-                       "submitted_tip_hash": f"{100:064x}"}
+            r.state = {
+                "submitted_tip": 100,
+                "submitted_at": time.time() - r.resubmit_secs - 1,
+                "submitted_start": 1,
+                "submitted_txid": txid,
+                "submitted_tip_hash": f"{100:064x}",
+            }
             r.veld.mempool.add(txid)
             r.run_once()
             self.assertEqual(r.posts, [])
@@ -104,11 +105,13 @@ class RelayFrontierTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             r = self.make_relay(td)
             txid = "ab" * 32
-            r.state = {"submitted_tip": 100,
-                       "submitted_at": time.time() - r.resubmit_secs - 1,
-                       "submitted_start": 1,
-                       "submitted_txid": txid,
-                       "submitted_tip_hash": f"{100:064x}"}
+            r.state = {
+                "submitted_tip": 100,
+                "submitted_at": time.time() - r.resubmit_secs - 1,
+                "submitted_start": 1,
+                "submitted_txid": txid,
+                "submitted_tip_hash": f"{100:064x}",
+            }
             r.veld.mempool.add(txid)
             r.btc.hashes[100] = "ff" * 32
             r.run_once()
@@ -118,11 +121,13 @@ class RelayFrontierTests(unittest.TestCase):
     def test_evicted_timed_out_transaction_is_replaced(self):
         with tempfile.TemporaryDirectory() as td:
             r = self.make_relay(td)
-            r.state = {"submitted_tip": 100,
-                       "submitted_at": time.time() - r.resubmit_secs - 1,
-                       "submitted_start": 1,
-                       "submitted_txid": "ab" * 32,
-                       "submitted_tip_hash": f"{100:064x}"}
+            r.state = {
+                "submitted_tip": 100,
+                "submitted_at": time.time() - r.resubmit_secs - 1,
+                "submitted_start": 1,
+                "submitted_txid": "ab" * 32,
+                "submitted_tip_hash": f"{100:064x}",
+            }
             r.run_once()
             self.assertEqual(r.posts, [(1, 100)])
 
@@ -134,24 +139,26 @@ class RelayFrontierTests(unittest.TestCase):
             # A posted frontier consensus never adopted (best stayed at 200) whose
             # resubmit window has elapsed: treat it as a source reorg and rewind
             # below best+1 by REORG_REWIND_INIT rather than orphan-loop on best+1.
-            r.state = {"submitted_tip": 299,
-                       "submitted_at": time.time() - r.resubmit_secs - 1,
-                       "reorg_rewind": 0}
+            r.state = {
+                "submitted_tip": 299,
+                "submitted_at": time.time() - r.resubmit_secs - 1,
+                "reorg_rewind": 0,
+            }
             r.run_once()
-            self.assertEqual(r.posts[-1], (200, 100))          # best+1-1
+            self.assertEqual(r.posts[-1], (200, 100))  # best+1-1
             self.assertEqual(r.state["reorg_rewind"], relayd.REORG_REWIND_INIT)
 
             # Still unadopted -> the re-anchor depth doubles.
             r.state["submitted_at"] = time.time() - r.resubmit_secs - 1
             r.run_once()
-            self.assertEqual(r.posts[-1], (199, 100))          # best+1-2
+            self.assertEqual(r.posts[-1], (199, 100))  # best+1-2
             self.assertEqual(r.state["reorg_rewind"], 2)
 
             # Consensus finally adopts -> depth resets, normal extension resumes.
             r.veld.best = 400
             r.state["submitted_at"] = time.time() - r.resubmit_secs - 1
             r.run_once()
-            self.assertEqual(r.posts[-1], (401, 100))          # best+1, no rewind
+            self.assertEqual(r.posts[-1], (401, 100))  # best+1, no rewind
             self.assertEqual(r.state["reorg_rewind"], 0)
 
     def test_reorg_rewind_never_crosses_the_checkpoint_floor(self):
@@ -161,11 +168,13 @@ class RelayFrontierTests(unittest.TestCase):
             r.btc.tip = 500
             r.checkpoint_height = 5
             # A deep escalated rewind must never submit below checkpoint_height+1.
-            r.state = {"submitted_tip": 105,
-                       "submitted_at": time.time() - r.resubmit_secs - 1,
-                       "reorg_rewind": 32}
+            r.state = {
+                "submitted_tip": 105,
+                "submitted_at": time.time() - r.resubmit_secs - 1,
+                "reorg_rewind": 32,
+            }
             r.run_once()
-            self.assertEqual(r.posts[-1][0], 6)                # checkpoint_height+1
+            self.assertEqual(r.posts[-1][0], 6)  # checkpoint_height+1
 
     def test_future_checkpoint_is_a_fatal_config_error(self):
         with tempfile.TemporaryDirectory() as td:
@@ -188,8 +197,7 @@ class RelayFrontierTests(unittest.TestCase):
             r = self.make_relay(td)
             r.max_per_op = relayd.MAX_HEADERS_PER_OP
             with self.assertRaisesRegex(RuntimeError, "oversized"):
-                relayd.Relay.post_batch(
-                    r, 1, [b"x" * 80] * (relayd.MAX_HEADERS_PER_OP + 1))
+                relayd.Relay.post_batch(r, 1, [b"x" * 80] * (relayd.MAX_HEADERS_PER_OP + 1))
             with self.assertRaisesRegex(RuntimeError, "malformed"):
                 relayd.Relay.post_batch(r, 1, [b"short"])
 
@@ -225,18 +233,18 @@ class RelayProductionConfigTests(unittest.TestCase):
         return {
             "production": True,
             "state_dir": str(self.state),
-            "cli_base": [str(self.bitcoin),
-                         "-datadir=" + str(self.bitcoin_dir)],
+            "cli_base": [str(self.bitcoin), "-datadir=" + str(self.bitcoin_dir)],
             "btc_rpc_timeout": 30,
             "veld_rpc": {
                 "url": "http://127.0.0.1:8334",
-                "token_cmd": [str(self.node),
-                              "--datadir=" + str(self.veld_dir),
-                              "--print-rpc-token"],
+                "token_cmd": [
+                    str(self.node),
+                    "--datadir=" + str(self.veld_dir),
+                    "--print-rpc-token",
+                ],
             },
             "fund_addr": "VUjD1JoewGkiGxRqJ52FkK1UiMotjsp9Tg",
-            "signer": {"keygen": str(self.keygen),
-                       "keyfile": str(self.keyfile)},
+            "signer": {"keygen": str(self.keygen), "keyfile": str(self.keyfile)},
             "checkpoint_height": 0,
             "max_headers_per_op": 100,
             "resubmit_timeout_secs": 600,
@@ -244,18 +252,23 @@ class RelayProductionConfigTests(unittest.TestCase):
 
     def test_exact_production_config_accepts_only_local_bounded_paths(self):
         self.assertIs(relayd.validate_config(self.config())["production"], True)
-        for field, value in (("max_headers_per_op", 0),
-                             ("max_headers_per_op", 101),
-                             ("resubmit_timeout_secs", 29),
-                             ("resubmit_timeout_secs", 86401),
-                             ("checkpoint_height", -1)):
-            cfg = self.config(); cfg[field] = value
+        for field, value in (
+            ("max_headers_per_op", 0),
+            ("max_headers_per_op", 101),
+            ("resubmit_timeout_secs", 29),
+            ("resubmit_timeout_secs", 86401),
+            ("checkpoint_height", -1),
+        ):
+            cfg = self.config()
+            cfg[field] = value
             with self.assertRaises(RuntimeError, msg=(field, value)):
                 relayd.validate_config(cfg)
-        cfg = self.config(); cfg["veld_rpc"]["url"] = "http://localhost:8334"
+        cfg = self.config()
+        cfg["veld_rpc"]["url"] = "http://localhost:8334"
         with self.assertRaisesRegex(RuntimeError, "exact http"):
             relayd.validate_config(cfg)
-        cfg = self.config(); cfg["veld_rpc"]["token_file"] = str(self.keyfile)
+        cfg = self.config()
+        cfg["veld_rpc"]["token_file"] = str(self.keyfile)
         cfg["veld_rpc"].pop("token_cmd")
         with self.assertRaisesRegex(RuntimeError, "exact private runtime"):
             relayd.validate_config(cfg)
@@ -267,8 +280,7 @@ class RelayProductionConfigTests(unittest.TestCase):
             relayd._secure_state_dir(str(self.state))
         os.chmod(self.state, 0o700)
         state_path = self.state / "relay_state.json"
-        relayd.save_json(str(state_path), {"submitted_tip": 5,
-                                           "submitted_at": 1.0})
+        relayd.save_json(str(state_path), {"submitted_tip": 5, "submitted_at": 1.0})
         self.assertEqual(relayd.load_relay_state(str(state_path))["submitted_tip"], 5)
         os.chmod(state_path, 0o644)
         with self.assertRaisesRegex(RuntimeError, "mode-0600"):
@@ -276,19 +288,18 @@ class RelayProductionConfigTests(unittest.TestCase):
 
     def test_loop_and_resubmit_bounds_are_explicit(self):
         for value in (relayd.MIN_LOOP_SECS, relayd.MAX_LOOP_SECS):
-            self.assertEqual(relayd._strict_int(
-                value, "--loop", relayd.MIN_LOOP_SECS,
-                relayd.MAX_LOOP_SECS), value)
+            self.assertEqual(
+                relayd._strict_int(value, "--loop", relayd.MIN_LOOP_SECS, relayd.MAX_LOOP_SECS),
+                value,
+            )
         for value in (relayd.MIN_LOOP_SECS - 1, relayd.MAX_LOOP_SECS + 1):
             with self.assertRaises(RuntimeError):
-                relayd._strict_int(value, "--loop", relayd.MIN_LOOP_SECS,
-                                   relayd.MAX_LOOP_SECS)
+                relayd._strict_int(value, "--loop", relayd.MIN_LOOP_SECS, relayd.MAX_LOOP_SECS)
 
     def test_shipped_service_and_runbook_bind_the_relay(self):
         deploy = Path(__file__).parent / "deploy"
         unit = (deploy / "veld-btcrelayd.service").read_text(encoding="utf-8")
-        example = json.loads((deploy / "btcrelayd.example.json").read_text(
-            encoding="utf-8"))
+        example = json.loads((deploy / "btcrelayd.example.json").read_text(encoding="utf-8"))
         runbook = (deploy / "SPV-MINT-RUNBOOK.md").read_text(encoding="utf-8")
         self.assertIn("StateDirectory=veld-btcrelayd", unit)
         self.assertIn("ProtectSystem=strict", unit)

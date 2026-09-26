@@ -12,9 +12,11 @@
 # there is no float rounding in the amount the desk locks.
 from decimal import Decimal, InvalidOperation
 
-VELD_UNITS = 100_000_000                       # base units per 1 VELD (chain precision, 8 dp)
-QUOTE_DECIMALS = 2                             # swaps quote + lock VELD to this many dp
-_QUOTE_STEP = VELD_UNITS // (10 ** QUOTE_DECIMALS)   # base units per one quote step (0.01 VELD = 1_000_000)
+VELD_UNITS = 100_000_000  # base units per 1 VELD (chain precision, 8 dp)
+QUOTE_DECIMALS = 2  # swaps quote + lock VELD to this many dp
+_QUOTE_STEP = VELD_UNITS // (
+    10**QUOTE_DECIMALS
+)  # base units per one quote step (0.01 VELD = 1_000_000)
 
 
 def quote_base_units(amount_base, veld_per_coin, decimals):
@@ -31,16 +33,15 @@ def quote_base_units(amount_base, veld_per_coin, decimals):
         rate = Decimal(str(veld_per_coin))
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise ValueError('VELD-per-coin rate is malformed') from exc
-    if (not rate.is_finite() or rate <= 0
-            or rate > Decimal('1000000000000')):
+    if not rate.is_finite() or rate <= 0 or rate > Decimal('1000000000000'):
         raise ValueError('VELD-per-coin rate is outside the supported range')
     scaled = rate * VELD_UNITS
     integral = scaled.to_integral_value()
     if scaled != integral:
         raise ValueError('VELD-per-coin rate has more than 8 decimal places')
     veld_base_per_coin = int(integral)
-    raw = (amount_base * veld_base_per_coin) // (10 ** decimals)
-    return (raw // _QUOTE_STEP) * _QUOTE_STEP   # floor to the 0.01-VELD step
+    raw = (amount_base * veld_base_per_coin) // (10**decimals)
+    return (raw // _QUOTE_STEP) * _QUOTE_STEP  # floor to the 0.01-VELD step
 
 
 def format_veld(base_units):

@@ -18,8 +18,10 @@ struct RecentLookupProgress {
             examined.reset();
         } else if (height > tip_height) {
             const auto delta = height - tip_height;
-            if (delta >= WINDOW) examined.reset();
-            else examined <<= static_cast<size_t>(delta);
+            if (delta >= WINDOW)
+                examined.reset();
+            else
+                examined <<= static_cast<size_t>(delta);
         }
         tip_height = height;
         tip_hash = hash;
@@ -27,7 +29,8 @@ struct RecentLookupProgress {
     std::optional<uint64_t> Next() const {
         const uint64_t count = tip_height < WINDOW - 1 ? tip_height + 1 : WINDOW;
         for (size_t i = 0; i < count; ++i)
-            if (!examined[i]) return tip_height - i;
+            if (!examined[i])
+                return tip_height - i;
         return std::nullopt;
     }
     void MarkExamined(uint64_t height) {

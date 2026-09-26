@@ -12,28 +12,35 @@ ROOT = Path(__file__).resolve().parents[1]
 version_header = (ROOT / "include/core/version.h").read_text(encoding="utf-8")
 activation_fixture = (ROOT / "tests/release_activation_tests.cpp").read_text(encoding="utf-8")
 runtime_version = re.search(r'CLIENT_VERSION\s*=\s*"([^"]+)"', version_header)
-fixture_version = re.search(r'std::string_view\(CLIENT_VERSION\)\s*==\s*"([^"]+)"', activation_fixture)
+fixture_version = re.search(
+    r'std::string_view\(CLIENT_VERSION\)\s*==\s*"([^"]+)"', activation_fixture
+)
 assert runtime_version and fixture_version, "release version assertions must be explicit"
-assert runtime_version.group(1) == fixture_version.group(1), "release activation fixture has a stale client version"
+assert runtime_version.group(1) == fixture_version.group(1), (
+    "release activation fixture has a stale client version"
+)
 path = ROOT / "scripts/verify-release-version.py"
 spec = importlib.util.spec_from_file_location("release_version", path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-header = ('inline constexpr const char* CLIENT_VERSION = "9.8.7";\n'
-          'inline constexpr const char* CLIENT_USER_AGENT = "/Veld:9.8.7/";\n')
+header = (
+    'inline constexpr const char* CLIENT_VERSION = "9.8.7";\n'
+    'inline constexpr const char* CLIENT_USER_AGENT = "/Veld:9.8.7/";\n'
+)
 checks = 0
 for prefix in ("", "VELD_DEPLOYMENT_INFO_V1_JSON "):
     assert module.verify(header, prefix + '{"client_version":"9.8.7"}') == "9.8.7"
     checks += 1
 for candidate, report in (
-        (header, '{"client_version":"3.1.1"}'),
-        (header, '{}'),
-        (header, '[]'),
-        (header, '{"client_version":"9.8.7","client_version":"9.8.7"}'),
-        (header, '{"client_version":"9.8.7"}\n{"client_version":"9.8.7"}'),
-        (header, 'warning\n{"client_version":"9.8.7"}'),
-        (header.replace('/Veld:9.8.7/', '/Veld:9.8.6/'), '{"client_version":"9.8.7"}'),
-        (header + header, '{"client_version":"9.8.7"}')):
+    (header, '{"client_version":"3.1.1"}'),
+    (header, '{}'),
+    (header, '[]'),
+    (header, '{"client_version":"9.8.7","client_version":"9.8.7"}'),
+    (header, '{"client_version":"9.8.7"}\n{"client_version":"9.8.7"}'),
+    (header, 'warning\n{"client_version":"9.8.7"}'),
+    (header.replace('/Veld:9.8.7/', '/Veld:9.8.6/'), '{"client_version":"9.8.7"}'),
+    (header + header, '{"client_version":"9.8.7"}'),
+):
     try:
         module.verify(candidate, report)
     except ValueError:
@@ -47,9 +54,12 @@ with tempfile.TemporaryDirectory(prefix="veld-version-test-") as directory:
     deployment = root / "deployment.txt"
     for version, expected in (("9.8.7", 0), ("3.1.1", 1)):
         deployment.write_text('{"client_version":"' + version + '"}', encoding="utf-8")
-        result = subprocess.run([sys.executable, str(path), "--root", str(root),
-                                 "--deployment-info", str(deployment)],
-                                capture_output=True, text=True, timeout=15)
+        result = subprocess.run(
+            [sys.executable, str(path), "--root", str(root), "--deployment-info", str(deployment)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
         assert result.returncode == expected, result.stdout + result.stderr
         checks += 1
 for name in ("mainnet-v2-linux.sh", "mainnet-v2-windows.sh"):

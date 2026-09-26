@@ -20,6 +20,7 @@ It can do NOTHING else: no shell, no caller-supplied paths, no key access, no
 signing. So the watchtower's SSH key grants only "pause or halt the signer",
 never "mint". Any malformed input is rejected and changes nothing (fail-closed).
 """
+
 import json
 import fcntl
 import os
@@ -32,33 +33,39 @@ import stat
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import veld_peg_solvency as sol  # noqa: E402
-from rpc_url_policy import (read_bounded_regular_file,
-                            run_bounded_subprocess,
-                            strict_json_loads)  # noqa: E402
+from rpc_url_policy import read_bounded_regular_file, run_bounded_subprocess, strict_json_loads  # noqa: E402
 
 HEARTBEATF = os.path.join(HERE, "signer-heartbeat.json")
-HALTF      = os.path.join(HERE, "HALT")
-RECVLOG    = os.path.join(HERE, "wt-recv.log")
-LASTSEQF   = os.path.join(HERE, "watchtower-last-seq")
-LOCKF      = os.path.join(HERE, ".wt-recv.lock")
-MAX_STDIN  = 65536  # a beat is a few hundred bytes; cap the read hard
+HALTF = os.path.join(HERE, "HALT")
+RECVLOG = os.path.join(HERE, "wt-recv.log")
+LASTSEQF = os.path.join(HERE, "watchtower-last-seq")
+LOCKF = os.path.join(HERE, ".wt-recv.lock")
+MAX_STDIN = 65536  # a beat is a few hundred bytes; cap the read hard
 # Pinned watchtower beat-signing public key. Every beat must
 # carry a valid ML-DSA signature from this key, unless an explicit dev opt-out marker
 # (beat-unsigned-ok) is present. Missing pin AND missing opt-out => fail-closed refuse.
-BEAT_PUBKEY      = os.path.join(HERE, "watchtower-beat-pubkey.hex")
+BEAT_PUBKEY = os.path.join(HERE, "watchtower-beat-pubkey.hex")
 BEAT_UNSIGNED_OK = os.path.join(HERE, "beat-unsigned-ok")
-KEYGEN           = os.path.join(HERE, "veld-keygen")
+KEYGEN = os.path.join(HERE, "veld-keygen")
 
 
 def _log(m):
     try:
-        flags = (os.O_WRONLY | os.O_APPEND | os.O_CREAT |
-                 getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+        flags = (
+            os.O_WRONLY
+            | os.O_APPEND
+            | os.O_CREAT
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+        )
         fd = os.open(RECVLOG, flags, 0o600)
         info = os.fstat(fd)
-        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or
-                info.st_uid not in (0, os.geteuid()) or
-                stat.S_IMODE(info.st_mode) & 0o022):
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or info.st_uid not in (0, os.geteuid())
+            or stat.S_IMODE(info.st_mode) & 0o022
+        ):
             os.close(fd)
             return
         os.fchmod(fd, 0o600)
@@ -73,18 +80,19 @@ def _trusted_state_directory(path):
     if os.path.realpath(directory) != directory:
         raise RuntimeError("signer state directory must not traverse symlinks")
     info = os.lstat(directory)
-    if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or
-            info.st_uid not in (0, os.geteuid()) or
-            stat.S_IMODE(info.st_mode) & 0o022):
-        raise RuntimeError(
-            "signer state directory must be root/service-owned and non-writable")
+    if (
+        not stat.S_ISDIR(info.st_mode)
+        or stat.S_ISLNK(info.st_mode)
+        or info.st_uid not in (0, os.geteuid())
+        or stat.S_IMODE(info.st_mode) & 0o022
+    ):
+        raise RuntimeError("signer state directory must be root/service-owned and non-writable")
     return directory
 
 
 def _atomic_write(path, text):
     directory = _trusted_state_directory(path)
-    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".",
-                               suffix=".tmp", dir=directory)
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", suffix=".tmp", dir=directory)
     try:
         os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -113,18 +121,27 @@ def _last_sequence():
     """Load durable monotonic sequence; any corruption fails closed."""
     values = []
     if os.path.lexists(LASTSEQF):
-        raw = read_bounded_regular_file(
-            os.path.abspath(LASTSEQF), 128, "durable watchtower sequence",
-            private=True).decode("ascii").strip()
+        raw = (
+            read_bounded_regular_file(
+                os.path.abspath(LASTSEQF), 128, "durable watchtower sequence", private=True
+            )
+            .decode("ascii")
+            .strip()
+        )
         if not raw.isdigit():
             reject("durable watchtower sequence is corrupt")
         values.append(int(raw))
     if os.path.lexists(HEARTBEATF):
         try:
-            old = strict_json_loads(read_bounded_regular_file(
-                os.path.abspath(HEARTBEATF), MAX_STDIN,
-                "existing signer heartbeat", private=True),
-                "existing signer heartbeat")
+            old = strict_json_loads(
+                read_bounded_regular_file(
+                    os.path.abspath(HEARTBEATF),
+                    MAX_STDIN,
+                    "existing signer heartbeat",
+                    private=True,
+                ),
+                "existing signer heartbeat",
+            )
             ok, why = sol.validate_heartbeat(old)
             if not ok:
                 raise ValueError(why)
@@ -150,12 +167,13 @@ def verify_beat_sig(p):
     compromised custody box cannot substitute a beat even if it reaches this path."""
     if os.path.lexists(BEAT_UNSIGNED_OK):
         read_bounded_regular_file(
-            os.path.abspath(BEAT_UNSIGNED_OK), 1024,
-            "unsigned-beat development marker")
+            os.path.abspath(BEAT_UNSIGNED_OK), 1024, "unsigned-beat development marker"
+        )
         return True, "unsigned-ok (dev opt-out)"
     if not os.path.lexists(BEAT_PUBKEY):
-        return False, ("no watchtower-beat-pubkey.hex pin and no beat-unsigned-ok "
-                       "opt-out (fail-closed)")
+        return False, (
+            "no watchtower-beat-pubkey.hex pin and no beat-unsigned-ok opt-out (fail-closed)"
+        )
     sig_hex = p.get("sig")
     if not isinstance(sig_hex, str) or not sig_hex:
         return False, "beat carries no signature"
@@ -174,8 +192,8 @@ def verify_beat_sig(p):
             f.write(sig)
         try:
             pubkey = read_bounded_regular_file(
-                os.path.abspath(BEAT_PUBKEY), 1024 * 1024,
-                "watchtower beat public key")
+                os.path.abspath(BEAT_PUBKEY), 1024 * 1024, "watchtower beat public key"
+            )
         except Exception as e:
             return False, "pinned beat public key is unsafe: %s" % e
         with open(pf, "wb") as f:
@@ -183,13 +201,18 @@ def verify_beat_sig(p):
         try:
             r = run_bounded_subprocess(
                 [KEYGEN, "verify-release", "@" + pf, bf, sf],
-                timeout=30, stdout_max=64 * 1024, stderr_max=64 * 1024,
-                description="watchtower beat verifier")
+                timeout=30,
+                stdout_max=64 * 1024,
+                stderr_max=64 * 1024,
+                description="watchtower beat verifier",
+            )
         except Exception as e:
             return False, "verify subprocess failed: %s" % e
         if r.returncode != 0:
-            return False, ("signature invalid: "
-                           + (r.stderr.strip()[:160] or "verify-release rc=%d" % r.returncode))
+            return False, (
+                "signature invalid: "
+                + (r.stderr.strip()[:160] or "verify-release rc=%d" % r.returncode)
+            )
     return True, "ok"
 
 
@@ -235,13 +258,15 @@ def main():
     # SOLVENT: serialize concurrent forced-command processes and accept each
     # signed sequence exactly once. Without this durable monotonic check, a
     # captured old beat could be replayed to refresh its receiver-stamped expiry.
-    lock_flags = (os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) |
-                  getattr(os, "O_CLOEXEC", 0))
+    lock_flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
     lock_fd = os.open(LOCKF, lock_flags, 0o600)
     lock_info = os.fstat(lock_fd)
-    if (not stat.S_ISREG(lock_info.st_mode) or lock_info.st_nlink != 1 or
-            lock_info.st_uid not in (0, os.geteuid()) or
-            stat.S_IMODE(lock_info.st_mode) & 0o022):
+    if (
+        not stat.S_ISREG(lock_info.st_mode)
+        or lock_info.st_nlink != 1
+        or lock_info.st_uid not in (0, os.geteuid())
+        or stat.S_IMODE(lock_info.st_mode) & 0o022
+    ):
         os.close(lock_fd)
         reject("receiver lock is not a trusted regular file")
     os.fchmod(lock_fd, 0o600)
@@ -249,15 +274,16 @@ def main():
     fcntl.flock(lock, fcntl.LOCK_EX)
     last_seq = _last_sequence()
     if p["seq"] <= last_seq:
-        reject("replayed/out-of-order beat seq=%d <= durable seq=%d" %
-               (p["seq"], last_seq))
+        reject("replayed/out-of-order beat seq=%d <= durable seq=%d" % (p["seq"], last_seq))
     hb = sol.stamp_heartbeat(p, time.time())
     # Heartbeat first: if a crash lands between writes, restart also recovers the
     # new seq from this file. Both writes have file+directory fsync barriers.
     _atomic_write(HEARTBEATF, json.dumps(hb, sort_keys=True, separators=(",", ":")))
     _atomic_write(LASTSEQF, str(p["seq"]) + "\n")
-    _log("BEAT seq=%s headroom=%s ttl=%d"
-         % (hb["seq"], hb["headroom_sats"], int(hb["expires_at"] - hb["issued_at"])))
+    _log(
+        "BEAT seq=%s headroom=%s ttl=%d"
+        % (hb["seq"], hb["headroom_sats"], int(hb["expires_at"] - hb["issued_at"]))
+    )
     sys.stdout.write("ok\n")
 
 

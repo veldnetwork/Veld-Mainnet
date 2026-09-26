@@ -21,11 +21,12 @@
 namespace veld {
 
 class NmsVerifyCache {
-public:
+  public:
     bool Lookup(const std::string& key, bool& out_result) const {
         std::lock_guard<std::mutex> lk(m_);
         auto it = map_.find(key);
-        if (it == map_.end()) return false;
+        if (it == map_.end())
+            return false;
         out_result = it->second;
         return true;
     }
@@ -38,7 +39,8 @@ public:
             }
         }
         auto [it, inserted] = map_.try_emplace(key, result);
-        if (inserted) fifo_.push_back(key);
+        if (inserted)
+            fifo_.push_back(key);
     }
     size_t Clear() {
         std::lock_guard<std::mutex> lk(m_);
@@ -51,7 +53,8 @@ public:
         std::lock_guard<std::mutex> lk(m_);
         return map_.size();
     }
-private:
+
+  private:
     static constexpr size_t CAP = 1'000'000;
     mutable std::mutex m_;
     std::unordered_map<std::string, bool> map_;
@@ -81,18 +84,23 @@ enum class NmsValidationDisposition : uint8_t {
 // verify PoW, prev-block freshness, difficulty, or the signing input. All of
 // those are chain-state checks and live in the future `ValidateNms` function.
 inline std::optional<NmsRecord> ParseNmsPayload(const uint8_t* data, size_t len) {
-    if (data == nullptr) return std::nullopt;
-    if (len != NMS_PAYLOAD_LEN) return std::nullopt;
+    if (data == nullptr)
+        return std::nullopt;
+    if (len != NMS_PAYLOAD_LEN)
+        return std::nullopt;
 
-    if (std::memcmp(data, NMS_MAGIC, NMS_MAGIC_LEN) != 0) return std::nullopt;
+    if (std::memcmp(data, NMS_MAGIC, NMS_MAGIC_LEN) != 0)
+        return std::nullopt;
 
-    if (data[NMS_MAGIC_LEN] != NMS_VERSION) return std::nullopt;
+    if (data[NMS_MAGIC_LEN] != NMS_VERSION)
+        return std::nullopt;
 
     const uint8_t* hdr_bytes = data + NMS_MAGIC_LEN + 1;
     std::vector<uint8_t> hdr_buf(hdr_bytes, hdr_bytes + NMS_HEADER_LEN);
 
     BlockHeader hdr;
-    if (!hdr.Deserialize(hdr_buf, 0)) return std::nullopt;
+    if (!hdr.Deserialize(hdr_buf, 0))
+        return std::nullopt;
 
     NmsRecord rec;
     rec.header = hdr;
@@ -118,8 +126,10 @@ inline std::vector<uint8_t> EncodeNmsPayload(const BlockHeader& hdr) {
 }
 
 inline bool LooksLikeNms(const uint8_t* data, size_t len) {
-    if (data == nullptr) return false;
-    if (len != NMS_PAYLOAD_LEN) return false;
+    if (data == nullptr)
+        return false;
+    if (len != NMS_PAYLOAD_LEN)
+        return false;
     return std::memcmp(data, NMS_MAGIC, NMS_MAGIC_LEN) == 0;
 }
 
@@ -132,13 +142,19 @@ inline std::optional<NmsRecord> ExtractNmsFromTx(const Transaction& tx) {
     for (const auto& out : tx.outputs) {
         const auto& spk = out.script_pubkey;
         constexpr size_t kNmsScriptLen = 3 + NMS_PAYLOAD_LEN;
-        if (spk.size() != kNmsScriptLen) continue;
-        if (spk[0] != 0x6A) continue;
-        if (spk[1] != 0x4C) continue;
-        if (spk[2] != NMS_PAYLOAD_LEN) continue;
+        if (spk.size() != kNmsScriptLen)
+            continue;
+        if (spk[0] != 0x6A)
+            continue;
+        if (spk[1] != 0x4C)
+            continue;
+        if (spk[2] != NMS_PAYLOAD_LEN)
+            continue;
         auto parsed = ParseNmsPayload(spk.data() + 3, NMS_PAYLOAD_LEN);
-        if (!parsed) continue;
-        if (found) return std::nullopt;
+        if (!parsed)
+            continue;
+        if (found)
+            return std::nullopt;
         found = parsed;
     }
     return found;
@@ -157,14 +173,22 @@ inline std::vector<uint8_t> BuildNmsOpReturnScript(const std::vector<uint8_t>& p
 inline std::vector<uint8_t> ExtractNmsMinerScript(const Transaction& tx) {
     for (const auto& out : tx.outputs) {
         const auto& spk = out.script_pubkey;
-        if (spk.empty()) continue;
-        if (spk[0] == 0x6A) continue;
-        if (spk.size() != 25) continue;
-        if (spk[0]  != 0x76) continue;
-        if (spk[1]  != 0xA9) continue;
-        if (spk[2]  != 0x14) continue;
-        if (spk[23] != 0x88) continue;
-        if (spk[24] != 0xAC) continue;
+        if (spk.empty())
+            continue;
+        if (spk[0] == 0x6A)
+            continue;
+        if (spk.size() != 25)
+            continue;
+        if (spk[0] != 0x76)
+            continue;
+        if (spk[1] != 0xA9)
+            continue;
+        if (spk[2] != 0x14)
+            continue;
+        if (spk[23] != 0x88)
+            continue;
+        if (spk[24] != 0xAC)
+            continue;
         return spk;
     }
     return {};
@@ -172,20 +196,27 @@ inline std::vector<uint8_t> ExtractNmsMinerScript(const Transaction& tx) {
 
 inline bool ValidateNmsMinerIdentity(const Transaction& tx) {
     auto miner_script = ExtractNmsMinerScript(tx);
-    if (miner_script.size() != 25) return false;
+    if (miner_script.size() != 25)
+        return false;
     std::array<uint8_t, 20> expected_hash;
-    for (int i = 0; i < 20; ++i) expected_hash[i] = miner_script[3 + i];
+    for (int i = 0; i < 20; ++i)
+        expected_hash[i] = miner_script[3 + i];
 
     for (const auto& inp : tx.inputs) {
         std::vector<uint8_t> sig_unused;
         std::array<uint8_t, 1952> pubkey;
-        if (!veld::pqc::ParseScriptSig(inp.script_sig, sig_unused, pubkey)) continue;
+        if (!veld::pqc::ParseScriptSig(inp.script_sig, sig_unused, pubkey))
+            continue;
         Hash160 actual = Hash160Compute(pubkey);
         bool match = true;
         for (int i = 0; i < 20; ++i) {
-            if (actual[i] != expected_hash[i]) { match = false; break; }
+            if (actual[i] != expected_hash[i]) {
+                match = false;
+                break;
+            }
         }
-        if (match) return true;
+        if (match)
+            return true;
     }
     return false;
 }
@@ -215,40 +246,39 @@ inline bool ValidateNmsMinerIdentity(const Transaction& tx) {
 //  it's the block being validated.
 // ─────────────────────────────────────────────────────────────────────
 template <typename ChainT>
-inline bool ValidateNms(const NmsRecord& rec,
-                         const ChainT& chain,
-                         uint64_t enclosing_block_height,
-                         mining::ExpensivePowBudget* source_pow_budget = nullptr,
-                         bool* local_work_deferred = nullptr,
-                         mining::ExpensivePowUse pow_use =
-                             mining::ExpensivePowUse::PeerNms)
-{
-    if (local_work_deferred) *local_work_deferred = false;
+inline bool ValidateNms(const NmsRecord& rec, const ChainT& chain, uint64_t enclosing_block_height,
+                        mining::ExpensivePowBudget* source_pow_budget = nullptr,
+                        bool* local_work_deferred = nullptr,
+                        mining::ExpensivePowUse pow_use = mining::ExpensivePowUse::PeerNms) {
+    if (local_work_deferred)
+        *local_work_deferred = false;
     auto prev_height_opt = chain.GetHeightByHashLocked(rec.header.prev_block_hash);
-    if (!prev_height_opt) return false;
+    if (!prev_height_opt)
+        return false;
     uint64_t claim_height = *prev_height_opt + 1;
-    if (enclosing_block_height == 0) return false;
+    if (enclosing_block_height == 0)
+        return false;
     // Fresh public-mainnet-v2 rule: an NMS claim is useful only for the next
     // block on the exact branch it was mining.  Accepting any of the prior 100
     // parents let an unauthenticated transaction alternate dataset identities
     // even after block-header aliases were closed.
-    if (claim_height != enclosing_block_height) return false;
+    if (claim_height != enclosing_block_height)
+        return false;
 
     uint32_t expected_bits = chain.ComputeNextBitsAtLocked(*prev_height_opt);
     CanonicalPowTarget canonical_target;
-    if (!DecodeExpectedVeldTarget(
-            rec.header.bits, expected_bits, canonical_target))
+    if (!DecodeExpectedVeldTarget(rec.header.bits, expected_bits, canonical_target))
         return false;
 
 #if defined(VELD_TEST_NMS_BRANCH_CONTEXT)
 #if defined(VELD_PUBLIC_RELEASE)
 #error "VELD_TEST_NMS_BRANCH_CONTEXT must never be enabled in a public release"
 #endif
-    // Focused reorg-context sentinel: preserve payload parsing, candidate
-    // ancestry/gap, and exact compact-bits validation above, but bypass the
-    // expensive probabilistic near-miss hash search.  Miner identity, duplicate
-    // suppression, and stake-bond gates remain in Blockchain and are exercised
-    // by the harness.  No shipped build defines this macro.
+        // Focused reorg-context sentinel: preserve payload parsing, candidate
+        // ancestry/gap, and exact compact-bits validation above, but bypass the
+        // expensive probabilistic near-miss hash search.  Miner identity, duplicate
+        // suppression, and stake-bond gates remain in Blockchain and are exercised
+        // by the harness.  No shipped build defines this macro.
 #endif
 
     std::string cache_key = HashToHex(Hash256d(rec.raw));
@@ -266,17 +296,17 @@ inline bool ValidateNms(const NmsRecord& rec,
     }
     std::optional<mining::ExpensivePowLease> source_pow_lease;
     if (source_pow_budget) {
-        source_pow_lease = source_pow_budget->TryAcquire(
-            pow_use);
+        source_pow_lease = source_pow_budget->TryAcquire(pow_use);
         if (!source_pow_lease) {
-            if (local_work_deferred) *local_work_deferred = true;
+            if (local_work_deferred)
+                *local_work_deferred = true;
             return false;
         }
     }
-    auto global_pow_lease = mining::GlobalExpensivePowBudget().TryAcquire(
-        pow_use);
+    auto global_pow_lease = mining::GlobalExpensivePowBudget().TryAcquire(pow_use);
     if (!global_pow_lease) {
-        if (local_work_deferred) *local_work_deferred = true;
+        if (local_work_deferred)
+            *local_work_deferred = true;
         return false;
     }
 #if defined(VELD_TEST_NMS_BRANCH_CONTEXT)
@@ -284,12 +314,12 @@ inline bool ValidateNms(const NmsRecord& rec,
     // bypass only the probabilistic near-miss hash comparison itself.
     return true;
 #endif
-    Hash256 pow = mining::VeldHash(
-        hdr_bytes, claim_height, canonical_target);
+    Hash256 pow = mining::VeldHash(hdr_bytes, claim_height, canonical_target);
     if (!mining::g_veldhash_last_dataset_ok()) {
         // Dataset allocation/generation is local work state, never a negative
         // consensus result and never eligible for the negative NMS cache.
-        if (local_work_deferred) *local_work_deferred = true;
+        if (local_work_deferred)
+            *local_work_deferred = true;
         return false;
     }
 
@@ -299,22 +329,18 @@ inline bool ValidateNms(const NmsRecord& rec,
 }
 
 template <typename ChainT>
-inline NmsValidationDisposition ValidateNmsWithDisposition(
-        const NmsRecord& rec,
-        const ChainT& chain,
-        uint64_t enclosing_block_height,
-        mining::ExpensivePowBudget* source_pow_budget = nullptr,
-        mining::ExpensivePowUse pow_use =
-            mining::ExpensivePowUse::PeerNms) {
+inline NmsValidationDisposition
+ValidateNmsWithDisposition(const NmsRecord& rec, const ChainT& chain,
+                           uint64_t enclosing_block_height,
+                           mining::ExpensivePowBudget* source_pow_budget = nullptr,
+                           mining::ExpensivePowUse pow_use = mining::ExpensivePowUse::PeerNms) {
     bool local_work_deferred = false;
-    if (ValidateNms(
-            rec, chain, enclosing_block_height, source_pow_budget,
-            &local_work_deferred, pow_use)) {
+    if (ValidateNms(rec, chain, enclosing_block_height, source_pow_budget, &local_work_deferred,
+                    pow_use)) {
         return NmsValidationDisposition::Valid;
     }
-    return local_work_deferred
-        ? NmsValidationDisposition::DeferredLocalWork
-        : NmsValidationDisposition::ConsensusInvalid;
+    return local_work_deferred ? NmsValidationDisposition::DeferredLocalWork
+                               : NmsValidationDisposition::ConsensusInvalid;
 }
 
 }

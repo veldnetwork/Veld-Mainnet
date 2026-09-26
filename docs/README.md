@@ -7,6 +7,7 @@
 - [Testing](../tests/README.md): test groups, dependencies, and local execution.
 - [Contributing](../CONTRIBUTING.md): patch scope, coding style, and review.
 - [Source identity](source-identity.md): commits, release inputs, and launch records.
+- [Source formatting](source-style.md): pinned tools and preservation checks.
 - [Pool implementation](../pool/README.md): gateway, work verification, accounting, and signing.
 - [btcVELD implementation](../swap/README.md): issuance, reserves, redemption, and custody services.
 
@@ -19,6 +20,7 @@
 - [Pool installation](../pkg/pool/README.md): service configuration, identity separation, and shutdown.
 - [Pool administration](../pkg/pool/ADMIN.md): authenticated operator controls.
 - [Release notes](release-notes.md): client changes and upgrade requirements.
+- [Release verification](release-verification.md): trusted verifiers, signatures, hashes, and source identity.
 - [Automatic updates](operations/automatic-updates.md): opt-in, mining resume, and recovery limits.
 - [Changelog](../CHANGELOG.md): versioned changes and unreleased maintenance.
 

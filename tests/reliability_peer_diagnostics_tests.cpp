@@ -10,8 +10,9 @@ int main() {
     compat::InitNetwork();
     Blockchain chain;
     const auto genesis = CreateGenesisBlock();
-    assert(chain.AddBlockDirect(genesis, true, false, false,
-        mining::PowAdmissionContext::Internal()).IsAccepted());
+    assert(
+        chain.AddBlockDirect(genesis, true, false, false, mining::PowAdmissionContext::Internal())
+            .IsAccepted());
     const auto hash = genesis.GetHash();
     Mempool mempool;
     net::NodeServer server(0, MAINNET_MAGIC, chain, mempool);
@@ -37,7 +38,8 @@ int main() {
     auto replacement = add("192.0.2.1", "second", true);
     diagnostic = server.SnapshotConnectionTips();
     assert(diagnostic.size() == 1 && diagnostic[0].connection_id == first->DiagnosticId());
-    Hash256 unknown{}; unknown.fill(0x23);
+    Hash256 unknown{};
+    unknown.fill(0x23);
     server.TestRecordPeerTip(replacement, unknown, 102);
     diagnostic = server.SnapshotConnectionTips();
     assert(diagnostic.size() == 1 && diagnostic[0].connection_id == first->DiagnosticId());
@@ -49,6 +51,8 @@ int main() {
     server.TestFinalizePeerConnection("first", first);
     diagnostic = server.SnapshotConnectionTips();
     assert(diagnostic.size() == 2);
-    for (const auto& tip : diagnostic) assert(tip.connection_id != first->DiagnosticId());
-    std::cout << "PASS: same-IP diagnostics keep separate identities; missing, unknown and retired tips stay absent; reconnects inherit no evidence; quorum remains IP-distinct\n";
+    for (const auto& tip : diagnostic)
+        assert(tip.connection_id != first->DiagnosticId());
+    std::cout
+        << "PASS: same-IP diagnostics keep separate identities; missing, unknown and retired tips stay absent; reconnects inherit no evidence; quorum remains IP-distinct\n";
 }

@@ -14,11 +14,12 @@ source = (root / 'src/veld-validator.cpp').read_text()
 
 def section(begin, end):
     start = source.index(begin)
-    return source[start:source.index(end, start)]
+    return source[start : source.index(end, start)]
 
 
-helpers = section('static const veld::btc_buy::JsonValue* strict_rpc_result(',
-                  'static bool decode_lower_hex(')
+helpers = section(
+    'static const veld::btc_buy::JsonValue* strict_rpc_result(', 'static bool decode_lower_hex('
+)
 helpers += section('static bool json_u64(', 'static bool json_string(')
 renderer = section('static int cmd_status(', 'static std::string sign_block(')
 program = r'''
@@ -139,8 +140,21 @@ with tempfile.TemporaryDirectory(prefix='veld-validator-status-') as directory:
     fixture.write_text(program)
     binary = build / ('status.exe' if os.name == 'nt' else 'status')
     compiler = shlex.split(os.environ.get('CXX', 'c++'))
-    subprocess.run(compiler + ['-std=c++20', '-O2', '-DVELD_MAINNET_POW',
-                               '-DVELD_PUBLIC_RELEASE', '-DVELD_PUBLIC_MAINNET',
-                               '-I', str(root / 'include'), str(fixture), '-o', str(binary)],
-                   check=True, timeout=120)
+    subprocess.run(
+        compiler
+        + [
+            '-std=c++20',
+            '-O2',
+            '-DVELD_MAINNET_POW',
+            '-DVELD_PUBLIC_RELEASE',
+            '-DVELD_PUBLIC_MAINNET',
+            '-I',
+            str(root / 'include'),
+            str(fixture),
+            '-o',
+            str(binary),
+        ],
+        check=True,
+        timeout=120,
+    )
     subprocess.run([str(binary)], check=True, timeout=15)

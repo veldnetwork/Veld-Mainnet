@@ -1,4 +1,5 @@
 """Transport policy shared by funds-bearing operator RPC clients."""
+
 import json
 import math
 import os
@@ -23,14 +24,14 @@ class _RejectRpcRedirects(urllib.request.HTTPRedirectHandler):
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise urllib.error.HTTPError(
-            req.full_url, code, "operator RPC redirects are forbidden", headers, fp)
+            req.full_url, code, "operator RPC redirects are forbidden", headers, fp
+        )
 
 
 # RPC credentials must not transit ambient HTTP(S)_PROXY settings.  A deployment
 # that deliberately needs a proxy can terminate an authenticated tunnel locally;
 # silently inheriting a service-manager environment is not an authorization step.
-_RPC_OPENER = urllib.request.build_opener(
-    urllib.request.ProxyHandler({}), _RejectRpcRedirects())
+_RPC_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RejectRpcRedirects())
 
 
 def validate_backend_rpc_url(url, field_name="rpc_url"):
@@ -51,8 +52,8 @@ def validate_backend_rpc_url(url, field_name="rpc_url"):
         raise ValueError("%s must not contain a query or fragment" % field_name)
     if parsed.scheme == "http" and host.lower() not in _LOOPBACK_HOSTS:
         raise ValueError(
-            "%s remote endpoints require HTTPS; plaintext HTTP is loopback-only"
-            % field_name)
+            "%s remote endpoints require HTTPS; plaintext HTTP is loopback-only" % field_name
+        )
     return url
 
 
@@ -82,11 +83,14 @@ def open_direct_https_request(request, timeout=30):
         parsed.port
     except ValueError as exc:
         raise ValueError("direct HTTPS URL is malformed") from exc
-    if (parsed.scheme != "https" or not parsed.hostname or
-            parsed.username is not None or parsed.password is not None or
-            parsed.fragment):
-        raise ValueError(
-            "direct source must use HTTPS without credentials or a fragment")
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise ValueError("direct source must use HTTPS without credentials or a fragment")
     return _RPC_OPENER.open(request, timeout=timeout)
 
 
@@ -102,8 +106,7 @@ def strict_json_loads(raw, description="JSON document"):
         raise ValueError("%s must be UTF-8 bytes or text" % description)
 
     def reject_constant(value):
-        raise ValueError("%s contains non-finite number %s" %
-                         (description, value))
+        raise ValueError("%s contains non-finite number %s" % (description, value))
 
     def finite_float(value):
         parsed = float(value)
@@ -121,18 +124,19 @@ def strict_json_loads(raw, description="JSON document"):
 
     try:
         text = bytes(raw).decode("utf-8") if not isinstance(raw, str) else raw
-        return json.loads(text,
-                          object_pairs_hook=unique_object,
-                          parse_constant=reject_constant,
-                          parse_float=finite_float)
+        return json.loads(
+            text,
+            object_pairs_hook=unique_object,
+            parse_constant=reject_constant,
+            parse_float=finite_float,
+        )
     except UnicodeDecodeError as exc:
         raise ValueError("%s is not UTF-8" % description) from exc
 
 
 def load_bounded_json_response(response, maximum, description="JSON response"):
     """Read one strict UTF-8 JSON value through an explicit memory ceiling."""
-    if (type(maximum) is not int or maximum <= 0
-            or maximum > _MAX_JSON_RESPONSE_BYTES):
+    if type(maximum) is not int or maximum <= 0 or maximum > _MAX_JSON_RESPONSE_BYTES:
         raise ValueError("JSON response byte limit is invalid")
     raw = response.read(maximum + 1)
     if not isinstance(raw, (bytes, bytearray)):
@@ -142,8 +146,7 @@ def load_bounded_json_response(response, maximum, description="JSON response"):
     return strict_json_loads(raw, description)
 
 
-def read_bounded_regular_file(path, maximum, description="operator file",
-                              *, private=False):
+def read_bounded_regular_file(path, maximum, description="operator file", *, private=False):
     """Read one bounded, non-linked operator file through its checked descriptor.
 
     Root-owned deployment files and files owned by the current service account are
@@ -154,8 +157,7 @@ def read_bounded_regular_file(path, maximum, description="operator file",
     """
     if not isinstance(path, str) or not os.path.isabs(path):
         raise RuntimeError("%s path must be absolute" % description)
-    if (type(maximum) is not int or maximum <= 0 or
-            maximum > _MAX_LOCAL_FILE_BYTES):
+    if type(maximum) is not int or maximum <= 0 or maximum > _MAX_LOCAL_FILE_BYTES:
         raise RuntimeError("%s byte limit is invalid" % description)
     if os.name == "nt":
         if __package__:
@@ -165,8 +167,7 @@ def read_bounded_regular_file(path, maximum, description="operator file",
         try:
             return read_protected_file(path, maximum, description, private=private)
         except (OSError, ValueError) as exc:
-            raise RuntimeError("%s could not be read securely: %s" %
-                               (description, exc)) from exc
+            raise RuntimeError("%s could not be read securely: %s" % (description, exc)) from exc
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is None:
         raise RuntimeError("platform lacks O_NOFOLLOW required for %s" % description)
@@ -174,13 +175,18 @@ def read_bounded_regular_file(path, maximum, description="operator file",
     try:
         info = os.fstat(fd)
         mode = stat.S_IMODE(info.st_mode)
-        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or
-                info.st_uid not in (0, os.geteuid()) or mode & 0o022 or
-                (private and mode & 0o077)):
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or info.st_uid not in (0, os.geteuid())
+            or mode & 0o022
+            or (private and mode & 0o077)
+        ):
             qualifier = "private " if private else "non-writable "
             raise RuntimeError(
-                "%s must be a root/service-owned, non-linked %sregular file" %
-                (description, qualifier))
+                "%s must be a root/service-owned, non-linked %sregular file"
+                % (description, qualifier)
+            )
         chunks = []
         remaining = maximum + 1
         while remaining:
@@ -197,11 +203,9 @@ def read_bounded_regular_file(path, maximum, description="operator file",
         os.close(fd)
 
 
-def load_bounded_json_file(path, maximum, description="JSON operator file",
-                           *, private=False):
+def load_bounded_json_file(path, maximum, description="JSON operator file", *, private=False):
     """Read and strictly decode one security-sensitive local JSON document."""
-    raw = read_bounded_regular_file(
-        path, maximum, description, private=private)
+    raw = read_bounded_regular_file(path, maximum, description, private=private)
     try:
         return strict_json_loads(raw, description)
     except ValueError as exc:
@@ -212,13 +216,19 @@ def read_bounded_secret_file(path, maximum=4096, description="secret file"):
     """Read a root/service-owned, owner-only regular file without link races."""
     if type(maximum) is not int or maximum <= 0 or maximum > 1024 * 1024:
         raise RuntimeError("%s byte limit is invalid" % description)
-    return read_bounded_regular_file(
-        path, maximum, description, private=True)
+    return read_bounded_regular_file(path, maximum, description, private=True)
 
 
-def run_bounded_subprocess(argv, *, input_text=None, timeout,
-                           stdout_max, stderr_max,
-                           description="operator subprocess", env=None):
+def run_bounded_subprocess(
+    argv,
+    *,
+    input_text=None,
+    timeout,
+    stdout_max,
+    stderr_max,
+    description="operator subprocess",
+    env=None,
+):
     """Run one POSIX operator command with timeout and hard output ceilings.
 
     ``subprocess.run(capture_output=True)`` accumulates an arbitrary child response
@@ -226,16 +236,21 @@ def run_bounded_subprocess(argv, *, input_text=None, timeout,
     nonblocking pipes incrementally and kills the child's process group as soon as
     either byte budget or the wall-clock deadline is crossed.
     """
-    if (not isinstance(argv, (list, tuple)) or not argv or
-            any(not isinstance(item, str) or not item or "\x00" in item
-                for item in argv)):
+    if (
+        not isinstance(argv, (list, tuple))
+        or not argv
+        or any(not isinstance(item, str) or not item or "\x00" in item for item in argv)
+    ):
         raise RuntimeError("%s argv is malformed" % description)
-    if (type(timeout) not in (int, float) or isinstance(timeout, bool) or
-            not math.isfinite(timeout) or timeout <= 0):
+    if (
+        type(timeout) not in (int, float)
+        or isinstance(timeout, bool)
+        or not math.isfinite(timeout)
+        or timeout <= 0
+    ):
         raise RuntimeError("%s timeout is invalid" % description)
     for value in (stdout_max, stderr_max):
-        if (type(value) is not int or value <= 0 or
-                value > _MAX_SUBPROCESS_OUTPUT_BYTES):
+        if type(value) is not int or value <= 0 or value > _MAX_SUBPROCESS_OUTPUT_BYTES:
             raise RuntimeError("%s output limit is invalid" % description)
     if input_text is not None and not isinstance(input_text, str):
         raise RuntimeError("%s input must be text" % description)
@@ -248,30 +263,51 @@ def run_bounded_subprocess(argv, *, input_text=None, timeout,
     # normal CompletedProcess without launching operator binaries.
     if subprocess.run is not _ORIGINAL_SUBPROCESS_RUN:
         completed = subprocess.run(
-            list(argv), input=input_text, capture_output=True, text=True,
-            timeout=timeout, env=env, check=False)
+            list(argv),
+            input=input_text,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+            check=False,
+        )
         stdout_value = getattr(completed, "stdout", "")
         stderr_value = getattr(completed, "stderr", "")
-        stdout_raw = (stdout_value.encode("utf-8") if isinstance(stdout_value, str)
-                      else bytes(stdout_value or b""))
-        stderr_raw = (stderr_value.encode("utf-8") if isinstance(stderr_value, str)
-                      else bytes(stderr_value or b""))
+        stdout_raw = (
+            stdout_value.encode("utf-8")
+            if isinstance(stdout_value, str)
+            else bytes(stdout_value or b"")
+        )
+        stderr_raw = (
+            stderr_value.encode("utf-8")
+            if isinstance(stderr_value, str)
+            else bytes(stderr_value or b"")
+        )
     elif os.name == "nt":
         if __package__:
             from .windows_managed_process import run_managed
         else:
             from windows_managed_process import run_managed
-        completed = run_managed(list(argv), input_raw, timeout=timeout,
-            stdout_max=stdout_max, stderr_max=stderr_max, env=env)
+        completed = run_managed(
+            list(argv),
+            input_raw,
+            timeout=timeout,
+            stdout_max=stdout_max,
+            stderr_max=stderr_max,
+            env=env,
+        )
         stdout_raw, stderr_raw = completed.stdout, completed.stderr
     else:
         if os.name != "posix" or not all(hasattr(os, name) for name in ("set_blocking", "killpg")):
             raise RuntimeError("%s requires the POSIX bounded operator runtime" % description)
         proc = subprocess.Popen(
-            list(argv), stdin=(subprocess.PIPE if input_text is not None
-                               else subprocess.DEVNULL),
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
-            start_new_session=True)
+            list(argv),
+            stdin=(subprocess.PIPE if input_text is not None else subprocess.DEVNULL),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            start_new_session=True,
+        )
         selector = selectors.DefaultSelector()
         stdout_raw = bytearray()
         stderr_raw = bytearray()
@@ -288,8 +324,7 @@ def run_bounded_subprocess(argv, *, input_text=None, timeout,
                         pass
 
         try:
-            for stream, label in ((proc.stdout, "stdout"),
-                                  (proc.stderr, "stderr")):
+            for stream, label in ((proc.stdout, "stdout"), (proc.stderr, "stderr")):
                 os.set_blocking(stream.fileno(), False)
                 selector.register(stream, selectors.EVENT_READ, label)
             if proc.stdin is not None:
@@ -312,8 +347,8 @@ def run_bounded_subprocess(argv, *, input_text=None, timeout,
                         try:
                             if stdin_offset < len(input_raw):
                                 wrote = os.write(
-                                    stream.fileno(), input_raw[stdin_offset:
-                                                               stdin_offset + 65536])
+                                    stream.fileno(), input_raw[stdin_offset : stdin_offset + 65536]
+                                )
                                 stdin_offset += wrote
                             if stdin_offset >= len(input_raw):
                                 selector.unregister(stream)
@@ -372,7 +407,8 @@ def run_bounded_subprocess(argv, *, input_text=None, timeout,
     except UnicodeDecodeError as exc:
         raise RuntimeError("%s output is not UTF-8" % description) from exc
     return subprocess.CompletedProcess(
-        list(argv), completed.returncode, stdout=stdout, stderr=stderr)
+        list(argv), completed.returncode, stdout=stdout, stderr=stderr
+    )
 
 
 def build_direct_requests_session(rpc_url, field_name="rpc_url"):

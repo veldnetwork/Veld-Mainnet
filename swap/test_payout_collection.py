@@ -1,4 +1,5 @@
 """Offline collector control-flow fixtures; no signing or Bitcoin execution."""
+
 import base64
 import copy
 import json
@@ -12,14 +13,20 @@ from swap import veld_redeemd as rd
 
 TXID = "a1" * 32
 PSBT = lambda name: base64.b64encode(b"psbt\xff" + name.encode()).decode()
-CONFIG = {"mode": "threshold_psbt", "threshold": 3,
-          "signers": [{"id": f"s{i}", "command": [f"fixture-s{i}"]}
-                      for i in range(1, 6)]}
+CONFIG = {
+    "mode": "threshold_psbt",
+    "threshold": 3,
+    "signers": [{"id": f"s{i}", "command": [f"fixture-s{i}"]} for i in range(1, 6)],
+}
 
 
 def witness():
-    script = b"".join(b"\x20" + bytes([i + 1]) * 32 +
-                      bytes([0xac if i == 0 else 0xba]) for i in range(5)) + b"\x53\x9c"
+    script = (
+        b"".join(
+            b"\x20" + bytes([i + 1]) * 32 + bytes([0xAC if i == 0 else 0xBA]) for i in range(5)
+        )
+        + b"\x53\x9c"
+    )
     # Inert bytes: the fake Core below models its independent verification result.
     return ["01" * 64, "02" * 64, "03" * 64, "", "", script.hex(), "c0" + "00" * 32]
 
@@ -64,14 +71,19 @@ class PayoutCollectionTests(unittest.TestCase):
     def test_single_wallet_mode_cannot_bypass_fixed_threshold(self):
         core = CoreModel()
         with self.assertRaisesRegex(RuntimeError, "fixed 3-of-5"):
-            rd.sign_payout(core, "00", {}, {
-                "mode": "single_wallet_dev", "allow_unsafe_single_wallet": True})
+            rd.sign_payout(
+                core, "00", {}, {"mode": "single_wallet_dev", "allow_unsafe_single_wallet": True}
+            )
         self.assertEqual(core.deadlines, [])
 
     def test_native_reserve_cannot_fall_through_to_legacy_payout(self):
-        for peg in (None, [], {"reserve_semantics": None},
-                    {"reserve_semantics": "rolling-outpoint-v1"},
-                    {"reserve_semantics": "unknown-future-policy"}):
+        for peg in (
+            None,
+            [],
+            {"reserve_semantics": None},
+            {"reserve_semantics": "rolling-outpoint-v1"},
+            {"reserve_semantics": "unknown-future-policy"},
+        ):
             with self.subTest(peg=peg), self.assertRaises(RuntimeError):
                 rd.require_compatible_payout_authority(peg)
 
@@ -102,12 +114,17 @@ class PayoutCollectionTests(unittest.TestCase):
         self.assertLessEqual(len(core.combinations), 16)
 
     def test_response_schema_and_duplicate_partial_are_skipped(self):
-        for first in (None, [], {"signer_id": "s1", "psbt": 1},
-                      {"signer_id": "other", "psbt": PSBT("s1")}):
+        for first in (
+            None,
+            [],
+            {"signer_id": "s1", "psbt": 1},
+            {"signer_id": "other", "psbt": PSBT("s1")},
+        ):
             with self.subTest(response=first):
                 core = CoreModel(("s3", "s4", "s5"))
-                self.assertEqual(self.collect(core, {"s1": first, "s2": first})[1],
-                                 ["s3", "s4", "s5"])
+                self.assertEqual(
+                    self.collect(core, {"s1": first, "s2": first})[1], ["s3", "s4", "s5"]
+                )
 
     def test_insufficient_actual_signature_quorum_refused(self):
         core = CoreModel(("s1", "s2"))
@@ -154,43 +171,60 @@ class PayoutCollectionTests(unittest.TestCase):
     def test_unavailable_command_and_parser_failure_allow_remaining_quorum(self):
         for failure in (FileNotFoundError("fixture unavailable"), RecursionError("fixture parser")):
             contacted = []
+
             def transport(command, **kwargs):
                 sid = command[0].removeprefix("fixture-")
                 contacted.append(sid)
                 if sid == "s1" and isinstance(failure, OSError):
                     raise failure
-                return subprocess.CompletedProcess(command, 0, json.dumps(
-                    {"signer_id": sid, "psbt": PSBT(sid)}), "")
+                return subprocess.CompletedProcess(
+                    command, 0, json.dumps({"signer_id": sid, "psbt": PSBT(sid)}), ""
+                )
+
             parse = rd.strict_json_loads
+
             def parser(value, *args):
                 if json.loads(value)["signer_id"] == "s1" and isinstance(failure, RecursionError):
                     raise failure
                 return parse(value, *args)
-            with self.subTest(failure=type(failure).__name__), \
-                    mock.patch.object(rd, "run_bounded_subprocess", side_effect=transport), \
-                    mock.patch.object(rd, "strict_json_loads", side_effect=parser):
+
+            with (
+                self.subTest(failure=type(failure).__name__),
+                mock.patch.object(rd, "run_bounded_subprocess", side_effect=transport),
+                mock.patch.object(rd, "strict_json_loads", side_effect=parser),
+            ):
                 result = rd.sign_payout(CoreModel(("s2", "s3", "s4")), "00", {}, CONFIG)
                 self.assertEqual(result[1], ["s2", "s3", "s4"])
                 self.assertEqual(contacted, ["s1", "s2", "s3", "s4"])
 
     def test_observation_failures_allow_remaining_quorum(self):
         from swap.test_redemption_durability import BURN
+
         for failure in (FileNotFoundError("fixture unavailable"), RecursionError("fixture parser")):
+
             def transport(command, **kwargs):
                 sid = command[0].removeprefix("fixture-")
                 if sid == "s1" and isinstance(failure, OSError):
                     raise failure
-                return subprocess.CompletedProcess(command, 0, json.dumps(
-                    {"signer_id": sid, "observed": [rd.redeem_id(BURN)]}), "")
+                return subprocess.CompletedProcess(
+                    command, 0, json.dumps({"signer_id": sid, "observed": [rd.redeem_id(BURN)]}), ""
+                )
+
             parse = rd.strict_json_loads
+
             def parser(value, *args):
                 if json.loads(value)["signer_id"] == "s1" and isinstance(failure, RecursionError):
                     raise failure
                 return parse(value, *args)
-            with self.subTest(failure=type(failure).__name__), \
-                    mock.patch.object(rd, "run_bounded_subprocess", side_effect=transport), \
-                    mock.patch.object(rd, "strict_json_loads", side_effect=parser):
-                self.assertEqual(rd.replicate_observations(CONFIG, [BURN]), ["s2", "s3", "s4", "s5"])
+
+            with (
+                self.subTest(failure=type(failure).__name__),
+                mock.patch.object(rd, "run_bounded_subprocess", side_effect=transport),
+                mock.patch.object(rd, "strict_json_loads", side_effect=parser),
+            ):
+                self.assertEqual(
+                    rd.replicate_observations(CONFIG, [BURN]), ["s2", "s3", "s4", "s5"]
+                )
 
 
 if __name__ == "__main__":

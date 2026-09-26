@@ -1,4 +1,5 @@
 """Issuer chain binding and durable-state lifecycle, without signing or networking."""
+
 import copy
 import json
 import tempfile
@@ -15,12 +16,17 @@ CHAIN = chain_fixture.CHAIN
 class SignerChainBindingTests(unittest.TestCase):
     def test_rpc_constructor_checks_before_policy_calls(self):
         _, calls, call = chain_fixture.ChainIdentityTests().node()
-        cfg = {"url": "http://127.0.0.1:38374",
-               "token_file": "/disposable/test-token",
-               "expected_chain": CHAIN}
-        with mock.patch.object(signer, "read_bounded_secret_file",
-                               return_value=b"disposable-test-token"), \
-                mock.patch.object(signer.TrustedVeldRpc, "call", side_effect=call):
+        cfg = {
+            "url": "http://127.0.0.1:38374",
+            "token_file": "/disposable/test-token",
+            "expected_chain": CHAIN,
+        }
+        with (
+            mock.patch.object(
+                signer, "read_bounded_secret_file", return_value=b"disposable-test-token"
+            ),
+            mock.patch.object(signer.TrustedVeldRpc, "call", side_effect=call),
+        ):
             rpc = signer.TrustedVeldRpc(cfg)
         self.assertEqual(rpc.expected_chain, CHAIN)
         self.assertEqual(len(calls), 4)
@@ -28,8 +34,9 @@ class SignerChainBindingTests(unittest.TestCase):
     def test_missing_pins_refused_before_token_access(self):
         with mock.patch.object(signer, "read_bounded_secret_file") as secret:
             with self.assertRaisesRegex(ValueError, "expected_chain"):
-                signer.TrustedVeldRpc({"url": "http://127.0.0.1:38374",
-                                       "token_file": "/disposable/test-token"})
+                signer.TrustedVeldRpc(
+                    {"url": "http://127.0.0.1:38374", "token_file": "/disposable/test-token"}
+                )
         secret.assert_not_called()
 
     def test_policy_boundary_rechecks_after_rpc_was_created(self):
@@ -53,20 +60,28 @@ class SignerChainBindingTests(unittest.TestCase):
     def test_new_marker_binds_chain_and_restart_keeps_state(self):
         with tempfile.TemporaryDirectory(prefix="issuer-chain-binding-") as name:
             root = Path(name)
-            cfg = {"authority_state_activation_marker": str(root / "signer-authority-state.json"),
-                   "veld_rpc": {"expected_chain": copy.deepcopy(CHAIN)}}
-            paths = {"HERE": name,
-                     "STATEF": str(root / "signer-state.json"),
-                     "C1_STATEF": str(root / "c1-reservation-signer-state.json"),
-                     "PREVOUT_STATEF": str(root / "issuer-prevout-leases.json")}
-            with mock.patch.multiple(signer, **paths), \
-                    mock.patch.object(signer, "load_signer_configuration", return_value=cfg):
+            cfg = {
+                "authority_state_activation_marker": str(root / "signer-authority-state.json"),
+                "veld_rpc": {"expected_chain": copy.deepcopy(CHAIN)},
+            }
+            paths = {
+                "HERE": name,
+                "STATEF": str(root / "signer-state.json"),
+                "C1_STATEF": str(root / "c1-reservation-signer-state.json"),
+                "PREVOUT_STATEF": str(root / "issuer-prevout-leases.json"),
+            }
+            with (
+                mock.patch.multiple(signer, **paths),
+                mock.patch.object(signer, "load_signer_configuration", return_value=cfg),
+            ):
                 created = signer.initialize_signer_authority_state()
                 self.assertEqual(created["version"], 2)
                 self.assertEqual(created["expected_chain"], CHAIN)
                 before = {p: Path(p).read_bytes() for p in created["state_files"].values()}
                 self.assertTrue(signer.require_signer_authority_state_set(cfg))
-                with mock.patch.object(signer, "_validate_and_reconcile_signer_authority_members") as reconcile:
+                with mock.patch.object(
+                    signer, "_validate_and_reconcile_signer_authority_members"
+                ) as reconcile:
                     self.assertEqual(signer.initialize_signer_authority_state(), created)
                     reconcile.assert_called_once_with(cfg)
                 self.assertEqual({p: Path(p).read_bytes() for p in before}, before)
@@ -87,8 +102,10 @@ class SignerChainBindingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="issuer-chain-legacy-") as name:
             root = Path(name)
             marker = root / "signer-authority-state.json"
-            cfg = {"authority_state_activation_marker": str(marker),
-                   "veld_rpc": {"expected_chain": CHAIN}}
+            cfg = {
+                "authority_state_activation_marker": str(marker),
+                "veld_rpc": {"expected_chain": CHAIN},
+            }
             with mock.patch.object(signer, "HERE", name):
                 legacy = signer._authority_state_marker_document(cfg)
                 legacy["version"] = 1

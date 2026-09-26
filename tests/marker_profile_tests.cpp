@@ -12,14 +12,13 @@ namespace {
 
 size_t checks = 0;
 
-#define CHECK(expr)                                                          \
-    do {                                                                     \
-        ++checks;                                                            \
-        if (!(expr)) {                                                       \
-            std::cerr << "FAIL " << __FILE__ << ':' << __LINE__            \
-                      << " " #expr "\n";                                  \
-            return 1;                                                        \
-        }                                                                    \
+#define CHECK(expr)                                                                                \
+    do {                                                                                           \
+        ++checks;                                                                                  \
+        if (!(expr)) {                                                                             \
+            std::cerr << "FAIL " << __FILE__ << ':' << __LINE__ << " " #expr "\n";                 \
+            return 1;                                                                              \
+        }                                                                                          \
     } while (false)
 
 std::vector<uint8_t> Marker(const std::string& payload) {
@@ -45,10 +44,8 @@ int main() {
 #endif
 
     const Transaction reserve = WithMarkers({"VELD_RSV1|proof"});
-    const Transaction duplicate =
-        WithMarkers({"VELD_RSV1|one", "VELD_RSV1|two"});
-    const Transaction composed =
-        WithMarkers({"VELD_RSV1|proof", "VELD_AMM|proof"});
+    const Transaction duplicate = WithMarkers({"VELD_RSV1|one", "VELD_RSV1|two"});
+    const Transaction composed = WithMarkers({"VELD_RSV1|proof", "VELD_AMM|proof"});
 
     // All profiles classify RSV1 as external value so public testnet can
     // reject it.  Only fresh mainnet and the isolated reserve test profile
@@ -56,11 +53,9 @@ int main() {
     CHECK(TxUsesExternalValueProtocol(reserve));
     CHECK(TxHasInvalidTokenMarkerSet(duplicate) == reserve_stateful);
     CHECK(TxComposesMultipleProtocols(composed) == reserve_stateful);
-    CHECK(mining::MiningTxTouchesStatefulProtocol(reserve) ==
-          reserve_stateful);
+    CHECK(mining::MiningTxTouchesStatefulProtocol(reserve) == reserve_stateful);
 
     std::cout << "PASS marker_profile_tests checks=" << checks
-              << " reserve_stateful=" << (reserve_stateful ? 1 : 0)
-              << " external_rejected=1\n";
+              << " reserve_stateful=" << (reserve_stateful ? 1 : 0) << " external_rejected=1\n";
     return 0;
 }

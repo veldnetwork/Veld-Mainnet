@@ -27,8 +27,9 @@
       if (holder) holder.innerHTML = icon;
       var group = pool.parentElement;
       var how = group.querySelector('a[href="https://veld.network/how-to/"]');
-      if (how && how.parentElement === group) group.appendChild(how);
-      group.appendChild(pool);
+      var foot = group.querySelector(':scope > .sn-foot');
+      if (how && how.parentElement === group) group.insertBefore(how, foot);
+      group.insertBefore(pool, foot);
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', update, {once: true});
@@ -54,8 +55,8 @@
   intro.insertAdjacentElement('afterend', overview);
   var recent = document.createElement('section');
   recent.className = 'pool-recent';
-  recent.innerHTML = '<h3>Recent pool blocks</h3><p class="pool-note">Rewards mature for at least 120 confirmations and must be spendable before payment.</p>' +
-    '<div class="pool-block-table"><table><thead><tr><th>Block</th><th>Miner reward</th><th>Confirmations</th><th>Status</th></tr></thead><tbody id="pool-block-rows"></tbody></table></div>' +
+  recent.innerHTML = '<h3 id="pool-recent-title">Recent pool blocks</h3><p class="pool-note">Rewards need 120+ confirmations and must be spendable before payment.</p>' +
+    '<div class="pool-block-table"><table aria-labelledby="pool-recent-title"><thead><tr><th scope="col">Block</th><th scope="col">Miner reward</th><th scope="col">Confirmations</th><th scope="col">Status</th></tr></thead><tbody id="pool-block-rows"></tbody></table></div>' +
     '<div class="pool-extra-rewards"><p>Lottery winnings <strong id="pool-lottery-earned">—</strong></p><p>Staking distributions <strong id="pool-stake-earned">—</strong></p></div>' +
     '<p class="pool-note">Earned rewards include funds still maturing or waiting for a payment batch. They are different from confirmed payments.</p>';
   var setup = Array.from(page.querySelectorAll('h3')).find(function (h) { return h.textContent === 'Start pool mining'; });
@@ -95,9 +96,13 @@
     var rows = document.createDocumentFragment();
     o.recent_blocks.forEach(function (b) {
       var tr = document.createElement('tr'), block = row('', 'Block'), link = document.createElement('a');
-      link.href = '/block/' + b.hash; link.textContent = '#' + count(b.height); block.appendChild(link); tr.appendChild(block);
-      tr.appendChild(row(money(b.amount_units) + ' VELD', 'Miner reward')); tr.appendChild(row(count(b.confirmations), 'Confirmations'));
-      var status = row({pending: 'Maturing', available: 'Mature', orphaned: 'Orphaned'}[b.state], 'Status'); status.className = 'pool-block-state ' + b.state; tr.appendChild(status); rows.appendChild(tr);
+      link.href = '/block/' + b.hash; link.textContent = '#' + count(b.height); block.className = 'pool-block-height'; block.appendChild(link); tr.appendChild(block);
+      var reward = row(money(b.amount_units), 'Miner reward'), unit = document.createElement('span');
+      reward.className = 'pool-block-reward'; unit.className = 'pool-block-unit'; unit.textContent = ' VELD'; reward.appendChild(unit); tr.appendChild(reward);
+      var confirmations = row(count(b.confirmations), 'Confirmations'), label = document.createElement('span');
+      confirmations.className = 'pool-block-confirmations'; label.className = 'pool-mobile-label'; label.textContent = uint(b.confirmations) === 1n ? ' confirmation' : ' confirmations'; confirmations.appendChild(label); tr.appendChild(confirmations);
+      var status = row('', 'Status'), badge = document.createElement('span');
+      status.className = 'pool-block-status'; badge.className = 'pool-block-state ' + b.state; badge.textContent = {pending: 'Maturing', available: 'Mature', orphaned: 'Orphaned'}[b.state]; status.appendChild(badge); tr.appendChild(status); rows.appendChild(tr);
     });
     document.getElementById('pool-block-rows').replaceChildren(rows);
     if (!o.recent_blocks.length) empty('No pool blocks recorded yet.');

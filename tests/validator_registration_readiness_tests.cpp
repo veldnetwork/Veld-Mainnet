@@ -18,22 +18,22 @@ int main() {
     auto reason = [&](uint64_t height, uint64_t total) {
         return registry.RegistrationPreparationError(key, address, height, total);
     };
-    for (uint64_t height : {CONSENSUS_SECURITY_UPGRADE_HEIGHT - 1,
-                            CONSENSUS_SECURITY_UPGRADE_HEIGHT,
-                            CONSENSUS_SECURITY_UPGRADE_HEIGHT + 1}) {
+    for (uint64_t height :
+         {CONSENSUS_SECURITY_UPGRADE_HEIGHT - 1, CONSENSUS_SECURITY_UPGRADE_HEIGHT,
+          CONSENSUS_SECURITY_UPGRADE_HEIGHT + 1}) {
         assert(!reason(height, VALIDATOR_UNLOCK_STAKED - 1).empty());
         assert(reason(height, VALIDATOR_UNLOCK_STAKED).empty());
         assert(reason(height, VALIDATOR_UNLOCK_STAKED + 1).empty());
     }
-    assert(!registry.RegistrationPreparationError(
-        std::string(3904, 'A'), address, 5000, VALIDATOR_UNLOCK_STAKED).empty());
+    assert(!registry
+                .RegistrationPreparationError(std::string(3904, 'A'), address, 5000,
+                                              VALIDATOR_UNLOCK_STAKED)
+                .empty());
     auto state = empty;
     state.last_op_height[address] = 5000;
     registry.RestoreState(state);
-    assert(!reason(5000 + VALIDATOR_OP_COOLDOWN_BLOCKS - 1,
-                   VALIDATOR_UNLOCK_STAKED).empty());
-    assert(reason(5000 + VALIDATOR_OP_COOLDOWN_BLOCKS,
-                  VALIDATOR_UNLOCK_STAKED).empty());
+    assert(!reason(5000 + VALIDATOR_OP_COOLDOWN_BLOCKS - 1, VALIDATOR_UNLOCK_STAKED).empty());
+    assert(reason(5000 + VALIDATOR_OP_COOLDOWN_BLOCKS, VALIDATOR_UNLOCK_STAKED).empty());
     state = empty;
     state.slashed_pubkeys.insert(key);
     registry.RestoreState(state);

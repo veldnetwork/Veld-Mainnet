@@ -31,11 +31,15 @@ int main(int argc, char** argv) {
     assert(!std::getenv("VELD_OLD_PASSPHRASE"));
     assert(!std::getenv("VELD_NEW_PASSPHRASE"));
     std::vector<uint8_t> after;
-    assert(secure_file::Read(path, after, &error, 1024 * 1024, true) == secure_file::ReadResult::Ok);
+    assert(secure_file::Read(path, after, &error, 1024 * 1024, true) ==
+           secure_file::ReadResult::Ok);
     assert(veld::wallet_crypto::DecryptWallet(after, new_pass) == plaintext);
     bool old_pass_rejected = false;
-    try { (void)veld::wallet_crypto::DecryptWallet(after, old_pass); }
-    catch (...) { old_pass_rejected = true; }
+    try {
+        (void)veld::wallet_crypto::DecryptWallet(after, old_pass);
+    } catch (...) {
+        old_pass_rejected = true;
+    }
     assert(old_pass_rejected);
     assert(fs::remove(path)); // exact fixture only
     std::cout << "PASS: real rotation entry point with non-key plaintext\n";

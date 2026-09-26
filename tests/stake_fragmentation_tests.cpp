@@ -12,16 +12,19 @@ namespace {
 unsigned checks = 0;
 void Check(bool value, const char* message) {
     ++checks;
-    if (!value) throw std::runtime_error(message);
+    if (!value)
+        throw std::runtime_error(message);
 }
 
 btc_buy::JsonValue Call(RpcServer& rpc, const std::string& method,
-                       const std::vector<std::string>& params) {
+                        const std::vector<std::string>& params) {
     std::vector<std::string> items;
-    for (const auto& param : params) items.push_back(JsonBuilder::String(param));
-    const auto response = rpc.Handle(JsonBuilder::Object({
-        {"jsonrpc", "\"2.0\""}, {"id", "1"},
-        {"method", JsonBuilder::String(method)}, {"params", JsonBuilder::Array(items)}}));
+    for (const auto& param : params)
+        items.push_back(JsonBuilder::String(param));
+    const auto response = rpc.Handle(JsonBuilder::Object({{"jsonrpc", "\"2.0\""},
+                                                          {"id", "1"},
+                                                          {"method", JsonBuilder::String(method)},
+                                                          {"params", JsonBuilder::Array(items)}}));
     btc_buy::JsonValue value;
     std::string error;
     Check(btc_buy::StrictJsonParser(response).Parse(value, error), "RPC response parse");
@@ -39,13 +42,15 @@ Transaction Prepared(const btc_buy::JsonValue& response) {
 }
 
 void SignAndAdmit(Transaction& tx, const RealKeyPair& key, Blockchain& chain, Mempool& pool) {
-    const size_t expected = tx.Serialize().size() + tx.inputs.size() *
-        (offline_signing::kCanonicalInputScriptBytes + 2U);
+    const size_t expected = tx.Serialize().size() +
+                            tx.inputs.size() * (offline_signing::kCanonicalInputScriptBytes + 2U);
     std::vector<std::vector<uint8_t>> scripts;
     for (uint32_t i = 0; i < tx.inputs.size(); ++i)
-        scripts.push_back(BuildScriptSig(key.private_key, key.public_key, tx, i,
-                                        key.GetP2PKHScript()).script_sig);
-    for (size_t i = 0; i < scripts.size(); ++i) tx.inputs[i].script_sig = scripts[i];
+        scripts.push_back(
+            BuildScriptSig(key.private_key, key.public_key, tx, i, key.GetP2PKHScript())
+                .script_sig);
+    for (size_t i = 0; i < scripts.size(); ++i)
+        tx.inputs[i].script_sig = scripts[i];
     tx.InvalidateTxIDCache();
     Check(tx.Serialize().size() == expected, "real signature size differs from preflight");
     Check(expected <= Mempool::MAX_RELAY_TX_BYTES, "signed transaction exceeds relay cap");
@@ -59,8 +64,11 @@ int main(int argc, char** argv) {
     try {
         Check(argc == 2, "fresh isolated storage path required");
         Blockchain chain;
-        Check(chain.AddBlockDirect(CreateGenesisBlock(), true, true, false,
-            mining::PowAdmissionContext::Internal()).IsAccepted(), "fixture genesis");
+        Check(chain
+                  .AddBlockDirect(CreateGenesisBlock(), true, true, false,
+                                  mining::PowAdmissionContext::Internal())
+                  .IsAccepted(),
+              "fixture genesis");
         Mempool pool;
         StorageEngine storage(argv[1], MAINNET_MAGIC);
         RpcServer rpc(chain, pool, storage);
@@ -83,10 +91,10 @@ int main(int argc, char** argv) {
         const auto rejected = Call(rpc, "preparestake", {key.address, "500", "1"});
         const auto* error = rejected.Get("error");
         Check(error && error->Get("message") &&
-              error->Get("message")->text.find("Combine my outputs") != std::string::npos,
+                  error->Get("message")->text.find("Combine my outputs") != std::string::npos,
               "fragmented stake needs actionable pre-sign rejection");
         Check(rpc.ComputeWalletState(key.address).spendable_units == before.spendable_units &&
-              pool.GetPendingStakeUnits(key.address) == 0,
+                  pool.GetPendingStakeUnits(key.address) == 0,
               "rejected preparation changed funds or reservations");
 
         // Model two confirmed cleanup batches using disposable in-memory coins.
@@ -96,7 +104,8 @@ int main(int argc, char** argv) {
             SignAndAdmit(cleanup, key, chain, pool);
             pool.Remove(HashToHex(cleanup.GetTxID()));
             for (const auto& input : cleanup.inputs)
-                Check(chain.TestEraseUTXO(input.prev_tx_hash, input.prev_out_index), "cleanup spend");
+                Check(chain.TestEraseUTXO(input.prev_tx_hash, input.prev_out_index),
+                      "cleanup spend");
             UTXO combined;
             combined.tx_hash = cleanup.GetTxID();
             combined.output_index = 0;
@@ -109,7 +118,8 @@ int main(int argc, char** argv) {
         auto stake = Prepared(Call(rpc, "preparestake", {key.address, "500", "1"}));
         Check(stake.inputs.size() == 21, "cleanup did not reduce stake to 21 inputs");
         Check(stake.outputs[0].value == 500 * VELD_UNITS &&
-              stake.outputs[0].script_pubkey == key.GetP2PKHScript(), "stake principal changed");
+                  stake.outputs[0].script_pubkey == key.GetP2PKHScript(),
+              "stake principal changed");
         SignAndAdmit(stake, key, chain, pool);
         Check(pool.GetPendingStakeUnits(key.address) == 500 * VELD_UNITS, "stake not admitted");
         const auto after = rpc.ComputeWalletState(key.address);

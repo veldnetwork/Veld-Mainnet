@@ -1,0 +1,47 @@
+/* The hosted desktop wallet uses reading type for controls and copy. */
+@media (min-width:769px) {
+  html body,html body * { font-family:var(--sans)!important; }
+  html:not([data-theme="light"]) body :is(.page-title,.ptitle,.modal-title),
+  html[data-theme="light"] body :is(.page-title,.ptitle,.modal-title) {
+    font-family:var(--sans)!important;
+  }
+  html body :is(code,pre,.mono,.hash,.addr,.txid,.wallet-settings-address),
+  html body :is(#w-mining-addr,#val-health-pubkey) {
+    font-family:var(--font)!important;
+  }
+  html body .ks-indicator #ks-btn {
+    min-height:34px!important;
+    padding:7px 12px!important;
+    font-size:12px!important;
+    font-weight:700!important;
+    white-space:nowrap!important;
+  }
+}
+
+/* The current signed client has a later charcoal rule for both themes.
+   Hosted light mode keeps the wallet's existing pale action palette. */
+html[data-theme="light"] body :is(.btn-em,.btn-gold,#pwa-install-btn,#ks-btn) {
+  background:#dfe5e0!important;
+  color:#172119!important;
+  -webkit-text-fill-color:#172119!important;
+  border:1px solid #b9c7bb!important;
+  box-shadow:none!important;
+  filter:none!important;
+}
+html[data-theme="light"] body :is(.btn-em,.btn-gold,#pwa-install-btn,#ks-btn):hover {
+  background:#d3ddd5!important;
+  border-color:#91ad96!important;
+  color:#172119!important;
+}
+html[data-theme="light"] body :is(.btn-ghost,.copy-btn,.pag-btn) {
+  background:#fff!important;
+  color:#172119!important;
+  -webkit-text-fill-color:#172119!important;
+  border:1px solid #b9c7bb!important;
+  box-shadow:none!important;
+}
+html[data-theme="light"] body :is(.btn-ghost,.copy-btn,.pag-btn):hover {
+  background:#f2f5f2!important;
+  border-color:#91ad96!important;
+  color:#172119!important;
+}

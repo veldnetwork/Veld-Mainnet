@@ -12,8 +12,8 @@ int main() {
     compat::InitNetwork();
     Blockchain chain;
     const Block genesis = CreateGenesisBlock();
-    assert(chain.AddBlockDirect(genesis, true, true, false,
-        mining::PowAdmissionContext::Internal()).IsAccepted());
+    assert(chain.AddBlockDirect(genesis, true, true, false, mining::PowAdmissionContext::Internal())
+               .IsAccepted());
     Block previous = genesis;
     for (uint64_t height = 1; height <= 2; ++height) {
         Block block;
@@ -26,8 +26,9 @@ int main() {
         coinbase.outputs.emplace_back(1, std::vector<uint8_t>{0x51});
         block.transactions.push_back(coinbase);
         block.UpdateMerkleRoot();
-        assert(chain.AddBlockDirect(block, true, true, false,
-            mining::PowAdmissionContext::Internal()).IsAccepted());
+        assert(
+            chain.AddBlockDirect(block, true, true, false, mining::PowAdmissionContext::Internal())
+                .IsAccepted());
         previous = block;
     }
     Mempool mempool;
@@ -46,7 +47,7 @@ int main() {
     auto a = connection("192.0.2.1", false);
     auto b = connection("192.0.2.2", false);
     auto inbound = connection("192.0.2.3", true);
-    for (const auto& c : {a,b,inbound}) {
+    for (const auto& c : {a, b, inbound}) {
         server.TestRecordVersionClaim(c, 100);
         server.TestMarkPeerHandshakeReady(c);
     }

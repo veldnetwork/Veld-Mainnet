@@ -3,9 +3,16 @@
 Decoding is not signature or chain authorization. The caller must independently
 verify the complete envelope with the pinned native node before using its data.
 """
+
+
 def authorized_parents(wire, unsigned):
-    if (type(wire) is not bytes or not 5 <= len(wire) <= 50000 or
-            wire[:4] != b"CIA1" or wire[4] not in (1, 2) or type(unsigned) is not bytes):
+    if (
+        type(wire) is not bytes
+        or not 5 <= len(wire) <= 50000
+        or wire[:4] != b"CIA1"
+        or wire[4] not in (1, 2)
+        or type(unsigned) is not bytes
+    ):
         raise ValueError("custody authorization wire is invalid")
     position = 5
 
@@ -13,7 +20,7 @@ def authorized_parents(wire, unsigned):
         nonlocal position
         if length > len(wire) - position:
             raise ValueError("custody authorization is truncated")
-        value = wire[position:position + length]
+        value = wire[position : position + length]
         position += length
         return value
 

@@ -1,4 +1,5 @@
 """Keyless decoder interoperability using public receipts from a local native run."""
+
 import argparse
 import hashlib
 import json
@@ -35,26 +36,57 @@ def main():
             observed = observed["result"]
         unsigned = receipt["unsigned_tx_hex"]
         assert observed["unsigned_tx_sha256"] == hashlib.sha256(bytes.fromhex(unsigned)).hexdigest()
-        request = {"issuer_script_hex": issuer_script(observed["issuer"]), "unsigned_tx_hex": unsigned,
+        request = {
+            "issuer_script_hex": issuer_script(observed["issuer"]),
+            "unsigned_tx_hex": unsigned,
             "reserve_prior_state_hex": observed["reserve_prior_state_hex"],
-            "reserve_prior_supply_sats": observed["reserve_prior_supply_sats"]}
-        run = subprocess.run([str(args.keygen), "decode-mint-stdin"], input=json.dumps(request),
-            capture_output=True, text=True, timeout=30, check=True)
+            "reserve_prior_supply_sats": observed["reserve_prior_supply_sats"],
+        }
+        run = subprocess.run(
+            [str(args.keygen), "decode-mint-stdin"],
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
         decoded = json.loads(run.stdout)
         assert decoded["from"] == observed["issuer"] and decoded["to"] == observed["recipient"]
         assert decoded["sats"] == observed["sats"] and decoded["num_inputs"] > 0
         assert decoded["memo"].startswith("RTP1:")
-        assert hashlib.sha256(bytes.fromhex(decoded["memo"][5:])).hexdigest() == observed["proof_sha256"]
-        checks.append({"receipt": path.name, "receipt_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-            "unsigned_sha256": observed["unsigned_tx_sha256"], "amount_sats": decoded["sats"],
-            "exact_native_decode": True})
-    missing = subprocess.run([str(args.keygen), "decode-mint-stdin"], input="{}",
-        capture_output=True, text=True, timeout=30)
+        assert (
+            hashlib.sha256(bytes.fromhex(decoded["memo"][5:])).hexdigest()
+            == observed["proof_sha256"]
+        )
+        checks.append(
+            {
+                "receipt": path.name,
+                "receipt_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "unsigned_sha256": observed["unsigned_tx_sha256"],
+                "amount_sats": decoded["sats"],
+                "exact_native_decode": True,
+            }
+        )
+    missing = subprocess.run(
+        [str(args.keygen), "decode-mint-stdin"],
+        input="{}",
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
     assert missing.returncode != 0 and missing.stdout == ""
-    report = {"status": "passed", "keygen_sha256": hashlib.sha256(args.keygen.read_bytes()).hexdigest(),
-        "keyless": True, "network_access": False, "signing_executed": False,
-        "native_receipts": checks, "incomplete_request_refused": True,
-        "limits": ["Decoder checks retained public templates; no fresh signing authority or issuer/witness lifecycle is established."]}
+    report = {
+        "status": "passed",
+        "keygen_sha256": hashlib.sha256(args.keygen.read_bytes()).hexdigest(),
+        "keyless": True,
+        "network_access": False,
+        "signing_executed": False,
+        "native_receipts": checks,
+        "incomplete_request_refused": True,
+        "limits": [
+            "Decoder checks retained public templates; no fresh signing authority or issuer/witness lifecycle is established."
+        ],
+    }
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print("PASS native RTP1 decoder interoperability: " + str(len(checks)) + " receipts")
 
