@@ -749,19 +749,30 @@ function Open-UpdateLock([string]$lockPath, [int]$WaitSeconds = 0) {
 function Write-UpdateResult([string]$Status, [string]$Message) {
     $destination = Ensure-SafeParent (Join-Path $InstallDir 'update-last-result.json') 'update result'
     if ([IO.File]::Exists($destination)) { Assert-RegularFile $destination 'previous update result' }
-    $pending = $destination + '.' + [guid]::NewGuid().ToString('N') + '.new'
     $body = @{schema=1;status=$Status;phase=$Mode;message=$Message;
         utc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress
     $bytes = [Text.UTF8Encoding]::new($false).GetBytes($body + "`n")
-    try {
-        $stream = [IO.File]::Open($pending, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-        try { $stream.Write($bytes,0,$bytes.Length); $stream.Flush($true) }
-        finally { $stream.Dispose() }
-        if ([IO.File]::Exists($destination)) { Replace-FileAtomic $pending $destination }
-        else { [IO.File]::Move($pending,$destination) }
-    } finally {
-        if ([IO.File]::Exists($pending)) { [IO.File]::Delete($pending) }
-    }
+    $deadline = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $pending = $destination + '.' + [guid]::NewGuid().ToString('N') + '.new'
+        try {
+            $stream = [IO.File]::Open($pending, [IO.FileMode]::CreateNew,
+                [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try { $stream.Write($bytes,0,$bytes.Length); $stream.Flush($true) }
+            finally { $stream.Dispose() }
+            if ([IO.File]::Exists($destination)) { Replace-FileAtomic $pending $destination }
+            else { [IO.File]::Move($pending,$destination) }
+            return
+        }
+        catch {
+            if (-not (Test-RetryableFileError $_.Exception) -or
+                $deadline.Elapsed.TotalSeconds -ge 15) { throw }
+        }
+        finally {
+            if ([IO.File]::Exists($pending)) { [IO.File]::Delete($pending) }
+        }
+        Start-Sleep -Milliseconds 250
+    } while ($true)
 }
 
 function Get-VerifiedPackage([string]$Stage) {

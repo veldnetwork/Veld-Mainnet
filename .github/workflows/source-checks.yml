@@ -132,8 +132,21 @@ jobs:
             objects+=("$object")
             index=$((index + 1))
           done < vendor/pqc/provenance/release-c-sources.txt
+          fixture_definitions=()
+          fixture_args=()
+          if [[ '${{ matrix.fixture }}' == windows_auto_update_tests ]]; then
+            clang++ -std=c++20 -O1 -municode \
+              -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 \
+              tests/windows_update_resume_node_stub.cpp -nostdlib++ \
+              /clang64/lib/libc++.a /clang64/lib/libc++abi.a \
+              /clang64/lib/libunwind.a -o "$output/node-stub.exe"
+            node_hash=$(sha256sum "$output/node-stub.exe" | cut -d ' ' -f1)
+            fixture_definitions+=("-DVELD_TRUSTED_NODE_SHA256=\"$node_hash\"")
+            fixture_args+=("$output/node-stub.exe")
+          fi
           clang++ -std=c++20 -O1 -pthread -DVELD_USE_LEVELDB \
             -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 \
+            "${fixture_definitions[@]}" \
             -Iinclude -Ivendor/pqc -Ivendor/pqc/mldsa65 -Itests \
             "tests/${{ matrix.fixture }}.cpp" "${objects[@]}" -nostdlib++ \
             /clang64/lib/libleveldb.a /clang64/lib/libc++.a \
@@ -144,7 +157,7 @@ jobs:
           if [[ '${{ matrix.standalone }}' == 'true' ]]; then
             "$output/fixture.exe" ${{ matrix.args }}
           else
-            "$output/fixture.exe" "$output/data" ${{ matrix.args }}
+            "$output/fixture.exe" "$output/data" "${fixture_args[@]}" ${{ matrix.args }}
           fi
 
   portable:
