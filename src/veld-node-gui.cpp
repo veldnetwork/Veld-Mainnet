@@ -6467,7 +6467,7 @@ private:
         const auto file_time = [](const FILETIME& value) {
             return (uint64_t(value.dwHighDateTime) << 32) | value.dwLowDateTime;
         };
-        if (file_time(receipt_attributes.ftLastWriteTime) <
+        if (file_time(receipt_attributes.ftLastWriteTime) <=
             file_time(ticket_attributes.ftCreationTime)) return;
         veld::node_gui::UpdateResume resume;
         if (!veld::node_gui::ConsumeUpdateResume(ticket_path,

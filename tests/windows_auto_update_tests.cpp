@@ -277,6 +277,7 @@ struct GuiStateQualification {
             manifest << "early-open committed fixture";
         }
         {
+            Sleep(50);
             std::ofstream receipt(root / L"update-last-result.json", std::ios::binary);
             receipt << "{\"status\":\"installed\"}";
         }
@@ -344,6 +345,7 @@ int main(int argc, char** argv) {
     auto commit = [&]() {
         Write(install / L"SHA256SUMS.txt", "next signed fixture manifest");
         std::filesystem::remove_all(stage.parent_path());
+        Sleep(50);
         Write(install / L"update-last-result.json", "{\"status\":\"installed\"}");
     };
     auto ticket = prepare();
@@ -372,6 +374,7 @@ int main(int argc, char** argv) {
     std::cout << "PASS protected unlock transfers to a fresh Windows process\n";
     ticket = prepare();
     std::filesystem::remove_all(stage.parent_path());
+    Sleep(50);
     Write(install / L"update-last-result.json", "{\"status\":\"failed\"}");
     assert(GuiStateQualification::Resume(profile, install));
     std::cout << "PASS verified rollback restart\n";
@@ -448,6 +451,7 @@ int main(int argc, char** argv) {
     assert(std::filesystem::exists(address_ticket));
     Write(address_install / L"SHA256SUMS.txt", "address-only next signed fixture");
     std::filesystem::remove_all(address_install / L".veld-update-transaction");
+    Sleep(50);
     Write(address_install / L"update-last-result.json", "{\"status\":\"installed\"}");
     assert(GuiStateQualification::ResumeAddressOnly(address_profile, address_install, address));
     assert(!std::filesystem::exists(address_ticket));
@@ -462,6 +466,7 @@ int main(int argc, char** argv) {
                                          veld::GenerateKeyPair(false).address);
     Write(address_install / L"SHA256SUMS.txt", "address-only next signed fixture 2");
     std::filesystem::remove_all(address_install / L".veld-update-transaction");
+    Sleep(50);
     Write(address_install / L"update-last-result.json", "{\"status\":\"installed\"}");
     assert(!GuiStateQualification::ResumeWithChangedAddress(address_profile, address_install));
     assert(!std::filesystem::exists(changed_ticket));
@@ -496,6 +501,7 @@ int main(int argc, char** argv) {
     assert(!GuiStateQualification::ResumeAddressOnly(early_profile, early_install, address));
     assert(std::filesystem::exists(early_ticket));
     Write(early_install / L"SHA256SUMS.txt", "early GUI target fixture");
+    Sleep(50);
     Write(early_install / L"update-last-result.json", "{\"status\":\"installed\"}");
     assert(GuiStateQualification::ResumeAddressOnly(early_profile, early_install, address));
     assert(!std::filesystem::exists(early_ticket));
@@ -531,6 +537,7 @@ int main(int argc, char** argv) {
                                                   exited_address_root, true, address);
     Write(exited_address_root / L"SHA256SUMS.txt", "exit-before-stage new fixture");
     std::filesystem::remove_all(exited_address_root / L".veld-update-transaction");
+    Sleep(50);
     Write(exited_address_root / L"update-last-result.json", "{\"status\":\"installed\"}");
     assert(GuiStateQualification::ResumeAddressOnly(exited_address_root / L"profile",
                                                     exited_address_root, address));
@@ -548,6 +555,7 @@ int main(int argc, char** argv) {
                                               address);
     Write(launched_address_root / L"SHA256SUMS.txt", "launch new fixture");
     std::filesystem::remove_all(launched_address_root / L".veld-update-transaction");
+    Sleep(50);
     Write(launched_address_root / L"update-last-result.json", "{\"status\":\"installed\"}");
     std::filesystem::create_directories(launched_address_root / L"bin");
     assert(CopyFileW(signed_test_node.c_str(),
@@ -567,6 +575,7 @@ int main(int argc, char** argv) {
     GuiStateQualification::Prepare(launched_wallet_profile, launched_wallet_root);
     Write(launched_wallet_root / L"SHA256SUMS.txt", "wallet launch new fixture");
     std::filesystem::remove_all(launched_wallet_root / L".veld-update-transaction");
+    Sleep(50);
     Write(launched_wallet_root / L"update-last-result.json", "{\"status\":\"installed\"}");
     std::filesystem::create_directories(launched_wallet_root / L"bin");
     assert(CopyFileW(signed_test_node.c_str(),
