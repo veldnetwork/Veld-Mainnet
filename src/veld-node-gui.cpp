@@ -6454,12 +6454,12 @@ private:
         const auto root = InstallRoot();
         const auto ticket_path = UpdateResumePath();
         const auto receipt_path = root / L"update-last-result.json";
-        std::error_code preflight_error;
-        if (settings_load_failed_ ||
-            std::filesystem::exists(root / L".veld-update-transaction", preflight_error) ||
-            preflight_error) return;
+        if (settings_load_failed_) return;
         using Decision = veld::node_gui::UpdateResumeDecision;
         const auto decide = [&](const veld::node_gui::UpdateResume& candidate) -> Decision {
+            std::error_code active_error;
+            if (std::filesystem::exists(root / L".veld-update-transaction",
+                    active_error) || active_error) return Decision::Retry;
             const auto manifest = ReadTextBounded(root / L"SHA256SUMS.txt", 8 * 1024 * 1024);
             const auto receipt = ReadTextBounded(receipt_path, 8192);
             veld::btc_buy::JsonValue value;

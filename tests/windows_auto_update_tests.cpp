@@ -69,6 +69,27 @@ struct GuiStateQualification {
         assert(app.PrepareUpdateResume());
         return app.UpdateResumePath();
     }
+    static void ExpiredDuringCommit(const std::filesystem::path& profile,
+                                    const std::filesystem::path& root, const std::string& address) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        app.address_only_ = true;
+        app.SetAddressPayout(address);
+        assert(app.SaveSettings(false));
+        veld::node_gui::UpdateResume expired;
+        expired.created = static_cast<uint64_t>(std::time(nullptr)) - 3601;
+        expired.data_directory = std::filesystem::weakly_canonical(app.data_dir_).wstring();
+        expired.identity = Utf8ToWide(app.RemoteIdentityFingerprint());
+        expired.previous_manifest = Utf8ToWide(
+            veld::node_gui::PortalDigest(ReadTextBounded(root / L"SHA256SUMS.txt", 8192)));
+        expired.target_manifest = Utf8ToWide(veld::node_gui::PortalDigest(ReadTextBounded(
+            root / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt", 8192)));
+        const auto ticket = app.UpdateResumePath();
+        assert(veld::node_gui::SaveUpdateResume(ticket, veld::node_gui::UpdateInstallContext(root),
+                                                expired, expired.created, true));
+        app.LoadUpdateResume();
+        assert(!app.update_resume_pending_ && !std::filesystem::exists(ticket));
+    }
     static bool ResumeAddressOnly(const std::filesystem::path& profile,
                                   const std::filesystem::path& root, const std::string& address) {
         NodeGuiApp app(profile);
@@ -519,6 +540,16 @@ int main(int argc, char** argv) {
     GuiStateQualification::RetryEarlyOpenedAddressOnly(retry_profile, retry_root, signed_test_node);
     std::cout
         << "PASS already-open GUI retries verified commit and starts its disposable address-only node\n";
+
+    const auto expired_root = root / L"expired ticket during interrupted commit";
+    const auto expired_profile = expired_root / L"profile";
+    std::filesystem::create_directories(expired_root / L"custom data");
+    std::filesystem::create_directories(expired_profile);
+    Write(expired_root / L"SHA256SUMS.txt", "expired previous fixture");
+    Write(expired_root / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "expired target fixture");
+    GuiStateQualification::ExpiredDuringCommit(expired_profile, expired_root, address);
+    std::cout << "PASS expired ticket is purged while an interrupted commit remains\n";
 
     const auto exited_wallet_root = root / L"wallet exit during install";
     Write(exited_wallet_root / L"veld-update.ps1",
