@@ -134,8 +134,7 @@ int main(int argc, char** argv) {
         uint64_t rounds = 0;
         Json cfg;
         if (argc >= 3 && std::string(argv[1]) == "--config") {
-            Require(argc == 3 || argc == 5,
-                    "use --config PRIVATE_CONFIG [--rounds COUNT]");
+            Require(argc == 3 || argc == 5, "use --config PRIVATE_CONFIG [--rounds COUNT]");
             if (argc == 5) {
                 Require(std::string(argv[3]) == "--rounds", "rounds argument");
                 rounds = Number(argv[4], 1000000);
@@ -146,12 +145,12 @@ int main(int argc, char** argv) {
                     "use --pool HTTPS_ENDPOINT --payout VELD_ADDRESS --threads COUNT"
                     " --state-dir PRIVATE_DIRECTORY [--ca-file PEM]");
             std::map<std::string, std::string> options;
-            const std::set<std::string> allowed = {
-                "--pool", "--payout", "--threads", "--state-dir", "--ca-file"};
+            const std::set<std::string> allowed = {"--pool", "--payout", "--threads", "--state-dir",
+                                                   "--ca-file"};
             for (int i = 1; i < argc; i += 2) {
                 const std::string key(argv[i]), value(argv[i + 1]);
-                Require(allowed.count(key) == 1 && !value.empty() &&
-                            value.size() <= 4096 && options.emplace(key, value).second,
+                Require(allowed.count(key) == 1 && !value.empty() && value.size() <= 4096 &&
+                            options.emplace(key, value).second,
                         "unknown, repeated or empty pool option");
             }
             Require(options.count("--pool") && options.count("--payout") &&
@@ -162,15 +161,15 @@ int main(int argc, char** argv) {
             Require(workers > 0, "pool worker count must be positive");
             auto compiled = HexToBytes(GENESIS_HASH);
             std::reverse(compiled.begin(), compiled.end());
-            cfg = Parse(Object({
-                {"endpoint", options.at("--pool")},
-                {"ca_file", options.count("--ca-file") ? options.at("--ca-file") : ""},
-                {"genesis", BytesToHex(compiled)},
-                {"payout_address", options.at("--payout")},
-                {"state_directory", options.at("--state-dir")},
-                {"threads", std::to_string(workers)},
-                {"nonce_count", "1024"},
-                {"pause_ms", "0"}}));
+            cfg = Parse(
+                Object({{"endpoint", options.at("--pool")},
+                        {"ca_file", options.count("--ca-file") ? options.at("--ca-file") : ""},
+                        {"genesis", BytesToHex(compiled)},
+                        {"payout_address", options.at("--payout")},
+                        {"state_directory", options.at("--state-dir")},
+                        {"threads", std::to_string(workers)},
+                        {"nonce_count", "1024"},
+                        {"pause_ms", "0"}}));
         }
         compat::InitNetwork();
         std::signal(SIGINT, Stop);
