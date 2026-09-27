@@ -56,6 +56,56 @@ struct GuiStateQualification {
         }
         return app.update_resume_pending_;
     }
+    static std::filesystem::path PrepareAddressOnly(const std::filesystem::path& profile,
+                                                    const std::filesystem::path& root,
+                                                    const std::string& address) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        app.address_only_ = true;
+        app.mining_enabled_ = true;
+        app.SetAddressPayout(address);
+        assert(app.SaveSettings(false));
+        assert(!app.HasSessionUnlock());
+        assert(app.PrepareUpdateResume());
+        return app.UpdateResumePath();
+    }
+    static bool ResumeAddressOnly(const std::filesystem::path& profile,
+                                  const std::filesystem::path& root, const std::string& address) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        app.LoadSettings();
+        assert(app.address_only_ && app.AddressPayout() == address);
+        assert(app.mining_enabled_ && !app.HasSessionUnlock());
+        app.LoadUpdateResume();
+        if (app.update_resume_pending_) {
+            assert(!app.HasSessionUnlock());
+            const auto command = app.NodeStartCommand();
+            assert(command.find(L" --mine --address-only --miner ") != std::wstring::npos);
+        }
+        return app.update_resume_pending_;
+    }
+    static void ChangeAddress(const std::filesystem::path& profile,
+                              const std::filesystem::path& root, const std::string& address) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        app.LoadSettings();
+        app.SetAddressPayout(address);
+        assert(app.SaveSettings(false));
+    }
+    static void SaveWalletSettings(const std::filesystem::path& profile,
+                                   const std::filesystem::path& root) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        assert(app.SaveSettings(false));
+    }
+    static bool ResumeWithChangedAddress(const std::filesystem::path& profile,
+                                         const std::filesystem::path& root) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        app.LoadSettings();
+        app.LoadUpdateResume();
+        return app.update_resume_pending_;
+    }
     static void DownloadFailure(const std::filesystem::path& profile,
                                 const std::filesystem::path& root) {
         NodeGuiApp app(profile);
@@ -134,6 +184,114 @@ struct GuiStateQualification {
         app.TickAutomaticUpdates(app.next_auto_update_ + std::chrono::hours(24));
         assert(app.update_operation_.load() == UpdateOperation::None);
     }
+    static void NodeExitsDuringInstall(const std::filesystem::path& profile,
+                                       const std::filesystem::path& root, bool address_only,
+                                       const std::string& address = {}) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        app.address_only_ = address_only;
+        app.mining_enabled_ = true;
+        if (address_only)
+            app.SetAddressPayout(address);
+        assert(app.SaveSettings(false));
+        const auto node = root / L"bin" / L"veld-node.exe";
+        std::filesystem::create_directories(node.parent_path());
+        assert(CopyFileW(ModulePath().c_str(), node.c_str(), TRUE));
+        const std::string event_name = "Local\\VeldUpdateFixture-" +
+                                       std::to_string(GetCurrentProcessId()) + "-" +
+                                       std::to_string(GetTickCount64());
+        HANDLE release = CreateEventA(nullptr, TRUE, FALSE, event_name.c_str());
+        assert(release);
+        std::wstring command = L"\"" + node.wstring() + L"\" --hold-node " + Utf8ToWide(event_name);
+        std::vector<wchar_t> mutable_command(command.begin(), command.end());
+        mutable_command.push_back(0);
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        PROCESS_INFORMATION child{};
+        assert(CreateProcessW(node.c_str(), mutable_command.data(), nullptr, nullptr, FALSE,
+                              CREATE_NO_WINDOW, nullptr, root.c_str(), &startup, &child));
+        DWORD found = 0;
+        for (int attempt = 0; attempt < 200 && !found; ++attempt) {
+            found = FindNodeProcess(node);
+            if (!found)
+                Sleep(25);
+        }
+        assert(found == child.dwProcessId);
+        assert(app.BeginUpdateInstall());
+        assert(app.update_node_running_at_install_start_);
+        assert(WaitForSingleObject(app.update_process_, 15000) == WAIT_OBJECT_0);
+        DWORD exit_code = 1;
+        assert(GetExitCodeProcess(app.update_process_, &exit_code) && exit_code == 0);
+        assert(SetEvent(release));
+        assert(WaitForSingleObject(child.hProcess, 15000) == WAIT_OBJECT_0);
+        CloseHandle(child.hThread);
+        CloseHandle(child.hProcess);
+        CloseHandle(release);
+        assert(FindNodeProcess(node) == 0);
+        app.OnUpdateProcessComplete(exit_code);
+        assert(!app.update_node_running_at_install_start_);
+        if (address_only) {
+            assert(std::filesystem::exists(app.UpdateResumePath()));
+            assert(app.update_status_.find(L"restarting") != std::wstring::npos);
+        } else {
+            assert(!std::filesystem::exists(app.UpdateResumePath()));
+            assert(app.update_status_.find(L"postponed") != std::wstring::npos);
+        }
+    }
+    static void LaunchAfterUpdate(const std::filesystem::path& profile,
+                                  const std::filesystem::path& root, bool address_only) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        app.LoadSettings();
+        assert(app.address_only_ == address_only);
+        app.LoadUpdateResume();
+        assert(app.update_resume_pending_);
+        app.TickAutomaticUpdates();
+        assert(!app.update_resume_pending_);
+        assert(app.owned_pid_.load() != 0);
+        const auto marker = root / L"custom data" / L"update-resume-node-started.txt";
+        for (int attempt = 0; attempt < 200 && !std::filesystem::exists(marker); ++attempt)
+            Sleep(25);
+        assert(std::filesystem::exists(marker));
+        const auto started = ReadTextBounded(marker, 256);
+        assert(started == (address_only ? "address-only mine\n" : "wallet mine\n"));
+        assert(WaitForSingleObject(app.owned_process_, 10000) == WAIT_OBJECT_0);
+        DWORD exit_code = 1;
+        assert(GetExitCodeProcess(app.owned_process_, &exit_code) && exit_code == 0);
+    }
+    static void RetryEarlyOpenedAddressOnly(const std::filesystem::path& profile,
+                                            const std::filesystem::path& root,
+                                            const std::filesystem::path& test_node) {
+        NodeGuiApp app(profile);
+        Configure(app, root);
+        app.LoadSettings();
+        // Opening while bin/ is being replaced can leave a stale fallback path.
+        app.node_path_ = root / L"veld-node.exe";
+        app.LoadUpdateResume();
+        assert(!app.update_resume_pending_ && std::filesystem::exists(app.UpdateResumePath()));
+        std::filesystem::remove_all(root / L".veld-update-transaction");
+        app.TickAutomaticUpdates();
+        assert(!app.update_resume_pending_ && std::filesystem::exists(app.UpdateResumePath()));
+        {
+            std::ofstream manifest(root / L"SHA256SUMS.txt", std::ios::binary);
+            manifest << "early-open committed fixture";
+        }
+        {
+            std::ofstream receipt(root / L"update-last-result.json", std::ios::binary);
+            receipt << "{\"status\":\"installed\"}";
+        }
+        std::filesystem::create_directories(root / L"bin");
+        assert(CopyFileW(test_node.c_str(), (root / L"bin" / L"veld-node.exe").c_str(), TRUE));
+        app.TickAutomaticUpdates();
+        assert(!std::filesystem::exists(app.UpdateResumePath()));
+        assert(app.node_path_ == root / L"bin" / L"veld-node.exe");
+        assert(app.owned_pid_.load() != 0 && !app.update_resume_pending_);
+        const auto marker = root / L"custom data" / L"update-resume-node-started.txt";
+        for (int attempt = 0; attempt < 200 && !std::filesystem::exists(marker); ++attempt)
+            Sleep(25);
+        assert(ReadTextBounded(marker, 256) == "address-only mine\n");
+        assert(WaitForSingleObject(app.owned_process_, 10000) == WAIT_OBJECT_0);
+    }
 };
 
 void Write(const std::filesystem::path& path, const std::string& text) {
@@ -146,6 +304,15 @@ void Write(const std::filesystem::path& path, const std::string& text) {
 }
 
 int main(int argc, char** argv) {
+    std::cout.setf(std::ios::unitbuf);
+    if (argc == 3 && std::string(argv[1]) == "--hold-node") {
+        HANDLE release = OpenEventA(SYNCHRONIZE, FALSE, argv[2]);
+        if (!release)
+            return 3;
+        const DWORD waited = WaitForSingleObject(release, 15000);
+        CloseHandle(release);
+        return waited == WAIT_OBJECT_0 ? 0 : 4;
+    }
     if (argc == 3 && std::string(argv[1]) == "--consume") {
         const auto root = std::filesystem::absolute(argv[2]);
         return GuiStateQualification::Resume(root / L"private profile",
@@ -153,8 +320,10 @@ int main(int argc, char** argv) {
                    ? 0
                    : 1;
     }
-    assert(argc == 2);
+    assert(argc == 3);
     const auto root = std::filesystem::absolute(argv[1]);
+    const auto signed_test_node = std::filesystem::absolute(argv[2]);
+    assert(std::filesystem::is_regular_file(signed_test_node));
     assert(!std::filesystem::exists(root));
     const auto install = root / L"Install \u00e9 \u65e5\u672c\u8a9e";
     const auto profile = root / L"private profile";
@@ -264,4 +433,144 @@ int main(int argc, char** argv) {
     GuiStateQualification::HourlyChecks(profile, install);
     std::cout
         << "PASS hourly check boundaries, repeated current-version checks, no concurrent check and opt-out\n";
+
+    const auto address_root = root / L"address-only update";
+    const auto address_install = address_root / L"installation";
+    const auto address_profile = address_root / L"profile";
+    std::filesystem::create_directories(address_install / L"custom data");
+    std::filesystem::create_directories(address_profile);
+    const auto address = veld::GenerateKeyPair(false).address;
+    Write(address_install / L"SHA256SUMS.txt", "address-only previous signed fixture");
+    Write(address_install / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "address-only next signed fixture");
+    const auto address_ticket =
+        GuiStateQualification::PrepareAddressOnly(address_profile, address_install, address);
+    assert(std::filesystem::exists(address_ticket));
+    Write(address_install / L"SHA256SUMS.txt", "address-only next signed fixture");
+    std::filesystem::remove_all(address_install / L".veld-update-transaction");
+    Write(address_install / L"update-last-result.json", "{\"status\":\"installed\"}");
+    assert(GuiStateQualification::ResumeAddressOnly(address_profile, address_install, address));
+    assert(!std::filesystem::exists(address_ticket));
+    std::cout
+        << "PASS address-only update restores solo mining intent without a wallet passphrase\n";
+
+    Write(address_install / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "address-only next signed fixture 2");
+    const auto changed_ticket =
+        GuiStateQualification::PrepareAddressOnly(address_profile, address_install, address);
+    GuiStateQualification::ChangeAddress(address_profile, address_install,
+                                         veld::GenerateKeyPair(false).address);
+    Write(address_install / L"SHA256SUMS.txt", "address-only next signed fixture 2");
+    std::filesystem::remove_all(address_install / L".veld-update-transaction");
+    Write(address_install / L"update-last-result.json", "{\"status\":\"installed\"}");
+    assert(!GuiStateQualification::ResumeWithChangedAddress(address_profile, address_install));
+    assert(!std::filesystem::exists(changed_ticket));
+    std::cout << "PASS changed payout refuses address-only update resume\n";
+
+    GuiStateQualification::ChangeAddress(address_profile, address_install, address);
+    Write(address_install / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "address-only next signed fixture 3");
+    const auto wallet_ticket =
+        GuiStateQualification::PrepareAddressOnly(address_profile, address_install, address);
+    veld::node_gui::UpdateResume wrong_mode;
+    assert(!veld::node_gui::ConsumeUpdateResume(
+        wallet_ticket, veld::node_gui::UpdateInstallContext(address_install), wrong_mode,
+        static_cast<uint64_t>(std::time(nullptr))));
+    assert(!std::filesystem::exists(wallet_ticket));
+    std::cout << "PASS wallet mode rejects a passphrase-free resume ticket\n";
+
+    const auto early_root = root / L"early GUI during commit";
+    const auto early_install = early_root / L"installation";
+    const auto early_profile = early_root / L"profile";
+    std::filesystem::create_directories(early_install / L"custom data");
+    std::filesystem::create_directories(early_profile);
+    Write(early_install / L"SHA256SUMS.txt", "early GUI previous fixture");
+    Write(early_install / L"update-last-result.json", "{\"status\":\"installed\"}");
+    Write(early_install / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "early GUI target fixture");
+    const auto early_ticket =
+        GuiStateQualification::PrepareAddressOnly(early_profile, early_install, address);
+    assert(!GuiStateQualification::ResumeAddressOnly(early_profile, early_install, address));
+    assert(std::filesystem::exists(early_ticket));
+    std::filesystem::remove_all(early_install / L".veld-update-transaction");
+    assert(!GuiStateQualification::ResumeAddressOnly(early_profile, early_install, address));
+    assert(std::filesystem::exists(early_ticket));
+    Write(early_install / L"SHA256SUMS.txt", "early GUI target fixture");
+    Write(early_install / L"update-last-result.json", "{\"status\":\"installed\"}");
+    assert(GuiStateQualification::ResumeAddressOnly(early_profile, early_install, address));
+    assert(!std::filesystem::exists(early_ticket));
+    std::cout << "PASS early GUI launches preserve the one-use ticket until verified commit\n";
+
+    const auto retry_root = root / L"early-open GUI stays running";
+    const auto retry_profile = retry_root / L"profile";
+    std::filesystem::create_directories(retry_root / L"custom data");
+    std::filesystem::create_directories(retry_profile);
+    Write(retry_root / L"SHA256SUMS.txt", "early-open previous fixture");
+    Write(retry_root / L"update-last-result.json", "{\"status\":\"installed\"}");
+    Write(retry_root / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "early-open committed fixture");
+    GuiStateQualification::PrepareAddressOnly(retry_profile, retry_root, address);
+    GuiStateQualification::RetryEarlyOpenedAddressOnly(retry_profile, retry_root, signed_test_node);
+    std::cout
+        << "PASS already-open GUI retries verified commit and starts its disposable address-only node\n";
+
+    const auto exited_wallet_root = root / L"wallet exit during install";
+    Write(exited_wallet_root / L"veld-update.ps1",
+          "param($Mode,$InstallDir,$Distribution)\nexit 0\n");
+    GuiStateQualification::NodeExitsDuringInstall(exited_wallet_root / L"profile",
+                                                  exited_wallet_root, false);
+    std::cout << "PASS node exit during install preserves wallet-mode sign-in requirement\n";
+
+    const auto exited_address_root = root / L"address-only exit during install";
+    Write(exited_address_root / L"veld-update.ps1",
+          "param($Mode,$InstallDir,$Distribution)\nexit 0\n");
+    Write(exited_address_root / L"SHA256SUMS.txt", "exit-before-stage old fixture");
+    Write(exited_address_root / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "exit-before-stage new fixture");
+    GuiStateQualification::NodeExitsDuringInstall(exited_address_root / L"profile",
+                                                  exited_address_root, true, address);
+    Write(exited_address_root / L"SHA256SUMS.txt", "exit-before-stage new fixture");
+    std::filesystem::remove_all(exited_address_root / L".veld-update-transaction");
+    Write(exited_address_root / L"update-last-result.json", "{\"status\":\"installed\"}");
+    assert(GuiStateQualification::ResumeAddressOnly(exited_address_root / L"profile",
+                                                    exited_address_root, address));
+    std::cout
+        << "PASS running address-only node exits during install and resumes after signed handoff\n";
+
+    const auto launched_address_root = root / L"address-only process launch";
+    const auto launched_address_profile = launched_address_root / L"profile";
+    std::filesystem::create_directories(launched_address_root / L"custom data");
+    std::filesystem::create_directories(launched_address_profile);
+    Write(launched_address_root / L"SHA256SUMS.txt", "launch old fixture");
+    Write(launched_address_root / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "launch new fixture");
+    GuiStateQualification::PrepareAddressOnly(launched_address_profile, launched_address_root,
+                                              address);
+    Write(launched_address_root / L"SHA256SUMS.txt", "launch new fixture");
+    std::filesystem::remove_all(launched_address_root / L".veld-update-transaction");
+    Write(launched_address_root / L"update-last-result.json", "{\"status\":\"installed\"}");
+    std::filesystem::create_directories(launched_address_root / L"bin");
+    assert(CopyFileW(signed_test_node.c_str(),
+                     (launched_address_root / L"bin" / L"veld-node.exe").c_str(), TRUE));
+    GuiStateQualification::LaunchAfterUpdate(launched_address_profile, launched_address_root, true);
+    std::cout << "PASS address-only signed update resumes an actual disposable node process\n";
+
+    const auto launched_wallet_root = root / L"wallet process launch";
+    const auto launched_wallet_profile = launched_wallet_root / L"profile";
+    std::filesystem::create_directories(launched_wallet_root / L"custom data");
+    std::filesystem::create_directories(launched_wallet_profile);
+    Write(launched_wallet_root / L"custom data" / L"miner.key", "wallet launch identity");
+    Write(launched_wallet_root / L"SHA256SUMS.txt", "wallet launch old fixture");
+    Write(launched_wallet_root / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "wallet launch new fixture");
+    GuiStateQualification::SaveWalletSettings(launched_wallet_profile, launched_wallet_root);
+    GuiStateQualification::Prepare(launched_wallet_profile, launched_wallet_root);
+    Write(launched_wallet_root / L"SHA256SUMS.txt", "wallet launch new fixture");
+    std::filesystem::remove_all(launched_wallet_root / L".veld-update-transaction");
+    Write(launched_wallet_root / L"update-last-result.json", "{\"status\":\"installed\"}");
+    std::filesystem::create_directories(launched_wallet_root / L"bin");
+    assert(CopyFileW(signed_test_node.c_str(),
+                     (launched_wallet_root / L"bin" / L"veld-node.exe").c_str(), TRUE));
+    GuiStateQualification::LaunchAfterUpdate(launched_wallet_profile, launched_wallet_root, false);
+    std::cout << "PASS wallet-mode signed update resumes an actual disposable node process\n";
 }

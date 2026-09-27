@@ -22,7 +22,7 @@ struct UpdateResume {
         if (!passphrase.empty()) SecureZeroMemory(passphrase.data(), passphrase.size() * sizeof(wchar_t));
         passphrase.clear();
     }
-    bool Valid(uint64_t now) const {
+    bool Valid(uint64_t now, bool address_only = false) const {
         const auto digest = [](const std::wstring& s) {
             return s.size() == 64 && std::all_of(s.begin(), s.end(), [](wchar_t c) {
                 return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f');
@@ -32,7 +32,9 @@ struct UpdateResume {
             !data_directory.empty() && data_directory.size() <= 32767 && data_directory.find(L'\0') == std::wstring::npos &&
             std::filesystem::path(data_directory).is_absolute() &&
             digest(identity) && digest(previous_manifest) && digest(target_manifest) &&
-            previous_manifest != target_manifest && !passphrase.empty() && passphrase.size() <= 4096 &&
+            previous_manifest != target_manifest &&
+            (address_only ? passphrase.empty() : !passphrase.empty()) &&
+            passphrase.size() <= 4096 &&
             passphrase.find(L'\0') == std::wstring::npos;
     }
 };
@@ -48,8 +50,8 @@ inline std::wstring UpdateInstallContext(const std::filesystem::path& root) {
 
 inline bool SaveUpdateResume(const std::filesystem::path& path,
                              const std::wstring& context, const UpdateResume& resume,
-                             uint64_t now) {
-    if (context.empty() || !resume.Valid(now)) return false;
+                             uint64_t now, bool address_only = false) {
+    if (context.empty() || !resume.Valid(now, address_only)) return false;
     size_t total = sizeof(uint64_t);
     for (const auto* field : {&resume.data_directory, &resume.identity,
             &resume.previous_manifest, &resume.target_manifest, &resume.passphrase})
@@ -81,7 +83,7 @@ inline bool SaveUpdateResume(const std::filesystem::path& path,
 // cannot release an unlock, and no second process can consume this handoff.
 inline bool ConsumeUpdateResume(const std::filesystem::path& path,
                                 const std::wstring& context, UpdateResume& resume,
-                                uint64_t now) {
+                                uint64_t now, bool address_only = false) {
     resume.Wipe();
     namespace sf = channel::secure_file;
     sf::WinOwnerSecurity owner;
@@ -120,7 +122,7 @@ inline bool ConsumeUpdateResume(const std::filesystem::path& path,
         field->resize(chars);
         ok = take(field->data(), chars * sizeof(wchar_t));
     }
-    ok = ok && at == plain.cbData && resume.Valid(now);
+    ok = ok && at == plain.cbData && resume.Valid(now, address_only);
     SecureZeroMemory(plain.pbData, plain.cbData); LocalFree(plain.pbData);
     if (!ok) resume.Wipe();
     return ok;

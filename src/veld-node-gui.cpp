@@ -2141,6 +2141,7 @@ private:
     std::atomic<bool> auto_update_enabled_{false};
     bool automatic_update_operation_{false};
     bool automatic_install_pending_{false};
+    bool update_node_running_at_install_start_{false};
     bool update_resume_pending_{false};
     bool explicit_data_directory_{false};
     std::chrono::steady_clock::time_point next_auto_update_{
@@ -6426,8 +6427,10 @@ private:
 
     bool PrepareUpdateResume() {
         veld::node_gui::UpdateResume resume;
-        if (!HasSessionUnlock() || !session_unlock_confirmed_.load() ||
-            !LoadSessionPassphrase(resume.passphrase)) return false;
+        if (address_only_) {
+            if (!ValidSoloAddress(AddressPayout())) return false;
+        } else if (!HasSessionUnlock() || !session_unlock_confirmed_.load() ||
+                   !LoadSessionPassphrase(resume.passphrase)) return false;
         std::error_code error;
         resume.data_directory = std::filesystem::weakly_canonical(data_dir_, error).wstring();
         if (error) return false;
@@ -6440,18 +6443,38 @@ private:
         resume.previous_manifest = Utf8ToWide(veld::node_gui::PortalDigest(previous));
         resume.target_manifest = Utf8ToWide(veld::node_gui::PortalDigest(target));
         return veld::node_gui::SaveUpdateResume(UpdateResumePath(),
-            veld::node_gui::UpdateInstallContext(root), resume, resume.created);
+            veld::node_gui::UpdateInstallContext(root), resume, resume.created,
+            address_only_);
     }
 
     void LoadUpdateResume() {
-        veld::node_gui::UpdateResume resume;
-        if (!veld::node_gui::ConsumeUpdateResume(UpdateResumePath(),
-                veld::node_gui::UpdateInstallContext(InstallRoot()), resume,
-                static_cast<uint64_t>(std::time(nullptr)))) return;
+        // A user can reopen the app while Commit still owns the transaction.
+        // Keep the one-use ticket until the helper has removed its journal and
+        // written a result newer than the ticket; otherwise an early launch
+        // consumes the only restart intent before the signed install finishes.
         const auto root = InstallRoot();
+        const auto ticket_path = UpdateResumePath();
+        const auto receipt_path = root / L"update-last-result.json";
+        std::error_code preflight_error;
+        if (settings_load_failed_ ||
+            std::filesystem::exists(root / L".veld-update-transaction", preflight_error) ||
+            preflight_error) return;
+        WIN32_FILE_ATTRIBUTE_DATA ticket_attributes{}, receipt_attributes{};
+        if (!GetFileAttributesExW(ticket_path.c_str(), GetFileExInfoStandard,
+                &ticket_attributes) ||
+            !GetFileAttributesExW(receipt_path.c_str(), GetFileExInfoStandard,
+                &receipt_attributes)) return;
+        const auto file_time = [](const FILETIME& value) {
+            return (uint64_t(value.dwHighDateTime) << 32) | value.dwLowDateTime;
+        };
+        if (file_time(receipt_attributes.ftLastWriteTime) <
+            file_time(ticket_attributes.ftCreationTime)) return;
+        veld::node_gui::UpdateResume resume;
+        if (!veld::node_gui::ConsumeUpdateResume(ticket_path,
+                veld::node_gui::UpdateInstallContext(root), resume,
+                static_cast<uint64_t>(std::time(nullptr)), address_only_)) return;
         const auto manifest = ReadTextBounded(root / L"SHA256SUMS.txt", 8 * 1024 * 1024);
         const auto digest = Utf8ToWide(veld::node_gui::PortalDigest(manifest));
-        const auto receipt_path = root / L"update-last-result.json";
         const auto receipt = ReadTextBounded(receipt_path, 8192);
         veld::btc_buy::JsonValue value;
         std::string error;
@@ -6475,7 +6498,12 @@ private:
             ? (ValidSoloAddress(AddressPayout()) ? "address-only|"+AddressPayout() : std::string{})
             : ReadTextBounded(restored / L"miner.key", 65536);
         if (identity.empty() || Utf8ToWide(veld::node_gui::PortalDigest(identity)) != resume.identity) return;
-        if (!StoreSessionPassphrase(resume.passphrase)) return;
+        if (address_only_) {
+            if (!resume.passphrase.empty()) return;
+        } else if (!StoreSessionPassphrase(resume.passphrase)) return;
+        // This instance may have opened while Commit was replacing bin/. Use
+        // the verified package path rather than a constructor-time fallback.
+        node_path_ = root / L"bin" / L"veld-node.exe";
         data_dir_ = restored;
         update_resume_pending_ = true;
         update_status_ = L"Signed update verified · resuming node";
@@ -6553,16 +6581,21 @@ private:
 
     void TickAutomaticUpdates(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now()) {
         if (update_operation_.load() != UpdateOperation::None || tor_preparing_.load() || stopping_node_.load()) return;
+        if (!windows_startup_invocation_ && !update_resume_pending_ &&
+            GetFileAttributesW(UpdateResumePath().c_str()) != INVALID_FILE_ATTRIBUTES)
+            LoadUpdateResume();
         if (update_resume_pending_) {
             update_resume_pending_ = false;
-            if (HasSessionUnlock() && FindNodeProcess(node_path_) == 0) StartNode();
+            if ((address_only_ || HasSessionUnlock()) &&
+                FindNodeProcess(node_path_) == 0) StartNode();
         }
         if (!auto_update_enabled_) return;
         if (!automatic_install_pending_ && now < next_auto_update_) return;
         next_auto_update_ = now + AUTO_UPDATE_INTERVAL;
         if (automatic_install_pending_) {
             automatic_install_pending_ = false;
-            if (FindNodeProcess(node_path_) != 0 && (!HasSessionUnlock() || !session_unlock_confirmed_.load())) {
+            if (FindNodeProcess(node_path_) != 0 && !address_only_ &&
+                (!HasSessionUnlock() || !session_unlock_confirmed_.load())) {
                 update_status_ = L"Automatic update waiting · sign in once to resume mining";
                 update_status_color_ = C_WARN;
                 return;
@@ -6582,6 +6615,8 @@ private:
 
     bool BeginUpdateProcess(UpdateOperation operation) {
         if (update_operation_.load() != UpdateOperation::None) return false;
+        const bool node_running_at_install_start =
+            operation == UpdateOperation::Install && FindNodeProcess(node_path_) != 0;
         const auto root = InstallRoot();
         const auto updater = root / L"veld-update.ps1";
         if (!std::filesystem::is_regular_file(updater)) {
@@ -6667,6 +6702,7 @@ private:
             if (update_process_) CloseHandle(update_process_);
             update_operation_.store(operation);
             update_process_ = pi.hProcess;
+            update_node_running_at_install_start_ = node_running_at_install_start;
         }
         if (installing) update_available_ = false;
         update_status_ = installing
@@ -6689,6 +6725,8 @@ private:
     void OnUpdateProcessComplete(DWORD exit_code) {
         const UpdateOperation operation =
             update_operation_.exchange(UpdateOperation::None);
+        const bool node_was_running = update_node_running_at_install_start_;
+        update_node_running_at_install_start_ = false;
         const bool automatic = automatic_update_operation_;
         automatic_update_operation_ = false;
         next_auto_update_ = std::chrono::steady_clock::now() + AUTO_UPDATE_INTERVAL;
@@ -6700,7 +6738,8 @@ private:
                 update_status_color_ = C_TEXT;
                 InvalidateRect(hwnd_, nullptr, FALSE);
             } else if (exit_code == 0) {
-                if (FindNodeProcess(node_path_) != 0 && !PrepareUpdateResume()) {
+                if ((node_was_running || FindNodeProcess(node_path_) != 0) &&
+                    !PrepareUpdateResume()) {
                     update_status_ = L"Update postponed · sign in to preserve mining through restart";
                     update_status_color_ = C_WARN;
                     return;
