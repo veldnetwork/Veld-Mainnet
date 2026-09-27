@@ -157,11 +157,7 @@ def main(binary):
         try:
             deadline = time.monotonic() + 10
             account = state / "pool-account.json"
-            while (
-                time.monotonic() < deadline
-                and not account.exists()
-                and worker.poll() is None
-            ):
+            while time.monotonic() < deadline and not account.exists() and worker.poll() is None:
                 time.sleep(0.05)
             assert account.exists(), (
                 "pool registration did not persist; "
@@ -185,12 +181,8 @@ def main(binary):
         changed = command.copy()
         changed[changed.index("--payout") + 1] = "VUjD1JoewGkiGxRqJ52FkK1UiMotjsp9Tg"
         assert run(binary, *changed[1:]).returncode != 0
-        assert account.read_bytes() == original, (
-            "existing pool account changed identity"
-        )
-        assert (
-            len([path for path, _ in Gateway.requests if path == "/v1/register"]) == 1
-        )
+        assert account.read_bytes() == original, "existing pool account changed identity"
+        assert len([path for path, _ in Gateway.requests if path == "/v1/register"]) == 1
         assert not (root / "bad-address").exists()
     print(
         "PASS Linux pool CLI: strict options, authenticated local TLS registration,"
