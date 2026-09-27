@@ -6449,9 +6449,8 @@ private:
 
     void LoadUpdateResume() {
         // A user can reopen the app while Commit still owns the transaction.
-        // Keep the one-use ticket until the helper has removed its journal and
-        // written a result newer than the ticket; otherwise an early launch
-        // consumes the only restart intent before the signed install finishes.
+        // Inspect the protected ticket under its exclusive owner-only handle,
+        // then consume it only after the result and package identity agree.
         const auto root = InstallRoot();
         const auto ticket_path = UpdateResumePath();
         const auto receipt_path = root / L"update-last-result.json";
@@ -6459,48 +6458,54 @@ private:
         if (settings_load_failed_ ||
             std::filesystem::exists(root / L".veld-update-transaction", preflight_error) ||
             preflight_error) return;
-        WIN32_FILE_ATTRIBUTE_DATA ticket_attributes{}, receipt_attributes{};
-        if (!GetFileAttributesExW(ticket_path.c_str(), GetFileExInfoStandard,
-                &ticket_attributes) ||
-            !GetFileAttributesExW(receipt_path.c_str(), GetFileExInfoStandard,
-                &receipt_attributes)) return;
-        const auto file_time = [](const FILETIME& value) {
-            return (uint64_t(value.dwHighDateTime) << 32) | value.dwLowDateTime;
+        using Decision = veld::node_gui::UpdateResumeDecision;
+        const auto decide = [&](const veld::node_gui::UpdateResume& candidate) -> Decision {
+            const auto manifest = ReadTextBounded(root / L"SHA256SUMS.txt", 8 * 1024 * 1024);
+            const auto receipt = ReadTextBounded(receipt_path, 8192);
+            veld::btc_buy::JsonValue value;
+            std::string error;
+            veld::btc_buy::StrictJsonParser parser(receipt, 8192, true);
+            if (manifest.empty() || !parser.Parse(value, error)) return Decision::Retry;
+            const auto* status = value.Get("status");
+            WIN32_FILE_ATTRIBUTE_DATA attributes{};
+            if (!status || status->kind != veld::btc_buy::JsonValue::Kind::String ||
+                !GetFileAttributesExW(receipt_path.c_str(), GetFileExInfoStandard,
+                    &attributes)) return Decision::Retry;
+            const uint64_t written =
+                ((uint64_t(attributes.ftLastWriteTime.dwHighDateTime) << 32) |
+                    attributes.ftLastWriteTime.dwLowDateTime) /
+                    10000000ULL - 11644473600ULL;
+            const auto digest = Utf8ToWide(veld::node_gui::PortalDigest(manifest));
+            if (written < candidate.created) return Decision::Retry;
+            if (status->text == "ready" ||
+                (status->text == "installed" && digest == candidate.previous_manifest))
+                return Decision::Retry;
+            if (!((status->text == "installed" && digest == candidate.target_manifest) ||
+                  (status->text == "failed" && digest == candidate.previous_manifest)))
+                return Decision::Reject;
+            std::error_code ec;
+            if (std::filesystem::exists(root / L".veld-update-transaction", ec) ||
+                ec || settings_load_failed_) return Decision::Retry;
+            const std::filesystem::path restored(candidate.data_directory);
+            if (explicit_data_directory_ &&
+                std::filesystem::weakly_canonical(data_dir_, ec) != restored)
+                return Decision::Reject;
+            if (ec) return Decision::Retry;
+            const auto identity = address_only_
+                ? (ValidSoloAddress(AddressPayout()) ? "address-only|" + AddressPayout()
+                    : std::string{})
+                : ReadTextBounded(restored / L"miner.key", 65536);
+            if (identity.empty() ||
+                Utf8ToWide(veld::node_gui::PortalDigest(identity)) != candidate.identity)
+                return Decision::Reject;
+            return Decision::Accept;
         };
-        if (file_time(receipt_attributes.ftLastWriteTime) <=
-            file_time(ticket_attributes.ftCreationTime)) return;
         veld::node_gui::UpdateResume resume;
         if (!veld::node_gui::ConsumeUpdateResume(ticket_path,
                 veld::node_gui::UpdateInstallContext(root), resume,
-                static_cast<uint64_t>(std::time(nullptr)), address_only_)) return;
-        const auto manifest = ReadTextBounded(root / L"SHA256SUMS.txt", 8 * 1024 * 1024);
-        const auto digest = Utf8ToWide(veld::node_gui::PortalDigest(manifest));
-        const auto receipt = ReadTextBounded(receipt_path, 8192);
-        veld::btc_buy::JsonValue value;
-        std::string error;
-        veld::btc_buy::StrictJsonParser parser(receipt, 8192, true);
-        if (manifest.empty() || !parser.Parse(value, error)) return;
-        const auto* status = value.Get("status");
-        WIN32_FILE_ATTRIBUTE_DATA attributes{};
-        if (!status || status->kind != veld::btc_buy::JsonValue::Kind::String ||
-            !GetFileAttributesExW(receipt_path.c_str(), GetFileExInfoStandard, &attributes)) return;
-        const uint64_t written = ((uint64_t(attributes.ftLastWriteTime.dwHighDateTime) << 32) |
-            attributes.ftLastWriteTime.dwLowDateTime) / 10000000ULL - 11644473600ULL;
-        if (written < resume.created ||
-            !((status->text == "installed" && digest == resume.target_manifest) ||
-              (status->text == "failed" && digest == resume.previous_manifest))) return;
-        std::error_code ec;
-        if (std::filesystem::exists(root / L".veld-update-transaction", ec) || ec || settings_load_failed_) return;
+                static_cast<uint64_t>(std::time(nullptr)), address_only_, decide)) return;
         const std::filesystem::path restored(resume.data_directory);
-        if (explicit_data_directory_ && std::filesystem::weakly_canonical(data_dir_, ec) != restored) return;
-        if (ec) return;
-        const auto identity = address_only_
-            ? (ValidSoloAddress(AddressPayout()) ? "address-only|"+AddressPayout() : std::string{})
-            : ReadTextBounded(restored / L"miner.key", 65536);
-        if (identity.empty() || Utf8ToWide(veld::node_gui::PortalDigest(identity)) != resume.identity) return;
-        if (address_only_) {
-            if (!resume.passphrase.empty()) return;
-        } else if (!StoreSessionPassphrase(resume.passphrase)) return;
+        if (!address_only_ && !StoreSessionPassphrase(resume.passphrase)) return;
         // This instance may have opened while Commit was replacing bin/. Use
         // the verified package path rather than a constructor-time fallback.
         node_path_ = root / L"bin" / L"veld-node.exe";

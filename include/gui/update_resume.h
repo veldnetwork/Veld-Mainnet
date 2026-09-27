@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstring>
 #include <ctime>
+#include <functional>
 #include <vector>
 
 namespace veld::node_gui {
@@ -38,6 +39,8 @@ struct UpdateResume {
             passphrase.find(L'\0') == std::wstring::npos;
     }
 };
+
+enum class UpdateResumeDecision { Accept, Retry, Reject };
 
 inline std::wstring UpdateInstallContext(const std::filesystem::path& root) {
     std::error_code error;
@@ -83,7 +86,8 @@ inline bool SaveUpdateResume(const std::filesystem::path& path,
 // cannot release an unlock, and no second process can consume this handoff.
 inline bool ConsumeUpdateResume(const std::filesystem::path& path,
                                 const std::wstring& context, UpdateResume& resume,
-                                uint64_t now, bool address_only = false) {
+                                uint64_t now, bool address_only = false,
+                                const std::function<UpdateResumeDecision(const UpdateResume&)>& decide = {}) {
     resume.Wipe();
     namespace sf = channel::secure_file;
     sf::WinOwnerSecurity owner;
@@ -101,13 +105,18 @@ inline bool ConsumeUpdateResume(const std::filesystem::path& path,
     std::vector<BYTE> bytes(static_cast<size_t>(size.QuadPart));
     DWORD read = 0;
     if (!ReadFile(file.value, bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr) || read != bytes.size()) return false;
-    FILE_DISPOSITION_INFO disposition{TRUE};
-    if (!SetFileInformationByHandle(file.value, FileDispositionInfo, &disposition, sizeof(disposition))) return false;
-    if (!CloseHandle(file.release())) return false;
+    const auto delete_ticket = [&]() {
+        FILE_DISPOSITION_INFO disposition{TRUE};
+        return SetFileInformationByHandle(file.value, FileDispositionInfo,
+                   &disposition, sizeof(disposition)) && CloseHandle(file.release());
+    };
     DATA_BLOB sealed{static_cast<DWORD>(bytes.size()), bytes.data()}, plain{};
     DATA_BLOB entropy{static_cast<DWORD>(context.size() * sizeof(wchar_t)),
         reinterpret_cast<BYTE*>(const_cast<wchar_t*>(context.data()))};
-    if (!CryptUnprotectData(&sealed, nullptr, &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &plain)) return false;
+    if (!CryptUnprotectData(&sealed, nullptr, &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &plain)) {
+        (void)delete_ticket();
+        return false;
+    }
     size_t at = 0;
     auto take = [&](void* destination, size_t count) {
         if (at > plain.cbData || count > plain.cbData - at) return false;
@@ -124,8 +133,23 @@ inline bool ConsumeUpdateResume(const std::filesystem::path& path,
     }
     ok = ok && at == plain.cbData && resume.Valid(now, address_only);
     SecureZeroMemory(plain.pbData, plain.cbData); LocalFree(plain.pbData);
-    if (!ok) resume.Wipe();
-    return ok;
+    if (!ok) {
+        (void)delete_ticket();
+        resume.Wipe();
+        return false;
+    }
+    UpdateResumeDecision decision = UpdateResumeDecision::Accept;
+    if (decide) {
+        try { decision = decide(resume); }
+        catch (...) { decision = UpdateResumeDecision::Retry; }
+    }
+    if (decision != UpdateResumeDecision::Accept) {
+        if (decision == UpdateResumeDecision::Reject) (void)delete_ticket();
+        resume.Wipe();
+        return false;
+    }
+    if (!delete_ticket()) { resume.Wipe(); return false; }
+    return true;
 }
 
 } // namespace veld::node_gui
