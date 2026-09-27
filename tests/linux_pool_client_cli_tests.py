@@ -181,6 +181,16 @@ def main(binary):
             server.shutdown()
             server.server_close()
         assert worker.returncode == 0, "clean pool-worker stop failed"
+        original = account.read_bytes()
+        changed = command.copy()
+        changed[changed.index("--payout") + 1] = "VUjD1JoewGkiGxRqJ52FkK1UiMotjsp9Tg"
+        assert run(binary, *changed[1:]).returncode != 0
+        assert account.read_bytes() == original, (
+            "existing pool account changed identity"
+        )
+        assert (
+            len([path for path, _ in Gateway.requests if path == "/v1/register"]) == 1
+        )
         assert not (root / "bad-address").exists()
     print(
         "PASS Linux pool CLI: strict options, authenticated local TLS registration,"
