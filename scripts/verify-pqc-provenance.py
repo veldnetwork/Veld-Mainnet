@@ -72,6 +72,7 @@ FIXED_COVERAGE = {
     ".gitignore",
     "THIRD_PARTY_NOTICES.md",
     "build/mainnet-v2-linux.sh",
+    "build/mainnet-v2-linux-client.sh",
     "build/mainnet-v2-windows.sh",
     "build/mainnet-v2-pool.sh",
     "include/crypto/mldsa65_nist_kat.h",
@@ -829,6 +830,7 @@ def main() -> int:
         choices=(
             "node",
             "desktop",
+            "pool-worker",
             "keygen",
             "validator",
             "operator",

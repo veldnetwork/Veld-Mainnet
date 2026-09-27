@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 usage() {
   echo "usage: $0 ROLE OUTPUT_DIR" >&2
-  echo "ROLE: node | desktop | keygen | validator | operator | fleet" >&2
+  echo "ROLE: node | desktop | pool-worker | keygen | validator | operator | fleet" >&2
   exit 2
 }
 
@@ -27,6 +27,7 @@ fi
 case "$role" in
   node)    source_file=src/veld-node.cpp;    binary=veld-node ;;
   desktop) source_file=src/veld-desktop.cpp; binary=veld-desktop ;;
+  pool-worker) source_file=src/veld-pool-client.cpp; binary=veld-pool-client ;;
   keygen)  source_file=src/veld-keygen.cpp;  binary=veld-keygen ;;
   validator) source_file=src/veld-validator.cpp; binary=veld-validator ;;
   operator) source_file=src/veld-miner-portal.py; binary=veld-miner-portal ;;
@@ -137,8 +138,11 @@ else
     echo "Linux desktop transport requires OpenSSL >= 3.0; found $openssl_version" >&2
     exit 2
   }
-  dpkg-query -W -f='${Package}\t${Version}\n' \
-    build-essential gcc g++ binutils libc6-dev libleveldb-dev libssl-dev openssl pkg-config 2>/dev/null \
+  dependencies=(build-essential gcc g++ binutils libc6-dev libssl-dev openssl pkg-config)
+  if [[ $role == node || $role == desktop || $role == fleet ]]; then
+    dependencies+=(libleveldb-dev)
+  fi
+  dpkg-query -W -f='${Package}\t${Version}\n' "${dependencies[@]}" 2>/dev/null \
     | sort | tee "$output/dependencies.tsv"
 
   mapfile -t c_sources < <(grep -Ev '^[[:space:]]*(#|$)' \
@@ -155,7 +159,7 @@ else
   done
 
   libraries=(-lssl -lcrypto)
-  [[ $role == keygen || $role == validator ]] || libraries+=(-lleveldb)
+  [[ $role == keygen || $role == validator || $role == pool-worker ]] || libraries+=(-lleveldb)
   command=(g++ -std=c++20 -O2 -DNDEBUG -pthread -I"$src/include" \
     -I"$src/vendor/pqc" -I"$src/vendor/pqc/mldsa65" \
     "${definitions[@]}" "$src/$source_file" "${objects[@]}" \
@@ -218,6 +222,12 @@ case "$role" in
     grep -F '"remote_tls_backend":"openssl"' "$output/deployment-info.txt"
     grep -F '"storage_backend":"leveldb"' "$output/deployment-info.txt"
     ;;
+  pool-worker)
+    grep -F '"binary_role":"pool-worker"' "$output/deployment-info.txt"
+    grep -F '"remote_tls_backend":"openssl"' "$output/deployment-info.txt"
+    grep -F '"fleet_no_mine":false' "$output/deployment-info.txt"
+    grep -F '"signing_authority":false' "$output/deployment-info.txt"
+    ;;
   keygen)
     grep -F '"binary_role":"keygen"' "$output/deployment-info.txt"
     ;;
@@ -264,6 +274,9 @@ case "$role" in
     required_features=(veld-public-mainnet-v2 RTP1 RVS1)
     ;;
   validator|operator)
+    required_features=(veld-public-mainnet-v2)
+    ;;
+  pool-worker)
     required_features=(veld-public-mainnet-v2)
     ;;
 esac

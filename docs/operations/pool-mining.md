@@ -1,15 +1,40 @@
 # Pool mining with Veld Node
 
-Use the official signed Windows client from [veld.network](https://veld.network/).
+Use an official signed Veld client from [veld.network](https://veld.network/).
 The public pool is available at [pool.veld.network](https://pool.veld.network/).
 
-## Connect
+## Windows
 
 1. Open Veld Node and select **Pool**.
 2. Enter `https://pool.veld.network`, or another compatible HTTPS pool endpoint.
 3. Enter **your own wallet's payout address**. Do not use the pool's operator address.
 4. Choose a CPU worker count, leaving capacity for other applications.
 5. Select **Start pool mining** and check that accepted work increases.
+
+## Linux
+
+Use a verified Linux client package containing `bin/veld-pool-client`. The
+previous 3.2.8 Linux download does not contain this worker. From the extracted
+package directory, run:
+
+```sh
+./bin/veld-pool-client --pool https://pool.veld.network \
+  --payout YOUR_VELD_ADDRESS --threads 4 \
+  --state-dir "$HOME/.local/share/veld/pool"
+```
+
+Replace the payout address with your own and adjust the worker count to leave
+capacity for other applications. The pool worker connects over authenticated
+HTTPS, retains its account in a private local directory, and needs no wallet
+key, passphrase, running full node, or blockchain download. Press Ctrl+C to
+stop. Inspect `pool-status.json` inside the private state directory for accepted
+shares and balances. Keep `pool-account.json` private; it contains mining and
+dashboard viewing credentials. A different endpoint or payout address needs a
+different state directory.
+
+For a source build, `build/mainnet-v2-linux.sh pool-worker OUTPUT_DIRECTORY`
+produces the same worker from a clean worktree. A local build is unsigned;
+verify an official signed package before using it with real earnings.
 
 Members need no personal stake or deposit and must never provide a private key
 or wallet passphrase to the pool. Multiple machines may use the same payout
