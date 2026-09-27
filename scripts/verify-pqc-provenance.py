@@ -829,6 +829,7 @@ def main() -> int:
         choices=(
             "node",
             "desktop",
+            "pool-worker",
             "keygen",
             "validator",
             "operator",
