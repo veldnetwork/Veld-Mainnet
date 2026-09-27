@@ -138,8 +138,11 @@ else
     echo "Linux desktop transport requires OpenSSL >= 3.0; found $openssl_version" >&2
     exit 2
   }
-  dpkg-query -W -f='${Package}\t${Version}\n' \
-    build-essential gcc g++ binutils libc6-dev libleveldb-dev libssl-dev openssl pkg-config 2>/dev/null \
+  dependencies=(build-essential gcc g++ binutils libc6-dev libssl-dev openssl pkg-config)
+  if [[ $role == node || $role == desktop || $role == fleet ]]; then
+    dependencies+=(libleveldb-dev)
+  fi
+  dpkg-query -W -f='${Package}\t${Version}\n' "${dependencies[@]}" 2>/dev/null \
     | sort | tee "$output/dependencies.tsv"
 
   mapfile -t c_sources < <(grep -Ev '^[[:space:]]*(#|$)' \
