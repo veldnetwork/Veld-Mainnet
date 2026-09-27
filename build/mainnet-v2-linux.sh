@@ -270,7 +270,10 @@ case "$role" in
   keygen)
     required_features=(veld-public-mainnet-v2 RTP1 RVS1)
     ;;
-  validator|operator|pool-worker)
+  validator|operator)
+    required_features=(veld-public-mainnet-v2)
+    ;;
+  pool-worker)
     required_features=(veld-public-mainnet-v2)
     ;;
 esac
