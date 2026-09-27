@@ -13,9 +13,8 @@ The public pool is available at [pool.veld.network](https://pool.veld.network/).
 
 ## Linux
 
-Use a verified Linux client package containing `bin/veld-pool-client`. The
-previous 3.2.8 Linux download does not contain this worker. From the extracted
-package directory, run:
+Use a verified Linux client package containing `bin/veld-pool-client`. From the
+extracted package directory, run:
 
 ```sh
 ./bin/veld-pool-client --pool https://pool.veld.network \

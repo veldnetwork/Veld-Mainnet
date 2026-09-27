@@ -1,3 +1,8 @@
+## 3.2.9 - Reliable restarts and Linux pool mining
+
+- After an automatic Windows update, Veld Node restores a previously running node and its saved solo-mining intent without requiring a manual start.
+- The Linux client includes a standalone pool miner. It can connect to an authenticated HTTPS pool with a payout address and a private local account, without a local wallet or full node.
+
 ## 3.2.8 - First sync and pool connection recovery
 
 - Initial sync continues requesting the canonical chain when a peer's download cursor runs ahead of the local header chain.
