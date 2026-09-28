@@ -74,6 +74,24 @@ jobs:
         if: matrix.role == 'pool-worker'
         run: |
           python3 tests/linux_pool_client_cli_tests.py "$RUNNER_TEMP/source-build/bin/veld-pool-client"
+      - name: Verify portable identity recovery and the interactive pool entry
+        if: matrix.role == 'node'
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O0 -pthread -ffunction-sections -fdata-sections \
+            -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -DVELD_PUBLIC_MAINNET \
+            -DVELD_USE_LEVELDB -DVELD_ENABLE_SNAPSHOT_BOOTSTRAP \
+            -Iinclude -Ivendor/pqc -Ivendor/pqc/mldsa65 \
+            tests/portable_keyfile_identity_tests.cpp "$RUNNER_TEMP/source-build/obj/"*.o \
+            -Wl,--gc-sections -lssl -lcrypto -lleveldb -o "$RUNNER_TEMP/keyfile-tests"
+          "$RUNNER_TEMP/keyfile-tests" "$RUNNER_TEMP/keyfile-identity-state"
+          sudo unshare --net -- bash -c 'ip link set lo up; exec python3 "$@"' \
+            bash tests/linux_keyfile_resume_tests.py "$RUNNER_TEMP/source-build/bin/veld-node"
+          bash build/mainnet-v2-linux.sh pool-worker "$RUNNER_TEMP/menu-worker-build"
+          cp "$RUNNER_TEMP/menu-worker-build/bin/veld-pool-client" "$RUNNER_TEMP/source-build/bin/"
+          sudo unshare --net -- bash -c 'ip link set lo up; exec python3 "$@"' \
+            bash tests/linux_pool_menu_tests.py "$RUNNER_TEMP/source-build/bin/veld-node"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
         with:

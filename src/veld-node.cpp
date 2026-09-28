@@ -766,13 +766,48 @@ static bool _wiz_create_portable_key_bundle(const std::string& datadir,
     return true;
 }
 
-// Once an encrypted mining identity has been authenticated, keep exactly one
-// portable copy beside miner.key.  This migrates identities created by older
-// clients without generating a replacement wallet or re-encrypting the key.
-// Existing matching bytes are accepted; conflicting bytes fail closed.
+static bool _wiz_parse_key_record(std::string_view content, veld::RealKeyPair& kp, bool testnet);
+
+static bool _wiz_same_encrypted_identity(const std::vector<uint8_t>& operational,
+                                         const std::vector<uint8_t>& portable,
+                                         const std::string& passphrase, const std::string& address,
+                                         bool testnet) {
+    if (passphrase.empty())
+        return false;
+    std::string first, second;
+    veld::RealKeyPair a, b;
+    struct IdentityWiper {
+        std::string& first;
+        std::string& second;
+        veld::RealKeyPair& a;
+        veld::RealKeyPair& b;
+        ~IdentityWiper() {
+            veld::WipeString(first);
+            veld::WipeString(second);
+            veld::compat::SecureZero(a.private_key.data(), a.private_key.size());
+            veld::compat::SecureZero(b.private_key.data(), b.private_key.size());
+        }
+    } wipe{first, second, a, b};
+    try {
+        first = veld::wallet_crypto::DecryptWallet(operational, passphrase);
+        second = veld::wallet_crypto::DecryptWallet(portable, passphrase);
+        return _wiz_parse_key_record(first, a, testnet) &&
+               _wiz_parse_key_record(second, b, testnet) && a.address == address &&
+               b.address == address &&
+               veld::compat::ConstantTimeEqual(a.private_key.data(), b.private_key.data(),
+                                               a.private_key.size());
+    } catch (...) {
+        return false;
+    }
+}
+
+// A re-import or encryption upgrade may encode the same identity with new
+// randomness. Authenticate both complete records before accepting different
+// envelopes, and leave the existing recovery file untouched.
 static bool _wiz_ensure_portable_keyfile(const std::string& datadir, const std::string& address,
                                          std::string& portable_path, bool& created,
-                                         std::string& error) {
+                                         std::string& error, const std::string& passphrase,
+                                         bool testnet) {
     portable_path.clear();
     created = false;
     error.clear();
@@ -820,8 +855,11 @@ static bool _wiz_ensure_portable_keyfile(const std::string& datadir, const std::
         if (portable_bytes.size() != operational_bytes.size() ||
             !std::equal(operational_bytes.begin(), operational_bytes.end(),
                         portable_bytes.begin())) {
-            error = "existing portable keyfile differs from miner.key";
-            return false;
+            if (!_wiz_same_encrypted_identity(operational_bytes, portable_bytes, passphrase,
+                                              address, testnet)) {
+                error = "existing portable keyfile differs from miner.key";
+                return false;
+            }
         }
         return true;
     }
@@ -1254,6 +1292,55 @@ static void _wiz_offer_shred_disabled_keys(const std::string& datadir) {
     }
 }
 
+#if defined(__linux__) && !defined(VELD_PUBLIC_TESTNET) && !defined(VELD_FLEET_NO_MINE)
+static int _wiz_start_pool_client(const std::string& datadir) {
+    std::error_code ec;
+    const auto executable = std::filesystem::read_symlink("/proc/self/exe", ec);
+    const auto worker = executable.parent_path() / "veld-pool-client";
+    if (ec || !std::filesystem::is_regular_file(worker, ec) || ec ||
+        ::access(worker.c_str(), X_OK) != 0) {
+        std::cerr << "\n  The included veld-pool-client is missing or not executable.\n"
+                  << "  Extract the complete Linux client package and try again.\n\n";
+        return 1;
+    }
+    std::cout << "\n  Pool mining needs only your public payout address.\n"
+              << "  Pool URL [https://pool.veld.network]: " << std::flush;
+    std::string endpoint, address, threads;
+    if (!std::getline(std::cin, endpoint))
+        return 1;
+    endpoint = _wiz_trim(endpoint);
+    if (endpoint.empty())
+        endpoint = "https://pool.veld.network";
+    std::cout << "  Payout address: " << std::flush;
+    if (!std::getline(std::cin, address))
+        return 1;
+    address = _wiz_trim(address);
+    std::cout << "  CPU workers [4]: " << std::flush;
+    if (!std::getline(std::cin, threads))
+        return 1;
+    threads = _wiz_trim(threads);
+    if (threads.empty())
+        threads = "4";
+
+    // The worker owns endpoint/address validation, account persistence and TLS.
+    // Replace this process before node construction; pool mode needs no chain.
+    std::vector<std::string> args{
+        worker.string(), "--pool",      endpoint,
+        "--payout",      address,       "--threads",
+        threads,         "--state-dir", (std::filesystem::path(datadir) / "pool").string()};
+    std::vector<char*> argv;
+    for (auto& arg : args)
+        argv.push_back(arg.data());
+    argv.push_back(nullptr);
+    veld::WipeString(g_passphrase);
+    ::unsetenv("VELD_VAULT_PASSPHRASE");
+    std::cout << "\n  Starting pool mining. Press Ctrl+C to stop.\n" << std::flush;
+    ::execv(worker.c_str(), argv.data());
+    std::cerr << "\n  Could not start the included pool client: " << std::strerror(errno) << "\n";
+    return 1;
+}
+#endif
+
 static int run_mining_wizard(const std::string& datadir, bool testnet = false) {
     namespace fs = std::filesystem;
     static thread_local int s_wizard_depth = 0;
@@ -1355,14 +1442,24 @@ static int run_mining_wizard(const std::string& datadir, bool testnet = false) {
 #else
               << "    [2] Log in from a keyfile    (.veld-keys file)\n"
               << "    [3] Log in with a different VELD wallet\n"
-              << "    [4] Create a brand-new wallet\n\n"
+              << "    [4] Create a brand-new wallet\n"
+#if defined(__linux__) && !defined(VELD_FLEET_NO_MINE)
+              << "    [5] Pool mining             (public payout address only)\n\n"
+              << "  Choice [1-5]: " << std::flush;
+#else
+              << "\n"
               << "  Choice [1-4]: " << std::flush;
+#endif
 #endif
 
     std::string choice;
     if (!std::getline(std::cin, choice))
         return 1;
     choice = _wiz_trim(choice);
+#if defined(__linux__) && !defined(VELD_PUBLIC_TESTNET) && !defined(VELD_FLEET_NO_MINE)
+    if (choice == "5")
+        return _wiz_start_pool_client(datadir);
+#endif
 #ifdef VELD_PUBLIC_TESTNET
     if (choice == "2") {
         choice = "4"; // reuse the generate-new implementation below
@@ -3932,15 +4029,16 @@ int main(int argc, char* argv[]) {
 
 #ifndef VELD_PUBLIC_TESTNET
             // A successful sign-in must leave one wallet/node-compatible portable
-            // keyfile for this identity.  This is an exact encrypted-byte copy,
-            // never a second key generation, and is idempotent on every restart.
+            // keyfile for this identity. New copies preserve the encrypted bytes;
+            // existing copies must authenticate the same key and address.
             if (miner_key_ready && !g_passphrase.empty() &&
                 (opt_mine || opt_endorse || bind_existing_regtest_generation_identity)) {
                 std::string portable_path;
                 std::string portable_error;
                 bool portable_created = false;
                 if (!_wiz_ensure_portable_keyfile(opt_datadir, miner_kp.address, portable_path,
-                                                  portable_created, portable_error)) {
+                                                  portable_created, portable_error, g_passphrase,
+                                                  config.IsTestNetwork())) {
                     std::cerr << RED << "  FATAL: portable mining keyfile verification failed: "
                               << portable_error << "\n"
                               << RESET;
