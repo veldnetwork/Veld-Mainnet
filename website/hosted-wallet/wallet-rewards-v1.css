@@ -11,6 +11,10 @@ html[data-theme="light"]{color-scheme:light;background:#efefef!important}
 #page-payouts .rewards-load-status [hidden] { display: none !important; }
 #page-payouts #earn-recent-body td:first-child { padding-left: 20px; }
 #page-payouts #earn-recent-body td { white-space: nowrap; }
-/* History pagination follows the results and uses the standard charcoal action. */
+/* History controls follow the results and the selected theme. */
 .history-footer{display:flex;justify-content:center;margin-top:16px}
-html body #page-history #h-load-older{appearance:none!important;-webkit-appearance:none!important;background:#34383c!important;color:#f3f4f5!important;border:1px solid #646b76!important;box-shadow:none!important}
+html:not([data-theme="light"]) body #page-history #h-load-older{appearance:none!important;-webkit-appearance:none!important;background:#34383c!important;color:#f3f4f5!important;border:1px solid #646b76!important;box-shadow:none!important}
+html[data-theme="light"] body #page-history #h-load-older{appearance:none!important;-webkit-appearance:none!important;background:#dfe5e0!important;color:#172119!important;-webkit-text-fill-color:#172119!important;border:1px solid #b9c7bb!important;box-shadow:none!important;filter:none!important}
+html[data-theme="light"] body #page-history #h-load-older:hover{background:#d3ddd5!important;border-color:#91ad96!important}
+html[data-theme="light"] body #page-history #h-list button[data-act-click^="hhist_"]{background:#fff!important;color:#172119!important;-webkit-text-fill-color:#172119!important;border:1px solid #b9c7bb!important;box-shadow:none!important;filter:none!important}
+html[data-theme="light"] body #page-history #h-list button[data-act-click^="hhist_"]:hover{background:#f2f5f2!important;border-color:#91ad96!important}

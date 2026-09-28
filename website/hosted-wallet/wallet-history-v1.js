@@ -25,6 +25,15 @@
     }
   }
 
+  function removeRedundantHistoryNotice() {
+    var status = document.getElementById('h-load-status');
+    if (!status) return;
+    if (status.textContent.trim() === 'Older activity remains. Totals cover loaded transactions only.') {
+      status.textContent = '';
+      status.style.display = 'none';
+    }
+  }
+
   var style = document.createElement('style');
   style.textContent = 'html[data-theme="light"] .wallet-bal-hero .act-round .ar.swap .ic{background:transparent!important;color:#121514!important;box-shadow:none!important}';
   document.head.appendChild(style);
@@ -53,6 +62,11 @@
 
   removeLegacyBanner();
   normalizeSwapAction();
+  removeRedundantHistoryNotice();
+  var historyStatus = document.getElementById('h-load-status');
+  if (historyStatus) new MutationObserver(removeRedundantHistoryNotice).observe(historyStatus, {
+    childList: true, characterData: true, subtree: true
+  });
   var observer = new MutationObserver(function () {
     removeLegacyBanner();
     normalizeSwapAction();

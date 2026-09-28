@@ -5,6 +5,20 @@
 <meta property="og:type" content="article"><meta property="og:title" content="Join Veld Pool with Veld Node"><meta property="og:description" content="Pool setup, private account access, rewards and payment history."><meta property="og:url" content="https://veld.network/how-to/join-mining-pool/">
 <link rel="canonical" href="https://veld.network/how-to/join-mining-pool/"><title>Join Veld Pool | Veld How-to</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="/how-to/how-to.css">
+<style>
+/* Optional reading stays available without crowding the page. */
+details.veld-details{margin:10px 0 14px;min-width:0;color:inherit}
+details.veld-details>summary{display:list-item;width:fit-content;max-width:100%;padding:8px 2px;cursor:pointer;color:var(--muted,var(--text-dim,#87968b));font:500 12px/1.5 var(--font,inherit);letter-spacing:0;text-transform:none;background:transparent;border:0;border-radius:3px;box-shadow:none;list-style:disclosure-closed}
+details.veld-details[open]>summary{list-style:disclosure-open;color:var(--em,#75b943);margin-bottom:6px}
+details.veld-details>summary:hover{color:var(--em,#75b943)}
+details.veld-details>summary:focus-visible{outline:2px solid var(--em,#75b943);outline-offset:3px}
+details.veld-details>summary::marker{font-size:9px}
+details.veld-details>p:last-child{margin-bottom:0}
+details.veld-details:not([open])>*:not(summary){display:none!important}
+html[data-theme="light"] details.veld-details>summary{color:#45604c;background:transparent;box-shadow:none}
+
+.dl>details.veld-details{flex-basis:100%;width:100%}
+</style>
 </head>
 <body>
 <a class="skip" href="#guide">Skip to guide</a><header class="nav-bar"><div class="nav-inner"><a class="brand" href="/" aria-label="Veld home">VELD<span>.</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="/">Home</a><a href="/how-to/" aria-current="page">How-to</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a><a href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Pool</a><a class="button" href="/#download">Download</a></nav></div></header>
@@ -23,12 +37,13 @@
 </header>
 <div class="shell"><article class="article">
   <section class="content-section" id="connect">
-    <p class="stage-label">01 / Connect</p><h2>Open the Pool tab</h2>
+    <p class="stage-label">01 / Connect</p><h2>Connect your client</h2>
     <ol class="step-list">
       <li class="step"><div><h3>Choose the pool endpoint</h3><p>In Veld Node, open <strong>Pool</strong>. Set <strong>Pool endpoint (HTTPS)</strong> to <code>https://pool.veld.network</code>. You can enter another compatible pool instead.</p></div></li>
       <li class="step"><div><h3>Enter your payout address</h3><p>Use an address from your own Veld wallet. Use the same address on your PC and laptop if you want both machines paid to that wallet. Do not enter the pool operator’s wallet address.</p></div></li>
       <li class="step"><div><h3>Select CPU workers</h3><p>Start with enough spare capacity for your other apps. Leave the optional certificate authority field blank for Veld Pool. Choose <strong>Start pool mining</strong>.</p></div></li>
     </ol>
+    <div id="linux"><h3>Linux</h3><p>In the extracted signed Linux package, run <code>./bin/veld-desktop --wallet</code> and choose <strong>[5] Pool mining</strong>. Enter the HTTPS endpoint, your payout address and CPU worker count. Accepted work is recorded in <code>pool-status.json</code> in the private pool state folder. Press Ctrl+C to stop.</p><details class="veld-details"><summary>Linux account access</summary><p>The private pool state folder also contains <code>pool-account.json</code>. Use its account ID and viewing token under <strong>My rewards → Enter account details manually</strong>. Never share that file or its mining credential. Keep the same state folder when restarting or updating.</p></details></div>
     <div class="note"><strong>No wallet import or deposit.</strong> Joining does not require your keyfile, private key, wallet passphrase or a personal stake. Installing the client does not connect or start mining automatically.</div>
   </section>
   <section class="content-section" id="work">
@@ -49,8 +64,8 @@
       <div class="compare-row"><dt>Available</dt><dd>Mature, reconciled earnings that can enter a payment batch once the threshold and schedule are met.</dd></div>
       <div class="compare-row"><dt>Paid</dt><dd>A payment confirmed on the canonical chain. Follow its transaction ID and confirm it in your wallet.</dd></div>
     </dl>
-    <p>Block rewards use verified work in the pool’s recent PPLNS window. Two machines can earn different amounts even when they use the same payout address. Work from earlier contributors can still fall inside that window; only the miner-category output is shared as block income.</p>
-    <p>When the pool identity qualifies for co-mining, actual lottery winnings and its ordinary staking yield are shared with the contributors in their recorded windows. Members do not need a personal stake. Operator-contributed stake principal remains separate.</p>
+    <details class="veld-details"><summary>Reward details</summary><p>Block rewards use verified work in the pool’s recent PPLNS window. Two machines can earn different amounts even when they use the same payout address. Work from earlier contributors can still fall inside that window; only the miner-category output is shared as block income.</p></details>
+    <details class="veld-details"><summary>Reward details</summary><p>When the pool identity qualifies for co-mining, actual lottery winnings and its ordinary staking yield are shared with the contributors in their recorded windows. Members do not need a personal stake. Operator-contributed stake principal remains separate.</p></details>
     <p>The settings are <strong>0% service fee</strong>, <strong>1 VELD payment threshold</strong>, daily batches and at least <strong>120 confirmations plus actual spendability</strong>. Eligible accounts using the same payout address are combined for the destination threshold. Earnings below it remain recorded. Check the dashboard for the active terms; daily batches do not guarantee daily earnings.</p>
   </section>
   <section class="content-section" id="account">

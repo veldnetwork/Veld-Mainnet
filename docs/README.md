@@ -15,7 +15,7 @@
 
 - [Running Veld](operations/README.md): launchers, node roles, and updates.
 - [Node health](operations/node-health.md): synchronization, peers, and state consistency.
-- [Pool mining](operations/pool-mining.md): Windows setup, account access, and reward balances.
+- [Pool mining](operations/pool-mining.md): Windows and Linux setup, account access, and reward balances.
 - [Pool service operations](operations/pool-candidate.md): architecture, accounting, and recovery.
 - [Pool installation](../pkg/pool/README.md): service configuration, identity separation, and shutdown.
 - [Pool administration](../pkg/pool/ADMIN.md): authenticated operator controls.

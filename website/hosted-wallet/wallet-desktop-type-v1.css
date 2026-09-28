@@ -20,6 +20,19 @@
 
 /* The current signed client has a later charcoal rule for both themes.
    Hosted light mode keeps the wallet's existing pale action palette. */
+/* Match the signed client's ID-weighted :is() selector; load this asset after it. */
+html[data-theme="light"] body :is(.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn) {
+  background:#fff!important;
+  color:#172119!important;
+  -webkit-text-fill-color:#172119!important;
+  border:1px solid #b9c7bb!important;
+  box-shadow:none!important;
+}
+html[data-theme="light"] body :is(.btn-ghost,.copy-btn,.pag-btn,#pwa-install-btn):hover {
+  background:#f2f5f2!important;
+  border-color:#91ad96!important;
+  color:#172119!important;
+}
 html[data-theme="light"] body :is(.btn-em,.btn-gold,#pwa-install-btn,#ks-btn) {
   background:#dfe5e0!important;
   color:#172119!important;
@@ -30,18 +43,6 @@ html[data-theme="light"] body :is(.btn-em,.btn-gold,#pwa-install-btn,#ks-btn) {
 }
 html[data-theme="light"] body :is(.btn-em,.btn-gold,#pwa-install-btn,#ks-btn):hover {
   background:#d3ddd5!important;
-  border-color:#91ad96!important;
-  color:#172119!important;
-}
-html[data-theme="light"] body :is(.btn-ghost,.copy-btn,.pag-btn) {
-  background:#fff!important;
-  color:#172119!important;
-  -webkit-text-fill-color:#172119!important;
-  border:1px solid #b9c7bb!important;
-  box-shadow:none!important;
-}
-html[data-theme="light"] body :is(.btn-ghost,.copy-btn,.pag-btn):hover {
-  background:#f2f5f2!important;
   border-color:#91ad96!important;
   color:#172119!important;
 }

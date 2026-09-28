@@ -1,3 +1,8 @@
+## 3.3.0 - Linux wallet startup
+
+- Importing an encrypted mining identity preserves the matching portable wallet keyfile instead of failing on encryption differences.
+- The Linux package includes the node, browser wallet and pool worker.
+
 ## 3.2.9 - Reliable restarts and Linux pool mining
 
 - After an automatic Windows update, Veld Node restores a previously running node and its saved solo-mining intent without requiring a manual start.

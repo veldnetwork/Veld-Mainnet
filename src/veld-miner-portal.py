@@ -384,6 +384,19 @@ PORTAL_HTML = r"""<!doctype html>
 .portal-more .pool-how-to{display:flex;align-items:center;justify-content:center;gap:6px;color:var(--text);text-decoration:none;border:1px solid var(--line);border-radius:10px;min-height:48px}
 .pool-nav-icon{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;margin-right:9px}.pool-machine{margin-bottom:16px}.pool-machine p{margin:8px 0 0}
 .portal-more .pool-nav-icon{margin:0}.portal-more [data-more-page="pool"] span{display:block;align-self:center}
+
+/* Optional reading stays available without crowding the page. */
+details.veld-details{margin:10px 0 14px;min-width:0;color:inherit}
+details.veld-details>summary{display:list-item;width:fit-content;max-width:100%;padding:8px 2px;cursor:pointer;color:var(--muted,var(--text-dim,#87968b));font:500 12px/1.5 var(--font,inherit);letter-spacing:0;text-transform:none;background:transparent;border:0;border-radius:3px;box-shadow:none;list-style:disclosure-closed}
+details.veld-details[open]>summary{list-style:disclosure-open;color:var(--em,#75b943);margin-bottom:6px}
+details.veld-details>summary:hover{color:var(--em,#75b943)}
+details.veld-details>summary:focus-visible{outline:2px solid var(--em,#75b943);outline-offset:3px}
+details.veld-details>summary::marker{font-size:9px}
+details.veld-details>p:last-child{margin-bottom:0}
+details.veld-details:not([open])>*:not(summary){display:none!important}
+html[data-theme="light"] details.veld-details>summary{color:#45604c;background:transparent;box-shadow:none}
+
+.dl>details.veld-details{flex-basis:100%;width:100%}
 </style>
 </head>
 <body>
@@ -822,7 +835,7 @@ function pool(){return `<section class="pool-page"><h2>Veld Pool</h2><p class="p
 </div>
 <p class="pool-note" id="pool-public-comining-note">The pool needs 1,000 VELD staked to qualify for co-mining. Lottery winnings and staking rewards are shared with contributors.</p>
 <h3>Start pool mining</h3><div class="card"><ol><li>Open Veld Node and select <strong>Pool</strong>.</li><li>Use <code>https://pool.veld.network</code> and enter your own payout address.</li><li>Choose your CPU workers, then select <strong>Start pool mining</strong>.</li></ol><p class="pool-note">No deposit or personal stake required. Multiple machines can use the same payout address. Keep your private keys.</p></div>
-<h3>Your rewards</h3><div class="card"><p>Select <strong>Copy view access</strong> in your node, then open the dashboard to see your balances and payment history.</p><p><span id="pool-public-policy">Loading payment policy…</span> Earned receipts need at least 120 confirmations and must be spendable. Daily processing does not guarantee daily earnings.</p><a class="btn" href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Open pool dashboard →</a></div></section>
+<h3>Your rewards</h3><div class="card"><p>Select <strong>Copy view access</strong> in your node, then open the dashboard to see your balances and payment history.</p><details class="veld-details"><summary>Payment timing</summary><p><span id="pool-public-policy">Loading payment policy…</span> Earned receipts need at least 120 confirmations and must be spendable. Daily processing does not guarantee daily earnings.</p></details><a class="btn" href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Open pool dashboard →</a></div></section>
 `;}
 // Shared public Pool-tab view, embedded in Explorer and portal by the source generator.
 // No account identifiers, cookies, pairing credentials or private tokens leave the page.
@@ -874,7 +887,7 @@ function network(d,s){
   const topology=s.topology||{},roles=topologyRoles(topology,s.peer_roles||{}),mapping=inboundMapping(d,s);
   const nodeCount=Array.isArray(topology.nodes)?topology.nodes.length:0,eligible=Math.max(Number(topology.eligible_nodes)||0,nodeCount),reporting=Number(topology.reporting_nodes)||0;
   const coverage=eligible?`${n(reporting)} / ${n(eligible)} reporting`:`${n(reporting)} reporting`;
-  return `<div class="cards network-cards">${metric(n(d.peers),"Direct peers","green")}${metric(n(d.inbound),"Inbound")}${metric(n(s.outbound),"Outbound")}${metric(`${n(s.exact_tip)} / ${n(d.peers)}`,"Exact tip agreement")}${metric(mapping.value,"Automatic port mapping")}${metric(s.tor?'Tor only':'Clearnet',"Transport")}</div><p class="network-note">${mapping.detail}</p><section class="section"><div class="section-head"><div><h2>Peer topology</h2><p>Full reported network. Dotted lines mean one-sided reporting, not inbound direction. Addresses are never shown.</p></div><span class="pill">${n(d.peers)} direct · ${coverage}</span></div>${topologyGraph(topology)}</section><section class="section"><div class="section-head"><div><h2>Peer classes</h2><p>Network-wide identities in the current report.</p></div></div><div class="kv"><div><b>${n(roles.fleet)}</b><span>Fleet</span></div><div><b>${n(roles.node)}</b><span>Nodes</span></div><div><b>${n(roles.miner)}</b><span>Miners</span></div><div><b>${n(roles.validator)}</b><span>Validators</span></div></div></section>`;
+  return `<div class="cards network-cards">${metric(n(d.peers),"Direct peers","green")}${metric(n(d.inbound),"Inbound")}${metric(n(s.outbound),"Outbound")}${metric(`${n(s.exact_tip)} / ${n(d.peers)}`,"Exact tip agreement")}${metric(mapping.value,"Automatic port mapping")}${metric(s.tor?'Tor only':'Clearnet',"Transport")}</div><p class="network-note">${mapping.detail}</p><section class="section"><div class="section-head"><div><h2>Peer topology</h2><details class="veld-details"><summary>About this graph</summary><p>Full reported network. Dotted lines mean one-sided reporting, not inbound direction. Addresses are never shown.</p></details></div><span class="pill">${n(d.peers)} direct · ${coverage}</span></div>${topologyGraph(topology)}</section><section class="section"><div class="section-head"><div><h2>Peer classes</h2><p>Network-wide identities in the current report.</p></div></div><div class="kv"><div><b>${n(roles.fleet)}</b><span>Fleet</span></div><div><b>${n(roles.node)}</b><span>Nodes</span></div><div><b>${n(roles.miner)}</b><span>Miners</span></div><div><b>${n(roles.validator)}</b><span>Validators</span></div></div></section>`;
 }
 
 function logs(d,s){const events=Array.isArray(s.events)?s.events:[];return `<section class="section"><div class="section-head"><div><h2>Operational events</h2><p>Sanitized status events only. Raw logs and local paths stay on the machine.</p></div></div><div class="log">${events.length?events.map(esc).join("\n"):"Waiting for sanitized client events..."}</div></section>`}

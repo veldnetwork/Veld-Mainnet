@@ -2298,6 +2298,20 @@ html[data-theme="light"] .page-header .page-sub,html[data-theme="light"] .pheade
   html[data-theme="light"] body :is(.page-title,.ptitle,.modal-title){font-family:var(--sans)!important}
 }
 </style>
+<style>
+/* Optional reading stays available without crowding the page. */
+details.veld-details{margin:10px 0 14px;min-width:0;color:inherit}
+details.veld-details>summary{display:list-item;width:fit-content;max-width:100%;padding:8px 2px;cursor:pointer;color:var(--muted,var(--text-dim,#87968b));font:500 12px/1.5 var(--font,inherit);letter-spacing:0;text-transform:none;background:transparent;border:0;border-radius:3px;box-shadow:none;list-style:disclosure-closed}
+details.veld-details[open]>summary{list-style:disclosure-open;color:var(--em,#75b943);margin-bottom:6px}
+details.veld-details>summary:hover{color:var(--em,#75b943)}
+details.veld-details>summary:focus-visible{outline:2px solid var(--em,#75b943);outline-offset:3px}
+details.veld-details>summary::marker{font-size:9px}
+details.veld-details>p:last-child{margin-bottom:0}
+details.veld-details:not([open])>*:not(summary){display:none!important}
+html[data-theme="light"] details.veld-details>summary{color:#45604c;background:transparent;box-shadow:none}
+
+.dl>details.veld-details{flex-basis:100%;width:100%}
+</style>
 </head>
 
 <div id="pwa-install-banner">
@@ -3016,7 +3030,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
  address by accident; sends route to themselves and they
  think they lost funds. Inline warning that funds are safe. -->
         <div id="s-self-warn" style="display:none;margin-top:8px;padding:8px 12px;border-radius:6px;background:linear-gradient(170deg,rgba(255,216,74,.10),rgba(255,216,74,.025));border:1px solid rgba(255,216,74,.18);font-size:11.5px;color:var(--gold)">
-          ⚠ You're sending to your own address. Funds aren't lost — they return to your wallet. Combining your coins happens automatically.
+          ⚠ You're sending to your own address. Funds aren't lost — they return to your wallet. Use wallet cleanup to combine small outputs.
         </div>
         <div id="s-saved-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"></div>
       </div>
@@ -3304,12 +3318,12 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <div id="bv-wrap-msg"></div>
       <button class="btn btn-em" id="bv-wrap-btn" type="button" data-act-click="hbv_get_deposit" style="width:100%;margin-top:14px">Get my BTC deposit address</button>
       </div>
-      <div class="bv-aside">
+      <details class="veld-details"><summary>How settlement works</summary><div class="bv-aside">
         <div class="ba-t">Settlement path</div>
         <div class="ba-step"><span class="ba-n">1</span><div class="ba-s"><h5>Choose one exact amount</h5><p>The service reserves your amount against the chain's available custody capacity before it reveals a fresh address. Never overpay or reuse it.</p></div></div>
         <div class="ba-step"><span class="ba-n">2</span><div class="ba-s"><h5>It confirms on Bitcoin</h5><p>After the compiled Bitcoin confirmation depth, the exact deposit is credited to your Veld wallet as btcVELD, 1:1.</p></div></div>
-        <div class="ba-step"><span class="ba-n">3</span><div class="ba-s"><h5>Use it on Veld</h5><p>Send it, swap it against VELD in the pool, or redeem it back to real BTC whenever you want.</p></div></div>
-      </div>
+        <div class="ba-step"><span class="ba-n">3</span><div class="ba-s"><h5>Use it on Veld</h5><p>Send it, swap it in an available VELD/btcVELD pool, or request redemption when the peg service is available.</p></div></div>
+      </div></details>
     </div>
 
     <!-- REDEEM (btcVELD -> BTC, burn) -->
@@ -3332,12 +3346,12 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <button class="btn btn-em" id="bv-redeem-btn" type="button" data-act-click="hbv_redeem" style="width:100%;margin-top:6px" disabled>Enter an amount</button>
       <div id="bv-redeem-pending" style="margin-top:16px"></div>
       </div>
-      <div class="bv-aside">
+      <details class="veld-details"><summary>How settlement works</summary><div class="bv-aside">
         <div class="ba-t">Redemption path</div>
         <div class="ba-step"><span class="ba-n">1</span><div class="ba-s"><h5>Burn btcVELD</h5><p>The redeem destroys your btcVELD on-chain and records the Bitcoin address you chose. It cannot be reversed.</p></div></div>
-        <div class="ba-step"><span class="ba-n">2</span><div class="ba-s"><h5>The burn finalizes</h5><p>A few Veld blocks confirm the burn before payout — this is what makes the redemption tamper-proof.</p></div></div>
+        <div class="ba-step"><span class="ba-n">2</span><div class="ba-s"><h5>The burn finalizes</h5><p>The service verifies the canonical burn and required finality before preparing the Bitcoin payout.</p></div></div>
         <div class="ba-step"><span class="ba-n">3</span><div class="ba-s"><h5>BTC is paid out</h5><p>Real BTC is sent from peg custody to your address. Standard addresses only (bc1…, 1…, 3…).</p></div></div>
-      </div>
+      </div></details>
     </div>
 
     <!-- SWAP (VELD <-> btcVELD AMM) — pool-gated -->
@@ -3418,7 +3432,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
             <div class="bv-lp-cell"><span>Your btcVELD</span><b id="bv-lp-btc-val">—</b></div>
           </div>
           <div class="bv-stat" style="border-top:1px solid var(--b1);margin-top:12px;padding-top:10px"><span>Total value</span><span id="bv-lp-total-val">—</span></div>
-          <div class="bv-lp-earn">Every fee stays in the pool in the asset the trader receives. You own <b id="bv-lp-fee">0.30–1.00% in the output asset</b> pro rata through your LP shares; there is no protocol cut.</div>
+          <details class="veld-details"><summary>How fees are shared</summary><div class="bv-lp-earn">Every fee stays in the pool in the asset the trader receives. You own <b id="bv-lp-fee">0.30% in the output asset</b> pro rata through your LP shares; there is no protocol cut.</div></details>
         </div>
         <div class="card">
           <details id="bv-lp-details">
@@ -3606,12 +3620,12 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
         <div class="prev-row"><span class="k">Staking multiplier <span style="color:var(--muted);font-size:11px">(Diamond-only 3.00&times; cap)</span></span><span class="v em" id="sk-proj-combined">1.00&times;</span></div>
         <div class="prev-row"><span class="k">Predicted avg. staking multiplier</span><span class="v em" id="sk-proj-weighted">&mdash;</span></div>
         <div class="prev-row"><span class="k">Distribution interval</span><span class="v">480 blk &middot; ~24h</span></div>
-        <div class="prev-note">Projection assumes steady vault inflow (20% of each coinbase + 100% of every vault-block every 100 blocks + all TX fees). Actual payouts depend on blocks mined and number of stakers.</div>
+        <details class="veld-details"><summary>Projection details</summary><div class="prev-note">Projection assumes steady vault inflow (20% of ordinary block subsidy + the full subsidy every 100th block + transaction fees during issuance). Actual payouts depend on blocks mined and number of stakers.</div></details>
       </div>
 
       <div class="prev" style="margin-top:12px">
         <div class="card-title" style="margin-bottom:6px">Staking multiplier ladder</div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Your <strong>staking multiplier</strong> is your mining tier &times; your lockup tier &mdash; both ladders contribute to it, and it boosts your share of vault distributions. Per-block coinbase is flat 50% &mdash; tier never affects it.</div>
+        <details class="veld-details"><summary>How the multiplier works</summary><div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Your <strong>staking multiplier</strong> is your mining tier &times; your lockup tier &mdash; both ladders contribute to it, and it boosts your share of vault distributions. Mining tier does not change the ordinary-block miner share. Every 100th block sends its subsidy to the vault.</div></details>
         <div class="prev-row"><span class="k">Lockup tier &middot; 7d</span><span class="v">1.00&times;</span></div>
         <div class="prev-row"><span class="k">Lockup tier &middot; 14d</span><span class="v">1.10&times;</span></div>
         <div class="prev-row"><span class="k">Lockup tier &middot; 30d</span><span class="v">1.25&times;</span></div>
@@ -3799,14 +3813,13 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <span>Slashing Evidence Ledger</span>
       <span id="val-slash-phase" style="font-weight:400;font-size:11px;color:var(--muted2)">enforced · bond slashed</span>
     </div>
-    <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.5">
-      A validator that signs two different block hashes at the same height is
-      slashed on-chain: the offence is <b>permanent</b> (the key is banned from
-      ever re-registering) and its custodial bond is confiscated &mdash;
-      <b>25%</b> to the reporter as a bounty, <b>25%</b> to the vault, 50%
-      returned to the offender. Live from genesis; entries
-      below are the verified ledger.
-    </div>
+    <details class="veld-details"><summary>Slashing details</summary><div style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.5">
+      Verified conflicting signatures permanently ban the validator key.
+      Ordinary endorsement double-signing pays 25% of the bond to the reporter,
+      25% to the vault and returns 50% to the offender. Locked-finality
+      equivocation pays 25% to the reporter and burns 75%, with no return to
+      the offender. The ledger below records verified evidence.
+    </div></details>
     <div id="val-slash-list"><div style="color:var(--muted);font-size:11px;text-align:center;padding:14px">Loading&hellip;</div></div>
   </div>
 </div>

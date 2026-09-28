@@ -7,3 +7,16 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
 
 @media(max-width:500px){.blocks-table{min-width:0}.blocks-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.blocks-table tr{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line);padding:12px 19px;gap:14px}.blocks-table td{border:0;padding:0;font-size:12px}.blocks-table td[data-label]:before{content:attr(data-label);display:block;color:#899294;font:9px/1.6 system-ui,sans-serif;letter-spacing:.03em;margin-bottom:5px}.blocks-table td:nth-child(even){text-align:right}.blocks-table .empty-state{grid-column:1/-1;padding:22px 0;text-align:center}.blocks-table .status-badge{font-size:10px}.blocks-table .confirmations progress{width:84px}}
+
+/* Optional reading stays available without crowding the page. */
+details.veld-details{margin:10px 0 14px;min-width:0;color:inherit}
+details.veld-details>summary{display:list-item;width:fit-content;max-width:100%;padding:8px 2px;cursor:pointer;color:var(--muted,var(--text-dim,#87968b));font:500 12px/1.5 var(--font,inherit);letter-spacing:0;text-transform:none;background:transparent;border:0;border-radius:3px;box-shadow:none;list-style:disclosure-closed}
+details.veld-details[open]>summary{list-style:disclosure-open;color:var(--em,#75b943);margin-bottom:6px}
+details.veld-details>summary:hover{color:var(--em,#75b943)}
+details.veld-details>summary:focus-visible{outline:2px solid var(--em,#75b943);outline-offset:3px}
+details.veld-details>summary::marker{font-size:9px}
+details.veld-details>p:last-child{margin-bottom:0}
+details.veld-details:not([open])>*:not(summary){display:none!important}
+html[data-theme="light"] details.veld-details>summary{color:#45604c;background:transparent;box-shadow:none}
+
+.dl>details.veld-details{flex-basis:100%;width:100%}
