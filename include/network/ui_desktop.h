@@ -3318,7 +3318,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <div id="bv-wrap-msg"></div>
       <button class="btn btn-em" id="bv-wrap-btn" type="button" data-act-click="hbv_get_deposit" style="width:100%;margin-top:14px">Get my BTC deposit address</button>
       </div>
-      <details class="veld-details"><summary>How settlement works</summary><div class="bv-aside">
+      <details class="veld-details bv-aside"><summary>How settlement works</summary><div>
         <div class="ba-t">Settlement path</div>
         <div class="ba-step"><span class="ba-n">1</span><div class="ba-s"><h5>Choose one exact amount</h5><p>The service reserves your amount against the chain's available custody capacity before it reveals a fresh address. Never overpay or reuse it.</p></div></div>
         <div class="ba-step"><span class="ba-n">2</span><div class="ba-s"><h5>It confirms on Bitcoin</h5><p>After the compiled Bitcoin confirmation depth, the exact deposit is credited to your Veld wallet as btcVELD, 1:1.</p></div></div>
@@ -3346,7 +3346,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <button class="btn btn-em" id="bv-redeem-btn" type="button" data-act-click="hbv_redeem" style="width:100%;margin-top:6px" disabled>Enter an amount</button>
       <div id="bv-redeem-pending" style="margin-top:16px"></div>
       </div>
-      <details class="veld-details"><summary>How settlement works</summary><div class="bv-aside">
+      <details class="veld-details bv-aside"><summary>How settlement works</summary><div>
         <div class="ba-t">Redemption path</div>
         <div class="ba-step"><span class="ba-n">1</span><div class="ba-s"><h5>Burn btcVELD</h5><p>The redeem destroys your btcVELD on-chain and records the Bitcoin address you chose. It cannot be reversed.</p></div></div>
         <div class="ba-step"><span class="ba-n">2</span><div class="ba-s"><h5>The burn finalizes</h5><p>The service verifies the canonical burn and required finality before preparing the Bitcoin payout.</p></div></div>
