@@ -13,9 +13,9 @@ portal, btcVELD services, and public web applications for `veld-public-mainnet-v
 
 ## Getting started
 
-- **Run a client:** download the signed Windows package from
-  [veld.network](https://veld.network/), extract it, and open
-  `Start Veld Node.bat`. See the [operator guide](docs/operations/README.md).
+- **Run a client:** download the signed Windows or Linux package from
+  [veld.network](https://veld.network/). See the
+  [operator guide](docs/operations/README.md) for installation and launch steps.
 - **Build from source:** follow [BUILDING.md](BUILDING.md).
 - **Mine in a pool:** follow the [pool mining guide](docs/operations/pool-mining.md).
 - **Explore the implementation:** start with the
@@ -38,11 +38,8 @@ recovery behavior.
 Release tags and signed packages retain their original identities. Ongoing
 maintenance on `main` does not replace released binaries. See
 [source identity](docs/source-identity.md) for exact commits and hashes.
-For 3.2.7, see the [tagged source identity](docs/source-identity.md#veld-327)
-and [release verification guide](docs/release-verification.md).
-
-Publication is not a comprehensive security clearance or btcVELD custody
-activation. Full economic and custody qualification remain separately tracked.
+See the [release verification guide](docs/release-verification.md) for
+signature and package checks.
 
 | Property | Value |
 | --- | --- |

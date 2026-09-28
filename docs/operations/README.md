@@ -32,6 +32,12 @@ separate from node administration and btcVELD custody authority.
 
 ## Linux and source builds
 
+Download the signed Linux x86-64 package from [veld.network](https://veld.network/)
+and extract it. Run `./bin/veld-desktop --wallet` for the setup menu and browser
+wallet. Select **[5] Pool mining** to use the included pool worker. See
+`START-HERE.txt` in the package for full-node launch options and
+[pool mining](pool-mining.md) for account storage and command-line use.
+
 Follow [BUILDING.md](../../BUILDING.md) to select a role. The fleet role
 disables mining. The standalone validator uses authenticated node RPC.
 The portal provides controls for explicitly paired machines.

@@ -160,6 +160,20 @@ html[data-theme="light"] .liq-card{box-shadow:0 10px 28px rgba(31,58,37,.07)}
   h1{font-size:34px}
 }
 </style>
+<style>
+/* Optional reading stays available without crowding the page. */
+details.veld-details{margin:10px 0 14px;min-width:0;color:inherit}
+details.veld-details>summary{display:list-item;width:fit-content;max-width:100%;padding:8px 2px;cursor:pointer;color:var(--muted,var(--text-dim,#87968b));font:500 12px/1.5 var(--font,inherit);letter-spacing:0;text-transform:none;background:transparent;border:0;border-radius:3px;box-shadow:none;list-style:disclosure-closed}
+details.veld-details[open]>summary{list-style:disclosure-open;color:var(--em,#75b943);margin-bottom:6px}
+details.veld-details>summary:hover{color:var(--em,#75b943)}
+details.veld-details>summary:focus-visible{outline:2px solid var(--em,#75b943);outline-offset:3px}
+details.veld-details>summary::marker{font-size:9px}
+details.veld-details>p:last-child{margin-bottom:0}
+details.veld-details:not([open])>*:not(summary){display:none!important}
+html[data-theme="light"] details.veld-details>summary{color:#45604c;background:transparent;box-shadow:none}
+
+.dl>details.veld-details{flex-basis:100%;width:100%}
+</style>
 </head>
 <body class="liquidity-page">
 <header class="bar">
@@ -214,12 +228,12 @@ html[data-theme="light"] .liq-card{box-shadow:0 10px 28px rgba(31,58,37,.07)}
   <section class="liq-card" id="lp-card">
     <div class="liq-card-head"><h2>How liquidity providers earn</h2></div>
     <div class="liq-sub">Add both assets at the pool's current ratio. Your LP shares track your percentage of the reserves, including fees retained by the pool.</div>
-    <div class="earn-flow">
+    <details class="veld-details"><summary>How liquidity fees work</summary><div class="earn-flow">
       <div class="earn-step"><div class="k">1 &middot; A swap executes</div><p>A trade moves through the on-chain VELD and btcVELD pool.</p></div>
       <div class="earn-step"><div class="k">2 &middot; The fee stays in the pool</div><p>The swap fee stays in the reserve of the asset you receive. The VELD network fee is separate.</p></div>
       <div class="earn-step"><div class="k">3 &middot; Your share includes it</div><p>When you withdraw, your LP shares claim the same percentage of both current reserves.</p></div>
     </div>
-    <div class="earn-summary">
+    </details><div class="earn-summary">
       <div class="liq-stat"><div class="liq-label">Your ownership</div><div class="liq-value">your shares &divide; all shares</div><div class="liq-usd">Your percentage of the pool</div></div>
       <div class="liq-stat"><div class="liq-label">On withdrawal</div><div class="liq-value">claim both reserves</div><div class="liq-usd">At your current pool percentage</div></div>
     </div>
