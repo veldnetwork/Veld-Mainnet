@@ -57,6 +57,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.11'
@@ -92,6 +93,15 @@ jobs:
           cp "$RUNNER_TEMP/menu-worker-build/bin/veld-pool-client" "$RUNNER_TEMP/source-build/bin/"
           sudo unshare --net -- bash -c 'ip link set lo up; exec python3 "$@"' \
             bash tests/linux_pool_menu_tests.py "$RUNNER_TEMP/source-build/bin/veld-node"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: success() && contains(fromJSON('["node", "desktop", "pool-worker"]'), matrix.role)
+        with:
+          name: unsigned-linux-${{ matrix.role }}-payload
+          path: |
+            ${{ runner.temp }}/source-build/
+            !${{ runner.temp }}/source-build/obj/
+          retention-days: 7
+          if-no-files-found: error
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
         with:
