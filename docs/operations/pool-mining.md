@@ -13,8 +13,14 @@ The public pool is available at [pool.veld.network](https://pool.veld.network/).
 
 ## Linux
 
-Use a verified Linux client package containing `bin/veld-pool-client`. From the
-extracted package directory, run:
+Open the node's setup menu from a verified Linux client package and select
+**[5] Pool mining**. Enter the pool URL, your public payout address and the CPU
+worker count. Keep the complete extracted package together; the menu starts its
+included pool worker. Pool account state is retained in the `pool` subdirectory
+of the node's data directory.
+
+For a command-line launch or a custom pool account directory, run from the
+extracted package directory:
 
 ```sh
 ./bin/veld-pool-client --pool https://pool.veld.network \

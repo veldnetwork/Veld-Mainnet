@@ -5,6 +5,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 import datetime
+import json
 import re
 
 
@@ -46,6 +47,12 @@ class Guide(HTMLParser):
 def main():
     version_source = (ROOT.parents[1] / "include/core/version.h").read_text(encoding="utf-8")
     version = re.search(r'CLIENT_VERSION = "([0-9.]+)"', version_source).group(1)
+    platforms = json.loads((ROOT.parents[1] / "pkg/release-platforms.json").read_text())
+    assert platforms["source_version"] == version, "Review platform versions for this release"
+    assert platforms["linux_version"] == version, "Linux release identity differs from source"
+    windows_version = platforms["windows_version"]
+    assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", windows_version), "Invalid Windows version"
+    assert tuple(map(int, windows_version.split("."))) <= tuple(map(int, version.split(".")))
     guides = {}
     for path in sorted(ROOT.rglob("index.html")):
         text = path.read_text(encoding="utf-8")
@@ -53,7 +60,7 @@ def main():
         review = re.search(r'<time datetime="(\d{4}-\d{2}-\d{2})">', text)
         assert review and "Veld Mainnet" in text, path
         datetime.date.fromisoformat(review.group(1))
-        assert "Windows " + version in text, f"{path}: review client version is outdated"
+        assert "Windows " + windows_version in text, f"{path}: review client version is outdated"
         guide = Guide(path)
         guide.feed(text)
         guide.close()
