@@ -28,11 +28,7 @@ MARKER = "X-Veld-Managed=true\n"
 def private_dir(path):
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     info = path.lstat()
-    if (
-        not stat.S_ISDIR(info.st_mode)
-        or info.st_uid != os.getuid()
-        or info.st_mode & 0o077
-    ):
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
         raise RuntimeError("Wallet launcher storage must be an owner-only directory.")
     return path
 
@@ -43,11 +39,7 @@ def state_dir():
         raise RuntimeError("The desktop runtime directory must be an absolute path.")
     base.mkdir(mode=0o700, parents=True, exist_ok=True)
     info = base.lstat()
-    if (
-        not stat.S_ISDIR(info.st_mode)
-        or info.st_uid != os.getuid()
-        or info.st_mode & 0o022
-    ):
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
         raise RuntimeError(
             "The desktop runtime directory must belong to you and must not be writable by others."
         )
@@ -57,11 +49,7 @@ def state_dir():
 def lock_file(directory):
     fd = os.open(directory / "lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     info = os.fstat(fd)
-    if (
-        not stat.S_ISREG(info.st_mode)
-        or info.st_uid != os.getuid()
-        or info.st_mode & 0o077
-    ):
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
         os.close(fd)
         raise RuntimeError("Unsafe wallet launcher lock.")
     try:
@@ -159,9 +147,7 @@ def serve():
                 tail = (tail + data)[-16384:]
                 # Only the child that successfully bound the listener emits this
                 # line. Never open an arbitrary pre-existing HTTP server.
-                found = re.search(
-                    rb"(?:^|\n)  \[OK\] Wallet UI on port ([0-9]{1,5})\r?\n", tail
-                )
+                found = re.search(rb"(?:^|\n)  \[OK\] Wallet UI on port ([0-9]{1,5})\r?\n", tail)
                 if found and 0 < int(found[1]) <= 65535:
                     url = "http://127.0.0.1:" + found[1].decode("ascii")
                 # Do not persist native output, which can contain wallet details.
@@ -211,9 +197,7 @@ def browser(url):
     elif shutil.which("gio"):
         args = ["gio", "open", url]
     else:
-        raise RuntimeError(
-            "Install a web browser and xdg-utils, then open Veld Wallet again."
-        )
+        raise RuntimeError("Install a web browser and xdg-utils, then open Veld Wallet again.")
     try:
         result = subprocess.run(
             args,
@@ -223,14 +207,10 @@ def browser(url):
             check=False,
         )
         if result.returncode:
-            raise RuntimeError(
-                "Set a default web browser, then open Veld Wallet again."
-            )
+            raise RuntimeError("Set a default web browser, then open Veld Wallet again.")
     except subprocess.TimeoutExpired:
         # Some browser launchers remain attached to the opened window.
-        raise RuntimeError(
-            "The browser launcher did not return; check your default browser."
-        )
+        raise RuntimeError("The browser launcher did not return; check your default browser.")
 
 
 def open_wallet():
@@ -274,9 +254,7 @@ def open_wallet():
                     "The wallet could not start. Check that its port is free and your wallet directory is writable."
                 )
         time.sleep(0.1)
-    raise RuntimeError(
-        "The wallet did not become ready. Try Stop Wallet, then reopen it."
-    )
+    raise RuntimeError("The wallet did not become ready. Try Stop Wallet, then reopen it.")
 
 
 def desktop_quote(value):
@@ -295,9 +273,7 @@ def menu_entry():
     return (
         "[Desktop Entry]\nType=Application\nVersion=1.0\nName=Veld Wallet\n"
         "Comment=Open your Veld wallet\nTerminal=false\nCategories=Office;Finance;\n"
-        "Icon="
-        + str(PACKAGE / "share" / "icons" / "veld-wallet.svg").replace("\\", "\\\\")
-        + "\n"
+        "Icon=" + str(PACKAGE / "share" / "icons" / "veld-wallet.svg").replace("\\", "\\\\") + "\n"
         "Exec="
         + command
         + " open\nActions=Stop;\n"
@@ -314,18 +290,14 @@ def install(remove=False):
         raise RuntimeError("XDG_DATA_HOME must be an absolute path.")
     target = base / "applications" / APP_ID
     if target.is_symlink() or (target.exists() and MARKER not in target.read_text()):
-        raise RuntimeError(
-            "An unmanaged Veld Wallet shortcut exists; it was left untouched."
-        )
+        raise RuntimeError("An unmanaged Veld Wallet shortcut exists; it was left untouched.")
     if remove:
         target.unlink(missing_ok=True)
     else:
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = menu_entry()
         temporary = target.with_name(APP_ID + ".new")
-        fd = os.open(
-            temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
-        )
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 stream.write(payload)
@@ -340,11 +312,7 @@ def install(remove=False):
             stderr=subprocess.DEVNULL,
             timeout=5,
         )
-    print(
-        "Wallet shortcut removed."
-        if remove
-        else "Veld Wallet is now in your application menu."
-    )
+    print("Wallet shortcut removed." if remove else "Veld Wallet is now in your application menu.")
 
 
 def main():

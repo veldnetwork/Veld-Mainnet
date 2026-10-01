@@ -123,9 +123,7 @@ class LauncherTests(unittest.TestCase):
         for child in children:
             _, error = child.communicate(timeout=40)
             self.assertEqual(child.returncode, 0, error)
-        self.assertEqual(
-            len({u.split("/?")[0] for u in self.opened.read_text().splitlines()}), 1
-        )
+        self.assertEqual(len({u.split("/?")[0] for u in self.opened.read_text().splitlines()}), 1)
 
     def test_failed_backend_never_opens_browser(self):
         self.backend.write_text("#!/bin/sh\nexit 2\n")
@@ -145,9 +143,7 @@ class LauncherTests(unittest.TestCase):
         self.assertFalse(self.opened.exists())
 
     def test_unmanaged_shortcut_preserved(self):
-        path = (
-            Path(self.env["XDG_DATA_HOME"]) / "applications/network.veld.Wallet.desktop"
-        )
+        path = Path(self.env["XDG_DATA_HOME"]) / "applications/network.veld.Wallet.desktop"
         path.parent.mkdir(parents=True)
         path.write_text("Owner content\n")
         self.run_launcher("install", success=False)
@@ -156,9 +152,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_desktop_menu_real_gio_dispatch_special_path(self):
         self.run_launcher("install")
-        path = (
-            Path(self.env["XDG_DATA_HOME"]) / "applications/network.veld.Wallet.desktop"
-        )
+        path = Path(self.env["XDG_DATA_HOME"]) / "applications/network.veld.Wallet.desktop"
         command = "from gi.repository import Gio; import sys; a=Gio.DesktopAppInfo.new_from_filename(sys.argv[1]); assert a; assert a.launch([], None)"
         result = subprocess.run(
             ["/usr/bin/python3", "-c", command, str(path)],
@@ -210,14 +204,10 @@ class LauncherTests(unittest.TestCase):
         self.assertTrue(self.opened.exists())
 
     def test_supervisor_death_stops_own_child(self):
-        supervisor = subprocess.Popen(
-            [sys.executable, str(self.launcher), "_serve"], env=self.env
-        )
+        supervisor = subprocess.Popen([sys.executable, str(self.launcher), "_serve"], env=self.env)
         try:
             deadline = time.monotonic() + 5
-            while (
-                not (self.home / "child.pid").exists() and time.monotonic() < deadline
-            ):
+            while not (self.home / "child.pid").exists() and time.monotonic() < deadline:
                 time.sleep(0.1)
             pid = int((self.home / "child.pid").read_text())
             supervisor.kill()
@@ -245,9 +235,7 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("/?signer=", bootstrap_url)
         url = bootstrap_url.split("/?")[0]
         cookies = http.cookiejar.CookieJar()
-        browser = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(cookies)
-        )
+        browser = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
         with urllib.request.urlopen(url, timeout=5) as response:
             self.assertNotIn(b'<script src="/dilithium.js">', response.read())
         with browser.open(bootstrap_url, timeout=5) as response:
