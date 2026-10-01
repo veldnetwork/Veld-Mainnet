@@ -1,0 +1,395 @@
+#!/usr/bin/env python3
+"""Application-menu entry for the packaged, loopback-only Veld wallet."""
+
+import argparse
+import ctypes
+import fcntl
+import os
+from pathlib import Path
+import pty
+import re
+import secrets
+import select
+import shutil
+import signal
+import socket
+import stat
+import subprocess
+import sys
+import time
+
+START_TIMEOUT = 30
+SCRIPT = Path(__file__).resolve()
+PACKAGE = SCRIPT.parent.parent
+APP_ID = "network.veld.Wallet.desktop"
+MARKER = "X-Veld-Managed=true\n"
+
+
+def private_dir(path):
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    info = path.lstat()
+    if (
+        not stat.S_ISDIR(info.st_mode)
+        or info.st_uid != os.getuid()
+        or info.st_mode & 0o077
+    ):
+        raise RuntimeError("Wallet launcher storage must be an owner-only directory.")
+    return path
+
+
+def state_dir():
+    base = Path(os.environ.get("XDG_RUNTIME_DIR") or Path.home() / ".cache")
+    if not base.is_absolute():
+        raise RuntimeError("The desktop runtime directory must be an absolute path.")
+    base.mkdir(mode=0o700, parents=True, exist_ok=True)
+    info = base.lstat()
+    if (
+        not stat.S_ISDIR(info.st_mode)
+        or info.st_uid != os.getuid()
+        or info.st_mode & 0o022
+    ):
+        raise RuntimeError(
+            "The desktop runtime directory must belong to you and must not be writable by others."
+        )
+    return private_dir(base / "veld-wallet")
+
+
+def lock_file(directory):
+    fd = os.open(directory / "lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    info = os.fstat(fd)
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or info.st_uid != os.getuid()
+        or info.st_mode & 0o077
+    ):
+        os.close(fd)
+        raise RuntimeError("Unsafe wallet launcher lock.")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def request(directory, command):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(2)
+        client.connect(str(directory / "control"))
+        client.sendall(command.encode("ascii") + b"\n")
+        return client.recv(512).decode("ascii").strip()
+
+
+def stop_child(child):
+    if child is not None and child.poll() is None:
+        child.terminate()
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=5)
+
+
+def parent_death_guard():
+    parent = os.getppid()
+    if ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGTERM, 0, 0, 0) != 0:
+        os._exit(126)
+    if os.getppid() != parent or parent == 1:
+        os._exit(126)
+
+
+def serve():
+    directory = state_dir()
+    lock = lock_file(directory)
+    if lock is None:
+        return 0
+    child = None
+    master = slave = None
+    control = directory / "control"
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    stopping = False
+
+    def stop_signal(_sig, _frame):
+        nonlocal stopping
+        stopping = True
+
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, stop_signal)
+    try:
+        control.unlink(missing_ok=True)
+        server.bind(str(control))
+        os.chmod(control, 0o600)
+        server.listen(8)
+        master, slave = pty.openpty()
+        env = os.environ.copy()
+        bootstrap = secrets.token_urlsafe(32)
+        env["VELD_LOCAL_SIGNER_TOKEN"] = bootstrap
+        child = subprocess.Popen(
+            [
+                str(PACKAGE / "bin" / "veld-desktop"),
+                "--wallet",
+                "--rpcurl",
+                "https://node1.veld.network",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=slave,
+            stderr=slave,
+            env=env,
+            close_fds=True,
+            preexec_fn=parent_death_guard,
+        )
+        del env["VELD_LOCAL_SIGNER_TOKEN"]
+        os.close(slave)
+        slave = None
+        deadline = time.monotonic() + START_TIMEOUT
+        tail = b""
+        url = None
+        opening_until = 0
+        while not stopping and child.poll() is None:
+            if url is None and time.monotonic() > deadline:
+                break
+            readable, _, _ = select.select([server, master], [], [], 0.2)
+            if master in readable:
+                try:
+                    data = os.read(master, 8192)
+                except OSError:
+                    break
+                if not data:
+                    break
+                tail = (tail + data)[-16384:]
+                # Only the child that successfully bound the listener emits this
+                # line. Never open an arbitrary pre-existing HTTP server.
+                found = re.search(
+                    rb"(?:^|\n)  \[OK\] Wallet UI on port ([0-9]{1,5})\r?\n", tail
+                )
+                if found and 0 < int(found[1]) <= 65535:
+                    url = "http://127.0.0.1:" + found[1].decode("ascii")
+                # Do not persist native output, which can contain wallet details.
+            if server in readable:
+                conn, _ = server.accept()
+                with conn:
+                    conn.settimeout(1)
+                    try:
+                        command = conn.recv(32).strip()
+                        if command == b"stop":
+                            stopping = True
+                            reply = "stopping"
+                        elif command == b"open" and child.poll() is None:
+                            reply = url or "starting"
+                            if url and bootstrap:
+                                if time.monotonic() < opening_until:
+                                    reply = "opening"
+                                else:
+                                    reply = url + "/?signer=" + bootstrap
+                                    opening_until = time.monotonic() + 12
+                        elif command == b"opened":
+                            bootstrap = None
+                            opening_until = 0
+                            reply = "ok"
+                        elif command == b"openfailed":
+                            opening_until = 0
+                            reply = "ok"
+                        else:
+                            reply = "unavailable"
+                        conn.sendall(reply.encode("ascii"))
+                    except OSError:
+                        pass
+        return 0 if stopping else 1
+    finally:
+        stop_child(child)
+        server.close()
+        for fd in (master, slave):
+            if fd is not None:
+                os.close(fd)
+        control.unlink(missing_ok=True)
+        os.close(lock)
+
+
+def browser(url):
+    if shutil.which("xdg-open"):
+        args = ["xdg-open", url]
+    elif shutil.which("gio"):
+        args = ["gio", "open", url]
+    else:
+        raise RuntimeError(
+            "Install a web browser and xdg-utils, then open Veld Wallet again."
+        )
+    try:
+        result = subprocess.run(
+            args,
+            timeout=10,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if result.returncode:
+            raise RuntimeError(
+                "Set a default web browser, then open Veld Wallet again."
+            )
+    except subprocess.TimeoutExpired:
+        # Some browser launchers remain attached to the opened window.
+        raise RuntimeError(
+            "The browser launcher did not return; check your default browser."
+        )
+
+
+def open_wallet():
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        raise RuntimeError(
+            "Veld Wallet needs a graphical desktop. Use bin/veld-desktop --wallet on a headless host."
+        )
+    if not (PACKAGE / "bin" / "veld-desktop").is_file():
+        raise RuntimeError(
+            "Keep the complete extracted Veld package together; bin/veld-desktop is missing."
+        )
+    directory = state_dir()
+    supervisor = None
+    deadline = time.monotonic() + START_TIMEOUT + 3
+    while time.monotonic() < deadline:
+        try:
+            reply = request(directory, "open")
+            if reply == "opening":
+                return
+            if re.fullmatch(
+                r"http://127\.0\.0\.1:[0-9]{1,5}(?:/\?signer=[A-Za-z0-9_-]{43})?", reply
+            ):
+                try:
+                    browser(reply)
+                except Exception:
+                    request(directory, "openfailed")
+                    raise
+                request(directory, "opened")
+                return
+        except (OSError, UnicodeError):
+            if supervisor is None:
+                supervisor = subprocess.Popen(
+                    [sys.executable, str(SCRIPT), "_serve"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            elif supervisor.poll() not in (None, 0):
+                raise RuntimeError(
+                    "The wallet could not start. Check that its port is free and your wallet directory is writable."
+                )
+        time.sleep(0.1)
+    raise RuntimeError(
+        "The wallet did not become ready. Try Stop Wallet, then reopen it."
+    )
+
+
+def desktop_quote(value):
+    if any(c in value for c in "\r\n\x00"):
+        raise RuntimeError("The package path cannot contain a newline.")
+    # Exec uses desktop-entry escaping followed by argument unquoting. Percent
+    # signs are field codes even inside quotes; double them before serialization.
+    value = value.replace("%", "%%")
+    for char in ("\\", '"', "`", "$"):
+        value = value.replace(char, "\\" + char)
+    return '"' + value.replace("\\", "\\\\") + '"'
+
+
+def menu_entry():
+    command = desktop_quote(sys.executable) + " " + desktop_quote(str(SCRIPT))
+    return (
+        "[Desktop Entry]\nType=Application\nVersion=1.0\nName=Veld Wallet\n"
+        "Comment=Open your Veld wallet\nTerminal=false\nCategories=Office;Finance;\n"
+        "Icon="
+        + str(PACKAGE / "share" / "icons" / "veld-wallet.svg").replace("\\", "\\\\")
+        + "\n"
+        "Exec="
+        + command
+        + " open\nActions=Stop;\n"
+        + MARKER
+        + "\n[Desktop Action Stop]\nName=Stop Wallet\nExec="
+        + command
+        + " stop\n"
+    )
+
+
+def install(remove=False):
+    base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    if not base.is_absolute():
+        raise RuntimeError("XDG_DATA_HOME must be an absolute path.")
+    target = base / "applications" / APP_ID
+    if target.is_symlink() or (target.exists() and MARKER not in target.read_text()):
+        raise RuntimeError(
+            "An unmanaged Veld Wallet shortcut exists; it was left untouched."
+        )
+    if remove:
+        target.unlink(missing_ok=True)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = menu_entry()
+        temporary = target.with_name(APP_ID + ".new")
+        fd = os.open(
+            temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(payload)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+    if shutil.which("update-desktop-database"):
+        subprocess.run(
+            ["update-desktop-database", str(target.parent)],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+    print(
+        "Wallet shortcut removed."
+        if remove
+        else "Veld Wallet is now in your application menu."
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "action",
+        nargs="?",
+        default="open",
+        choices=("open", "stop", "install", "uninstall", "_serve"),
+    )
+    args = parser.parse_args()
+    os.umask(0o077)
+    try:
+        if args.action == "_serve":
+            return serve()
+        if args.action == "open":
+            open_wallet()
+        elif args.action == "stop":
+            directory = state_dir()
+            try:
+                request(directory, "stop")
+            except (FileNotFoundError, ConnectionRefusedError):
+                return 0
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                fd = lock_file(directory)
+                if fd is not None:
+                    os.close(fd)
+                    return 0
+                time.sleep(0.1)
+            raise RuntimeError("The wallet is still stopping. Try again shortly.")
+        else:
+            install(args.action == "uninstall")
+        return 0
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        message = "Veld Wallet: " + str(error)
+        print(message, file=sys.stderr)
+        if shutil.which("notify-send"):
+            subprocess.run(
+                ["notify-send", "--app-name=Veld Wallet", "Veld Wallet", str(error)],
+                check=False,
+                timeout=3,
+            )
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
