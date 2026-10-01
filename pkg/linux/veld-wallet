@@ -198,19 +198,21 @@ def browser(url):
         args = ["gio", "open", url]
     else:
         raise RuntimeError("Install a web browser and xdg-utils, then open Veld Wallet again.")
+    opener = subprocess.Popen(
+        args,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
     try:
-        result = subprocess.run(
-            args,
-            timeout=10,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if result.returncode:
-            raise RuntimeError("Set a default web browser, then open Veld Wallet again.")
+        result = opener.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        # Some browser launchers remain attached to the opened window.
-        raise RuntimeError("The browser launcher did not return; check your default browser.")
+        # An opener can remain attached to a working browser. Leave it running
+        # and retire the one-time URL instead of replaying a consumed token.
+        return
+    if result:
+        raise RuntimeError("Set a default web browser, then open Veld Wallet again.")
 
 
 def open_wallet():

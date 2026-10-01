@@ -227,6 +227,45 @@ class LauncherTests(unittest.TestCase):
                 supervisor.wait(timeout=5)
 
     @unittest.skipUnless(NATIVE, "pass --native-binary for the real packaged wallet")
+    def test_attached_browser_consumes_native_token_once(self):
+        shutil.copyfile(NATIVE, self.backend)
+        self.backend.chmod(0o755)
+        opener = self.tools / "xdg-open"
+        original = opener.read_text()
+        opener.write_text(
+            "#!/usr/bin/python3\n"
+            "import http.cookiejar, os, sys, time, urllib.request\n"
+            "from pathlib import Path\n"
+            "jar = http.cookiejar.CookieJar()\n"
+            "browser = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))\n"
+            "with browser.open(sys.argv[1], timeout=5) as response:\n"
+            "    assert response.status == 200\n"
+            "    assert b'<script src=\"/dilithium.js\">' in response.read()\n"
+            "Path(os.environ['OPENED']).write_text(sys.argv[1] + '\\n')\n"
+            "Path(os.environ['HOME'], 'opener.pid').write_text(str(os.getpid()))\n"
+            "time.sleep(30)\n"
+        )
+        try:
+            self.run_launcher()
+            pid = int((self.home / "opener.pid").read_text())
+            self.assertNotEqual(Path(f"/proc/{pid}/stat").read_text().split()[2], "Z")
+            first = self.opened.read_text().splitlines()[0]
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(first, timeout=5)
+            self.assertEqual(caught.exception.code, 403)
+            caught.exception.close()
+            opener.write_text(original)
+            self.run_launcher()
+            self.assertEqual(self.opened.read_text().splitlines()[-1], first.split("/?")[0])
+        finally:
+            record = self.home / "opener.pid"
+            if record.exists():
+                try:
+                    os.kill(int(record.read_text()), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+
+    @unittest.skipUnless(NATIVE, "pass --native-binary for the real packaged wallet")
     def test_native_wallet_and_occupied_port(self):
         shutil.copyfile(NATIVE, self.backend)
         self.backend.chmod(0o755)
