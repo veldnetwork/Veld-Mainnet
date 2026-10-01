@@ -3,6 +3,13 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## 3.3.1 - Linux graphical wallet launcher
+
+- Add a Veld Wallet application-menu shortcut and portable launch scripts.
+- Open the browser wallet with a fresh local authorization session, reuse an
+  existing wallet instance, and provide a Stop Wallet action.
+- Correct the Linux wallet and mining setup instructions.
+
 ## 3.2.7 - Address-only mining and Windows startup
 
 - Add address-only solo mining: save a payout address without creating or

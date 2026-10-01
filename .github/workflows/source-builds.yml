@@ -75,6 +75,16 @@ jobs:
         if: matrix.role == 'pool-worker'
         run: |
           python3 tests/linux_pool_client_cli_tests.py "$RUNNER_TEMP/source-build/bin/veld-pool-client"
+      - name: Verify the graphical wallet launcher and local signer boundary
+        if: matrix.role == 'desktop'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y python3-gi
+          sudo unshare --mount --net --pid --fork --mount-proc -- bash -c \
+            'ip link set lo up; exec timeout 180s /usr/bin/python3 -B "$@"' \
+            bash tests/linux_wallet_launcher_tests.py \
+            --native-binary "$RUNNER_TEMP/source-build/bin/veld-desktop"
       - name: Verify portable identity recovery and the interactive pool entry
         if: matrix.role == 'node'
         shell: bash

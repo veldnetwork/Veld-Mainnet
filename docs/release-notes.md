@@ -1,3 +1,11 @@
+## 3.3.1 - Linux graphical wallet launcher
+
+- Install a Veld Wallet shortcut in the application menu and open the graphical
+  wallet in your default browser.
+- Create or import a wallet through an authorized local browser session.
+- Reopening the app reuses its wallet service; Stop Wallet shuts it down.
+- See the [Linux wallet guide](operations/linux-wallet.md) for setup.
+
 ## 3.3.0 - Linux wallet startup
 
 - Importing an encrypted mining identity preserves the matching portable wallet keyfile instead of failing on encryption differences.

@@ -33,8 +33,10 @@ separate from node administration and btcVELD custody authority.
 ## Linux and source builds
 
 Download the signed Linux x86-64 package from [veld.network](https://veld.network/)
-and extract it. Run `./bin/veld-desktop --wallet` for the setup menu and browser
-wallet. Select **[5] Pool mining** to use the included pool worker. See
+and extract it. The graphical wallet runs in your browser; see
+[Linux wallet](linux-wallet.md) for its application-menu shortcut and launchers.
+Run `./bin/veld-node` for the setup menu and select **[5] Pool mining** to use
+the included pool worker. See
 `START-HERE.txt` in the package for full-node launch options and
 [pool mining](pool-mining.md) for account storage and command-line use.
 
