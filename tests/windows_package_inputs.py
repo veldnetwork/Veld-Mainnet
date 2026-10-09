@@ -166,7 +166,11 @@ def main():
         ).strip()
         == b"RELEASE-SIGNATURE-VALID"
     )
-    assert checksum.read_text().strip() == new_identity["sha256"] + " *VeldClient-Windows-x64.zip"
+    assert checksum.read_text().splitlines() == [
+        "# veld-release-zip-v1",
+        "# release-version=" + args.version,
+        new_identity["sha256"] + " *VeldClient-Windows-x64.zip",
+    ]
     identity = json.loads((target / "BUILD-IDENTITY.json").read_text())
     assert identity["version"] == args.version
     assert re.fullmatch(r"[0-9a-f]{40}", identity["source_commit"])
