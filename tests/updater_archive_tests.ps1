@@ -15,6 +15,22 @@ $functionAst = $ast.Find({
 }, $true)
 if ($null -eq $functionAst) { throw 'bounded archive function not found' }
 Invoke-Expression $functionAst.Extent.Text
+$canonicalAst = $ast.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -ceq 'Get-CanonicalDirectoryPath'
+}, $true)
+if ($null -eq $canonicalAst) { throw 'canonical directory function not found' }
+Invoke-Expression $canonicalAst.Extent.Text
+Add-Type @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class UpdaterShortPathFixture {
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    public static extern uint GetShortPathName(string path, StringBuilder result, uint capacity);
+}
+'@
 
 $MaxReleaseArchiveEntries = 4
 $MaxReleaseEntryBytes = 8
@@ -85,6 +101,23 @@ try {
         'exact total maximum changed'
     Check ((Get-ChildItem -LiteralPath $validStage -File -Recurse).Count -eq 2) `
         'valid archive file set changed'
+    $shortBuffer = [Text.StringBuilder]::new(32768)
+    Check ([UpdaterShortPathFixture]::GetShortPathName($validStage, $shortBuffer, 32768) -gt 0) `
+        'short-path lookup failed'
+    $shortStage = $shortBuffer.ToString()
+    $canonicalStage = Get-CanonicalDirectoryPath $shortStage
+    $relativeNames = @(Get-ChildItem -LiteralPath $canonicalStage -File -Recurse | ForEach-Object {
+        $_.FullName.Substring($canonicalStage.Length).TrimStart('\').Replace('\','/')
+    })
+    Check ($relativeNames.Count -eq 2 -and $relativeNames -contains 'a.txt' -and
+        $relativeNames -contains 'dir/b.txt') 'short temporary path changed package membership'
+    if ($shortStage -cne $canonicalStage) {
+        $legacyNames = @(Get-ChildItem -LiteralPath $shortStage -File -Recurse | ForEach-Object {
+            $_.FullName.Substring($shortStage.Length).TrimStart('\').Replace('\','/')
+        })
+        Check ($legacyNames -notcontains 'a.txt') 'legacy short-path refusal was not reproduced'
+        Write-Output 'PASS real Windows short-path package membership regression'
+    } else { Write-Output 'Short alias unavailable on this filesystem; canonical membership passed' }
 
     $traversal = Join-Path $TempRoot 'traversal.zip'
     New-FixtureZip $traversal @(

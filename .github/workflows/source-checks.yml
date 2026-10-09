@@ -209,7 +209,9 @@ jobs:
       - name: Verify updater file locks and state protection
         if: runner.os == 'Windows'
         shell: powershell
-        run: tests/windows_updater_durability_tests.ps1 -Output "$env:RUNNER_TEMP/veld-updater-durability"
+        run: |
+          tests/updater_archive_tests.ps1
+          tests/windows_updater_durability_tests.ps1 -Output "$env:RUNNER_TEMP/veld-updater-durability"
       - name: Verify actual updater relaunch process lifetime
         if: runner.os == 'Windows'
         shell: powershell
