@@ -108,8 +108,10 @@ inline bool ValidateOrCreatePublicNetworkIdentity(const std::string& data_dir,
             const bool wallet_keyfile = name.size() > wallet_suffix.size() &&
                                         name.compare(name.size() - wallet_suffix.size(),
                                                      wallet_suffix.size(), wallet_suffix) == 0;
-            return name == "miner.key" || wallet_keyfile || name == ".force-update" ||
-                   name.rfind(".force-update.applied-", 0) == 0;
+            // The Windows GUI creates this protected local RPC credential
+            // before the first node launch. It carries no chain identity.
+            return name == "miner.key" || wallet_keyfile || name == "address-only-rpc-unlock.dat" ||
+                   name == ".force-update" || name.rfind(".force-update.applied-", 0) == 0;
         }
         // Tor's client identity and cache do not contain Veld chain identity.
         return fs::is_directory(status) && name == "tor";

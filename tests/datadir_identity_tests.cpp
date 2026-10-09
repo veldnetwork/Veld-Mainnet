@@ -1,5 +1,8 @@
 #include "network/network_identity.h"
 #include "wallet/secure_channel_file.h"
+#ifdef _WIN32
+#include "mining/address_only.h"
+#endif
 
 #include <chrono>
 #include <filesystem>
@@ -74,6 +77,34 @@ int main() {
     error.clear();
     CHECK(!veld::ValidateOrCreatePublicNetworkIdentity(missing.path.string(), &error));
     CHECK(error.find("absent from a nonempty public datadir") != std::string::npos);
+
+    TempDirectory address_only{std::filesystem::temp_directory_path() /
+                               ("veld-test-identity-address-" + std::to_string(nonce))};
+    CHECK(veld::channel::secure_file::EnsurePrivateDirectory(address_only.path.string(), &error));
+#ifdef _WIN32
+    std::string secret;
+    CHECK(veld::mining::AddressOnlyRpcSecret(address_only.path, secret, &error));
+    veld::WipeString(secret);
+#else
+    CHECK(veld::channel::secure_file::AtomicWriteText(
+        (address_only.path / "address-only-rpc-unlock.dat").string(),
+        "network-neutral local credential fixture", &error, true));
+#endif
+    CHECK(veld::ValidateOrCreatePublicNetworkIdentity(address_only.path.string(), &error));
+    CHECK(veld::channel::secure_file::AtomicWriteText(
+        (address_only.path / "network.identity").string(), legacy, &error, true));
+    CHECK(!veld::ValidateOrCreatePublicNetworkIdentity(address_only.path.string(), &error));
+    CHECK(std::filesystem::remove(address_only.path / "network.identity"));
+    CHECK(veld::channel::secure_file::AtomicWriteText((address_only.path / "blocks.dat").string(),
+                                                      occupied, &error, true));
+    CHECK(!veld::ValidateOrCreatePublicNetworkIdentity(address_only.path.string(), &error));
+    CHECK(!std::filesystem::exists(address_only.path / "network.identity"));
+
+    TempDirectory wrong_kind{std::filesystem::temp_directory_path() /
+                             ("veld-test-identity-credential-directory-" + std::to_string(nonce))};
+    CHECK(veld::channel::secure_file::EnsurePrivateDirectory(wrong_kind.path.string(), &error));
+    CHECK(std::filesystem::create_directory(wrong_kind.path / "address-only-rpc-unlock.dat"));
+    CHECK(!veld::ValidateOrCreatePublicNetworkIdentity(wrong_kind.path.string(), &error));
 
     std::cout << "PASS datadir_identity_tests checks=" << checks
               << " v1_refused=1 missing_identity_nonempty_refused=1\n";
