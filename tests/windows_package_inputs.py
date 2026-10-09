@@ -139,9 +139,10 @@ def main():
     assert identity["version"] == args.version
     assert re.fullmatch(r"[0-9a-f]{40}", identity["source_commit"])
     assert identity["source_commit"] == args.source_commit
-    assert identity["source_tree"] == command(
-        ["git", "rev-parse", args.source_commit + "^{tree}"]
-    ).decode().strip()
+    assert (
+        identity["source_tree"]
+        == command(["git", "rev-parse", args.source_commit + "^{tree}"]).decode().strip()
+    )
     assert (
         command(["git", "rev-parse", identity["source_commit"] + "^{tree}"]).decode().strip()
         == identity["source_tree"]

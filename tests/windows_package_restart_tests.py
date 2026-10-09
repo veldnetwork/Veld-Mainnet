@@ -23,9 +23,14 @@ def digest(path):
 
 
 def run(args, **kwargs):
-    return subprocess.run(
-        list(map(str, args)), check=True, capture_output=True, timeout=120, **kwargs
+    result = subprocess.run(
+        list(map(str, args)), capture_output=True, timeout=120, **kwargs
     )
+    if result.returncode:
+        raise RuntimeError(
+            str(args[0]) + " failed: " + result.stderr.decode(errors="replace")[-6000:]
+        )
+    return result
 
 
 def wait_for(label, action, timeout=90):
@@ -172,7 +177,7 @@ def case(root, previous, target, verifier, writer, running):
         "@{ before=$before; current_user_sid=$sid.Value; checked=$items.Count } "
         "| ConvertTo-Json -Compress\n"
     )
-    ownership = run([ps, "-NoProfile", "-File", ownership_script, str(root)])
+    ownership = run([ps, "-NoProfile", "-File", ownership_script, str(root)], env=env)
     (root / "ownership.json").write_bytes(ownership.stdout)
     # The runner is disposable. Block this fixture node only; retain loopback.
     firewall_script = root / "firewall.ps1"
@@ -182,7 +187,7 @@ def case(root, previous, target, verifier, writer, running):
         "New-NetFirewallRule -DisplayName $Name -Direction Outbound -Action Block "
         "-Program $Program -RemoteAddress Internet | Out-Null\n"
     )
-    run([ps, "-NoProfile", "-File", firewall_script, firewall, node])
+    run([ps, "-NoProfile", "-File", firewall_script, firewall, node], env=env)
     parent = updater = None
     try:
         assert not processes(gui) and not processes(node)
@@ -309,7 +314,7 @@ def case(root, previous, target, verifier, writer, running):
         if updater is not None and updater.poll() is None:
             updater.terminate()
             updater.wait(timeout=15)
-        run([ps, "-NoProfile", "-File", firewall_script, "-Name", firewall, "-Remove"])
+        run([ps, "-NoProfile", "-File", firewall_script, "-Name", firewall, "-Remove"], env=env)
 
 
 def main():
