@@ -1,8 +1,4 @@
-"""Real signed Commit, GUI relaunch and node restart in a disposable Windows runner.
-
-The fixture stages authenticated packages and creates an explicit protected
-resume ticket. It does not exercise the hourly scheduler or HTTP download.
-"""
+"""Signed staged-Commit or complete automatic/manual updates on a disposable runner."""
 
 import argparse
 import ctypes
@@ -18,9 +14,20 @@ import time
 
 import psutil
 
+from windows_package_test_paths import TEMP_PATH_CASES, configure_temp_path
+
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def package_version(package):
+    match = re.search(
+        r"(?m)^# release-version=([0-9]+\.[0-9]+\.[0-9]+)$",
+        (package / "SHA256SUMS.txt").read_text(),
+    )
+    assert match, "Signed package version missing"
+    return match.group(1)
 
 
 def run(args, **kwargs):
@@ -156,7 +163,7 @@ def verified(package, verifier):
     return entries
 
 
-def case(root, previous, target, verifier, writer, running, flow="commit"):
+def case(root, previous, target, verifier, writer, running, flow="commit", temp_path="inherited"):
     root.mkdir()
     install = root / "installation"
     shutil.copytree(previous, install)
@@ -184,17 +191,12 @@ def case(root, previous, target, verifier, writer, running, flow="commit"):
         for k, v in os.environ.items()
         if not k.upper().startswith("VELD_") and k.upper() != "PSMODULEPATH"
     }
-    # 3.2.9 miscounts extracted files when TEMP contains a Windows short alias.
-    # Exercise its intact update entry on a canonical path. The candidate's
-    # short-path correction has a separate real Windows archive regression.
-    temp = root / "temp"
-    temp.mkdir()
     env.update(
         LOCALAPPDATA=str(profile),
         VELD_UPDATE_NODE_DATA_DIR=str(data),
-        TEMP=str(temp),
-        TMP=str(temp),
     )
+    path_receipt = configure_temp_path(env, root, temp_path)
+    (root / "environment.json").write_text(json.dumps(path_receipt, indent=2) + "\n")
     gui = install / "Veld Node.exe"
     node = install / "bin/veld-node.exe"
     firewall = "Veld disposable package " + root.name
@@ -279,6 +281,7 @@ def case(root, previous, target, verifier, writer, running, flow="commit"):
                 assert parent.wait(timeout=40) == 0
                 result = {
                     "status": "PASS",
+                    "temp_path": path_receipt,
                     "flow": "coldstart",
                     "native_network_identity_created": True,
                     "address_only_gui_start": True,
@@ -319,13 +322,28 @@ def case(root, previous, target, verifier, writer, running, flow="commit"):
                     "manual signed update check",
                     lambda: (state / "update-check.log").is_file()
                     and re.search(
-                        r"Remote version:\s+3\.3\.2(?:\s|$)",
+                        r"Remote version:\s+" + re.escape(package_version(target)) + r"(?:\s|$)",
                         (state / "update-check.log").read_text(errors="replace"),
                     ),
                 )
                 time.sleep(3)
                 click_update(hwnd)
-            assert parent.wait(timeout=300) == 0
+
+            def installed_gui_closed():
+                outcome_path = install / "update-last-result.json"
+                if outcome_path.is_file():
+                    try:
+                        update_result = json.loads(outcome_path.read_text(encoding="utf-8-sig"))
+                    except (OSError, ValueError):
+                        return False
+                    if update_result.get("status") == "failed":
+                        raise AssertionError(
+                            "Released updater refused the update: " + str(update_result)
+                        )
+                return parent.poll() is not None
+
+            wait_for("previous GUI shutdown after verified handoff", installed_gui_closed, 300)
+            assert parent.returncode == 0
             wait_for(
                 "completed real update",
                 lambda: not stage.parent.exists()
@@ -400,10 +418,11 @@ def case(root, previous, target, verifier, writer, running, flow="commit"):
         wait_for("new GUI exit", lambda: not processes(gui))
         result = {
             "status": "PASS",
+            "temp_path": path_receipt,
             "flow": flow,
             "resume_ticket_created_by": "fixture" if flow == "commit" else "actual_previous_gui",
             "commit_helper_sha256": digest(previous / "veld-update.ps1"),
-            "commit_helper_version": "3.2.9",
+            "commit_helper_version": package_version(previous),
             "previous_gui_pid": parent.pid,
             "reopened_gui_pid": reopened.pid,
             "running_intent": running,
@@ -413,7 +432,14 @@ def case(root, previous, target, verifier, writer, running, flow="commit"):
         }
         (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         return result
-    except BaseException:
+    except BaseException as error:
+        (root / "result.json").write_text(
+            json.dumps(
+                {"status": "FAILED", "flow": flow, "temp_path": path_receipt, "error": repr(error)},
+                indent=2,
+            )
+            + "\n"
+        )
         (root / "datadir-entries.json").write_text(
             json.dumps(
                 [{"name": item.name, "directory": item.is_dir()} for item in data.iterdir()],
@@ -480,6 +506,7 @@ def main():
     for field in ("previous", "target", "verifier", "ticket-writer", "output"):
         parser.add_argument("--" + field, required=True, type=Path)
     parser.add_argument("--flow", choices=("commit", "complete"), default="commit")
+    parser.add_argument("--temp-path", choices=("all", *TEMP_PATH_CASES), default="all")
     args = parser.parse_args()
     assert os.environ.get("GITHUB_ACTIONS") == "true", "Use only a disposable GitHub Windows runner"
     assert (
@@ -491,52 +518,65 @@ def main():
     args.output.mkdir()
     result = {"status": "RUNNING", "cases": []}
     try:
-        if args.flow == "commit":
-            for name, running in (("stopped", False), ("address-only-running", True)):
-                result["cases"].append(
-                    case(
-                        args.output / name,
-                        args.previous,
-                        args.target,
-                        args.verifier,
-                        args.ticket_writer,
-                        running,
-                    )
-                )
-            result["status"] = "PASS_SIGNED_PACKAGE_GUI_AND_NODE_RESTART"
-        else:
-            from windows_package_https_fixture import PrivateFeed
-
-            result["cases"].append(
-                case(
-                    args.output / "coldstart",
-                    args.target,
-                    args.target,
-                    args.verifier,
-                    args.ticket_writer,
-                    True,
-                    "coldstart",
-                )
-            )
-            with PrivateFeed(args.target, args.output / "https-feed") as feed:
-                for flow in ("automatic", "manual"):
-                    start = len(feed.rows)
+        path_cases = TEMP_PATH_CASES if args.temp_path == "all" else (args.temp_path,)
+        result["requested_temp_paths"] = list(path_cases)
+        result["temp_path_coverage_complete"] = False
+        for temp_path in path_cases:
+            path_root = args.output / temp_path
+            path_root.mkdir()
+            if args.flow == "commit":
+                for name, running in (("stopped", False), ("address-only-running", True)):
                     result["cases"].append(
                         case(
-                            args.output / flow,
+                            path_root / name,
                             args.previous,
                             args.target,
                             args.verifier,
                             args.ticket_writer,
-                            True,
-                            flow,
+                            running,
+                            temp_path=temp_path,
                         )
                     )
-                    routes = {row["path"] for row in feed.rows[start:] if row["status"] == 200}
-                    assert (set(feed.payloads) - {"/downloads/CHANGES.txt"}).issubset(routes), (
-                        routes
+            else:
+                from windows_package_https_fixture import PrivateFeed
+
+                result["cases"].append(
+                    case(
+                        path_root / "coldstart",
+                        args.target,
+                        args.target,
+                        args.verifier,
+                        args.ticket_writer,
+                        True,
+                        "coldstart",
+                        temp_path=temp_path,
                     )
-            result["status"] = "PASS_SIGNED_AUTOMATIC_AND_MANUAL_UPDATE_NODE_RESTART"
+                )
+                with PrivateFeed(args.target, path_root / "https-feed") as feed:
+                    for flow in ("automatic", "manual"):
+                        start = len(feed.rows)
+                        result["cases"].append(
+                            case(
+                                path_root / flow,
+                                args.previous,
+                                args.target,
+                                args.verifier,
+                                args.ticket_writer,
+                                True,
+                                flow,
+                                temp_path=temp_path,
+                            )
+                        )
+                        routes = {row["path"] for row in feed.rows[start:] if row["status"] == 200}
+                        assert (set(feed.payloads) - {"/downloads/CHANGES.txt"}).issubset(routes), (
+                            routes
+                        )
+        result["temp_path_coverage_complete"] = set(path_cases) == set(TEMP_PATH_CASES)
+        result["status"] = (
+            "PASS_SIGNED_PACKAGE_GUI_AND_NODE_RESTART"
+            if args.flow == "commit"
+            else "PASS_SIGNED_AUTOMATIC_AND_MANUAL_UPDATE_NODE_RESTART"
+        )
     except BaseException as error:
         result.update(status="FAILED", error=repr(error))
         raise
@@ -547,7 +587,7 @@ def main():
             )
             if args.flow == "commit"
             else (
-                "Unmodified signed 3.2.9 and target clients; canonical disposable TEMP path; private loopback HTTPS feed; actual automatic timer and Settings check/install, download, native signatures, GUI-created protected ticket, shutdown, Commit, GUI and address-only node resume. No mining or live peer connectivity. The released 3.2.9 short-TEMP-path refusal is separately reproduced."
+                "Unmodified signed previous and target clients; recorded inherited, long or real short TEMP paths; private loopback HTTPS feed; actual automatic timer and Settings check/install, download, native signatures, GUI-created protected ticket, shutdown, Commit, GUI and address-only node resume. No mining or live peer connectivity."
             )
         )
         (args.output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
