@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 import hashlib
+import ctypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -19,12 +20,15 @@ from cryptography.x509.oid import NameOID
 class PrivateFeed:
     def __init__(self, target, output):
         assert os.environ.get("GITHUB_ACTIONS") == "true"
+        assert os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted"
+        assert ctypes.windll.shell32.IsUserAnAdmin(), "Disposable runner must already be elevated"
         self.output = output
         self.output.mkdir()
         self.rows = []
         self.server = None
         self.thread = None
         self.thumbprint = None
+        self.certificate_imported = False
         self.hosts = Path(os.environ["SystemRoot"]) / "System32/drivers/etc/hosts"
         self.original = self.hosts.read_bytes()
         assert b"veld.network" not in self.original.lower()
@@ -70,11 +74,18 @@ class PrivateFeed:
             )
         )
         subprocess.run(
-            ["certutil", "-user", "-addstore", "Root", str(self.output / "tls.cer")],
+            ["certutil", "-f", "-addstore", "Root", str(self.output / "tls.cer")],
             check=True,
             capture_output=True,
             timeout=30,
         )
+        subprocess.run(
+            ["certutil", "-store", "Root", self.thumbprint],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        self.certificate_imported = True
 
     def __enter__(self):
         try:
@@ -130,17 +141,25 @@ class PrivateFeed:
         assert self.hosts.read_bytes() == self.original, "Unexpected hosts-file mutation"
         if self.thumbprint:
             subprocess.run(
-                ["certutil", "-user", "-delstore", "Root", self.thumbprint],
+                ["certutil", "-delstore", "Root", self.thumbprint],
                 check=True,
                 capture_output=True,
                 timeout=30,
             )
+            absent = subprocess.run(
+                ["certutil", "-store", "Root", self.thumbprint],
+                capture_output=True,
+                timeout=30,
+            )
+            assert absent.returncode != 0, "Temporary certificate still exists"
         (self.output / "requests.json").write_text(json.dumps(self.rows, indent=2) + "\n")
         (self.output / "cleanup.json").write_text(
             json.dumps(
                 {
                     "hosts_restored": True,
-                    "temporary_certificate_removed": bool(self.thumbprint),
+                    "temporary_certificate_imported": self.certificate_imported,
+                    "temporary_certificate_absent": bool(self.thumbprint),
+                    "temporary_certificate_store": "LocalMachine/Root on disposable hosted runner",
                     "listener_stopped": True,
                     "scope": "Loopback TLS feed on disposable hosted runner; normal TLS and package signatures enforced",
                 },
