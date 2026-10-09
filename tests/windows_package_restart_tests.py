@@ -50,17 +50,22 @@ user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 user32.SendMessageTimeoutW.argtypes = [
-    wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
-    wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_size_t),
+    wintypes.HWND,
+    wintypes.UINT,
+    wintypes.WPARAM,
+    wintypes.LPARAM,
+    wintypes.UINT,
+    wintypes.UINT,
+    ctypes.POINTER(ctypes.c_size_t),
 ]
 user32.SendMessageTimeoutW.restype = ctypes.c_ssize_t
 
 
 def menu_command(hwnd, command):
     result = ctypes.c_size_t()
-    assert user32.SendMessageTimeoutW(
-        hwnd, 0x111, command, 0, 3, 20000, ctypes.byref(result)
-    ), "Native menu command was not handled"
+    assert user32.SendMessageTimeoutW(hwnd, 0x111, command, 0, 3, 20000, ctypes.byref(result)), (
+        "Native menu command was not handled"
+    )
 
 
 def window(pid):
@@ -140,7 +145,8 @@ def case(root, previous, target, verifier, writer, running):
     data = root / "data"
     data.mkdir()
     sentinel = data / "preserved.txt"
-    sentinel.write_text("disposable persistent state")
+    if not running:
+        sentinel.write_text("disposable persistent state")
     address = "VYTVc2e49QRPbb2LWSeRBH95GsmYdszfRC"
     settings = (
         "startup=0\nstartup_unlock=0\nminimize_to_tray=0\nauto_update=0\n"
@@ -210,6 +216,8 @@ def case(root, previous, target, verifier, writer, running):
             old_node = wait_for("previous real node", lambda: next(iter(processes(node)), None))
             time.sleep(8)
             assert old_node.is_running()
+            assert (data / "network.identity").is_file()
+            sentinel.write_text("disposable persistent state")
             assert "--address-only" in old_node.cmdline() and "--mine" in old_node.cmdline()
             menu_command(hwnd, 4102)
             wait_for("previous node graceful stop", lambda: not processes(node))
@@ -243,7 +251,7 @@ def case(root, previous, target, verifier, writer, running):
                     "-ExecutionPolicy",
                     "Bypass",
                     "-File",
-                    str(target / "veld-update.ps1"),
+                    str(install / "veld-update.ps1"),
                     "-Mode",
                     "Commit",
                     "-InstallDir",
@@ -297,6 +305,8 @@ def case(root, previous, target, verifier, writer, running):
         wait_for("new GUI exit", lambda: not processes(gui))
         result = {
             "status": "PASS",
+            "commit_helper_sha256": digest(previous / "veld-update.ps1"),
+            "commit_helper_version": "3.2.9",
             "previous_gui_pid": parent.pid,
             "reopened_gui_pid": reopened.pid,
             "running_intent": running,
@@ -318,9 +328,13 @@ def case(root, previous, target, verifier, writer, running):
         log = state / "node-gui-node.log"
         if log.is_file():
             lines = log.read_bytes()[-65536:].decode(errors="replace").splitlines()
-            safe = [line for line in lines if not re.search(
-                r"token|passphrase|password|secret|cookie|authorization", line, re.I
-            )]
+            safe = [
+                line
+                for line in lines
+                if not re.search(
+                    r"token|passphrase|password|secret|cookie|authorization", line, re.I
+                )
+            ]
             (root / "node-diagnostic.log").write_text("\n".join(safe) + "\n")
         raise
     finally:
@@ -367,7 +381,7 @@ def main():
         raise
     finally:
         result["scope"] = (
-            "Authenticated staged packages, real Commit, GUI and node; fixture-created protected ticket. No hourly scheduler or download."
+            "Authenticated staged packages, previous installed updater Commit, real GUI and node; fixture-created protected ticket. No hourly scheduler or download."
         )
         (args.output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     print(result["status"])
