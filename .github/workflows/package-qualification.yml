@@ -72,5 +72,6 @@ jobs:
             ${{ runner.temp }}/package-results/**/result.json
             ${{ runner.temp }}/package-results/**/commit.log
             ${{ runner.temp }}/package-results/**/diagnostics.json
+            ${{ runner.temp }}/package-results/**/ownership.json
           retention-days: 14
           if-no-files-found: warn

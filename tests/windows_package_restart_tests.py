@@ -144,6 +144,36 @@ def case(root, previous, target, verifier, writer, running):
     node = install / "bin/veld-node.exe"
     firewall = "Veld disposable package " + root.name
     ps = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    # Elevated hosted runners default new objects to Administrators ownership.
+    # A normal user profile belongs to its individual SID. Reproduce that
+    # ownership only within this newly created disposable fixture tree.
+    ownership_script = root / "ownership.ps1"
+    ownership_script.write_text(
+        "param([string]$Path)\n$ErrorActionPreference='Stop'\n"
+        "$target = (Resolve-Path -LiteralPath $Path).Path\n"
+        "$boundary = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'package-results')) "
+        "+ [IO.Path]::DirectorySeparatorChar\n"
+        "if (!$target.StartsWith($boundary, [StringComparison]::OrdinalIgnoreCase)) "
+        "{ throw 'Outside fixture boundary' }\n"
+        "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User\n"
+        "$before = (Get-Acl -LiteralPath $target).Owner\n"
+        "$items = @(Get-Item -LiteralPath $target) + "
+        "@(Get-ChildItem -LiteralPath $target -Recurse -Force)\n"
+        "foreach ($item in $items) {\n"
+        "  if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) "
+        "{ throw 'Unexpected fixture reparse point' }\n"
+        "  $acl = Get-Acl -LiteralPath $item.FullName\n"
+        "  $acl.SetOwner($sid)\n"
+        "  Set-Acl -LiteralPath $item.FullName -AclObject $acl\n"
+        "  $actual = (Get-Acl -LiteralPath $item.FullName).GetOwner("
+        "[Security.Principal.SecurityIdentifier]).Value\n"
+        "  if ($actual -ne $sid.Value) { throw 'Fixture ownership mismatch' }\n"
+        "}\n"
+        "@{ before=$before; current_user_sid=$sid.Value; checked=$items.Count } "
+        "| ConvertTo-Json -Compress\n"
+    )
+    ownership = run([ps, "-NoProfile", "-File", ownership_script, str(root)])
+    (root / "ownership.json").write_bytes(ownership.stdout)
     # The runner is disposable. Block this fixture node only; retain loopback.
     firewall_script = root / "firewall.ps1"
     firewall_script.write_text(
@@ -264,7 +294,10 @@ def case(root, previous, target, verifier, writer, running):
         observed = {}
         for path in (gui, node):
             for process in processes(path):
-                observed[str(process.pid)] = diagnostics(process.pid)
+                try:
+                    observed[str(process.pid)] = diagnostics(process.pid)
+                except psutil.NoSuchProcess:
+                    pass
         (root / "diagnostics.json").write_text(json.dumps(observed, indent=2) + "\n")
         raise
     finally:
