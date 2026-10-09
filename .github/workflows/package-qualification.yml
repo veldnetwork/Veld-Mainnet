@@ -24,6 +24,16 @@ on:
         options:
           - commit
           - complete
+      temp_path:
+        description: Temporary-path qualification cases
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - inherited
+          - long
+          - short
 
 permissions:
   contents: read
@@ -73,10 +83,11 @@ jobs:
       - name: Exercise complete Commit with actual GUI and node processes
         env:
           QUALIFICATION_FLOW: ${{ inputs.flow }}
+          QUALIFICATION_TEMP_PATH: ${{ inputs.temp_path }}
         shell: pwsh
         run: |
           $inputs = Get-Content -LiteralPath "$env:RUNNER_TEMP/package-inputs/inputs.json" -Raw | ConvertFrom-Json
-          python tests/windows_package_restart_tests.py --previous $inputs.previous --target $inputs.target --verifier $inputs.verifier --ticket-writer "$env:RUNNER_TEMP/resume-ticket.exe" --output "$env:RUNNER_TEMP/package-results" --flow $env:QUALIFICATION_FLOW --temp-path all
+          python tests/windows_package_restart_tests.py --previous $inputs.previous --target $inputs.target --verifier $inputs.verifier --ticket-writer "$env:RUNNER_TEMP/resume-ticket.exe" --output "$env:RUNNER_TEMP/package-results" --flow $env:QUALIFICATION_FLOW --temp-path $env:QUALIFICATION_TEMP_PATH
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
