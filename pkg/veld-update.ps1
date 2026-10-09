@@ -14,6 +14,14 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.Net.Http
 Add-Type -AssemblyName System.IO.Compression
+function Get-CanonicalDirectoryPath([string]$Path) {
+    $item = Get-Item -LiteralPath $Path -Force
+    if (-not $item.PSIsContainer -or
+        ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'update directory must be a regular directory'
+    }
+    return $item.FullName
+}
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $installRoot = [IO.Path]::GetPathRoot($InstallDir)
 if ($InstallDir.Length -gt $installRoot.Length) {
@@ -23,6 +31,7 @@ if (-not [IO.Directory]::Exists($InstallDir)) {
     Write-Host '   [update] ABORT: install directory does not exist'
     exit 1
 }
+$InstallDir = Get-CanonicalDirectoryPath $InstallDir
 $Base = 'https://veld.network/downloads'
 $RemoteManifestName = if ($Distribution -eq 'Terminal') {
     'VeldTerminalClient-SHA256SUMS.txt'
@@ -1298,6 +1307,7 @@ if ($Mode -eq 'Watch') {
 
 $TempRoot = Join-Path $env:TEMP ('veld-update-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $TempRoot | Out-Null
+$TempRoot = Get-CanonicalDirectoryPath $TempRoot
 if (((Get-Item -LiteralPath $TempRoot -Force).Attributes -band
         [IO.FileAttributes]::ReparsePoint) -ne 0) {
     throw 'update temporary directory is a reparse point'

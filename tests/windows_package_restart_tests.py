@@ -184,7 +184,17 @@ def case(root, previous, target, verifier, writer, running, flow="commit"):
         for k, v in os.environ.items()
         if not k.upper().startswith("VELD_") and k.upper() != "PSMODULEPATH"
     }
-    env.update(LOCALAPPDATA=str(profile), VELD_UPDATE_NODE_DATA_DIR=str(data))
+    # 3.2.9 miscounts extracted files when TEMP contains a Windows short alias.
+    # Exercise its intact update entry on a canonical path. The candidate's
+    # short-path correction has a separate real Windows archive regression.
+    temp = root / "temp"
+    temp.mkdir()
+    env.update(
+        LOCALAPPDATA=str(profile),
+        VELD_UPDATE_NODE_DATA_DIR=str(data),
+        TEMP=str(temp),
+        TMP=str(temp),
+    )
     gui = install / "Veld Node.exe"
     node = install / "bin/veld-node.exe"
     firewall = "Veld disposable package " + root.name
@@ -537,7 +547,7 @@ def main():
             )
             if args.flow == "commit"
             else (
-                "Unmodified signed 3.2.9 and target clients; private loopback HTTPS feed; actual automatic timer and Settings check/install, download, native signatures, GUI-created protected ticket, shutdown, Commit, GUI and address-only node resume. No mining or live peer connectivity."
+                "Unmodified signed 3.2.9 and target clients; canonical disposable TEMP path; private loopback HTTPS feed; actual automatic timer and Settings check/install, download, native signatures, GUI-created protected ticket, shutdown, Commit, GUI and address-only node resume. No mining or live peer connectivity. The released 3.2.9 short-TEMP-path refusal is separately reproduced."
             )
         )
         (args.output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
