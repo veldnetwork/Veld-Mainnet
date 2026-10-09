@@ -62,6 +62,10 @@ async function run(){
    let rejected=false;try{_veldReviewNmsProof(JSON.stringify({...packet,...patch}),owner,tip);}catch(_){rejected=true;}if(!rejected)return false;
   }return true;
  });
+ await check('unsupported SHA-384 proof reports the reason without signing',()=>{
+  const packet={schema:1,genesis:VELD_GENESIS_HASH,address:owner,supported:false,payload:''};
+  try{_veldReviewNmsProof(JSON.stringify(packet),owner,null);}catch(e){return e.message==='Near-miss entries do not support SHA-384 payout addresses.';}return false;
+ });
  await check('explicit wallet confirmation and exact signing guards',async()=>{
   const p=_veldNmsTransaction(fixture['1u'],owner), packet={schema:1,genesis:VELD_GENESIS_HASH,address:owner,fee_units:'100000',height:102,window_draw:200,parent:p.parent,payload:p.payload,eligible:true,needed:true};
   document.getElementById('cm-nms-proof').value=JSON.stringify(packet);

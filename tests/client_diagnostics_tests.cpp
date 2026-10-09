@@ -61,6 +61,14 @@ int main(int argc, char** argv) {
                                      std::string(194, 'a') + "\"}";
     check(ParseMiningStats(with_proof(public_proof), stats, error));
     check(stats.nms_proof == public_proof);
+    check(ParseMiningStats(
+        with_proof(
+            "{\"address\":\"disposable-fixture-address\",\"supported\":false,\"payload\":\"\"}"),
+        stats, error));
+    check(!stats.nms_supported && stats.nms_proof.empty());
+    check(ParseMiningStats(
+        with_proof("{\"address\":\"other\",\"supported\":false,\"payload\":\"\"}"), stats, error));
+    check(stats.nms_supported && stats.nms_proof.empty());
     check(ParseMiningStats(with_proof("null"), stats, error) && stats.nms_proof.empty());
     check(ParseMiningStats(
               with_proof("{\"address\":\"other\",\"payload\":\"" + std::string(194, 'a') + "\"}"),

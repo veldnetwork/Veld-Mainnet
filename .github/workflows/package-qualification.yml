@@ -1,0 +1,67 @@
+name: Signed Windows package restart qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Unpublished signed draft version
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  signed-restart:
+    name: Real signed GUI and node restart
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install process inspection dependency
+        run: |
+          python -m pip install --only-binary=:all: psutil==7.0.0
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: CLANG64
+          update: true
+          install: mingw-w64-clang-x86_64-clang
+      - name: Compile the protected test ticket writer
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          clang++ -std=c++20 -O1 -municode -Iinclude tests/windows_package_resume_ticket.cpp \
+            -nostdlib++ /clang64/lib/libc++.a /clang64/lib/libc++abi.a /clang64/lib/libunwind.a \
+            -lbcrypt -lcrypt32 -ladvapi32 -luser32 -lshell32 \
+            -o "$(cygpath -u "$RUNNER_TEMP")/resume-ticket.exe"
+      - name: Authenticate the unpublished package with a pinned independent verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_VERSION: ${{ inputs.version }}
+        shell: pwsh
+        run: |
+          python tests/windows_package_inputs.py --version $env:PACKAGE_VERSION --output "$env:RUNNER_TEMP/package-inputs"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exercise complete Commit with actual GUI and node processes
+        shell: pwsh
+        run: |
+          $inputs = Get-Content -LiteralPath "$env:RUNNER_TEMP/package-inputs/inputs.json" -Raw | ConvertFrom-Json
+          python tests/windows_package_restart_tests.py --previous $inputs.previous --target $inputs.target --verifier $inputs.verifier --ticket-writer "$env:RUNNER_TEMP/resume-ticket.exe" --output "$env:RUNNER_TEMP/package-results"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: signed-package-restart-evidence
+          path: |
+            ${{ runner.temp }}/package-inputs/inputs.json
+            ${{ runner.temp }}/package-results/result.json
+            ${{ runner.temp }}/package-results/**/result.json
+            ${{ runner.temp }}/package-results/**/commit.log
+          retention-days: 14
+          if-no-files-found: warn

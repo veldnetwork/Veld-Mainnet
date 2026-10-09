@@ -52,6 +52,7 @@ struct MiningStats {
     std::string miner_address;
     std::string work_state;
     std::string nms_proof;
+    bool nms_supported{true};
 };
 
 struct BlockSummary {
@@ -458,6 +459,10 @@ inline bool ParseMiningStats(const std::string& body, MiningStats& out,
         if (proof_parser.Parse(packet, packet_error)) {
             const auto* payload = packet.Get("payload");
             const auto* owner = packet.Get("address");
+            const auto* supported = packet.Get("supported");
+            if (owner && owner->kind == btc_buy::JsonValue::Kind::String && owner->text == parsed.miner_address &&
+                supported && supported->kind == btc_buy::JsonValue::Kind::Bool)
+                parsed.nms_supported = supported->boolean;
             if (payload && payload->kind == btc_buy::JsonValue::Kind::String && payload->text.size() == 194 &&
                 payload->text.find_first_not_of("0123456789abcdef") == std::string::npos &&
                 owner && owner->kind == btc_buy::JsonValue::Kind::String && owner->text == parsed.miner_address)

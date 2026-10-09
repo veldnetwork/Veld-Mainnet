@@ -4950,6 +4950,8 @@ async function loadAddressOnlyNms() {
 function _veldReviewNmsProof(text, address, tip) {
   if (typeof text !== 'string' || text.length > 1200) throw new Error('Invalid near-miss proof.');
   var proof = JSON.parse(text);
+  if (proof && proof.schema === 1 && proof.genesis === VELD_GENESIS_HASH && proof.address === address && proof.supported === false)
+    throw new Error('Near-miss entries do not support SHA-384 payout addresses.');
   if (!proof || proof.schema !== 1 || proof.genesis !== VELD_GENESIS_HASH || proof.address !== address ||
       proof.fee_units !== '100000' || !Number.isSafeInteger(proof.height) || proof.height < 0 ||
       proof.window_draw !== proof.height - proof.height % 100 + 100 ||

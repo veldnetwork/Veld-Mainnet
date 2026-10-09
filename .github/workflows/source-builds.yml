@@ -29,6 +29,7 @@ jobs:
           update: true
           install: >-
             git
+            diffutils
             mingw-w64-clang-x86_64-clang
             mingw-w64-clang-x86_64-openssl
             mingw-w64-clang-x86_64-leveldb
@@ -40,6 +41,8 @@ jobs:
           output=$(cygpath -u "$RUNNER_TEMP")/windows-client
           bash build/mainnet-v2-windows.sh node "$output/node"
           bash build/mainnet-v2-windows.sh desktop "$output/desktop"
+          bash build/mainnet-v2-windows.sh keygen "$output/keygen"
+          bash build/mainnet-v2-windows.sh validator "$output/validator"
           VELD_TRUSTED_NODE_BUILD="$output/node" \
             VELD_TRUSTED_WALLET_BUILD="$output/desktop" \
             bash build/mainnet-v2-windows.sh gui "$output/gui"

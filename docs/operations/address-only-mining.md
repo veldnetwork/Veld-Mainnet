@@ -81,6 +81,11 @@ The payout address must meet the lottery's **1,000 VELD** staking requirement
 and have confirmed spendable funds for the **0.001 VELD** transaction fee.
 Finding a block alone does not submit a near-miss entry.
 
+Near-miss entries require a standard Veld payout address. SHA-384 payout
+destinations support block mining after their activation height, but the
+current near-miss transaction format does not support them. Their proof status
+reports this limitation instead of waiting for an entry.
+
 1. Keep the address-only miner running. On Windows, use **Copy near miss** on
    the node's Mining tab when a proof is available.
 2. Open the payout wallet and go to **Co-Mining Lottery → Address-only mining**.

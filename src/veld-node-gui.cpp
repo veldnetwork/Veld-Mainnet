@@ -3920,8 +3920,8 @@ private:
         copy_nms_button_ = {};
         if (address_only_) {
             copy_nms_button_ = {safety.right - S(230), safety.top + S(12), safety.right - S(16), safety.top + S(43)};
-            DrawButton(dc, copy_nms_button_, live.mining.nms_proof.empty()
-                ? L"Waiting for near miss" : L"Copy near miss", live.mining_status_online && !live.mining.nms_proof.empty());
+            DrawButton(dc, copy_nms_button_, !live.mining.nms_supported ? L"SHA-384: no NMS" : live.mining.nms_proof.empty()
+                ? L"Waiting for near miss" : L"Copy near miss", live.mining_status_online && live.mining.nms_supported && !live.mining.nms_proof.empty());
         }
         RECT safety_title{safety.left + S(22), safety.top + S(12),
                           safety.right - S(20), safety.top + S(43)};

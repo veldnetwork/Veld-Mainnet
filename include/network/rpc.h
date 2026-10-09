@@ -1152,16 +1152,23 @@ class RpcServer {
     std::string AddressOnlyNmsProofJson(const std::string& address) {
         auto transition = chain_.AcquireConsensusTransitionGuard();
         const auto script = AddressToScript(address);
-        if (script.size() != 25 || ScriptToAddress(script) != address)
-            throw std::invalid_argument("canonical legacy mining address required");
+        if ((script.size() != 25 && script.size() != 51) || ScriptToAddress(script) != address)
+            throw std::invalid_argument("canonical mining address required");
+        const bool supported = script.size() == 25;
         const auto tip = chain_.TipCopy();
         const auto proof = nms_proofs_.Read(script, tip.GetHash());
-        const bool eligible = chain_.NmsBondSatisfied(script, NextInclusionHeight(tip.height));
-        const bool needed = mining::NeedsNmsSubmission(chain_, mempool_, script, tip.GetHash());
+        const bool eligible =
+            supported && chain_.NmsBondSatisfied(script, NextInclusionHeight(tip.height));
+        const bool needed =
+            supported && mining::NeedsNmsSubmission(chain_, mempool_, script, tip.GetHash());
         return JsonBuilder::Object({
             {"schema", JsonBuilder::Number(uint64_t{1})},
             {"genesis", JsonBuilder::String(GENESIS_HASH)},
             {"address", JsonBuilder::String(address)},
+            {"supported", JsonBuilder::Bool(supported)},
+            {"reason",
+             JsonBuilder::String(
+                 supported ? "" : "Near-miss entries do not support SHA-384 payout addresses.")},
             {"parent", JsonBuilder::String(HashToHex(tip.GetHash()))},
             {"height", JsonBuilder::Number(tip.height)},
             {"window_draw", JsonBuilder::Number(tip.height - tip.height % COMINE_WINDOW_BLOCKS +

@@ -190,6 +190,12 @@ int main(int argc, char** argv) {
         StorageEngine storage((root / "rpc-storage").string(), MAINNET_MAGIC);
         RpcServer rpc(c, pool, storage);
         rpc.SetIBDCompleteFn([] { return true; });
+        const auto sha384_address = Sha384KeyAddress(owner.public_key, false);
+        const auto unsupported = call(rpc, "getaddressnmsproof", {sha384_address});
+        check(!unsupported.Get("supported")->boolean && !unsupported.Get("eligible")->boolean &&
+                  !unsupported.Get("needed")->boolean && unsupported.Get("payload")->text.empty() &&
+                  unsupported.Get("reason")->text.find("SHA-384") != std::string::npos,
+              "SHA-384 mining payout reports unsupported NMS explicitly");
         auto h = claim(c, 11);
         rpc.OfferAddressOnlyNmsProof(owner.GetP2PKHScript(), h);
         auto proof = call(rpc, "getaddressnmsproof", {address});
