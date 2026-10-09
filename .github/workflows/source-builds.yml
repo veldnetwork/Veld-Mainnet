@@ -153,7 +153,7 @@ jobs:
           sudo unshare --net -- bash -c 'ip link set lo up; exec python3 "$@"' \
             bash tests/linux_pool_menu_tests.py "$RUNNER_TEMP/source-build/bin/veld-node"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        if: success() && contains(fromJSON('["node", "desktop", "pool-worker"]'), matrix.role)
+        if: success() && contains(fromJSON('["node", "desktop", "pool-worker", "fleet"]'), matrix.role)
         with:
           name: unsigned-linux-${{ matrix.role }}-payload
           path: |
