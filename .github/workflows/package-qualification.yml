@@ -28,7 +28,6 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-          ref: ${{ inputs.source_commit }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.11'
@@ -52,9 +51,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PACKAGE_VERSION: ${{ inputs.version }}
+          RELEASE_SOURCE_COMMIT: ${{ inputs.source_commit }}
         shell: pwsh
         run: |
-          python tests/windows_package_inputs.py --version $env:PACKAGE_VERSION --output "$env:RUNNER_TEMP/package-inputs"
+          python tests/windows_package_inputs.py --version $env:PACKAGE_VERSION --source-commit $env:RELEASE_SOURCE_COMMIT --output "$env:RUNNER_TEMP/package-inputs"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise complete Commit with actual GUI and node processes
         shell: pwsh
@@ -71,5 +71,6 @@ jobs:
             ${{ runner.temp }}/package-results/result.json
             ${{ runner.temp }}/package-results/**/result.json
             ${{ runner.temp }}/package-results/**/commit.log
+            ${{ runner.temp }}/package-results/**/diagnostics.json
           retention-days: 14
           if-no-files-found: warn

@@ -113,10 +113,12 @@ def download(release, destination):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--source-commit", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     assert os.environ.get("GITHUB_ACTIONS") == "true"
     assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version)
+    assert re.fullmatch(r"[0-9a-f]{40}", args.source_commit)
     args.output.mkdir()
     old = api("releases/tags/v3.2.9")
     assert not old["draft"] and not old["prerelease"]
@@ -136,7 +138,10 @@ def main():
     identity = json.loads((target / "BUILD-IDENTITY.json").read_text())
     assert identity["version"] == args.version
     assert re.fullmatch(r"[0-9a-f]{40}", identity["source_commit"])
-    assert identity["source_tree"] == command(["git", "rev-parse", "HEAD^{tree}"]).decode().strip()
+    assert identity["source_commit"] == args.source_commit
+    assert identity["source_tree"] == command(
+        ["git", "rev-parse", args.source_commit + "^{tree}"]
+    ).decode().strip()
     assert (
         command(["git", "rev-parse", identity["source_commit"] + "^{tree}"]).decode().strip()
         == identity["source_tree"]

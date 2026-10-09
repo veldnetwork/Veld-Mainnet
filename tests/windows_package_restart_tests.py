@@ -43,6 +43,7 @@ callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
 user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
 user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
 user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 
 
@@ -55,12 +56,35 @@ def window(pid):
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
         title = ctypes.create_unicode_buffer(512)
         user32.GetWindowTextW(hwnd, title, len(title))
-        if owner.value == pid and title.value == "Veld Node":
+        kind = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, kind, len(kind))
+        if owner.value == pid and kind.value == "VeldNodeGuiWindow":
             found.append(hwnd)
         return True
 
     user32.EnumWindows(visit, 0)
     return found[0] if found else None
+
+
+def diagnostics(pid):
+    rows = []
+
+    @callback_type
+    def visit(hwnd, unused):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value != pid:
+            return True
+        title = ctypes.create_unicode_buffer(512)
+        kind = ctypes.create_unicode_buffer(256)
+        user32.GetWindowTextW(hwnd, title, len(title))
+        user32.GetClassNameW(hwnd, kind, len(kind))
+        rows.append({"handle": hwnd, "class": kind.value, "title": title.value})
+        return True
+
+    user32.EnumWindows(visit, 0)
+    process = psutil.Process(pid)
+    return {"windows": rows, "status": process.status(), "threads": process.num_threads()}
 
 
 def processes(path):
@@ -187,7 +211,7 @@ def case(root, previous, target, verifier, writer, running):
             )
             time.sleep(2)
             assert updater.poll() is None and parent.poll() is None
-            assert user32.PostMessageW(hwnd, 0x111, 4103, 0)
+            assert user32.PostMessageW(hwnd, 0x0010, 0, 0)
             assert parent.wait(timeout=40) == 0
             assert updater.wait(timeout=120) == 0
         outcome = json.loads((install / "update-last-result.json").read_text(encoding="utf-8-sig"))
@@ -223,7 +247,7 @@ def case(root, previous, target, verifier, writer, running):
             assert not processes(node), "stopped node unexpectedly started"
         assert sentinel.read_text() == "disposable persistent state"
         assert not stage.parent.exists()
-        assert user32.PostMessageW(hwnd, 0x111, 4103, 0)
+        assert user32.PostMessageW(hwnd, 0x0010, 0, 0)
         wait_for("new GUI exit", lambda: not processes(gui))
         result = {
             "status": "PASS",
@@ -236,6 +260,13 @@ def case(root, previous, target, verifier, writer, running):
         }
         (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         return result
+    except BaseException:
+        observed = {}
+        for path in (gui, node):
+            for process in processes(path):
+                observed[str(process.pid)] = diagnostics(process.pid)
+        (root / "diagnostics.json").write_text(json.dumps(observed, indent=2) + "\n")
+        raise
     finally:
         # Only processes from this absent-at-start disposable installation.
         for path in (gui, node):
