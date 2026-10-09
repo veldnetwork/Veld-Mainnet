@@ -89,5 +89,34 @@ $Mode='Commit';Write-UpdateResult 'failed' 'Fixture failure: installation preser
 $saved=Get-Content -LiteralPath (Join-Path $InstallDir 'update-last-result.json') -Raw|ConvertFrom-Json
 Need ($saved.status -eq 'failed' -and $saved.phase -eq 'Commit') 'Detached commit failure was not retained'
 $results+=@{case='durable outcome';result='PASS'}
+function Get-VerifiedInstalled { return @{Entries=@{'Veld Node.exe'='fixture'}} }
+function Start-Process {
+    param($FilePath,$WorkingDirectory,$WindowStyle,[switch]$PassThru,$ArgumentList)
+    Need ($FilePath -eq (Join-Path $InstallDir 'Veld Node.exe') -and $PassThru) 'Wrong GUI relaunch target'
+    $index=$script:LaunchCount
+    $script:LaunchCount++
+    $child=[pscustomobject]@{ExitCode=17;Exited=[bool]$script:LaunchExits[$index];Unknown=[bool]$script:LaunchUnknown}
+    $child|Add-Member ScriptMethod WaitForExit {param($Milliseconds) if($this.Unknown){throw 'fixture observation failed'};return $this.Exited}
+    $child|Add-Member ScriptMethod Dispose {}
+    return $child
+}
+$Distribution='Node'
+$script:LaunchCount=0;$script:LaunchExits=@($false);$script:LaunchUnknown=$false
+$script:CommitRelaunchAttempted=$false
+Relaunch-InstalledClient
+Need ($script:LaunchCount -eq 1 -and $script:CommitRelaunchAttempted) 'Stable GUI relaunch was not accepted'
+$script:LaunchCount=0;$script:LaunchExits=@($true,$true,$false)
+Relaunch-InstalledClient
+Need ($script:LaunchCount -eq 3) 'Transient early exits were not retried'
+$script:LaunchCount=0;$script:LaunchExits=@($true,$true,$true)
+$earlyExitRefused=$false
+try{Relaunch-InstalledClient}catch{$earlyExitRefused=$_.Exception.Message -like '*did not stay open after 3 starts*'}
+Need ($earlyExitRefused -and $script:LaunchCount -eq 3) 'Repeated early GUI exit was not bounded and reported'
+$script:LaunchCount=0;$script:LaunchExits=@($false);$script:LaunchUnknown=$true
+$unknownRefused=$false
+try{Relaunch-InstalledClient}catch{$unknownRefused=$_.Exception.Message -like '*state could not be checked*'}
+Need ($unknownRefused -and $script:LaunchCount -eq 1) 'Unknown child state launched duplicate GUI processes'
+$script:LaunchUnknown=$false
+$results+=@{case='bounded GUI relaunch';result='PASS'}
 @{result='PASS';cases=$results}|ConvertTo-Json -Depth 5|Set-Content -LiteralPath (Join-Path $InstallDir 'result.json')
 Write-Host ('PASS updater durability cases='+$results.Count)

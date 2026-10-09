@@ -3840,6 +3840,19 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     </div>
   </div>
 
+  <div class="card" id="cm-nms-card">
+    <div class="card-title">Address-only mining</div>
+    <p class="form-hint">Copy a proof from the node's Mining tab, or choose address-only-nms.json from its data folder on Linux or Windows. Sign it here with the payout wallet. The fee is 0.001 VELD. Proofs expire at the next block.</p>
+    <textarea id="cm-nms-proof" class="form-input" rows="3" maxlength="1200" aria-label="Near-miss proof" placeholder="Paste the public proof from your miner"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" data-act-click="hnms_load">Read from this node</button>
+      <button class="btn btn-ghost btn-sm" data-act-click="hnms_choose">Choose proof file</button>
+      <input id="cm-nms-file" type="file" accept=".json,application/json" style="display:none" data-act-change="hnms_file">
+      <button class="btn btn-em btn-sm" id="cm-nms-sign" data-act-click="hnms_sign">Sign near miss</button>
+    </div>
+    <div id="cm-nms-status" class="form-hint" role="status"></div>
+  </div>
+
   <!-- Your Lottery Eligibility — visible, top-of-page so the user sees it
        immediately instead of having to scroll to the paragraph below. The
        second "Stake Required" card was removed because the body text of
@@ -3889,7 +3902,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       </div>
       <div style="background:var(--s2);border-radius:6px;padding:14px">
         <div style="color:var(--em);font-size:11px;font-weight:600;margin-bottom:6px">2. Mine</div>
-        <div style="color:var(--muted);font-size:12px;line-height:1.55">Mine normally. Your node automatically submits "near-misses" while searching for blocks. One near-miss in a 100-block window is enough to enter the lottery.</div>
+        <div style="color:var(--muted);font-size:12px;line-height:1.55">A wallet mining node submits near misses automatically. Address-only miners submit through their payout wallet using the proof above. One near-miss in a 100-block window is enough to enter the lottery.</div>
       </div>
       <div style="background:var(--s2);border-radius:6px;padding:14px">
         <div style="color:var(--em);font-size:11px;font-weight:600;margin-bottom:6px">3. Win</div>
@@ -4901,8 +4914,109 @@ function _veldRpcTransport(method, params) {
     });
 }
 
+async function importAddressOnlyNms(input) {
+  var status = document.getElementById('cm-nms-status');
+  var target = document.getElementById('cm-nms-proof');
+  var file = input.files && input.files[0];
+  if (!file) return;
+  target.value = '';
+  try {
+    if (!currentAddr) throw new Error('Open your payout wallet first.');
+    if (file.size < 1 || file.size > 1200) throw new Error('Choose the public address-only-nms.json file (maximum 1,200 bytes).');
+    var address = currentAddr, text = await file.text();
+    var tip = await rpc('getblockchaininfo', []);
+    if (address !== currentAddr) throw new Error('Wallet changed. Choose the proof again.');
+    _veldReviewNmsProof(text, address, tip);
+    target.value = text;
+    status.textContent = 'Proof ready. Review and sign before the next block.';
+  } catch (e) { status.textContent = e.message; }
+  finally { input.value = ''; }
+}
+
 // Signed input guards survive delivery uncertainty and reversible confirmations.
 // This database contains public transaction bytes only, never wallet secrets.
+async function loadAddressOnlyNms() {
+  var status = document.getElementById('cm-nms-status');
+  try {
+    if (!currentAddr) throw new Error('Open your payout wallet first.');
+    var address = currentAddr, proof = await rpc('getaddressnmsproof', [address]);
+    if (address !== currentAddr) throw new Error('Wallet changed. Read the proof again.');
+    if (!proof || !proof.payload) throw new Error('No current eligible near miss from this node. For a separate miner, copy its proof into this box.');
+    document.getElementById('cm-nms-proof').value = JSON.stringify(proof);
+    status.textContent = 'Proof ready. Review and sign before the next block.';
+  } catch (e) { status.textContent = e.message; }
+}
+
+function _veldReviewNmsProof(text, address, tip) {
+  if (typeof text !== 'string' || text.length > 1200) throw new Error('Invalid near-miss proof.');
+  var proof = JSON.parse(text);
+  if (!proof || proof.schema !== 1 || proof.genesis !== VELD_GENESIS_HASH || proof.address !== address ||
+      proof.fee_units !== '100000' || !Number.isSafeInteger(proof.height) || proof.height < 0 ||
+      proof.window_draw !== proof.height - proof.height % 100 + 100 ||
+      typeof proof.payload !== 'string' || !/^56454c445f4e4d5301[0-9a-f]{176}$/.test(proof.payload) ||
+      !/^[0-9a-f]{64}$/.test(proof.parent) || proof.payload.slice(26,90) !== proof.parent)
+    throw new Error('Proof does not match this wallet, network or fee.');
+  if (!tip || tip.blocks !== proof.height || tip.best_block_hash !== proof.parent)
+    throw new Error('This proof expired. Copy a new near miss from your miner.');
+  if (proof.eligible !== true || proof.needed !== true) throw new Error('This wallet is not eligible or already has an entry.');
+  return proof;
+}
+
+async function submitAddressOnlyNms() {
+  var button = document.getElementById('cm-nms-sign'), status = document.getElementById('cm-nms-status');
+  if (!__opLock('nms', [button], 'Checking proof…')) return;
+  try {
+    var seed = __veldKey.get(), generation = _veldAssertActiveSignerSeed(seed);
+    var identity = _veldRequireBoundIdentity(seed, null, currentAddr);
+    var text = document.getElementById('cm-nms-proof').value;
+    var tip = await rpc('getblockchaininfo', []);
+    _veldAssertActiveSignerSeed(seed, generation);
+    var proof = _veldReviewNmsProof(text, identity.address, tip);
+    if (!window.confirm('Submit this near miss for ' + identity.address + '? Network fee: 0.001 VELD. No funds leave your wallet apart from that fee.')) return;
+    var result = await signAndBroadcast('preparenmstx', [identity.address, proof.payload], seed,
+      [{value_units_str:'100000', expected_hash160_hex:_veldAddrToKeyCommitmentHex(identity.address)}],
+      _veldAddrToKeyCommitmentHex(identity.address), null, null, '6a4c61' + proof.payload, null, generation);
+    status.textContent = 'Near miss submitted. Entry counts after confirmation: ' + result.txid;
+    loadCominingPage();
+  } catch (e) { status.textContent = e.message + ' Saved transactions can be retried or recovered in Wallet.'; }
+  finally { __opUnlock('nms', [button]); }
+}
+
+function _veldNmsTransaction(hex, owner) {
+  var tx = _veldParseUnsignedTx(hex), hash = _veldAddrToKeyCommitmentHex(owner);
+  if (!hash || hash.length !== 40 || tx.inputs.length !== 1 || tx.version !== 1 || tx.locktime !== 0)
+    return null;
+  var self = _veldKeyCommitmentToScriptHex(hash), payload = '', sum = 0n;
+  if (tx.outputs.length < 2 || tx.outputs.length > 3 ||
+      tx.outputs[0].script_pubkey_hex !== self || tx.outputs[0].value_units_str !== '100000') return null;
+  for (var output of tx.outputs) {
+    var script = output.script_pubkey_hex;
+    if (script === self) sum += BigInt(output.value_units_str);
+    else if (!payload && output.value_units_str === '0' && /^6a4c6156454c445f4e4d5301[0-9a-f]{176}$/.test(script))
+      payload = script.slice(6);
+    else return null;
+  }
+  return payload ? {tx:tx, payload:payload, parent:payload.slice(26,90), total:sum} : null;
+}
+
+function _veldNmsReplacement(oldHex, newHex, owner) {
+  var old = _veldNmsTransaction(oldHex, owner);
+  if (!old) return false;
+  var next = _veldParseUnsignedTx(newHex), self = _veldKeyCommitmentToScriptHex(_veldAddrToKeyCommitmentHex(owner));
+  var inputShape = function(tx) { return JSON.stringify(tx.inputs.map(function(i) {
+    return [_veldBytesToHex(i.prevTxHash), i.prevOutIndex, i.sequence];
+  })); };
+  if (next.version !== old.tx.version || next.locktime !== old.tx.locktime || inputShape(next) !== inputShape(old.tx)) return false;
+  var replacement = _veldNmsTransaction(newHex, owner);
+  if (replacement) return replacement.total === old.total &&
+    JSON.stringify(next.outputs.filter(function(o) { return o.script_pubkey_hex === self; })) ===
+    JSON.stringify(old.tx.outputs.filter(function(o) { return o.script_pubkey_hex === self; }));
+  // Recovery returns the same input to its owner with the same exact fee.
+  // Only one of these conflicting transactions can be included on a branch.
+  return next.outputs.length === 1 && next.outputs[0].script_pubkey_hex === self &&
+    BigInt(next.outputs[0].value_units_str) === old.total;
+}
+
 function _veldJournal() {
   if (_veldJournal.instance) return _veldJournal.instance;
   var genesis = String(VELD_GENESIS_HASH || '').toLowerCase();
@@ -4924,11 +5038,16 @@ function _veldJournal() {
   function open() {
     if (closed) return Promise.reject(new Error('Wallet recovery changed. Reload before signing.'));
     if (!opening) opening = new Promise(function(resolve, reject) {
-      var req = indexedDB.open(name, 1);
+      var req = indexedDB.open(name, 2);
       req.onupgradeneeded = function(event) {
-        if (event.oldVersion !== 0) { req.transaction.abort(); return; }
+        if (event.oldVersion !== 0 && event.oldVersion !== 1) { req.transaction.abort(); return; }
         var db = req.result;
+        if (db.objectStoreNames.contains('records')) {
+          req.transaction.objectStore('records').createIndex('nms_alternates', 'nms_alternates', {multiEntry:true});
+          return;
+        }
         var records = db.createObjectStore('records', {keyPath:'id'});
+        records.createIndex('nms_alternates', 'nms_alternates', {multiEntry:true});
         records.createIndex('owner', 'owner');
         records.createIndex('txid', 'txid', {unique:true});
         db.createObjectStore('payloads', {keyPath:'id'});
@@ -4995,6 +5114,13 @@ function _veldJournal() {
         !['reserved', 'ready', 'submitted', 'confirmed'].includes(record.state) ||
         (record.state !== 'reserved' && !/^[0-9a-f]{64}$/.test(record.txid)))
       throw new Error('Transaction recovery data needs attention. Existing records have been preserved.');
+    if (record.nms_alternates !== undefined && (!Array.isArray(record.nms_alternates) ||
+        record.nms_alternates.length > 32 || new Set(record.nms_alternates).size !== record.nms_alternates.length ||
+        !record.nms_alternates.every(function(id) { return /^[0-9a-f]{64}$/.test(id); })))
+      throw new Error('Near-miss recovery history is invalid.');
+    if (record.nms_confirmed !== undefined && (!record.nms_alternates ||
+        !record.nms_alternates.includes(record.nms_confirmed)))
+      throw new Error('Near-miss confirmation is not in the saved history.');
     return record;
   }
   async function budget(tx) {
@@ -5031,6 +5157,16 @@ function _veldJournal() {
                !Array.isArray(payload.metadata) || payload.metadata.length !== record.inputs.length ||
                JSON.stringify(keys(payload.unsigned)) !== JSON.stringify(record.inputs)) {
       throw new Error('Interrupted transaction recovery bytes are invalid.');
+    }
+    var prior = payload.nms_history || [];
+    if (!Array.isArray(prior) || prior.length > 32 ||
+        JSON.stringify(prior.map(function(v) { return v.txid; })) !== JSON.stringify(record.nms_alternates || []))
+      throw new Error('Near-miss recovery history is incomplete.');
+    for (var variant of prior) {
+      if (!variant || typeof variant.signed !== 'string' || variant.signed.length > 20000 ||
+          !/^(?:[0-9a-f]{2})+$/.test(variant.signed) || veldCrypto.sha256d(variant.signed) !== variant.txid ||
+          !_veldNmsReplacement(variant.signed, payload.unsigned || payload.signed, record.owner))
+        throw new Error('Near-miss recovery history does not match the reserved input.');
     }
     return {record:record, payload:payload};
   }
@@ -5084,10 +5220,34 @@ function _veldJournal() {
             budget:2 * (unsigned.length + size * 2) + keys(unsigned).length * 256 + 2048};
           var payload = {id:id, unsigned:unsigned, signed:'', metadata:metadata};
           record.label = _veldJournalOperation(unsigned, owner).label;
+          if (record.inputs.length === 1) {
+            var claim = await request(tx.objectStore('claims').get(record.inputs[0]));
+            if (claim && claim.owner === owner) {
+              var previous = await read(tx, await request(tx.objectStore('records').get(claim.id)));
+              if (previous.record.state !== 'reserved' && previous.record.state !== 'confirmed' &&
+                  _veldNmsReplacement(previous.payload.signed, unsigned, owner)) {
+                var history = (previous.payload.nms_history || []).concat([
+                  {txid:previous.record.txid, signed:previous.payload.signed}]);
+                var cap = _veldNmsTransaction(unsigned, owner) ? 31 : 32;
+                if (history.length > cap) throw new Error('Near-miss refresh limit reached. Recover the reserved funds in Wallet.');
+                payload.nms_history = history;
+                record.nms_alternates = history.map(function(v) { return v.txid; });
+                record.budget += history.reduce(function(total, v) { return total + v.signed.length * 2 + 256; }, 0);
+                var meta = await budget(tx);
+                // Preserve exact signed variants; replace the claim atomically.
+                tx.objectStore('records').delete(previous.record.id);
+                tx.objectStore('payloads').delete(previous.record.id);
+                tx.objectStore('claims').delete(record.inputs[0]);
+                meta.records--; meta.claims--; meta.bytes -= previous.record.budget;
+                tx.objectStore('meta').put(meta, 'budget');
+              }
+            }
+          }
           await insert(tx, record, payload);
           return {record:record, payload:payload};
         });
         notify(owner);
+        if (entry.record.nms_confirmed) throw new Error('An earlier version of this near miss already confirmed. Refresh Wallet activity.');
         if (entry.record.state !== 'reserved') return entry.payload.signed;
         // The origin-wide lock is retained until signed bytes are committed.
         // An interrupted signing attempt can resume only this exact intent.
@@ -5097,7 +5257,7 @@ function _veldJournal() {
         var txid = veldCrypto.sha256d(signed);
         await transaction('readwrite', async function(tx) {
           var current = await read(tx, await request(tx.objectStore('records').get(id)));
-          if (current.record.state !== 'reserved') throw new Error('Transaction recovery state changed.');
+          if (current.record.state !== 'reserved' || current.record.nms_confirmed) throw new Error('Transaction recovery state changed.');
           current.record.txid = txid;
           current.record.state = 'ready';
           current.payload.signed = signed;
@@ -5112,6 +5272,7 @@ function _veldJournal() {
       return transaction('readonly', async function(tx) {
         await budget(tx);
         var record = await request(tx.objectStore('records').index('txid').get(txid));
+        if (!record) record = await request(tx.objectStore('records').index('nms_alternates').get(txid));
         if (!record) record = await request(tx.objectStore('records').get(txid));
         return record ? read(tx, record) : null;
       });
@@ -5119,6 +5280,7 @@ function _veldJournal() {
     submitted: function(txid) {
       return transaction('readwrite', async function(tx) {
         var entry = await read(tx, await request(tx.objectStore('records').index('txid').get(txid)));
+        if (entry.record.state === 'confirmed' || entry.record.nms_confirmed) return;
         entry.record.state = 'submitted';
         tx.objectStore('records').put(entry.record);
       });
@@ -5127,9 +5289,13 @@ function _veldJournal() {
       return transaction('readwrite', async function(tx) {
         for (var txid of txids) {
           var record = await request(tx.objectStore('records').index('txid').get(txid));
+          if (!record) record = await request(tx.objectStore('records').index('nms_alternates').get(txid));
           if (!record) continue;
           check(record);
-          record.state = 'confirmed';
+          if ((record.nms_alternates || []).includes(txid)) record.nms_confirmed = txid;
+          // A newer version can still be awaiting a signature. Keep its unsigned
+          // reservation valid; the confirmed predecessor prevents further signing.
+          if (record.state !== 'reserved') record.state = 'confirmed';
           tx.objectStore('records').put(record);
         }
       });
@@ -5143,6 +5309,10 @@ function _veldJournal() {
           if (!claim || updated.has(claim.id)) continue;
           updated.add(claim.id);
           var record = check(await request(tx.objectStore('records').get(claim.id)));
+          if (record.nms_confirmed) {
+            delete record.nms_confirmed;
+            tx.objectStore('records').put(record);
+          }
           if (record.state === 'confirmed') {
             record.state = 'ready';
             tx.objectStore('records').put(record);
@@ -5167,9 +5337,10 @@ function _veldJournal() {
         await budget(tx);
         var records = await request(tx.objectStore('records').index('owner').getAll(owner, limit.records + 1));
         if (records.length > limit.records) throw new Error('Transaction recovery record limit exceeded.');
-        return records.map(check).filter(function(row) { return row.state !== 'confirmed'; })
+        return records.map(check).filter(function(row) { return row.state !== 'confirmed' && !row.nms_confirmed; })
           .sort(function(a, b) { return b.ts - a.ts; }).slice(0, 200)
           .map(function(row) { return {txid:row.txid || row.id, from_addr:row.owner, ts:row.ts,
+            alternative_txids:row.nms_alternates || [],
             prepare_method:'transaction', label:row.label || 'Transaction', interrupted:row.state === 'reserved'}; });
       });
     },
@@ -5196,6 +5367,7 @@ function _veldJournal() {
 }
 
 function _veldJournalOperation(bytes, owner) {
+  if (_veldNmsTransaction(bytes, owner)) return {label:'Near-miss entry', feature:''};
   var payload = '';
   try { payload = _veldGetSingleCanonicalOpReturnPayload({unsigned_tx_hex:bytes}); } catch (_) {}
   var kinds = [
@@ -5270,9 +5442,21 @@ async function _veldJournalBroadcast(signed, seed, generation) {
 async function _veldRetryJournalTransaction(txid) {
   var saved = await _veldJournal().get(txid);
   if (!saved) return rpc('rebroadcasttx', [txid]);
+  if (saved.record.nms_confirmed) throw new Error('An earlier version of this near miss already confirmed. Refresh Wallet activity.');
   var seed = __veldKey.get(), generation = _veldAssertActiveSignerSeed(seed);
   if (_veldRequireBoundIdentity(seed, null, currentAddr).address !== saved.record.owner)
     throw new Error('Unlock the original wallet to retry this transaction.');
+  var nms = saved.payload.signed && _veldNmsTransaction(saved.payload.signed, saved.record.owner);
+  if (nms) {
+    var tip = await rpc('getblockchaininfo', []);
+    _veldAssertActiveSignerSeed(seed, generation);
+    if (tip.best_block_hash !== nms.parent) {
+      if (!window.confirm('This near-miss proof expired. Recover its reserved input back to this wallet? The fee is 0.001 VELD; only one version can spend this input.'))
+        throw new Error('Recovery cancelled. The saved transaction is unchanged.');
+      return signAndBroadcast('preparenmsrecovery', [saved.record.owner, saved.payload.signed], seed,
+        null, _veldAddrToKeyCommitmentHex(saved.record.owner), null, null, '', null, generation);
+    }
+  }
   if (saved.record.state === 'reserved') {
     if (!window.confirm('Resume signing the saved transaction with its original recipient, amount and fee?'))
       throw new Error('Signing remains paused. The saved transaction has been kept.');
@@ -5326,7 +5510,8 @@ async function rpc(method, params) {
   var balance = result;
   if (!balance || typeof balance !== 'object' || !Number.isFinite(balance.spendable_veld) || balance.spendable_veld < 0)
     throw new Error('Wallet balance is unavailable.');
-  return Object.assign({}, balance, {spendable_veld:Math.min(Number(balance.spendable_veld), total / 100000000)});
+  return Object.assign({}, balance, {spendable_veld:Math.min(Number(balance.spendable_veld), total / 100000000),
+    local_reserved_units:Math.max(0, Math.round(balance.spendable_veld * 100000000) - total)});
 }
 
 
@@ -7713,10 +7898,11 @@ function updateTierPreview() {
   var preview = document.getElementById('sk-tier-preview');
   var warn = document.getElementById('sk-tier-warning');
   if (!tEl || !aEl || !preview) return;
-  var tier = parseInt(tEl.value || '1', 10);
-  var amt = parseFloat(aEl.value || '0');
-  if (warn) warn.style.display = (tier >= 3) ? 'block' : 'none';
   loadLockupTiers().then(function(cfg){
+    // Read the current form after the asynchronous policy refresh.
+    var tier = parseInt(tEl.value || '1', 10);
+    var amt = parseFloat(aEl.value || '0');
+    if (warn) warn.style.display = (tier >= 3) ? 'block' : 'none';
     if (!cfg) { preview.textContent = 'Multiplier preview unavailable.'; return; }
     var mult = computePreviewMultiplier(tier, amt);
     var days = (cfg.tiers[tier-1] && cfg.tiers[tier-1].days) || 0;
@@ -11291,9 +11477,13 @@ function loadPendingSends() {
     if (!isCurrent()) return;
     var mempool = new Set(mp);
     state.pending = mine.filter(function(e) { return mempool.has(e.txid); });
-    state.unknown = mine.filter(function(e) { return e.interrupted; });
-    var checking = mine.filter(function(e) { return !e.interrupted && !mempool.has(e.txid); });
-    var hints = await _veldPendingHistoryHints(address, checking, isCurrent);
+    state.unknown = mine.filter(function(e) { return e.interrupted && !(e.alternative_txids || []).length; });
+    var checking = mine.filter(function(e) { return (!e.interrupted || (e.alternative_txids || []).length) && !mempool.has(e.txid); });
+    var lookupEntries = checking.slice();
+    checking.forEach(function(entry) { (entry.alternative_txids || []).forEach(function(id) {
+      lookupEntries.push({txid:id, ts:entry.ts});
+    }); });
+    var hints = await _veldPendingHistoryHints(address, lookupEntries, isCurrent);
     var next = 0;
     async function checkNext() {
       while (next < checking.length && isCurrent()) {
@@ -11305,12 +11495,26 @@ function loadPendingSends() {
             confirmed = _veldIsConfirmedTransaction(hinted, entry.txid, height);
           } catch (_) {}
         }
-        if (!confirmed && isCurrent()) {
+        if (!confirmed && !entry.interrupted && isCurrent()) {
           try {
             var recent = await rpc('gettransactionrecent', [entry.txid]);
             confirmed = _veldIsConfirmedTransaction(recent, entry.txid);
           } catch (_) {}
         }
+        if (!confirmed && Array.isArray(entry.alternative_txids)) {
+          for (var alternate of entry.alternative_txids) {
+            if (!isCurrent()) return;
+            if (mempool.has(alternate)) { state.pending.push(entry); confirmed = 'pending'; break; }
+            try {
+              if (!hints.has(alternate)) continue;
+              var oldTx = await rpc('gettransaction', [alternate, String(hints.get(alternate))]);
+              if (_veldIsConfirmedTransaction(oldTx, alternate, hints.get(alternate))) {
+                state.confirmed.push(alternate); confirmed = true; break;
+              }
+            } catch (_) {}
+          }
+        }
+        if (confirmed === 'pending') continue;
         if (confirmed) state.confirmed.push(entry.txid);
         else state.unknown.push(entry);
       }
@@ -14656,9 +14860,18 @@ function _doStakeContinue(intent, keyHex, msgEl, operation, reenable) {
     _veldAssertActiveSignerSeed(keyHex, intent.generation);
     if (!isCurrent()) throw new Error('Wallet changed. Review the stake and try again.');
     var available = _veldStakeAvailableUnits(balance);
-    if (BigInt(intent.units) > available)
+    // Retire older display requests before showing this preflight snapshot.
+    ++_veldStakeBalanceRevision;
+    document.getElementById('sk-balance').textContent = _veldUnitsToAmountString(available);
+    if (BigInt(intent.units) > available) {
+      var detail = Number(balance.pending_out_veld) > 0
+        ? ' A transaction is still spending some outputs. Wait for confirmation, then refresh the wallet.'
+        : Number(balance.local_reserved_units) > 0
+          ? ' Some outputs belong to a saved transaction. Check In-flight transactions in Wallet before trying again.'
+          : ' Refresh Wallet activity to check confirmed spendable funds.';
       throw new Error('Amount exceeds the ' + fmt(Number(available) / 100000000, 8) +
-        ' VELD available to stake after the network fee.');
+        ' VELD available to stake after the network fee.' + detail);
+    }
     window._pendingStakeAddr = addr;
     var unstakeBtn = document.querySelector('button[data-act-click="haa7ba916"]');
     if (unstakeBtn) {
@@ -17027,6 +17240,10 @@ if ('serviceWorker' in navigator) {
       hedca1163: function(event){ nav('history',this) },
       h7510b6e8: function(event){ nav('staking',this) },
       h1664ee21: function(event){ nav('validators',this) },
+      hnms_load: function(event){ loadAddressOnlyNms(); },
+      hnms_choose: function(event){ document.getElementById('cm-nms-file').click(); },
+      hnms_file: function(event){ importAddressOnlyNms(this); },
+      hnms_sign: function(event){ submitAddressOnlyNms(); },
       h27230c65: function(event){ nav('comining',this) },
       h66d35202: function(event){ nav('explorer',this) },
       h7ff0b24d: function(event){ nav('governance',this) },
@@ -17523,6 +17740,10 @@ init();
       hedca1163: function(event){ nav('history',this) },
       h7510b6e8: function(event){ nav('staking',this) },
       h1664ee21: function(event){ nav('validators',this) },
+      hnms_load: function(event){ loadAddressOnlyNms(); },
+      hnms_choose: function(event){ document.getElementById('cm-nms-file').click(); },
+      hnms_file: function(event){ importAddressOnlyNms(this); },
+      hnms_sign: function(event){ submitAddressOnlyNms(); },
       h27230c65: function(event){ nav('comining',this) },
       h66d35202: function(event){ nav('explorer',this) },
       h7ff0b24d: function(event){ nav('governance',this) },
@@ -17990,6 +18211,10 @@ async function completeSetup(){
       hedca1163: function(event){ nav('history',this) },
       h7510b6e8: function(event){ nav('staking',this) },
       h1664ee21: function(event){ nav('validators',this) },
+      hnms_load: function(event){ loadAddressOnlyNms(); },
+      hnms_choose: function(event){ document.getElementById('cm-nms-file').click(); },
+      hnms_file: function(event){ importAddressOnlyNms(this); },
+      hnms_sign: function(event){ submitAddressOnlyNms(); },
       h27230c65: function(event){ nav('comining',this) },
       h66d35202: function(event){ nav('explorer',this) },
       h7ff0b24d: function(event){ nav('governance',this) },

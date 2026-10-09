@@ -145,5 +145,21 @@ const settle = async () => {for (let i=0; i<20; i++) await Promise.resolve();};
   f.timers[0](); await settle();
   wait.cancel(); rejectLookup(new Error('Ordinary cancelled lookup')); await settle();
   assert.equal(timedOut, 1); assert.equal(f.saved().length, 1); cases++;
+  // An older signed NMS variant may confirm while the current variant is saved.
+  for (const inMempool of [false, true]) for (const interrupted of [false, true]) {
+    f = fixture([], (method, params) => {
+      if (method === 'getrawmempool') return inMempool ? [other] : [];
+      if (method === 'getaddresshistory') return page([{txid:other, block_height:4997}]);
+      if (method === 'gettransaction' && params[0] === other) return confirmed(other);
+      return missing();
+    });
+    const resolved=[];
+    f.context._veldJournal=()=>({pending:async()=>[{...entry(),interrupted,alternative_txids:[other]}],confirmed:async ids=>resolved.push(...ids)});
+    await f.context.loadPendingSends();
+    if(inMempool) assert.equal(resolved.length,0);
+    else {assert(resolved.includes(other));assert(resolved.includes(txid));}
+    assert(!f.calls.some(c=>c.method==='gettransactionrecent'&&c.params[0]===other));
+    cases++;
+  }
   console.log('PASS: '+cases+' pending-confirmation cases; no broadcasts or signing');
 })().catch(error => {console.error(error); process.exitCode=1;});

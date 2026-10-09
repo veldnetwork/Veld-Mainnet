@@ -1,3 +1,16 @@
+## 3.3.2 - Near-miss submissions and client recovery
+
+- Address-only miners can export near-miss proofs on Windows and Linux for
+  review and signing in the payout wallet. The wallet checks eligibility and
+  shows the submission fee before signing.
+- The wallet preserves pending near-miss submissions across reloads and offers
+  recovery when a proof expires.
+- Constellation replaces the crowded peer graph in Veld Node and the portal.
+- Staking refreshes spendable funds and identifies pending transactions before
+  preparing a new stake.
+- Windows updates detect an early GUI exit, retry startup and retain mining
+  resume information when installation succeeds but relaunch fails.
+
 ## 3.3.1 - Linux graphical wallet launcher
 
 - Install a Veld Wallet shortcut in the application menu and open the graphical

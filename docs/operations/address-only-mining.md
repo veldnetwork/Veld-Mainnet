@@ -29,8 +29,9 @@ setup. Mining to an address does not grant this computer permission to spend it.
   not change rewards, network difficulty, synchronization or work admission.
 - Does not create, import or unlock `miner.key`, `pool.key`, or
   `endorsement_pool.key`. It does not load an extra endorser key.
-- Disables local validator endorsements, authenticated co-mining participation
-  and automatic signed NMS transactions. Existing on-chain funds, registrations
+- Disables local validator endorsements and automatic signed NMS transactions.
+  An eligible payout wallet can separately sign a public near-miss proof using
+  the flow below. Existing on-chain funds, registrations
   and stake positions are not changed by selecting this mode.
 - Can use an official signed snapshot on a fresh datadir. The imported state
   remains quarantined from RPC, inbound P2P and mining until a separate
@@ -74,6 +75,31 @@ separate address-mode RPC token. Keep the same secret across restarts; do not
 put it in command arguments or reuse a wallet passphrase. Linux does not have
 the Windows automatic DPAPI credential provisioning.
 
-Qualification uses disposable profiles and a private network namespace. It does
-not establish signed-package, real Windows sign-in or live mainnet payout
-qualification. Publication and installation are separate release steps.
+## Near-miss lottery entries
+
+The payout address must meet the lottery's **1,000 VELD** staking requirement
+and have confirmed spendable funds for the **0.001 VELD** transaction fee.
+Finding a block alone does not submit a near-miss entry.
+
+1. Keep the address-only miner running. On Windows, use **Copy near miss** on
+   the node's Mining tab when a proof is available.
+2. Open the payout wallet and go to **Co-Mining Lottery → Address-only mining**.
+   Paste the proof, or select **Choose proof file** and open
+   `address-only-nms.json` in the miner's data folder. The file option works on
+   Linux and Windows. Use the folder passed to `--datadir`; the direct command
+   line defaults to `./veld-data` when that option is omitted.
+3. Select **Sign near miss** and confirm the fee. The wallet checks the payout
+   address, chain and current proof before signing. The entry counts after
+   the transaction confirms.
+
+On Linux, open the graphical wallet with **Start Wallet.sh**. Its normal
+connection is to the public service, so use **Choose proof file** for a local
+address-only miner. **Read from this node** is for a wallet connected directly
+to the miner's RPC endpoint. Hidden data folders can be shown in your desktop's
+file picker.
+
+The exported file contains only public proof data. It contains no wallet keys
+or RPC credentials. A separate payout-wallet computer can receive this file
+without receiving the miner's credentials. Keep the file current: proofs expire
+at the next block, and the wallet refuses expired or already credited entries.
+This is a manual signing flow; it does not automatically sign future proofs.

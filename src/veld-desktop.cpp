@@ -2070,13 +2070,13 @@ private:
                     // build unsigned TX templates; the client signs and
                     // returns via sendrawtransaction.
                     "sendrawtransaction",
-                    "preparestaketx", "preparenmstx", "preparetokentx",
+                    "preparestaketx", "preparenmstx", "preparenmsrecovery", "preparetokentx",
                     "preparetokentransfer", "prepareregistertx",
                     "preparederegistertx", "prepareproposaltx", "preparevotetx",
                     "preparerawtransaction", "preparestake", "prepareunstake",
                     "preparegovproposal", "preparegovvote",
                     "prepareregistervalidator", "preparederegistervalidator",
-                    "rebroadcasttx", "getminerstatus", "getdustutxocount",
+                    "rebroadcasttx", "getminerstatus", "getaddressnmsproof", "getdustutxocount",
                     "prepareconsolidatetx",
                     // btcVELD peg + AMM — client-signed build methods (server holds
                     // no key; the wallet re-verifies + signs the unsigned tx, then

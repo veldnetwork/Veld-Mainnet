@@ -51,6 +51,7 @@ struct MiningStats {
     double hashrate{0.0};
     std::string miner_address;
     std::string work_state;
+    std::string nms_proof;
 };
 
 struct BlockSummary {
@@ -446,6 +447,23 @@ inline bool ParseMiningStats(const std::string& body, MiningStats& out,
     }
     parsed.work_state = work_state->text;
     parsed.miner_address = address->text;
+    if (const auto* proof = root.Get("nms_proof")) {
+        if (proof->kind != btc_buy::JsonValue::Kind::String || proof->text.size() > 1200) {
+            error = "invalid near-miss proof export";
+            return false;
+        }
+        btc_buy::JsonValue packet;
+        std::string packet_error;
+        btc_buy::StrictJsonParser proof_parser(proof->text, 1200, true);
+        if (proof_parser.Parse(packet, packet_error)) {
+            const auto* payload = packet.Get("payload");
+            const auto* owner = packet.Get("address");
+            if (payload && payload->kind == btc_buy::JsonValue::Kind::String && payload->text.size() == 194 &&
+                payload->text.find_first_not_of("0123456789abcdef") == std::string::npos &&
+                owner && owner->kind == btc_buy::JsonValue::Kind::String && owner->text == parsed.miner_address)
+                parsed.nms_proof = proof->text;
+        }
+    }
     if (const auto* daemon = root.Get("daemon")) {
         const auto* version = daemon->Get("version");
         const auto* profile = daemon->Get("profile");
