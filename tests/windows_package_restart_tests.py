@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import time
@@ -23,9 +24,7 @@ def digest(path):
 
 
 def run(args, **kwargs):
-    result = subprocess.run(
-        list(map(str, args)), capture_output=True, timeout=120, **kwargs
-    )
+    result = subprocess.run(list(map(str, args)), capture_output=True, timeout=120, **kwargs)
     if result.returncode:
         raise RuntimeError(
             str(args[0]) + " failed: " + result.stderr.decode(errors="replace")[-6000:]
@@ -50,6 +49,18 @@ user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintyp
 user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.SendMessageTimeoutW.argtypes = [
+    wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+    wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_size_t),
+]
+user32.SendMessageTimeoutW.restype = ctypes.c_ssize_t
+
+
+def menu_command(hwnd, command):
+    result = ctypes.c_size_t()
+    assert user32.SendMessageTimeoutW(
+        hwnd, 0x111, command, 0, 3, 20000, ctypes.byref(result)
+    ), "Native menu command was not handled"
 
 
 def window(pid):
@@ -195,12 +206,12 @@ def case(root, previous, target, verifier, writer, running):
         hwnd = wait_for("previous signed GUI", lambda: window(parent.pid))
         old_node = None
         if running:
-            assert user32.PostMessageW(hwnd, 0x111, 4102, 0)
+            menu_command(hwnd, 4102)
             old_node = wait_for("previous real node", lambda: next(iter(processes(node)), None))
             time.sleep(8)
             assert old_node.is_running()
             assert "--address-only" in old_node.cmdline() and "--mine" in old_node.cmdline()
-            assert user32.PostMessageW(hwnd, 0x111, 4102, 0)
+            menu_command(hwnd, 4102)
             wait_for("previous node graceful stop", lambda: not processes(node))
         stage = install / ".veld-update-transaction/stage"
         shutil.copytree(target, stage)
@@ -275,7 +286,7 @@ def case(root, previous, target, verifier, writer, running):
                 for p in resumed.net_connections(kind="tcp")
             )
             assert not (data / "miner.key").exists() and not (data / "pool.key").exists()
-            assert user32.PostMessageW(hwnd, 0x111, 4102, 0)
+            menu_command(hwnd, 4102)
             wait_for("resumed node graceful stop", lambda: not processes(node))
         else:
             time.sleep(10)
@@ -304,6 +315,13 @@ def case(root, previous, target, verifier, writer, running):
                 except psutil.NoSuchProcess:
                     pass
         (root / "diagnostics.json").write_text(json.dumps(observed, indent=2) + "\n")
+        log = state / "node-gui-node.log"
+        if log.is_file():
+            lines = log.read_bytes()[-65536:].decode(errors="replace").splitlines()
+            safe = [line for line in lines if not re.search(
+                r"token|passphrase|password|secret|cookie|authorization", line, re.I
+            )]
+            (root / "node-diagnostic.log").write_text("\n".join(safe) + "\n")
         raise
     finally:
         # Only processes from this absent-at-start disposable installation.
