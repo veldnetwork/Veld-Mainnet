@@ -118,6 +118,10 @@ jobs:
             -DVELD_PUBLIC_MAINNET -Iinclude -Ivendor/pqc -Ivendor/pqc/mldsa65 \
             tests/ibd_pow_budget_tests.cpp -o "$output/progress.exe"
           "$output/progress.exe"
+          clang++ -std=c++20 -O1 -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -DVELD_PUBLIC_MAINNET \
+            -Iinclude tests/datadir_identity_tests.cpp -lbcrypt -lcrypt32 -ladvapi32 -lssl -lcrypto \
+            -o "$output/datadir.exe"
+          "$output/datadir.exe"
       - name: Compile and exercise the native Windows fixture
         shell: msys2 {0}
         run: |
@@ -444,6 +448,9 @@ jobs:
             -DVELD_PUBLIC_MAINNET -Iinclude -Ivendor/pqc -Ivendor/pqc/mldsa65 \
             tests/ibd_pow_budget_tests.cpp -o "$RUNNER_TEMP/pow-progress"
           "$RUNNER_TEMP/pow-progress"
+          c++ -std=c++20 -O1 -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -DVELD_PUBLIC_MAINNET \
+            -Iinclude tests/datadir_identity_tests.cpp -o "$RUNNER_TEMP/datadir-identity"
+          "$RUNNER_TEMP/datadir-identity"
       - name: Verify private fixture exclusion from public profiles
         if: matrix.fixture == 'coinbase_cap_admission_tests'
         run: python3 tests/coinbase_fixture_profile_tests.py --compiler c++ --output-dir "$RUNNER_TEMP/coinbase-profiles"

@@ -7,6 +7,18 @@ on:
         description: Unpublished signed draft version
         required: true
         type: string
+      source_commit:
+        description: Exact release source commit to qualify
+        required: true
+        type: string
+      flow:
+        description: Staged Commit or complete automatic and manual update
+        required: true
+        default: commit
+        type: choice
+        options:
+          - commit
+          - complete
 
 permissions:
   contents: read
@@ -16,6 +28,9 @@ jobs:
     name: Real signed GUI and node restart
     runs-on: windows-2022
     timeout-minutes: 20
+    permissions:
+      # GitHub only exposes draft release assets to callers with write access.
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -23,10 +38,10 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: '3.11'
+          python-version: "3.11"
       - name: Install process inspection dependency
         run: |
-          python -m pip install --only-binary=:all: psutil==7.0.0
+          python -m pip install --only-binary=:all: psutil==7.0.0 cryptography==45.0.3
       - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
         with:
           msystem: CLANG64
@@ -44,15 +59,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PACKAGE_VERSION: ${{ inputs.version }}
+          RELEASE_SOURCE_COMMIT: ${{ inputs.source_commit }}
         shell: pwsh
         run: |
-          python tests/windows_package_inputs.py --version $env:PACKAGE_VERSION --output "$env:RUNNER_TEMP/package-inputs"
+          python tests/windows_package_inputs.py --version $env:PACKAGE_VERSION --source-commit $env:RELEASE_SOURCE_COMMIT --output "$env:RUNNER_TEMP/package-inputs"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise complete Commit with actual GUI and node processes
+        env:
+          QUALIFICATION_FLOW: ${{ inputs.flow }}
         shell: pwsh
         run: |
           $inputs = Get-Content -LiteralPath "$env:RUNNER_TEMP/package-inputs/inputs.json" -Raw | ConvertFrom-Json
-          python tests/windows_package_restart_tests.py --previous $inputs.previous --target $inputs.target --verifier $inputs.verifier --ticket-writer "$env:RUNNER_TEMP/resume-ticket.exe" --output "$env:RUNNER_TEMP/package-results"
+          python tests/windows_package_restart_tests.py --previous $inputs.previous --target $inputs.target --verifier $inputs.verifier --ticket-writer "$env:RUNNER_TEMP/resume-ticket.exe" --output "$env:RUNNER_TEMP/package-results" --flow $env:QUALIFICATION_FLOW
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
@@ -63,5 +81,12 @@ jobs:
             ${{ runner.temp }}/package-results/result.json
             ${{ runner.temp }}/package-results/**/result.json
             ${{ runner.temp }}/package-results/**/commit.log
+            ${{ runner.temp }}/package-results/**/datadir-entries.json
+            ${{ runner.temp }}/package-results/**/diagnostics.json
+            ${{ runner.temp }}/package-results/**/ownership.json
+            ${{ runner.temp }}/package-results/**/node-diagnostic.log
+            ${{ runner.temp }}/package-results/**/update-*.log
+            ${{ runner.temp }}/package-results/**/requests.json
+            ${{ runner.temp }}/package-results/**/cleanup.json
           retention-days: 14
           if-no-files-found: warn
