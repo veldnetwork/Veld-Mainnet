@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 LOGGER = logging.getLogger(__name__)
 
-VELD_OPERATOR_VERSION = "3.3.1"
+VELD_OPERATOR_VERSION = "3.3.2"
 VELD_OPERATOR_PROFILE = "veld-public-mainnet-v2"
 
 MAX_MINING_WORKERS = 64
@@ -256,7 +256,8 @@ PORTAL_MANIFEST = {
         }
     ],
 }
-PORTAL_OFFLINE_HTML = b"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a09"><title>Veld Portal offline</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#080a09;color:#f2f5f2;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(430px,100%);padding:25px;border:1px solid #343a36;border-radius:10px;background:#101311}h1{margin:0 0 8px;font:700 24px ui-monospace,Consolas,monospace}p{margin:0;color:#c5cbc7}</style><main class="card"><h1>Portal offline</h1><p>Reconnect to the internet, then reopen or refresh the app. Your node continues running independently.</p></main></html>"""
+PORTAL_OFFLINE_HTML = b"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a09"><title>Veld Portal offline</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#080a09;color:#f2f5f2;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(430px,100%);padding:25px;border:1px solid #343a36;border-radius:10px;background:#101311}h1{margin:0 0 8px;font:700 24px ui-monospace,Consolas,monospace}p{margin:0;color:#c5cbc7}
+</style><main class="card"><h1>Portal offline</h1><p>Reconnect to the internet, then reopen or refresh the app. Your node continues running independently.</p></main></html>"""
 PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v23';
 const ASSETS=['/manifest.webmanifest','/icon.png?v=6','/offline'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
@@ -397,6 +398,14 @@ details.veld-details:not([open])>*:not(summary){display:none!important}
 html[data-theme="light"] details.veld-details>summary{color:#45604c;background:transparent;box-shadow:none}
 
 .dl>details.veld-details{flex-basis:100%;width:100%}
+.vc-shell{box-sizing:border-box;--vc-bg:#0a100c;--vc-panel:#101812;--vc-text:#edf3e9;--vc-muted:#98a697;--vc-line:#2a362b;--vc-soft:#172219;--vc-miner:#a1df60;--vc-node:#70b49a;--vc-fleet:#7fbbdb;--vc-validator:#bd9ad9;--vc-warn:#efc367;color:var(--vc-text);font:14px/1.5 Inter,Arial,sans-serif;width:100%;max-width:700px;margin:0 auto;background:var(--vc-bg);border:1px solid var(--vc-line);border-radius:18px;overflow:hidden}
+html[data-theme="light"] .vc-shell{--vc-bg:#f4f7f1;--vc-panel:#fff;--vc-text:#142119;--vc-muted:#526252;--vc-line:#d5ded1;--vc-soft:#eaf0e5;--vc-miner:#427d15;--vc-node:#247961;--vc-fleet:#246b9a;--vc-validator:#8954a8;--vc-warn:#93640c}
+.vc-shell *{box-sizing:border-box}.vc-chrome{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--vc-line)}.vc-wordmark{display:flex;gap:12px;align-items:center;font:600 14px/1 'IBM Plex Mono',ui-monospace,Consolas,monospace;letter-spacing:.14em}.vc-logo{width:16px;height:16px;border:2px solid var(--vc-miner);transform:rotate(45deg);position:relative}.vc-logo:after{content:'';position:absolute;inset:3px;border:1px solid var(--vc-miner)}.vc-chrome-label{font:11px/1 'IBM Plex Mono',ui-monospace,Consolas,monospace;letter-spacing:.06em;color:var(--vc-muted)}
+.vc-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 20px 10px}.vc-shell h3{font:500 20px/1.25 'IBM Plex Mono',ui-monospace,Consolas,monospace;letter-spacing:-.05em;margin:0 0 6px}.vc-meta{color:var(--vc-muted);font-size:12px}.vc-stat{text-align:right;flex-shrink:0}.vc-stat strong{display:block;font:500 25px/1.05 'IBM Plex Mono',ui-monospace,Consolas,monospace;letter-spacing:-.06em}.vc-stat span{font-size:11px;color:var(--vc-muted)}
+.vc-plot{position:relative;width:100%;height:330px;touch-action:pan-y}.vc-plot svg{display:block;width:100%;height:100%}.vc-plot text{fill:var(--vc-text);font:11px 'IBM Plex Mono',ui-monospace,Consolas,monospace}.vc-plot .vc-hint{fill:var(--vc-muted)}.vc-label-box{fill:var(--vc-panel);stroke:var(--vc-line)}.vc-edge{fill:none;stroke:var(--vc-muted);stroke-width:1;opacity:.15}.vc-edge.vc-active{stroke:var(--vc-miner);stroke-width:1.25;opacity:.7}.vc-edge.vc-one{stroke-dasharray:3 5}.vc-miner{color:var(--vc-miner)}.vc-node{color:var(--vc-node)}.vc-fleet{color:var(--vc-fleet)}.vc-validator{color:var(--vc-validator)}.vc-differs{color:var(--vc-warn)}.vc-unknown{opacity:.3}
+.vc-inspect{display:flex;align-items:center;gap:12px;margin:0 16px;padding:14px;border:1px solid var(--vc-line);background:var(--vc-panel);border-radius:10px;min-height:74px}.vc-marker{display:block;width:10px;height:10px;background:currentColor;border-radius:50%;flex-shrink:0}.vc-description{flex:1;min-width:0}.vc-description strong{display:block;font:500 13px/1.5 'IBM Plex Mono',ui-monospace,Consolas,monospace}.vc-description small{display:block;color:var(--vc-muted);font:11px/1.5 Inter,Arial,sans-serif}.vc-shell button.vc-next{font:500 12px/1 Inter,Arial,sans-serif;color:var(--vc-text);background:var(--vc-soft);border:1px solid var(--vc-line);border-radius:7px;min-height:38px;padding:0 12px;flex-shrink:0;box-shadow:none}.vc-next:hover{border-color:var(--vc-miner)}.vc-next:focus-visible,.vc-plot:focus-visible{outline:2px solid var(--vc-miner);outline-offset:-3px}
+.vc-legend{display:flex;flex-wrap:wrap;gap:8px 16px;padding:16px 20px 12px;color:var(--vc-muted);font-size:11px}.vc-legend span{display:inline-flex;align-items:center;gap:7px}.vc-key{width:6px;height:6px;border-radius:50%;background:var(--vc-node)}.vc-key.miner{background:var(--vc-miner)}.vc-key.fleet{background:var(--vc-fleet);border-radius:1px}.vc-key.validator{background:var(--vc-validator);border-radius:0;transform:rotate(45deg)}.vc-foot{border-top:1px solid var(--vc-line);margin:0 20px;padding:11px 0 14px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;color:var(--vc-muted);font:11px/1.5 'IBM Plex Mono',ui-monospace,Consolas,monospace}.vc-foot span{display:inline-flex;align-items:center;gap:6px}.vc-link-key{display:inline-block;width:16px;height:0;border-top:1px solid var(--vc-muted)}.vc-link-key.one{border-top-style:dashed}.vc-empty{padding:60px 15px;text-align:center;color:var(--vc-muted)}
+@media(min-width:540px){.vc-plot{height:360px}}@media(max-width:360px){.vc-chrome{padding:15px}.vc-heading{padding:18px 15px 8px}.vc-shell h3{font-size:18px}.vc-inspect{margin:0 10px;padding:12px;gap:8px}.vc-shell button.vc-next{padding:0 9px}.vc-legend{gap:8px 12px;padding:14px 15px 10px}}@media(pointer:coarse){.vc-shell button.vc-next{min-height:44px}}
 </style>
 </head>
 <body>
@@ -720,23 +729,102 @@ function inboundMapping(d,s){
   const detail=Number(d.inbound)>0?'Inbound peers are connected; automatic port mapping is not reported.':Number(s.outbound)>0?'Outbound peers are connected. Automatic inbound port mapping is not required for mining.':'Automatic inbound port mapping is not reported. No outbound peers are currently reported.';
   return {value:'Not mapped',detail};
 }
-function topologyGraph(t){
-  if(!t||!Array.isArray(t.nodes)||!t.nodes.length)return '<div class="topology empty">Network map appears when this client reports topology data.</div>';
-  const compact=window.matchMedia('(max-width:520px)').matches,width=compact?420:760,height=compact?390:430,cx=width/2,cy=compact?188:208,radiusX=compact?148:280,radiusY=compact?116:132,localKey=String(t.local_id||''),key=x=>String(x.id),seen=new Set(),nodes=t.nodes.slice(0,64).filter(x=>{const k=key(x);if(seen.has(k))return false;seen.add(k);return true}),nodeByKey=new Map(nodes.map(x=>[key(x),x])),positions=new Map();
-  const compare=(a,b)=>String(a.role).localeCompare(String(b.role))||key(a).localeCompare(key(b));
-  const fleet=nodes.filter(x=>x.role==='fleet').sort(compare),validators=nodes.filter(x=>x.role==='validator').sort(compare),operators=nodes.filter(x=>x.role!=='fleet'&&x.role!=='validator').sort(compare);
-  const place=(group,scale,phase)=>group.forEach((x,i)=>{const angle=phase+2*Math.PI*i/Math.max(1,group.length);positions.set(key(x),[cx+radiusX*scale*Math.cos(angle),cy+radiusY*scale*Math.sin(angle)])});
-  place(fleet,.54,-Math.PI/2);place(validators,.77,validators.length===1?0:-Math.PI/2+Math.PI/5);place(operators,1,compact?-Math.PI/2:Math.PI);
-  // Display numbers describe this report, independent of saved role indices or the selected machine.
-  const counts=new Map(),ordinals=new Map();
-  for(const node of [...fleet,...validators,...operators]){const ordinal=(counts.get(node.role)||0)+1;counts.set(node.role,ordinal);ordinals.set(key(node),ordinal)}
-  const roleLabel=role=>role==='fleet'?'Fleet':role==='miner'?'Miner':role==='validator'?'Validator':'Node',nodeName=node=>`${roleLabel(node.role)} ${String(ordinals.get(key(node))||1).padStart(2,'0')}`;
-  const edgePath=(a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1],lengthSquared=dx*dx+dy*dy;if(lengthSquared<=1)return '';const along=Math.max(0,Math.min(1,((cx-a[0])*dx+(cy-a[1])*dy)/lengthSquared)),nearestX=a[0]+dx*along,nearestY=a[1]+dy*along,distance=Math.hypot(nearestX-cx,nearestY-cy),avoid=compact?45:64;if(distance>=avoid)return `M ${a[0].toFixed(1)} ${a[1].toFixed(1)} L ${b[0].toFixed(1)} ${b[1].toFixed(1)}`;const length=Math.sqrt(lengthSquared),offset=compact?54:78,midX=(a[0]+b[0])/2,midY=(a[1]+b[1])/2;let nx=-dy/length,ny=dx/length;const plus=(midX+nx*offset-cx)**2+(midY+ny*offset-cy)**2,minus=(midX-nx*offset-cx)**2+(midY-ny*offset-cy)**2;if(minus>plus){nx=-nx;ny=-ny}return `M ${a[0].toFixed(1)} ${a[1].toFixed(1)} C ${(a[0]+dx/3+nx*offset).toFixed(1)} ${(a[1]+dy/3+ny*offset).toFixed(1)}, ${(a[0]+2*dx/3+nx*offset).toFixed(1)} ${(a[1]+2*dy/3+ny*offset).toFixed(1)}, ${b[0].toFixed(1)} ${b[1].toFixed(1)}`};
-  const edges=(Array.isArray(t.edges)?t.edges:[]).map(edge=>{const first=String(edge.first),second=String(edge.second),a=positions.get(first),b=positions.get(second);if(!a||!b)return '';const path=edgePath(a,b),firstNode=nodeByKey.get(first),secondNode=nodeByKey.get(second),differs=firstNode&&secondNode&&(firstNode.tip_state==='differs'||secondNode.tip_state==='differs'),classes=`edge ${edge.confirmed?'':'one'} ${differs?'differs':''}`;return `${edge.confirmed?`<path class="edge-underlay" d="${path}"/>`:''}<path class="${classes}" d="${path}"/>`}).join('');
-  const marks=nodes.map(node=>{const p=positions.get(key(node));if(!p)return '';const isLocal=key(node)===localKey,name=nodeName(node),radius=compact?16:14,state=node.tip_state==='exact'?'exact tip':node.tip_state==='differs'?'tip differs':'no recent tip report';return `<g class="peer ${esc(node.role)} ${esc(node.tip_state)}"><title>${esc(name+(isLocal?' · this node':'')+' · '+state)}</title><circle class="halo" cx="${p[0]}" cy="${p[1]}" r="${radius+7}"/>${isLocal?`<circle class="direct-ring" cx="${p[0]}" cy="${p[1]}" r="${radius+5}"/>`:''}<circle class="core" cx="${p[0]}" cy="${p[1]}" r="${radius}"/><text x="${p[0]}" y="${p[1]+radius+16}" text-anchor="middle">${esc(name)}</text></g>`}).join('');
-  const orbits=`${fleet.length?`<ellipse class="orbit fleet" cx="${cx}" cy="${cy}" rx="${radiusX*.54}" ry="${radiusY*.54}"/>`:''}${validators.length?`<ellipse class="orbit validator" cx="${cx}" cy="${cy}" rx="${radiusX*.77}" ry="${radiusY*.77}"/>`:''}${operators.length?`<ellipse class="orbit operator" cx="${cx}" cy="${cy}" rx="${radiusX}" ry="${radiusY}"/>`:''}`;
-  return `<div class="topology"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Sanitized Veld peer topology"><defs><radialGradient id="topology-center" cx="34%" cy="28%"><stop offset="0" stop-color="#26372e"/><stop offset="1" stop-color="#121a16"/></radialGradient><radialGradient id="topology-fleet" cx="34%" cy="28%"><stop offset="0" stop-color="#385363"/><stop offset="1" stop-color="#172832"/></radialGradient><radialGradient id="topology-node" cx="34%" cy="28%"><stop offset="0" stop-color="#2c4b3d"/><stop offset="1" stop-color="#14271f"/></radialGradient><radialGradient id="topology-miner" cx="34%" cy="28%"><stop offset="0" stop-color="#355925"/><stop offset="1" stop-color="#182d14"/></radialGradient><radialGradient id="topology-validator" cx="34%" cy="28%"><stop offset="0" stop-color="#493861"/><stop offset="1" stop-color="#251d31"/></radialGradient></defs>${orbits}${edges}<g aria-hidden="true"><circle class="center-ring" cx="${cx}" cy="${cy}" r="36"/><circle class="center-ring" cx="${cx}" cy="${cy}" r="31"/><circle class="center-ring" cx="${cx}" cy="${cy}" r="27"/><circle class="center-core" cx="${cx}" cy="${cy}" r="23"/><text class="center-label" x="${cx}" y="${cy-2}" text-anchor="middle">VELD</text><text class="center-sub" x="${cx}" y="${cy+11}" text-anchor="middle">NETWORK</text></g>${marks}</svg></div><div class="topology-legend" aria-label="Peer role colors"><span><i class="legend-dot node"></i>Node</span><span><i class="legend-dot fleet"></i>Fleet</span><span><i class="legend-dot miner"></i>Miner</span><span><i class="legend-dot validator"></i>Validator</span></div><div class="topology-legend" aria-label="Link and status legend"><span><i class="legend-line"></i>Seen by both</span><span><i class="legend-line one"></i>One-sided</span><span><i class="legend-dot differs"></i>Tip differs</span><span><i class="legend-dot unavailable"></i>No recent tip report</span></div>`
+// BEGIN VELD CONSTELLATION
+/* Constellation uses only sanitized public topology records. */
+(function(global){
+'use strict';
+const names={fleet:'Fleet',miner:'Miner',node:'Node',validator:'Validator'};
+const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const id=x=>typeof x==='string'&&/^[1-9][0-9]{0,19}$/.test(x)&&BigInt(x)<=18446744073709551615n;
+function layout(count,width,height){
+ count=Math.min(count,512);width=Math.max(240,width);height=Math.max(240,height);
+ const slots=[[.19,.22],[.60,.17],[.81,.53],[.46,.51],[.35,.82],[.13,.58]],aw=width-76,ah=height-60;
+ return Array.from({length:count},(_,i)=>{const g=i%6,local=Math.floor(i/6),total=Math.ceil((count-g)/6),a=local*2.399963+.5*g,r=Math.sqrt((local+.55)/(total+.5));return {x:38+slots[g][0]*aw+Math.cos(a)*r*aw*.145,y:30+slots[g][1]*ah+Math.sin(a)*r*ah*.19}});
 }
+function normalize(raw){
+ const seen=new Set(),nodes=[];
+ for(const n of (Array.isArray(raw?.nodes)?raw.nodes:[]).slice(0,512)){
+  if(!n||!id(n.id)||seen.has(n.id))continue;seen.add(n.id);
+  nodes.push({id:n.id,role:Object.hasOwn(names,n.role)?n.role:'node',tip_state:['exact','differs','stale','unavailable'].includes(n.tip_state)?n.tip_state:'unavailable'});
+ }
+ nodes.sort((a,b)=>a.id.length-b.id.length||(a.id<b.id?-1:a.id>b.id?1:0));
+ nodes.forEach((n,i)=>n.label=names[n.role]+' '+String(i+1).padStart(3,'0'));
+ const edges=[],edgeKeys=new Set();
+ for(const e of (Array.isArray(raw?.edges)?raw.edges:[]).slice(0,8192)){
+  if(!e)continue;const a=e.first??e.a,b=e.second??e.b;
+  if(!id(a)||!id(b)||a===b||!seen.has(a)||!seen.has(b))continue;
+  const pair=[a,b].sort(),k=pair.join('/');if(edgeKeys.has(k))continue;edgeKeys.add(k);
+  edges.push({a:pair[0],b:pair[1],confirmed:e.confirmed===true});
+ }
+ return {nodes,edges};
+}
+function nearest(points,x,y){let best=-1,distance=32**2;points.forEach((p,i)=>{const d=(p.x-x)**2+(p.y-y)**2;if(d<distance){best=i;distance=d}});return best;}
+function scene(raw,selected,width,height=330){
+ const data=normalize(raw),points=layout(data.nodes.length,width,height);
+ let index=data.nodes.findIndex(n=>n.id===selected);if(index<0)index=Math.max(0,data.nodes.findIndex(n=>n.role==='miner'));
+ const n=data.nodes[index],byId=new Map(data.nodes.map((n,i)=>[n.id,points[i]])),linked=new Set();
+ const links=n?data.edges.filter(e=>e.a===n.id||e.b===n.id):[];links.forEach(e=>linked.add(e.a===n.id?e.b:e.a));
+ let svg='';
+ function line(e,active){const a=byId.get(e.a),b=byId.get(e.b);return `<path d="M${a.x},${a.y}L${b.x},${b.y}" class="vc-edge${active?' vc-active':''}${active&&!e.confirmed?' vc-one':''}"/>`;}
+ if(data.nodes.length<200)data.edges.forEach((e,i)=>{if(i%3===0)svg+=line(e,false)});
+ links.forEach(e=>svg+=line(e,true));
+ data.nodes.forEach((p,i)=>{
+  const at=points[i],chosen=i===index,bright=chosen||linked.has(p.id),r=chosen?7:linked.has(p.id)?4.5:data.nodes.length>200?2:3.1;
+  svg+=`<g class="vc-peer vc-${p.role}${p.tip_state==='differs'?' vc-differs':''}${p.tip_state==='stale'||p.tip_state==='unavailable'?' vc-unknown':''}" opacity="${bright?1:.48}"><title>${esc(p.label+' · '+(p.tip_state==='exact'?'Exact tip':p.tip_state==='differs'?'Tip differs':'No recent tip report'))}</title>`;
+  if(chosen)svg+=`<circle cx="${at.x}" cy="${at.y}" r="${r+13}" fill="currentColor" opacity=".055"/><circle cx="${at.x}" cy="${at.y}" r="${r+7}" fill="none" stroke="currentColor" opacity=".7"/>`;
+  svg+=p.role==='fleet'?`<rect x="${at.x-r}" y="${at.y-r}" width="${r*2}" height="${r*2}" rx="2" fill="currentColor"/>`:p.role==='validator'?`<path d="M${at.x},${at.y-r*1.25}L${at.x+r*1.25},${at.y}L${at.x},${at.y+r*1.25}L${at.x-r*1.25},${at.y}Z" fill="currentColor"/>`:`<circle cx="${at.x}" cy="${at.y}" r="${r}" fill="currentColor"/>`;
+  svg+='</g>';
+ });
+ if(n){const p=points[index],lw=n.label.length*6.7+20,lx=Math.max(12,Math.min(width-lw-12,p.x-lw/2)),ly=p.y>height-75?p.y-46:p.y+22;
+  svg+=`<rect class="vc-label-box" x="${lx}" y="${ly}" width="${lw}" height="25" rx="5"/><text x="${lx+lw/2}" y="${ly+16}" text-anchor="middle">${esc(n.label)}</text>`;
+ }
+ svg+=`<text class="vc-hint" x="20" y="${height-12}">TAP A PEER TO TRACE ITS LINKS</text>`;
+ return {data,points,index,node:n,links,svg:`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Reported network connections; select a peer to trace its links">${svg}</svg>`};
+}
+global.VeldConstellation={layout,normalize,nearest,scene};
+if(typeof module!=='undefined')module.exports=global.VeldConstellation;
+})(typeof window!=='undefined'?window:globalThis);
+/* The portal supplies the authenticated device report; no additional requests. */
+let constellationReport=null,constellationScene=null,constellationFrame=0;
+const constellationSelections=new Map();
+function constellationDevice(){return String(current()?.id||'network');}
+function paintConstellation(){
+ const plot=document.querySelector('.vc-plot');if(!plot)return;
+ const key=constellationDevice(),width=Math.max(240,plot.clientWidth),height=plot.clientHeight;
+ const scene=VeldConstellation.scene(constellationReport,constellationSelections.get(key),width,height);
+ constellationScene=scene;
+ if(!scene.node){setHtml(plot,'<div class="vc-empty">Waiting for a fresh topology report.</div>');return;}
+ constellationSelections.set(key,scene.node.id);if(constellationSelections.size>64)constellationSelections.delete(constellationSelections.keys().next().value);
+ setHtml(plot,scene.svg);
+ const shell=plot.closest('.vc-shell');shell.querySelector('.vc-name').textContent=scene.node.label;
+ shell.querySelector('.vc-detail').textContent=scene.links.length+' reported links · '+({exact:'tip agrees',differs:'tip differs',stale:'no recent tip report',unavailable:'no recent tip report'}[scene.node.tip_state]);
+ shell.querySelector('.vc-marker').className='vc-marker vc-'+scene.node.role+(scene.node.tip_state==='differs'?' vc-differs':'');
+ shell.querySelector('.vc-total').textContent=scene.data.nodes.length.toLocaleString();
+}
+function queueConstellation(){cancelAnimationFrame(constellationFrame);constellationFrame=requestAnimationFrame(paintConstellation);}
+function topologyGraph(t,device=current()){
+ constellationReport=t;queueConstellation();
+ const direct=Number.isSafeInteger(device?.peers)&&device.peers>=0?device.peers.toLocaleString():'—';
+ return '<section class="vc-shell"><div class="vc-chrome"><div class="vc-wordmark"><span class="vc-logo" aria-hidden="true"></span>VELD</div><span class="vc-chrome-label">NETWORK / MAP</span></div><div class="vc-heading"><div><h3>Peer topology</h3><div class="vc-meta">'+direct+' direct · selected peer connections</div></div><div class="vc-stat"><strong class="vc-total">'+VeldConstellation.normalize(t).nodes.length+'</strong><span>reported peers</span></div></div><div class="vc-plot" tabindex="0" role="group" aria-label="Peer constellation. Select a peer with the pointer, Left and Right keys, or Next peer."></div><div class="vc-inspect" aria-live="polite"><span class="vc-marker vc-miner" aria-hidden="true"></span><div class="vc-description"><strong class="vc-name">Peer topology</strong><small class="vc-detail">Select a peer to trace its links</small></div><button type="button" class="vc-next">Next peer →</button></div><div class="vc-legend"><span><i class="vc-key miner"></i>Miner</span><span><i class="vc-key"></i>Node</span><span><i class="vc-key fleet"></i>Fleet</span><span><i class="vc-key validator"></i>Validator</span></div><div class="vc-foot"><span><i class="vc-link-key"></i>Both report</span><span><i class="vc-link-key one"></i>One-sided report</span></div></section>';
+}
+function stepConstellation(delta){
+ const s=constellationScene;if(!s?.data.nodes.length)return;
+ const next=(s.index+delta+s.data.nodes.length)%s.data.nodes.length;
+ constellationSelections.set(constellationDevice(),s.data.nodes[next].id);queueConstellation();
+}
+document.addEventListener('click',event=>{
+ if(event.target.closest('.vc-next')){stepConstellation(1);return;}
+ const plot=event.target.closest('.vc-plot');if(!plot||!constellationScene)return;
+ const bounds=plot.getBoundingClientRect(),i=VeldConstellation.nearest(constellationScene.points,event.clientX-bounds.left,event.clientY-bounds.top);
+ if(i>=0){constellationSelections.set(constellationDevice(),constellationScene.data.nodes[i].id);queueConstellation();}
+});
+document.addEventListener('keydown',event=>{
+ if(!event.target.matches('.vc-plot')||!['ArrowLeft','ArrowRight'].includes(event.key))return;
+ event.preventDefault();stepConstellation(event.key==='ArrowRight'?1:-1);
+});
+window.addEventListener('resize',queueConstellation);
+// END VELD CONSTELLATION
+
 function action(name,payload={}){
   if(name==="pool.start"||name==="pool.stop")return runPoolAction(name);
   if(name==="updates.check"||name==="updates.install")
@@ -887,7 +975,7 @@ function network(d,s){
   const topology=s.topology||{},roles=topologyRoles(topology,s.peer_roles||{}),mapping=inboundMapping(d,s);
   const nodeCount=Array.isArray(topology.nodes)?topology.nodes.length:0,eligible=Math.max(Number(topology.eligible_nodes)||0,nodeCount),reporting=Number(topology.reporting_nodes)||0;
   const coverage=eligible?`${n(reporting)} / ${n(eligible)} reporting`:`${n(reporting)} reporting`;
-  return `<div class="cards network-cards">${metric(n(d.peers),"Direct peers","green")}${metric(n(d.inbound),"Inbound")}${metric(n(s.outbound),"Outbound")}${metric(`${n(s.exact_tip)} / ${n(d.peers)}`,"Exact tip agreement")}${metric(mapping.value,"Automatic port mapping")}${metric(s.tor?'Tor only':'Clearnet',"Transport")}</div><p class="network-note">${mapping.detail}</p><section class="section"><div class="section-head"><div><h2>Peer topology</h2><details class="veld-details"><summary>About this graph</summary><p>Full reported network. Dotted lines mean one-sided reporting, not inbound direction. Addresses are never shown.</p></details></div><span class="pill">${n(d.peers)} direct · ${coverage}</span></div>${topologyGraph(topology)}</section><section class="section"><div class="section-head"><div><h2>Peer classes</h2><p>Network-wide identities in the current report.</p></div></div><div class="kv"><div><b>${n(roles.fleet)}</b><span>Fleet</span></div><div><b>${n(roles.node)}</b><span>Nodes</span></div><div><b>${n(roles.miner)}</b><span>Miners</span></div><div><b>${n(roles.validator)}</b><span>Validators</span></div></div></section>`;
+  return `<div class="cards network-cards">${metric(n(d.peers),"Direct peers","green")}${metric(n(d.inbound),"Inbound")}${metric(n(s.outbound),"Outbound")}${metric(`${n(s.exact_tip)} / ${n(d.peers)}`,"Exact tip agreement")}${metric(mapping.value,"Automatic port mapping")}${metric(s.tor?'Tor only':'Clearnet',"Transport")}</div><p class="network-note">${mapping.detail}</p>${topologyGraph(topology,d)}<section class="section"><div class="section-head"><div><h2>Peer classes</h2><p>Network-wide identities in the current report.</p></div></div><div class="kv"><div><b>${n(roles.fleet)}</b><span>Fleet</span></div><div><b>${n(roles.node)}</b><span>Nodes</span></div><div><b>${n(roles.miner)}</b><span>Miners</span></div><div><b>${n(roles.validator)}</b><span>Validators</span></div></div></section>`;
 }
 
 function logs(d,s){const events=Array.isArray(s.events)?s.events:[];return `<section class="section"><div class="section-head"><div><h2>Operational events</h2><p>Sanitized status events only. Raw logs and local paths stay on the machine.</p></div></div><div class="log">${events.length?events.map(esc).join("\n"):"Waiting for sanitized client events..."}</div></section>`}
@@ -1911,6 +1999,16 @@ def diagnostic_transition(value: dict[str, Any]) -> tuple:
 def present_device(item: dict[str, Any]) -> None:
     """Apply validity to legacy storage columns before exposing any readings."""
     snapshot = item.get("snapshot", {})
+    # Decimal strings preserve all 64 bits of a public peer identity in browsers.
+    topology = snapshot.get("topology", {})
+    if isinstance(topology, dict):
+        if "local_id" in topology:
+            topology["local_id"] = str(topology["local_id"])
+        for node in topology.get("nodes", []):
+            node["id"] = str(node["id"])
+        for edge in topology.get("edges", []):
+            edge["first"] = str(edge["first"])
+            edge["second"] = str(edge["second"])
     diagnostic = snapshot.get("diagnostics", {})
     item["gui_version"] = item.get("version")
     if not supports_automatic_updates(str(item.get("version", "")), snapshot):

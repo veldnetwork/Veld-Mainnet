@@ -118,6 +118,19 @@ function fixture(options = {}) {
   assert.equal(f.element('stake-button').textContent, 'Stake VELD');
   assert.match(f.element('stake-msg').innerHTML, /available to stake after the network fee/); ++checks;
 
+  for (const balance of [
+    {spendable_veld:0, pending_out_veld:523.04},
+    {spendable_veld:0, local_reserved_units:52304000000}
+  ]) {
+    f = fixture({rpc:async method => method === 'getstake' ? {staked_veld:2509} : balance});
+    f.element('sk-balance').textContent = '523.04306871';
+    await f.context.doStake();
+    assert.equal(f.pending.length, 0);
+    assert.equal(f.element('sk-balance').textContent, '0');
+    assert.match(f.element('stake-msg').innerHTML, balance.pending_out_veld ? /still spending/ : /saved transaction/);
+    ++checks;
+  }
+
   f = fixture({rpc:async () => { throw new Error('Fixture service unavailable'); }});
   await f.context.doStake();
   assert.equal(f.pending.length, 0);
@@ -133,5 +146,14 @@ function fixture(options = {}) {
   await flush();
   assert.equal(f.element('stake-msg').innerHTML, 'Current wallet status');
   assert.equal(f.context.__opLocks.stake, false); ++checks;
+  const previewNodes={'sk-tier':{value:'1'},'sk-amount':{value:'50'},'sk-tier-preview':{textContent:''},'sk-tier-warning':{style:{}}};
+  let resolvePolicy;
+  const previewContext=vm.createContext({document:{getElementById:id=>previewNodes[id]||null},
+    loadLockupTiers:()=>new Promise(resolve=>{resolvePolicy=resolve;}),
+    computePreviewMultiplier:()=>1,fmt:(value,places)=>value.toFixed(places)});
+  vm.runInContext(extractFunction(source,'updateTierPreview'),previewContext);
+  previewContext.updateTierPreview();previewNodes['sk-amount'].value='500';
+  resolvePolicy({tiers:[{days:7,label:'Base'}]});await flush();
+  assert.match(previewNodes['sk-tier-preview'].textContent,/Weighted stake at this tier: 500\.00 VELD/);++checks;
   console.log('PASS ' + checks + ' stake UI controls; inert signing stub, no keys or network');
 })().catch(error => { console.error(error); process.exitCode = 1; });

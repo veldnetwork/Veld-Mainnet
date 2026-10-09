@@ -184,6 +184,14 @@ jobs:
           python -m pip install --only-binary=:all: -r tests/requirements.txt
       - name: Run portable checks
         run: python tests/run_checks.py
+      - name: Verify wallet near-miss recovery in Chromium
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/veld-browser-tests" --ignore-scripts --no-audit --no-fund playwright@1.62.1
+          node "$RUNNER_TEMP/veld-browser-tests/node_modules/playwright/cli.js" install --with-deps chromium
+          VELD_PLAYWRIGHT_MODULE="$RUNNER_TEMP/veld-browser-tests/node_modules/playwright" node tests/wallet_nms_tests.js
       - name: Verify checkpoint publication and recovery
         if: runner.os == 'Linux'
         shell: bash
@@ -198,6 +206,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: tests/windows_updater_durability_tests.ps1 -Output "$env:RUNNER_TEMP/veld-updater-durability"
+      - name: Verify actual updater relaunch process lifetime
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: tests/windows_updater_relaunch_process_tests.ps1 -Output "$env:RUNNER_TEMP/veld-updater-relaunch"
       - name: Verify repair of a DLL-dependent historical client
         if: runner.os == 'Windows'
         run: python tests/windows_updater_signed_repair_tests.py
@@ -271,7 +283,7 @@ jobs:
               -lcrypto -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"
           done
-          for test in co_mining_stake_floor_tests nms_mempool_lifecycle_tests nms_template_refresh_tests coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests; do
+          for test in co_mining_stake_floor_tests nms_mempool_lifecycle_tests nms_template_refresh_tests coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests constellation_layout_tests nms_proof_file_tests; do
             c++ -std=c++20 -O1 -pthread -Iinclude -Ivendor/pqc "tests/$test.cpp" "${objects[@]}" \
               -lssl -lcrypto -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"
@@ -300,6 +312,10 @@ jobs:
           - name: address-only mining and wallet-mode isolation
             fixture: address_only_node_tests
             defines: '-DVELD_TEST_HOOKS=1'
+            members: ''
+          - name: address-only near-miss wallet signing and recovery
+            fixture: address_only_nms_rpc_tests
+            defines: '-DVELD_MAINNET_POW -DVELD_TEST_CHAIN_BUILD -DVELD_DSTATE_QUALIFICATION -DVELD_ASERT_TESTCHAIN -DVELD_LIGHT_VERIFY'
             members: ''
           - name: supply cap
             fixture: coinbase_cap_admission_tests

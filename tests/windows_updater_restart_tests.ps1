@@ -35,7 +35,7 @@ function Get-VerifiedInstalled {
     return [pscustomobject]@{Entries = $entries}
 }
 function Start-Process {
-    param($FilePath, $ArgumentList, $WorkingDirectory, $WindowStyle)
+    param($FilePath, $ArgumentList, $WorkingDirectory, $WindowStyle, [switch]$PassThru)
     Check $script:verified 'restart occurred before installed-package verification'
     Check ($WorkingDirectory -ceq $InstallDir) 'restart lost the install directory'
     if ($Distribution -eq 'Node') {
@@ -55,6 +55,14 @@ function Start-Process {
     if (-not $process.WaitForExit(10000)) { $process.Kill(); throw 'fixture child did not finish' }
     Check ($process.ExitCode -eq 0) 'fixture child failed'
     $process.Dispose()
+    if ($PassThru) {
+        # This argument-preservation fixture intentionally exits immediately.
+        # Liveness and early-exit retries have separate native-process tests.
+        $observed = [pscustomobject]@{}
+        $observed | Add-Member ScriptMethod WaitForExit { param($Milliseconds); return $false }
+        $observed | Add-Member ScriptMethod Dispose {}
+        return $observed
+    }
 }
 function Expect-NoLaunch([scriptblock]$Action, [string]$Description) {
     $before = $script:launched; $rejected = $false

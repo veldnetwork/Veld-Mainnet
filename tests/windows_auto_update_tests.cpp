@@ -271,10 +271,14 @@ struct GuiStateQualification {
         assert(!app.update_resume_pending_);
         assert(app.owned_pid_.load() != 0);
         const auto marker = root / L"custom data" / L"update-resume-node-started.txt";
-        for (int attempt = 0; attempt < 200 && !std::filesystem::exists(marker); ++attempt)
+        std::string started;
+        const std::string expected = address_only ? "address-only mine\n" : "wallet mine\n";
+        for (int attempt = 0; attempt < 200; ++attempt) {
+            started = ReadTextBounded(marker, 256);
+            if (started == expected)
+                break;
             Sleep(25);
-        assert(std::filesystem::exists(marker));
-        const auto started = ReadTextBounded(marker, 256);
+        }
         assert(started == (address_only ? "address-only mine\n" : "wallet mine\n"));
         assert(WaitForSingleObject(app.owned_process_, 10000) == WAIT_OBJECT_0);
         DWORD exit_code = 1;
@@ -309,9 +313,14 @@ struct GuiStateQualification {
         assert(app.node_path_ == root / L"bin" / L"veld-node.exe");
         assert(app.owned_pid_.load() != 0 && !app.update_resume_pending_);
         const auto marker = root / L"custom data" / L"update-resume-node-started.txt";
-        for (int attempt = 0; attempt < 200 && !std::filesystem::exists(marker); ++attempt)
+        std::string started;
+        for (int attempt = 0; attempt < 200; ++attempt) {
+            started = ReadTextBounded(marker, 256);
+            if (started == "address-only mine\n")
+                break;
             Sleep(25);
-        assert(ReadTextBounded(marker, 256) == "address-only mine\n");
+        }
+        assert(started == "address-only mine\n");
         assert(WaitForSingleObject(app.owned_process_, 10000) == WAIT_OBJECT_0);
     }
 };
@@ -478,6 +487,44 @@ int main(int argc, char** argv) {
     assert(!std::filesystem::exists(address_ticket));
     std::cout
         << "PASS address-only update restores solo mining intent without a wallet passphrase\n";
+
+    const auto restart_root = root / L"post-commit relaunch failure";
+    const auto restart_install = restart_root / L"installation";
+    const auto restart_profile = restart_root / L"profile";
+    std::filesystem::create_directories(restart_install / L"custom data");
+    std::filesystem::create_directories(restart_profile);
+    Write(restart_install / L"SHA256SUMS.txt", "restart previous signed fixture");
+    Write(restart_install / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "restart target signed fixture");
+    const auto restart_ticket =
+        GuiStateQualification::PrepareAddressOnly(restart_profile, restart_install, address);
+    Write(restart_install / L"SHA256SUMS.txt", "restart target signed fixture");
+    std::filesystem::remove_all(restart_install / L".veld-update-transaction");
+    Sleep(50);
+    Write(restart_install / L"update-last-result.json", "{\"status\":\"failed\"}");
+    assert(GuiStateQualification::ResumeAddressOnly(restart_profile, restart_install, address));
+    assert(!std::filesystem::exists(restart_ticket));
+    std::cout << "PASS manually reopened GUI resumes after post-commit relaunch failure\n";
+
+    const auto restart_wallet_root = root / L"post-commit wallet relaunch failure";
+    const auto restart_wallet_install = restart_wallet_root / L"installation";
+    const auto restart_wallet_profile = restart_wallet_root / L"profile";
+    std::filesystem::create_directories(restart_wallet_install / L"custom data");
+    std::filesystem::create_directories(restart_wallet_profile);
+    Write(restart_wallet_install / L"custom data" / L"miner.key", "wallet restart identity");
+    Write(restart_wallet_install / L"SHA256SUMS.txt", "wallet restart previous fixture");
+    Write(restart_wallet_install / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
+          "wallet restart target fixture");
+    GuiStateQualification::SaveWalletSettings(restart_wallet_profile, restart_wallet_install);
+    const auto restart_wallet_ticket =
+        GuiStateQualification::Prepare(restart_wallet_profile, restart_wallet_install);
+    Write(restart_wallet_install / L"SHA256SUMS.txt", "wallet restart target fixture");
+    std::filesystem::remove_all(restart_wallet_install / L".veld-update-transaction");
+    Sleep(50);
+    Write(restart_wallet_install / L"update-last-result.json", "{\"status\":\"failed\"}");
+    assert(GuiStateQualification::Resume(restart_wallet_profile, restart_wallet_install));
+    assert(!std::filesystem::exists(restart_wallet_ticket));
+    std::cout << "PASS wallet-mode manual reopen retains protected resume after relaunch failure\n";
 
     Write(address_install / L".veld-update-transaction" / L"stage" / L"SHA256SUMS.txt",
           "address-only next signed fixture 2");

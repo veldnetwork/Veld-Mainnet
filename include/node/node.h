@@ -7762,6 +7762,16 @@ class VeldNode {
     }
     // Shared status for independent snapshot validation and the optional
     // same-datadir operator diagnostic.
+    std::string AddressOnlyNmsProofJson() {
+        if (!generation_address_only_)
+            return "null";
+        try {
+            return rpc_.AddressOnlyNmsProofJson(miner_keypair_.address);
+        } catch (...) {
+            return "null";
+        }
+    }
+
     std::string PowVerifyStatusJson() const {
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
         std::optional<SnapshotValidationBase> independent_base;
@@ -14181,15 +14191,8 @@ class VeldNode {
     }
 
     void BuildAndBroadcastNmsTx(const BlockHeader& nms_header) {
-        if (generation_address_only_)
-            return;
         if constexpr (!OPTION_B_CONSENSUS_GATE_ENABLED) {
             std::cerr << "  [nms] skip: OPTION_B disabled at compile time\n";
-            std::cerr.flush();
-            return;
-        }
-        if (miner_keypair_.public_key[0] == 0) {
-            std::cerr << "  [nms] skip: miner pubkey unset\n";
             std::cerr.flush();
             return;
         }
@@ -14213,6 +14216,16 @@ class VeldNode {
         if (!chain_.NmsBondSatisfied(miner_script, NextInclusionHeight(chain_.Height()))) {
             std::cerr << "  [nms] skip: NMS bond not satisfied (need >= "
                       << (NMS_MIN_BOND_UNITS / VELD_UNITS) << " VELD staked under miner addr)\n";
+            std::cerr.flush();
+            return;
+        }
+
+        if (generation_address_only_) {
+            rpc_.OfferAddressOnlyNmsProof(miner_script, nms_header);
+            return;
+        }
+        if (miner_keypair_.public_key[0] == 0) {
+            std::cerr << "  [nms] skip: miner pubkey unset\n";
             std::cerr.flush();
             return;
         }

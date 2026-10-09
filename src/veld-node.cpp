@@ -53,6 +53,7 @@
 #include "../include/wallet/cli.h"
 #endif
 #include "../include/wallet/secure_channel_file.h"
+#include "../include/mining/nms_proof_file.h"
 #include "../include/consensus/staking.h"
 #include "../include/network/chainparams.h"
 #include "../include/network/p2p.h"
@@ -4184,6 +4185,7 @@ int main(int argc, char* argv[]) {
             std::filesystem::exists(opt_datadir + "/.force-update", _fu_ec);
     }
 
+    veld::mining::NmsProofFile nms_proof_file;
     while (!g_shutdown) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         ++tick;
@@ -4213,6 +4215,13 @@ int main(int argc, char* argv[]) {
             }
             const int64_t now_seconds = static_cast<int64_t>(std::time(nullptr));
 
+            const std::string nms_proof = node.AddressOnlyNmsProofJson();
+            std::string proof_file_error;
+            if (nms_proof_file.Update(opt_datadir + "/address-only-nms.json", nms_proof, tick,
+                                      proof_file_error) ==
+                veld::mining::NmsProofFile::Result::Failed) {
+                std::cerr << "  [NMS] Cannot export public proof: " << proof_file_error << "\n";
+            }
             std::ostringstream status;
 #if defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
             const bool snapshot_bootstrap_compiled = true;
@@ -4241,6 +4250,7 @@ int main(int argc, char* argv[]) {
                    << ",\"hashrate\":" << node.GetHashrate()
                    << ",\"total_hashes\":" << node.GetTotalHashes()
                    << ",\"threads\":" << node.GetMiningThreads()
+                   << ",\"nms_proof\":" << veld::JsonBuilder::String(nms_proof)
                    << ",\"blocks_mined_session\":" << node.GetSessionBlocksMined()
                    << ",\"progress_counter\":" << node.GetMiningProgressCounter()
                    << ",\"updated_at\":" << static_cast<uint64_t>(std::time(nullptr))

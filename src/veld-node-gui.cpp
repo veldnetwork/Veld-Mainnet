@@ -33,6 +33,7 @@
 #include "../include/mining/worker_policy.h"
 #include "../include/crypto/release_verify.h"
 #include "../include/gui/node_gui_model.h"
+#include "../include/gui/constellation.h"
 #include "../include/gui/node_log_display.h"
 #include "../include/gui/state_file.h"
 #include "../include/gui/update_resume.h"
@@ -64,6 +65,7 @@
 #include <initializer_list>
 #include <limits>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -2217,6 +2219,7 @@ private:
     RECT address_mode_toggle_{};
     RECT address_edit_button_{};
     RECT address_settings_button_{};
+    RECT copy_nms_button_{};
     std::atomic<bool> address_only_{false};
     mutable std::mutex address_payout_mutex_;
     std::string address_payout_;
@@ -2255,6 +2258,10 @@ private:
     RECT chain_plot_rect_{};
     RECT rate_plot_rect_{};
     RECT network_graph_rect_{};
+    RECT constellation_next_{};
+    uint64_t constellation_selected_{0};
+    std::vector<uint64_t> constellation_ids_;
+    std::vector<veld::node_gui::ConstellationPoint> constellation_points_;
     std::vector<RECT> network_peer_rects_;
     std::vector<size_t> network_peer_indices_;
     std::vector<RECT> network_topology_rects_;
@@ -2278,7 +2285,8 @@ private:
 
     int PageContentHeight(const RECT& client) const {
         const int minimum = page_ == Page::Settings ? S(1502) :
-                            page_ == Page::Pool ? S(1080) : S(900);
+                            page_ == Page::Pool ? S(1080) :
+                            page_ == Page::Network ? S(1100) : S(900);
         return std::max(static_cast<int>(client.bottom), minimum);
     }
 
@@ -2365,11 +2373,14 @@ private:
         } else if (page_ == Page::Blockchain) {
             if (inside_any({&full_ibd_card_, &snapshot_card_})) return true;
         } else if (page_ == Page::Mining) {
-            if (PtInRect(&address_settings_button_, point)) return true;
+            if (PtInRect(&address_settings_button_, point) || PtInRect(&copy_nms_button_, point)) return true;
             for (const RECT& button : rate_range_buttons_)
                 if (PtInRect(&button, point)) return true;
         } else if (page_ == Page::Explorer) {
             if (inside_any({&open_explorer_button_, &open_wallet_button_}))
+                return true;
+        } else if (page_ == Page::Network) {
+            if (!constellation_ids_.empty() && inside_any({&network_graph_rect_, &constellation_next_}))
                 return true;
         } else if (page_ == Page::Logs) {
             if (inside_any({&copy_diagnostics_button_, &open_log_button_}))
@@ -2675,6 +2686,12 @@ private:
                          LOWORD(lp) == WM_CONTEXTMENU) ShowTrayMenu();
                 return 0;
             case WM_KEYDOWN:
+                if(page_==Page::Network && (wp==VK_LEFT||wp==VK_RIGHT) && !constellation_ids_.empty()) {
+                    auto it=std::find(constellation_ids_.begin(),constellation_ids_.end(),constellation_selected_);
+                    const size_t i=it==constellation_ids_.end()?0:static_cast<size_t>(it-constellation_ids_.begin());
+                    constellation_selected_=constellation_ids_[(i+constellation_ids_.size()+(wp==VK_RIGHT?1:-1))%constellation_ids_.size()];
+                    InvalidateRect(hwnd_,nullptr,FALSE);return 0;
+                }
                 if (wp == VK_UP || wp == VK_DOWN || wp == VK_PRIOR ||
                     wp == VK_NEXT || wp == VK_HOME || wp == VK_END) {
                     RECT client{};
@@ -3900,6 +3917,12 @@ private:
         RECT safety{left, client.bottom - S(190), right,
                     client.bottom - S(26)};
         FillRound(dc, safety, C_PANEL_ALT, C_BORDER);
+        copy_nms_button_ = {};
+        if (address_only_) {
+            copy_nms_button_ = {safety.right - S(230), safety.top + S(12), safety.right - S(16), safety.top + S(43)};
+            DrawButton(dc, copy_nms_button_, !live.mining.nms_supported ? L"SHA-384: no NMS" : live.mining.nms_proof.empty()
+                ? L"Waiting for near miss" : L"Copy near miss", live.mining_status_online && live.mining.nms_supported && !live.mining.nms_proof.empty());
+        }
         RECT safety_title{safety.left + S(22), safety.top + S(12),
                           safety.right - S(20), safety.top + S(43)};
         DrawTextAt(dc, L"Work admission", safety_title,
@@ -4604,560 +4627,7 @@ private:
         }
     }
 
-    void DrawReportedNetworkTopology(HDC dc, RECT card,
-                                     const LiveState& live) {
-        FillRound(dc, card, C_PANEL, C_BORDER);
-        const std::wstring coverage = live.topology_online
-            ? FormatUnsigned(live.local.peers) + L" direct · " +
-              FormatUnsigned(live.topology.reporting_nodes) + L" / " +
-              FormatUnsigned(live.topology.eligible_nodes) + L" reporting"
-            : L"Waiting for reports";
-        const int summary_w = S(208);
-        RECT summary{card.right - summary_w - S(18), card.top + S(13),
-                     card.right - S(18), card.top + S(43)};
-        FillRound(dc, summary, C_PANEL_ALT, C_BORDER_SOFT, 5);
-        DrawTextAt(dc, coverage, summary, font_small_, C_SUBTEXT,
-                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-        RECT title{card.left + S(20), card.top + S(12),
-                   summary.left - S(12), card.top + S(44)};
-        DrawTextAt(dc, L"Peer topology", title, font_heading_, C_TEXT);
-        RECT subtitle{card.left + S(20), card.top + S(42),
-                      card.right - S(20), card.top + S(78)};
-        DrawTextAt(dc,
-            L"Public links. Dotted means one-sided reporting, not inbound "
-            L"direction. No addresses exposed.",
-            subtitle, font_small_, C_MUTED,
-            DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
-
-        RECT plot{card.left + S(18), card.top + S(82),
-                  card.right - S(18), card.bottom - S(62)};
-        FillRound(dc, plot, RGB(11, 14, 12), C_BORDER_SOFT, 7);
-        InflateRect(&plot, -S(12), -S(10));
-        network_graph_rect_ = plot;
-        if (!live.topology_online) {
-            RECT message{plot.left + S(24), plot.top + S(24),
-                         plot.right - S(24), plot.bottom - S(24)};
-            DrawTextAt(dc,
-                L"A fresh network report is not available. Direct sessions remain available above.",
-                message, font_body_, C_MUTED,
-                DT_CENTER | DT_VCENTER | DT_WORDBREAK | DT_NOPREFIX);
-            return;
-        }
-        if (live.topology.nodes.empty()) {
-            DrawTextAt(dc, L"No network connections have been reported yet.",
-                       plot, font_body_, C_MUTED,
-                       DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-            return;
-        }
-
-        auto role_label = [](const std::string& role) -> std::wstring {
-            if (role == "fleet") return L"Fleet";
-            if (role == "miner") return L"Miner";
-            if (role == "validator") return L"Validator";
-            return L"Node";
-        };
-        auto role_color = [](const std::string& role) -> COLORREF {
-            if (role == "fleet") return RGB(111, 139, 153);
-            if (role == "validator") return RGB(143, 111, 189);
-            return RGB(92, 145, 124);
-        };
-
-        const size_t limit = (plot.right - plot.left >= S(650)) ? 40 : 24;
-        const size_t shown = std::min(limit, live.topology.nodes.size());
-        const int cx = (plot.left + plot.right) / 2;
-        const int cy = (plot.top + plot.bottom) / 2;
-        const int radius_x = std::max<int>(
-            S(95), static_cast<int>((plot.right - plot.left) / 2) - S(40));
-        const int radius_y = std::max<int>(
-            S(60), static_cast<int>((plot.bottom - plot.top) / 2) - S(36));
-        constexpr double PI = 3.14159265358979323846;
-
-        std::unordered_map<uint64_t, POINT> positions;
-        positions.reserve(shown);
-        std::unordered_map<uint64_t, std::string> node_roles;
-        node_roles.reserve(shown);
-        std::unordered_map<uint64_t, std::string> node_tip_states;
-        node_tip_states.reserve(shown);
-        std::unordered_set<uint64_t> direct_ids;
-        std::unordered_map<uint64_t,
-            const veld::node_gui::PeerSummary*> direct_peers;
-        for (const auto& peer : live.peer_details) {
-            if (!peer.identified) continue;
-            direct_ids.insert(peer.anonymous_id);
-            direct_peers.emplace(peer.anonymous_id, &peer);
-        }
-        if (live.local_topology_id != 0)
-            direct_ids.insert(live.local_topology_id);
-
-        std::vector<size_t> fleet_nodes;
-        std::vector<size_t> validator_nodes;
-        std::vector<size_t> operator_nodes;
-        fleet_nodes.reserve(shown);
-        validator_nodes.reserve(shown);
-        operator_nodes.reserve(shown);
-        for (size_t i = 0; i < shown; ++i) {
-            const auto& node = live.topology.nodes[i];
-            node_roles.emplace(node.anonymous_id, node.role);
-            node_tip_states.emplace(node.anonymous_id, node.tip_state);
-            if (node.role == "fleet")
-                fleet_nodes.push_back(i);
-            else if (node.role == "validator")
-                validator_nodes.push_back(i);
-            else
-                operator_nodes.push_back(i);
-        }
-
-        auto sort_layer = [&](std::vector<size_t>& layer,
-                              bool local_first) {
-            std::stable_sort(layer.begin(), layer.end(),
-                [&](size_t lhs, size_t rhs) {
-                    const auto& a = live.topology.nodes[lhs];
-                    const auto& b = live.topology.nodes[rhs];
-                    if (local_first) {
-                        const bool a_local =
-                            a.anonymous_id == live.local_topology_id;
-                        const bool b_local =
-                            b.anonymous_id == live.local_topology_id;
-                        if (a_local != b_local) return a_local;
-                    }
-                    if (a.role_index != b.role_index)
-                        return a.role_index < b.role_index;
-                    return a.anonymous_id < b.anonymous_id;
-                });
-        };
-        sort_layer(fleet_nodes, false);
-        sort_layer(validator_nodes, false);
-        sort_layer(operator_nodes, true);
-
-        auto place_layer = [&](const std::vector<size_t>& layer,
-                               double scale, double phase) {
-            if (layer.empty()) return;
-            const double step = 2.0 * PI /
-                static_cast<double>(layer.size());
-            for (size_t ordinal = 0; ordinal < layer.size(); ++ordinal) {
-                const auto& node = live.topology.nodes[layer[ordinal]];
-                const double angle = phase + step *
-                    static_cast<double>(ordinal);
-                positions[node.anonymous_id] = {
-                    cx + static_cast<int>(std::cos(angle) * radius_x * scale),
-                    cy + static_cast<int>(std::sin(angle) * radius_y * scale)};
-            }
-        };
-        place_layer(fleet_nodes, 0.54, -PI / 2.0);
-        place_layer(validator_nodes, 0.77, -PI / 2.0 + PI / 5.0);
-        place_layer(operator_nodes, 1.0, PI);
-
-        auto draw_orbit = [&](double scale, COLORREF color) {
-            HPEN orbit = CreatePen(PS_DOT, S(1), color);
-            HGDIOBJ old_orbit = SelectObject(dc, orbit);
-            HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
-            const int orbit_x = static_cast<int>(radius_x * scale);
-            const int orbit_y = static_cast<int>(radius_y * scale);
-            Ellipse(dc, cx - orbit_x, cy - orbit_y,
-                    cx + orbit_x, cy + orbit_y);
-            SelectObject(dc, old_brush);
-            SelectObject(dc, old_orbit);
-            DeleteObject(orbit);
-        };
-        if (!fleet_nodes.empty())
-            draw_orbit(0.54,
-                MixColor(role_color("fleet"), RGB(11, 14, 12), 72));
-        if (!validator_nodes.empty())
-            draw_orbit(0.77,
-                MixColor(role_color("validator"), RGB(11, 14, 12), 72));
-        if (!operator_nodes.empty())
-            draw_orbit(1.0,
-                MixColor(role_color("node"), RGB(11, 14, 12), 72));
-
-        uint64_t hovered_topology_id = 0;
-        for (size_t i = 0; i < shown; ++i) {
-            const auto& node = live.topology.nodes[i];
-            const auto position = positions.find(node.anonymous_id);
-            if (position == positions.end()) continue;
-            RECT hit{position->second.x - S(40),
-                     position->second.y - S(30),
-                     position->second.x + S(40),
-                     position->second.y + S(39)};
-            if (PtInRect(&hit, hover_point_)) {
-                hovered_topology_id = node.anonymous_id;
-                break;
-            }
-        }
-        std::unordered_set<uint64_t> hover_neighbors;
-        if (hovered_topology_id != 0) {
-            for (const auto& edge : live.topology.edges) {
-                if (edge.first == hovered_topology_id)
-                    hover_neighbors.insert(edge.second);
-                else if (edge.second == hovered_topology_id)
-                    hover_neighbors.insert(edge.first);
-            }
-        }
-
-        auto draw_edge_path = [&](const POINT& from, const POINT& to,
-                                  uint64_t first_id, uint64_t second_id) {
-            const double dx = static_cast<double>(to.x - from.x);
-            const double dy = static_cast<double>(to.y - from.y);
-            const double length_squared = dx * dx + dy * dy;
-            if (length_squared <= 1.0) return;
-            double along = ((static_cast<double>(cx - from.x) * dx) +
-                            (static_cast<double>(cy - from.y) * dy)) /
-                           length_squared;
-            along = std::max(0.0, std::min(1.0, along));
-            const double nearest_x = static_cast<double>(from.x) + dx * along;
-            const double nearest_y = static_cast<double>(from.y) + dy * along;
-            const double center_dx = nearest_x - static_cast<double>(cx);
-            const double center_dy = nearest_y - static_cast<double>(cy);
-            const double center_distance = std::sqrt(
-                center_dx * center_dx + center_dy * center_dy);
-            if (center_distance >= static_cast<double>(S(64))) {
-                MoveToEx(dc, from.x, from.y, nullptr);
-                LineTo(dc, to.x, to.y);
-                return;
-            }
-
-            const double length = std::sqrt(length_squared);
-            double normal_x = -dy / length;
-            double normal_y = dx / length;
-            const double midpoint_x =
-                (static_cast<double>(from.x) + to.x) / 2.0;
-            const double midpoint_y =
-                (static_cast<double>(from.y) + to.y) / 2.0;
-            const double offset = static_cast<double>(S(78));
-            const double plus_dx = midpoint_x + normal_x * offset - cx;
-            const double plus_dy = midpoint_y + normal_y * offset - cy;
-            const double minus_dx = midpoint_x - normal_x * offset - cx;
-            const double minus_dy = midpoint_y - normal_y * offset - cy;
-            const double plus_distance = plus_dx * plus_dx + plus_dy * plus_dy;
-            const double minus_distance = minus_dx * minus_dx + minus_dy * minus_dy;
-            if (minus_distance > plus_distance ||
-                (std::abs(minus_distance - plus_distance) < 1.0 &&
-                 ((first_id ^ second_id) & 1U) != 0)) {
-                normal_x = -normal_x;
-                normal_y = -normal_y;
-            }
-            POINT curve[4]{
-                from,
-                {from.x + static_cast<LONG>(dx / 3.0 + normal_x * offset),
-                 from.y + static_cast<LONG>(dy / 3.0 + normal_y * offset)},
-                {from.x + static_cast<LONG>(2.0 * dx / 3.0 + normal_x * offset),
-                 from.y + static_cast<LONG>(2.0 * dy / 3.0 + normal_y * offset)},
-                to};
-            PolyBezier(dc, curve, 4);
-        };
-
-        for (const auto& edge : live.topology.edges) {
-            const auto first = positions.find(edge.first);
-            const auto second = positions.find(edge.second);
-            if (first == positions.end() || second == positions.end()) continue;
-            const bool direct = live.local_topology_id != 0 &&
-                (edge.first == live.local_topology_id ||
-                 edge.second == live.local_topology_id);
-            const bool highlighted = hovered_topology_id != 0 &&
-                (edge.first == hovered_topology_id ||
-                 edge.second == hovered_topology_id);
-            const auto first_role = node_roles.find(edge.first);
-            const auto second_role = node_roles.find(edge.second);
-            const COLORREF first_color = role_color(
-                first_role == node_roles.end() ? "node" : first_role->second);
-            const COLORREF second_color = role_color(
-                second_role == node_roles.end() ? "node" : second_role->second);
-            COLORREF edge_color = first_color == second_color
-                ? first_color : MixColor(first_color, second_color, 50);
-            const auto first_peer = direct_peers.find(edge.first);
-            const auto second_peer = direct_peers.find(edge.second);
-            const auto first_tip = node_tip_states.find(edge.first);
-            const auto second_tip = node_tip_states.find(edge.second);
-            const bool tip_differs =
-                (first_peer != direct_peers.end() &&
-                 first_peer->second->peer_tip_age_s >= 0 &&
-                 !first_peer->second->exact_tip) ||
-                (second_peer != direct_peers.end() &&
-                 second_peer->second->peer_tip_age_s >= 0 &&
-                 !second_peer->second->exact_tip) ||
-                (first_peer == direct_peers.end() &&
-                 first_tip != node_tip_states.end() &&
-                 first_tip->second == "differs") ||
-                (second_peer == direct_peers.end() &&
-                 second_tip != node_tip_states.end() &&
-                 second_tip->second == "differs");
-            if (!edge.confirmed)
-                edge_color = MixColor(edge_color, RGB(11, 14, 12), 48);
-            else if (direct)
-                edge_color = MixColor(edge_color, C_TEXT, 14);
-            if (tip_differs) edge_color = C_WARN;
-            if (hovered_topology_id != 0 && !highlighted)
-                edge_color = MixColor(edge_color, RGB(11, 14, 12), 78);
-            if (highlighted) {
-                const auto hovered_role = node_roles.find(hovered_topology_id);
-                const COLORREF hovered_color = role_color(
-                    hovered_role == node_roles.end()
-                        ? "node" : hovered_role->second);
-                edge_color = MixColor(hovered_color, C_TEXT, 32);
-            }
-            // GDI only renders cosmetic dotted pens reliably at one pixel.
-            // Keep one-sided reports visibly dotted even while a node is
-            // highlighted; a thick solid underlay would erase that meaning.
-            if (edge.confirmed) {
-                HPEN underlay = CreatePen(PS_SOLID,
-                                          highlighted ? S(7) :
-                                          (direct ? S(4) : S(3)),
-                                          RGB(16, 20, 17));
-                HGDIOBJ old_underlay = SelectObject(dc, underlay);
-                draw_edge_path(first->second, second->second,
-                               edge.first, edge.second);
-                SelectObject(dc, old_underlay);
-                DeleteObject(underlay);
-            }
-            HPEN line = CreatePen(edge.confirmed ? PS_SOLID : PS_DOT,
-                                  edge.confirmed
-                                      ? (highlighted ? S(4) :
-                                         (direct ? S(2) : S(1)))
-                                      : S(1),
-                                  edge_color);
-            HGDIOBJ old_line = SelectObject(dc, line);
-            draw_edge_path(first->second, second->second,
-                           edge.first, edge.second);
-            SelectObject(dc, old_line);
-            DeleteObject(line);
-        }
-
-        // The center is a visual anchor for the network-wide view, not a
-        // synthetic peer. Connections retain their real reported endpoints.
-        const COLORREF center_color = RGB(95, 137, 116);
-        for (int ring = 3; ring >= 1; --ring) {
-            const int ring_radius = S(25 + ring * 5);
-            HPEN center_ring = CreatePen(PS_SOLID, S(1),
-                MixColor(center_color, RGB(11, 14, 12), 45 + ring * 10));
-            HGDIOBJ old_ring = SelectObject(dc, center_ring);
-            HGDIOBJ old_ring_brush = SelectObject(dc,
-                GetStockObject(HOLLOW_BRUSH));
-            Ellipse(dc, cx - ring_radius, cy - ring_radius,
-                    cx + ring_radius, cy + ring_radius);
-            SelectObject(dc, old_ring_brush);
-            SelectObject(dc, old_ring);
-            DeleteObject(center_ring);
-        }
-        DrawNetworkSphere(dc, cx, cy, S(25), RGB(20, 27, 23), center_color);
-        RECT center_title{cx - S(34), cy - S(12),
-                          cx + S(34), cy + S(4)};
-        DrawTextAt(dc, L"VELD", center_title, font_small_, C_TEXT,
-                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-        RECT center_subtitle{cx - S(38), cy + S(2),
-                             cx + S(38), cy + S(17)};
-        DrawTextAt(dc, L"NETWORK", center_subtitle, font_small_, C_TEXT,
-                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-
-        // Preserve valid public role ordinals while guaranteeing that a stale
-        // or malformed report can never render two peers with the same label.
-        std::unordered_map<uint64_t, uint32_t> display_ordinals;
-        std::unordered_map<std::string, std::unordered_set<uint32_t>>
-            used_role_ordinals;
-        display_ordinals.reserve(shown);
-        for (size_t i = 0; i < shown; ++i) {
-            const auto& node = live.topology.nodes[i];
-            if (node.role_index == 0) continue;
-            auto& used = used_role_ordinals[node.role];
-            if (used.insert(node.role_index).second)
-                display_ordinals.emplace(node.anonymous_id, node.role_index);
-        }
-        for (size_t i = 0; i < shown; ++i) {
-            const auto& node = live.topology.nodes[i];
-            if (display_ordinals.count(node.anonymous_id) != 0) continue;
-            auto& used = used_role_ordinals[node.role];
-            uint32_t ordinal = 1;
-            while (used.count(ordinal) != 0) ++ordinal;
-            used.insert(ordinal);
-            display_ordinals.emplace(node.anonymous_id, ordinal);
-        }
-        for (size_t i = 0; i < shown; ++i) {
-            const auto& node = live.topology.nodes[i];
-            const POINT center = positions[node.anonymous_id];
-            const COLORREF color = role_color(node.role);
-            const bool direct = direct_ids.count(node.anonymous_id) != 0;
-            const auto peer_status = direct_peers.find(node.anonymous_id);
-            const bool tip_unavailable = peer_status != direct_peers.end()
-                ? peer_status->second->peer_tip_age_s < 0
-                : node.tip_state == "unavailable" ||
-                  node.tip_state == "stale";
-            const bool tip_differs = peer_status != direct_peers.end()
-                ? peer_status->second->peer_tip_age_s >= 0 &&
-                  !peer_status->second->exact_tip
-                : node.tip_state == "differs";
-            const COLORREF status_color = tip_differs
-                ? C_WARN : (tip_unavailable ? C_MUTED : color);
-            const int radius = direct ? S(18) : S(15);
-            RECT hit{center.x - S(40), center.y - S(30),
-                     center.x + S(40), center.y + S(39)};
-            const bool hovered = PtInRect(&hit, hover_point_);
-            const bool connected_to_hover =
-                hover_neighbors.count(node.anonymous_id) != 0;
-            const bool unrelated_to_hover = hovered_topology_id != 0 &&
-                !hovered && !connected_to_hover;
-            if (direct) {
-                const COLORREF ring_color = connected_to_hover
-                    ? MixColor(status_color, C_TEXT, 38)
-                    : MixColor(status_color, C_TEXT, 18);
-                HPEN ring = CreatePen(PS_SOLID,
-                    connected_to_hover ? S(2) : S(1),
-                    ring_color);
-                HGDIOBJ old_ring = SelectObject(dc, ring);
-                HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
-                Ellipse(dc, center.x - radius - S(4), center.y - radius - S(4),
-                        center.x + radius + S(4), center.y + radius + S(4));
-                SelectObject(dc, old_brush);
-                SelectObject(dc, old_ring);
-                DeleteObject(ring);
-            }
-            DrawNetworkSphere(dc, center.x, center.y, hovered ? radius + S(2) : radius,
-                              MixColor(status_color, RGB(10, 13, 11),
-                                  unrelated_to_hover ? 82 : 62),
-                              (hovered || connected_to_hover)
-                                  ? MixColor(status_color, C_TEXT, 46)
-                                  : (unrelated_to_hover
-                                      ? MixColor(status_color,
-                                          RGB(10, 13, 11), 62)
-                                      : status_color));
-            const uint32_t ordinal = display_ordinals[node.anonymous_id];
-            const std::wstring label = role_label(node.role) + L" " +
-                (ordinal < 10 ? std::wstring(L"0") : std::wstring()) +
-                FormatUnsigned(ordinal);
-            RECT label_rect{center.x - S(45), center.y + S(18),
-                            center.x + S(45), center.y + S(38)};
-            DrawTextAt(dc, label, label_rect, font_small_,
-                       tip_differs ? C_WARN : C_TEXT,
-                       DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-            network_topology_rects_.push_back(hit);
-            network_topology_indices_.push_back(i);
-        }
-        if (live.topology.nodes.size() > shown) {
-            RECT more{plot.right - S(130), plot.bottom - S(22),
-                      plot.right, plot.bottom};
-            DrawTextAt(dc, L"+" +
-                FormatUnsigned(live.topology.nodes.size() - shown) +
-                L" more", more, font_small_, C_MUTED,
-                DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-        }
-
-        const int relationship_y = card.bottom - S(41);
-        const int status_y = card.bottom - S(17);
-        const int legend_left = card.left + S(20);
-        const int legend_right = card.right - S(20);
-        const int legend_col = (legend_right - legend_left) / 3;
-        auto legend = [&](int x, int label_right, int y, bool dotted,
-                          COLORREF color, const wchar_t* text) {
-            HPEN pen = CreatePen(PS_SOLID, S(1), color);
-            HGDIOBJ old = SelectObject(dc, pen);
-            if (dotted) {
-                const int extent = S(27);
-                const int dash = std::max(1, S(3));
-                const int stride = std::max(dash + 1, S(7));
-                for (int offset = 0; offset < extent; offset += stride) {
-                    MoveToEx(dc, x + offset, y, nullptr);
-                    LineTo(dc, x + std::min(extent, offset + dash), y);
-                }
-            } else {
-                MoveToEx(dc, x, y, nullptr);
-                LineTo(dc, x + S(27), y);
-            }
-            SelectObject(dc, old);
-            DeleteObject(pen);
-            RECT label{x + S(35), y - S(10), label_right, y + S(10)};
-            DrawTextAt(dc, text, label, font_small_, C_MUTED);
-        };
-        legend(legend_left, legend_left + legend_col, relationship_y,
-               false, C_MUTED, L"Seen by both");
-        legend(legend_left + legend_col,
-               legend_left + 2 * legend_col, relationship_y,
-               true, C_MUTED, L"One-sided");
-        legend(legend_left + 2 * legend_col, legend_right, relationship_y,
-               false, MixColor(C_TEXT, role_color("node"), 48),
-               L"Direct session");
-        const int status_x = legend_left;
-        HBRUSH warning_brush = CreateSolidBrush(C_WARN);
-        HGDIOBJ old_warning_brush = SelectObject(dc, warning_brush);
-        HGDIOBJ old_warning_pen = SelectObject(dc, GetStockObject(NULL_PEN));
-        Ellipse(dc, status_x, status_y - S(4),
-                status_x + S(8), status_y + S(4));
-        SelectObject(dc, old_warning_pen);
-        SelectObject(dc, old_warning_brush);
-        DeleteObject(warning_brush);
-        RECT status_label{status_x + S(16), status_y - S(10),
-                          legend_left + legend_col, status_y + S(10)};
-        DrawTextAt(dc, L"Tip differs", status_label, font_small_, C_MUTED);
-        const int unknown_x = legend_left + legend_col;
-        HBRUSH unknown_brush = CreateSolidBrush(C_MUTED);
-        HGDIOBJ old_unknown_brush = SelectObject(dc, unknown_brush);
-        HGDIOBJ old_unknown_pen = SelectObject(dc, GetStockObject(NULL_PEN));
-        Ellipse(dc, unknown_x, status_y - S(4),
-                unknown_x + S(8), status_y + S(4));
-        SelectObject(dc, old_unknown_pen);
-        SelectObject(dc, old_unknown_brush);
-        DeleteObject(unknown_brush);
-        RECT unknown_label{unknown_x + S(16), status_y - S(10),
-                           legend_right, status_y + S(10)};
-        DrawTextAt(dc, L"Status unavailable", unknown_label,
-                   font_small_, C_MUTED);
-
-        for (size_t i = 0; i < network_topology_rects_.size(); ++i) {
-            if (!PtInRect(&network_topology_rects_[i], hover_point_)) continue;
-            const auto& node = live.topology.nodes[network_topology_indices_[i]];
-            const bool direct = direct_ids.count(node.anonymous_id) != 0;
-            const veld::node_gui::PeerSummary* direct_peer = nullptr;
-            if (direct) {
-                for (const auto& peer : live.peer_details) {
-                    if (peer.identified &&
-                        peer.anonymous_id == node.anonymous_id) {
-                        direct_peer = &peer;
-                        break;
-                    }
-                }
-            }
-            const RECT tip = NetworkTooltipRect(
-                network_topology_rects_[i], S(260), S(76));
-            FillRound(dc, tip, RGB(24, 28, 25), RGB(92, 102, 96), 6);
-            RECT tip_title{tip.left + S(10), tip.top + S(6),
-                           tip.right - S(10), tip.top + S(29)};
-            DrawTextAt(dc, role_label(node.role) +
-                (direct_peer
-                    ? std::wstring(direct_peer->inbound
-                        ? L" · inbound direct session"
-                        : L" · outbound direct session")
-                    : (direct ? L" · this node" : L" · network report")),
-                tip_title, font_small_, C_TEXT);
-            RECT tip_detail{tip.left + S(10), tip.top + S(29),
-                            tip.right - S(10), tip.bottom - S(5)};
-            if (direct_peer) {
-                const std::wstring tip_state = direct_peer->exact_tip
-                    ? L"Exact tip agreement"
-                    : (direct_peer->lag_blocks > 0
-                        ? FormatUnsigned(static_cast<uint64_t>(
-                              direct_peer->lag_blocks)) + L" blocks behind"
-                        : (direct_peer->lag_blocks < 0
-                            ? FormatUnsigned(static_cast<uint64_t>(
-                                  -direct_peer->lag_blocks)) + L" blocks ahead"
-                            : (direct_peer->peer_tip_age_s < 0
-                                ? L"Tip unavailable"
-                                : L"Different tip at the same height")));
-                DrawTextAt(dc, tip_state + L"\nReceived " +
-                    FormatBytes(direct_peer->bytes_recv) + L" · sent " +
-                    FormatBytes(direct_peer->bytes_sent), tip_detail,
-                    font_small_, C_MUTED,
-                    DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
-            } else {
-                const std::wstring state = node.tip_state == "exact"
-                    ? L"Exact network tip"
-                    : (node.tip_state == "differs"
-                        ? L"Reported tip differs"
-                        : (node.tip_state == "stale"
-                            ? L"Tip report is stale"
-                            : L"Tip status unavailable"));
-                DrawTextAt(dc, state + L"\nLast reported " +
-                           FormatAge(node.updated_at),
-                           tip_detail, font_small_, C_MUTED);
-            }
-            break;
-        }
-    }
+#include "../include/gui/constellation_draw.inl"
 
     void DrawUnifiedNetworkTopology(HDC dc, RECT card,
                                     const LiveState& live) {
@@ -5165,7 +4635,28 @@ private:
         // displaying the node's authoritative direct sessions.
         if (!live.topology_online || live.topology.nodes.empty() ||
             live.local_topology_id == 0) {
-            DrawDirectPeerTopology(dc, card, live);
+            LiveState direct = live;
+            direct.topology = {};
+            std::unordered_set<uint64_t> ids;
+            if (live.local_topology_id != 0) {
+                veld::node_gui::TopologyNode self;
+                self.anonymous_id = live.local_topology_id;
+                self.role = mining_enabled_ ? "miner" : "node";
+                self.tip_state = live.local_online ? "exact" : "unavailable";
+                direct.topology.nodes.push_back(self);
+                ids.insert(self.anonymous_id);
+            }
+            if (live.peer_details_online) for (const auto& peer : live.peer_details) {
+                if (!peer.identified || !peer.anonymous_id || !ids.insert(peer.anonymous_id).second) continue;
+                veld::node_gui::TopologyNode node;
+                node.anonymous_id = peer.anonymous_id;
+                node.role = peer.role == "fleet" && !peer.role_index ? "node" : peer.role;
+                node.tip_state = peer.peer_tip_age_s < 0 ? "unavailable" : peer.exact_tip ? "exact" : "differs";
+                direct.topology.nodes.push_back(node);
+                if (live.local_topology_id) direct.topology.edges.push_back({live.local_topology_id,peer.anonymous_id,false});
+            }
+            direct.topology_online = !direct.topology.nodes.empty();
+            DrawReportedNetworkTopology(dc, card, direct);
             return;
         }
 
@@ -5953,6 +5444,19 @@ private:
 
     void OnClick(int x, int y) {
         POINT p = ContentPoint(POINT{x, y});
+        if(page_==Page::Network && !constellation_ids_.empty()) {
+            if(PtInRect(&constellation_next_,p)) {
+                auto it=std::find(constellation_ids_.begin(),constellation_ids_.end(),constellation_selected_);
+                const size_t index=it==constellation_ids_.end()?0:static_cast<size_t>(it-constellation_ids_.begin());
+                constellation_selected_=constellation_ids_[(index+1)%constellation_ids_.size()];
+                InvalidateRect(hwnd_,nullptr,FALSE);return;
+            }
+            if(PtInRect(&network_graph_rect_,p)) {
+                const size_t index=veld::node_gui::ConstellationNearest(constellation_points_,p.x,p.y,S(32));
+                if(index<constellation_ids_.size())constellation_selected_=constellation_ids_[index];
+                InvalidateRect(hwnd_,nullptr,FALSE);return;
+            }
+        }
         if (PtInRect(&overview_nav_, p)) page_ = Page::Overview;
         else if (PtInRect(&blockchain_nav_, p)) page_ = Page::Blockchain;
         else if (PtInRect(&mining_nav_, p)) page_ = Page::Mining;
@@ -6007,6 +5511,11 @@ private:
         } else if (page_ == Page::Explorer &&
                    PtInRect(&open_wallet_button_, p)) {
             OpenTrustedWallet();
+        } else if (page_ == Page::Mining && PtInRect(&copy_nms_button_, p)) {
+            const auto snapshot = SnapshotState();
+            if (address_only_ && snapshot.mining_status_online && !snapshot.mining.nms_proof.empty() &&
+                CopyWideText(hwnd_, Utf8ToWide(snapshot.mining.nms_proof)))
+                MessageBoxW(hwnd_, L"Paste this public proof in Wallet > Co-Mining Lottery and sign with your payout wallet before the next block.", L"Near-miss proof copied", MB_OK | MB_ICONINFORMATION);
         } else if (page_ == Page::Mining && PtInRect(&address_settings_button_, p)) {
             page_ = Page::Settings;
         } else if (page_ == Page::Settings &&
@@ -6481,7 +5990,9 @@ private:
                 (status->text == "installed" && digest == candidate.previous_manifest))
                 return Decision::Retry;
             if (!((status->text == "installed" && digest == candidate.target_manifest) ||
-                  (status->text == "failed" && digest == candidate.previous_manifest)))
+                  (status->text == "failed" &&
+                   (digest == candidate.previous_manifest ||
+                    digest == candidate.target_manifest))))
                 return Decision::Reject;
             std::error_code ec;
             if (std::filesystem::exists(root / L".veld-update-transaction", ec) ||

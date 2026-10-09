@@ -44,3 +44,12 @@ other machines.
 
 For mining, run `./bin/veld-node` and use its setup menu. See
 [pool mining](pool-mining.md) for the Linux pool worker.
+
+## Address-only near misses
+
+While an address-only solo miner runs, open **Co-Mining Lottery** in the payout
+wallet. Select **Choose proof file**, open `address-only-nms.json` from that
+miner's data folder, then select **Sign near miss**. The wallet checks the proof
+and asks you to confirm the 0.001 VELD fee. The payout address needs 1,000 VELD
+staked and confirmed spendable funds for the fee. Proofs expire at the next
+block. See [address-only mining](address-only-mining.md) for details.

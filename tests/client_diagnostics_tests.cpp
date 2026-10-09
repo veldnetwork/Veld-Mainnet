@@ -48,6 +48,34 @@ int main(int argc, char** argv) {
     node_only.replace(node_only.find("disposable-fixture-address"),
                       std::string("disposable-fixture-address").size(), "");
     check(ParseMiningStats(node_only, stats, error));
+    const auto with_proof = [&](const std::string& packet) {
+        std::string escaped;
+        for (const char ch : packet) {
+            if (ch == '\"' || ch == '\\')
+                escaped += '\\';
+            escaped += ch;
+        }
+        return base.substr(0, base.size() - 1) + ",\"nms_proof\":\"" + escaped + "\"}";
+    };
+    const std::string public_proof = "{\"address\":\"disposable-fixture-address\",\"payload\":\"" +
+                                     std::string(194, 'a') + "\"}";
+    check(ParseMiningStats(with_proof(public_proof), stats, error));
+    check(stats.nms_proof == public_proof);
+    check(ParseMiningStats(
+        with_proof(
+            "{\"address\":\"disposable-fixture-address\",\"supported\":false,\"payload\":\"\"}"),
+        stats, error));
+    check(!stats.nms_supported && stats.nms_proof.empty());
+    check(ParseMiningStats(
+        with_proof("{\"address\":\"other\",\"supported\":false,\"payload\":\"\"}"), stats, error));
+    check(stats.nms_supported && stats.nms_proof.empty());
+    check(ParseMiningStats(with_proof("null"), stats, error) && stats.nms_proof.empty());
+    check(ParseMiningStats(
+              with_proof("{\"address\":\"other\",\"payload\":\"" + std::string(194, 'a') + "\"}"),
+              stats, error) &&
+          stats.nms_proof.empty());
+    check(!ParseMiningStats(with_proof(std::string(1201, 'a')), stats, error));
+    check(ParseMiningStats(base, stats, error) && stats.nms_proof.empty());
     check(!ParseMiningStats(base.substr(0, base.size() - 1) + ",\"hashrate\":1}", stats, error));
     for (unsigned retries = 0; retries < 5; ++retries) {
         check(ClassifyExit(75, false, retries) ==

@@ -1067,8 +1067,32 @@ function Relaunch-InstalledClient() {
             $trailing = [regex]::Match($data, '\\+$').Value
             $start.ArgumentList = '--datadir "' + $data + $trailing + '"'
         }
-        Start-Process @start | Out-Null
-        return
+        # Process creation alone does not prove the GUI stayed open. An
+        # immediate startup exit can leave the miner and portal report offline.
+        $script:CommitRelaunchAttempted = $true
+        $lastExit = 'not started'
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            $child = $null
+            try {
+                $child = Start-Process @start -PassThru
+            }
+            catch {
+                $lastExit = $_.Exception.Message
+            }
+            if ($null -ne $child) {
+                try {
+                    if (-not $child.WaitForExit(15000)) { return }
+                    $lastExit = 'exit code ' + $child.ExitCode
+                }
+                catch {
+                    throw ('updated Veld GUI was launched but its state could not be checked: ' +
+                        $_.Exception.Message)
+                }
+                finally { $child.Dispose() }
+            }
+            if ($attempt -lt 3) { Start-Sleep -Seconds 2 }
+        }
+        throw ('updated Veld GUI did not stay open after 3 starts: ' + $lastExit)
     }
     $launcherName = 'Start Mining.bat'
     if (-not $installed.Entries.ContainsKey($launcherName)) {
@@ -1202,7 +1226,8 @@ if ($Mode -eq 'Commit') {
         try { Write-UpdateResult 'failed' $_.Exception.Message } catch { }
         Write-Host ('   [update] COMMIT FAILED: ' + $_.Exception.Message)
         if ($null -ne $script:InstallLock) { $script:InstallLock.Dispose(); $script:InstallLock = $null }
-        if ($ParentPid -gt 0 -and $null -eq (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) {
+        if (-not $script:CommitRelaunchAttempted -and $ParentPid -gt 0 -and
+            $null -eq (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) {
             try { Relaunch-InstalledClient } catch { }
         }
         exit 1

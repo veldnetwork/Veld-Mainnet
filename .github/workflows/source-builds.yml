@@ -14,6 +14,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-client:
+    name: Unsigned Windows client build
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            git
+            diffutils
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-openssl
+            mingw-w64-clang-x86_64-leveldb
+            mingw-w64-clang-x86_64-python
+      - name: Build and attest the public Windows client
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          output=$(cygpath -u "$RUNNER_TEMP")/windows-client
+          bash build/mainnet-v2-windows.sh node "$output/node"
+          bash build/mainnet-v2-windows.sh desktop "$output/desktop"
+          bash build/mainnet-v2-windows.sh keygen "$output/keygen"
+          bash build/mainnet-v2-windows.sh validator "$output/validator"
+          VELD_TRUSTED_NODE_BUILD="$output/node" \
+            VELD_TRUSTED_WALLET_BUILD="$output/desktop" \
+            bash build/mainnet-v2-windows.sh gui "$output/gui"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: success()
+        with:
+          name: unsigned-windows-client-payload
+          path: |
+            ${{ runner.temp }}/windows-client/
+            !${{ runner.temp }}/windows-client/**/obj/
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: windows-client-build-evidence
+          path: ${{ runner.temp }}/windows-client/**/logs/
+          retention-days: 7
+          if-no-files-found: warn
+
   services:
     name: Pool and custody unit tests
     runs-on: ubuntu-24.04
@@ -104,7 +153,7 @@ jobs:
           sudo unshare --net -- bash -c 'ip link set lo up; exec python3 "$@"' \
             bash tests/linux_pool_menu_tests.py "$RUNNER_TEMP/source-build/bin/veld-node"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        if: success() && contains(fromJSON('["node", "desktop", "pool-worker"]'), matrix.role)
+        if: success() && contains(fromJSON('["node", "desktop", "pool-worker", "fleet"]'), matrix.role)
         with:
           name: unsigned-linux-${{ matrix.role }}-payload
           path: |

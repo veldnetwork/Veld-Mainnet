@@ -23,6 +23,8 @@
 #include "../core/amm_pool.h"
 #include "../core/btc_relay_order.h"
 #include "../mining/preflight_selector.h"
+#include "../mining/nms_submission.h"
+#include "../mining/nms_proof_mailbox.h"
 #include "../consensus/tiers.h"
 #include "../consensus/governance.h"
 #include "../wallet/wallet.h"
@@ -1143,6 +1145,42 @@ class RpcServer {
     void SetPoolInfoFn(std::function<std::string()> fn) {
         pool_info_fn_ = fn;
     }
+    void OfferAddressOnlyNmsProof(const std::vector<uint8_t>& script, const BlockHeader& header) {
+        nms_proofs_.Offer(script, header);
+    }
+
+    std::string AddressOnlyNmsProofJson(const std::string& address) {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        const auto script = AddressToScript(address);
+        if ((script.size() != 25 && script.size() != 51) || ScriptToAddress(script) != address)
+            throw std::invalid_argument("canonical mining address required");
+        const bool supported = script.size() == 25;
+        const auto tip = chain_.TipCopy();
+        const auto proof = nms_proofs_.Read(script, tip.GetHash());
+        const bool eligible =
+            supported && chain_.NmsBondSatisfied(script, NextInclusionHeight(tip.height));
+        const bool needed =
+            supported && mining::NeedsNmsSubmission(chain_, mempool_, script, tip.GetHash());
+        return JsonBuilder::Object({
+            {"schema", JsonBuilder::Number(uint64_t{1})},
+            {"genesis", JsonBuilder::String(GENESIS_HASH)},
+            {"address", JsonBuilder::String(address)},
+            {"supported", JsonBuilder::Bool(supported)},
+            {"reason",
+             JsonBuilder::String(
+                 supported ? "" : "Near-miss entries do not support SHA-384 payout addresses.")},
+            {"parent", JsonBuilder::String(HashToHex(tip.GetHash()))},
+            {"height", JsonBuilder::Number(tip.height)},
+            {"window_draw", JsonBuilder::Number(tip.height - tip.height % COMINE_WINDOW_BLOCKS +
+                                                COMINE_WINDOW_BLOCKS)},
+            {"eligible", JsonBuilder::Bool(eligible)},
+            {"needed", JsonBuilder::Bool(needed)},
+            {"payload",
+             JsonBuilder::String(proof && eligible && needed ? BytesToHex(proof->raw) : "")},
+            {"fee_units", JsonBuilder::String(std::to_string(MIN_TX_FEE))},
+        });
+    }
+
     void SetMinerStatusFn(std::function<std::string()> fn) {
         miner_status_fn_ = std::move(fn);
     }
@@ -1519,6 +1557,8 @@ class RpcServer {
     std::string datadir_;
     std::function<std::string()> pool_info_fn_;
     std::function<std::string()> miner_status_fn_;
+    mining::NmsProofMailbox nms_proofs_;
+    std::mutex nms_prepare_mutex_;
     std::function<std::string(bool)> flush_trigger_fn_;
     std::function<bool()> ibd_complete_fn_;
     std::function<bool()> txindex_enabled_fn_;
@@ -1774,6 +1814,133 @@ class RpcServer {
                 {"security_state_migration_height", JB::Number(SECURITY_STATE_MIGRATION_HEIGHT)},
                 {"consensus_security_upgrade_height",
                  JB::Number(CONSENSUS_SECURITY_UPGRADE_HEIGHT)},
+            });
+        });
+
+        methods_["getaddressnmsproof"] = RpcMethod([this](const P& params) -> std::string {
+            if (params.size() != 1)
+                throw std::invalid_argument("Usage: getaddressnmsproof <mining_address>");
+            return AddressOnlyNmsProofJson(params[0]);
+        });
+
+        methods_["preparenmsrecovery"] = RpcMethod([this](const P& params) -> std::string {
+            if (params.size() != 2 || params[1].size() > 20000 || params[1].empty() ||
+                params[1].size() % 2 ||
+                params[1].find_first_not_of("0123456789abcdef") != std::string::npos)
+                throw std::invalid_argument(
+                    "Usage: preparenmsrecovery <address> <saved_signed_nms_hex>");
+            const auto script = AddressToScript(params[0]);
+            const auto raw = HexToBytes(params[1]);
+            Transaction old;
+            if (Transaction::Deserialize(raw, 0, old) != raw.size() || old.inputs.size() != 1 ||
+                old.outputs.size() < 2 || old.outputs.size() > 3 || script.size() != 25 ||
+                ScriptToAddress(script) != params[0] || old.version != 1 || old.locktime != 0 ||
+                old.Serialize() != raw || old.outputs[0].value != MIN_TX_FEE ||
+                old.outputs[0].script_pubkey != script)
+                throw std::invalid_argument("invalid saved near-miss transaction");
+            const auto proof = ExtractNmsFromTx(old);
+            if (!proof)
+                throw std::invalid_argument("saved transaction is not a near miss");
+            for (const auto& out : old.outputs)
+                if (out.script_pubkey != script &&
+                    (out.value != 0 || out.script_pubkey != BuildNmsOpReturnScript(proof->raw)))
+                    throw std::invalid_argument("saved near-miss has an unexpected output");
+            auto transition = chain_.AcquireConsensusTransitionGuard();
+            if (chain_.TipCopy().GetHash() == proof->header.prev_block_hash)
+                throw std::invalid_argument(
+                    "Near-miss proof is still current; wait for the next block");
+            const auto wallet = ComputeWalletState(params[0]);
+            const auto coin = std::find_if(
+                wallet.selectable.begin(), wallet.selectable.end(), [&](const UTXO& u) {
+                    return u.tx_hash == old.inputs[0].prev_tx_hash &&
+                           u.output_index == old.inputs[0].prev_out_index;
+                });
+            if (coin == wallet.selectable.end() || coin->value <= MIN_TX_FEE ||
+                old.TotalOutput() != coin->value - MIN_TX_FEE)
+                throw std::invalid_argument(
+                    "Saved input is unavailable or its exact fee changed; refresh Wallet activity");
+            Transaction tx;
+            TxInput in = old.inputs[0];
+            in.script_sig.clear();
+            tx.version = old.version;
+            tx.locktime = old.locktime;
+            tx.inputs.push_back(in);
+            tx.outputs.emplace_back(coin->value - MIN_TX_FEE, script);
+            return JB::Object({
+                {"unsigned_tx_hex", JB::String(BytesToHex(tx.Serialize()))},
+                {"inputs",
+                 JB::Array({JB::Object({
+                     {"index", JB::Number(uint64_t{0})},
+                     {"sighash_hex", JB::String(BytesToHex(ComputeSighash(tx, 0, script)))},
+                     {"prev_script_hex", JB::String(BytesToHex(script))},
+                 })})},
+                {"total_input", JB::Number(coin->value)},
+                {"total_output", JB::Number(coin->value - MIN_TX_FEE)},
+                {"fee", JB::Number(MIN_TX_FEE)},
+            });
+        });
+
+        methods_["preparenmstx"] = RpcMethod([this](const P& params) -> std::string {
+            if (params.size() != 2 || params[1].size() != NMS_PAYLOAD_LEN * 2 ||
+                params[1].find_first_not_of("0123456789abcdef") != std::string::npos)
+                throw std::invalid_argument(
+                    "Usage: preparenmstx <address> <canonical_nms_payload_hex>");
+            std::unique_lock<std::mutex> preparing(nms_prepare_mutex_, std::try_to_lock);
+            if (!preparing)
+                throw rpc_error(-32005, "Near-miss preparation busy; retry shortly");
+            const auto script = AddressToScript(params[0]);
+            if (script.size() != 25 || ScriptToAddress(script) != params[0])
+                throw std::invalid_argument("canonical legacy mining address required");
+            const auto proof = ParseNmsPayload(HexToBytes(params[1]));
+            if (!proof)
+                throw std::invalid_argument("invalid near-miss payload");
+            auto transition = chain_.AcquireConsensusTransitionGuard();
+            const auto tip = chain_.TipCopy();
+            const auto next = NextInclusionHeight(tip.height);
+            if (ibd_complete_fn_ && !ibd_complete_fn_())
+                throw rpc_error(-32005,
+                                "Wait for full synchronization before submitting a near miss");
+            if (!mining::NeedsNmsSubmission(chain_, mempool_, script,
+                                            proof->header.prev_block_hash))
+                throw std::invalid_argument(
+                    "Near miss expired, already submitted, or this window is closing");
+            if (!chain_.NmsBondSatisfied(script, next))
+                throw std::invalid_argument(
+                    "Near-miss lottery requires 1000 VELD staked at the mining address");
+            const auto verdict = chain_.ValidateNmsLocking(*proof, next);
+            if (verdict == NmsValidationDisposition::DeferredLocalWork)
+                throw rpc_error(-32005, "Near-miss verification busy; retry shortly");
+            if (verdict != NmsValidationDisposition::Valid || chain_.NmsPayloadSeen(proof->raw))
+                throw std::invalid_argument("Near-miss proof is invalid or already used");
+            const auto funding = ComputeWalletState(params[0]);
+            const auto* coin = mining::SelectNmsFundingOutput(funding.selectable, tip.height,
+                                                              funding.spendable_units, MIN_TX_FEE,
+                                                              MIN_TX_FEE, DUST_THRESHOLD_UNITS);
+            if (!coin)
+                throw std::invalid_argument(
+                    "A confirmed spendable output must cover the 0.001 VELD marker and 0.001 VELD fee");
+            Transaction tx;
+            TxInput in;
+            in.prev_tx_hash = coin->tx_hash;
+            in.prev_out_index = coin->output_index;
+            tx.inputs.push_back(in);
+            tx.outputs.emplace_back(MIN_TX_FEE, script);
+            tx.outputs.emplace_back(0, BuildNmsOpReturnScript(proof->raw));
+            const auto change = coin->value - 2 * MIN_TX_FEE;
+            if (change)
+                tx.outputs.emplace_back(change, script);
+            return JB::Object({
+                {"unsigned_tx_hex", JB::String(BytesToHex(tx.Serialize()))},
+                {"inputs",
+                 JB::Array({JB::Object({
+                     {"index", JB::Number(uint64_t{0})},
+                     {"sighash_hex", JB::String(BytesToHex(ComputeSighash(tx, 0, script)))},
+                     {"prev_script_hex", JB::String(BytesToHex(script))},
+                 })})},
+                {"total_input", JB::Number(coin->value)},
+                {"total_output", JB::Number(coin->value - MIN_TX_FEE)},
+                {"fee", JB::Number(MIN_TX_FEE)},
+                {"change", JB::Number(change)},
             });
         });
 
