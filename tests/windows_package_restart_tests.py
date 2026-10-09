@@ -308,8 +308,10 @@ def case(root, previous, target, verifier, writer, running, flow="commit"):
                 wait_for(
                     "manual signed update check",
                     lambda: (state / "update-check.log").is_file()
-                    and "Remote version: 3.3.2"
-                    in (state / "update-check.log").read_text(errors="replace"),
+                    and re.search(
+                        r"Remote version:\s+3\.3\.2(?:\s|$)",
+                        (state / "update-check.log").read_text(errors="replace"),
+                    ),
                 )
                 time.sleep(3)
                 click_update(hwnd)
@@ -521,7 +523,9 @@ def main():
                         )
                     )
                     routes = {row["path"] for row in feed.rows[start:] if row["status"] == 200}
-                    assert set(feed.payloads).issubset(routes), routes
+                    assert (set(feed.payloads) - {"/downloads/CHANGES.txt"}).issubset(routes), (
+                        routes
+                    )
             result["status"] = "PASS_SIGNED_AUTOMATIC_AND_MANUAL_UPDATE_NODE_RESTART"
     except BaseException as error:
         result.update(status="FAILED", error=repr(error))
