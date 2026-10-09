@@ -234,18 +234,23 @@ def case(root, previous, target, verifier, writer, running, flow="commit"):
         if running and flow != "coldstart":
             # An existing 3.2.9 installation already has its native network marker.
             # Initialize it through the authenticated native utility, without P2P.
-            run(
+            initialized = subprocess.run(
                 [
-                    node,
+                    str(node),
                     "--address-only",
                     "--miner",
                     address,
                     "--datadir",
-                    data,
+                    str(data),
                     "--print-rpc-token",
                 ],
                 env=env,
+                capture_output=True,
+                timeout=30,
             )
+            assert initialized.returncode == 2
+            assert b"address-only RPC credential is missing" in initialized.stderr
+            assert (data / "network.identity").is_file()
         parent = subprocess.Popen([str(gui), "--datadir", str(data)], cwd=install, env=env)
         hwnd = wait_for("previous signed GUI", lambda: window(parent.pid))
         old_node = None
