@@ -14,7 +14,7 @@ import time
 
 import psutil
 
-from windows_package_test_paths import TEMP_PATH_CASES, configure_temp_path
+from windows_package_test_paths import TEMP_PATH_CASES, cleanup_temp_path, configure_temp_path
 
 
 def digest(path):
@@ -499,6 +499,7 @@ def case(root, previous, target, verifier, writer, running, flow="commit", temp_
             updater.terminate()
             updater.wait(timeout=15)
         run([ps, "-NoProfile", "-File", firewall_script, "-Name", firewall, "-Remove"], env=env)
+        cleanup_temp_path(path_receipt)
 
 
 def main():
