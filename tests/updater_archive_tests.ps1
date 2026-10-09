@@ -22,6 +22,13 @@ $canonicalAst = $ast.Find({
 }, $true)
 if ($null -eq $canonicalAst) { throw 'canonical directory function not found' }
 Invoke-Expression $canonicalAst.Extent.Text
+$mapAst = $ast.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -ceq 'Get-ReleaseFileMap'
+}, $true)
+if ($null -eq $mapAst) { throw 'release file map function not found' }
+Invoke-Expression $mapAst.Extent.Text
 Add-Type @'
 using System;
 using System.Text;
@@ -118,6 +125,21 @@ try {
         Check ($legacyNames -notcontains 'a.txt') 'legacy short-path refusal was not reproduced'
         Write-Output 'PASS real Windows short-path package membership regression'
     } else { Write-Output 'Short alias unavailable on this filesystem; canonical membership passed' }
+    $shortFiles = Get-ReleaseFileMap $shortStage
+    Check ($shortFiles.Count -eq 2 -and $shortFiles.ContainsKey('a.txt') -and
+        $shortFiles.ContainsKey('dir/b.txt')) 'file map changed short-path membership'
+    $longFiles = Get-ReleaseFileMap ($canonicalStage + '\')
+    Check ($longFiles.Count -eq 2 -and $longFiles['a.txt'] -ceq $shortFiles['a.txt']) `
+        'trailing separator changed package membership'
+    [IO.File]::WriteAllText((Join-Path $canonicalStage 'SHA256SUMS.txt'), 'fixture metadata')
+    [IO.File]::WriteAllText((Join-Path $canonicalStage 'SHA256SUMS.txt.sig'), 'fixture signature')
+    Check ((Get-ReleaseFileMap $shortStage).Count -eq 2) 'root metadata counted as payload'
+    $hidden = Join-Path $canonicalStage 'hidden.txt'
+    [IO.File]::WriteAllText($hidden, 'not in manifest')
+    [IO.File]::SetAttributes($hidden, [IO.FileAttributes]::Hidden)
+    $withHidden = Get-ReleaseFileMap $shortStage
+    Check ($withHidden.Count -eq 3 -and $withHidden.ContainsKey('hidden.txt')) `
+        'hidden extra payload escaped exact file-set verification'
 
     $traversal = Join-Path $TempRoot 'traversal.zip'
     New-FixtureZip $traversal @(

@@ -1,3 +1,10 @@
+## 3.3.3 - Windows update package verification
+
+- Windows updates use one consistent file-list check for downloaded and staged
+  packages, including shortened folder names and hidden files.
+- Automatic and manual update qualification now covers inherited temporary
+  folders, paths with spaces and Unicode, and real Windows short paths.
+
 ## 3.3.2 - Near-miss submissions and client recovery
 
 - Address-only miners can export near-miss proofs on Windows and Linux for

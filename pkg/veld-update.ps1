@@ -22,6 +22,26 @@ function Get-CanonicalDirectoryPath([string]$Path) {
     }
     return $item.FullName
 }
+
+function Get-ReleaseFileMap([string]$Directory) {
+    $root = Get-CanonicalDirectoryPath $Directory
+    $prefix = $root.TrimEnd('\') + '\'
+    $files = @{}
+    foreach ($item in Get-ChildItem -LiteralPath $root -Recurse -Force) {
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw ('package contains a reparse point: ' + $item.FullName)
+        }
+        if ($item.PSIsContainer) { continue }
+        if (-not $item.FullName.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'package file escapes its directory'
+        }
+        $rel = $item.FullName.Substring($prefix.Length).Replace('\','/')
+        if ($rel -eq 'SHA256SUMS.txt' -or $rel -eq 'SHA256SUMS.txt.sig') { continue }
+        if ($files.ContainsKey($rel)) { throw ('duplicate package path: ' + $rel) }
+        $files[$rel] = $item.FullName
+    }
+    return $files
+}
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $installRoot = [IO.Path]::GetPathRoot($InstallDir)
 if ($InstallDir.Length -gt $installRoot.Length) {
@@ -805,17 +825,7 @@ function Get-VerifiedPackage([string]$Stage) {
             throw ('signed package is missing required updater component: ' + $required)
         }
     }
-    $files = @{}
-    foreach ($item in Get-ChildItem -LiteralPath $safeStage -Recurse -Force) {
-        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw ('package contains a reparse point: ' + $item.FullName)
-        }
-        if ($item.PSIsContainer) { continue }
-        $rel = $item.FullName.Substring($safeStage.Length).TrimStart('\').Replace('\','/')
-        if ($rel -eq 'SHA256SUMS.txt' -or $rel -eq 'SHA256SUMS.txt.sig') { continue }
-        if ($files.ContainsKey($rel)) { throw ('duplicate package path: ' + $rel) }
-        $files[$rel] = $item.FullName
-    }
+    $files = Get-ReleaseFileMap $safeStage
     if ($files.Count -ne $entries.Count) {
         throw 'package file set does not match the signed manifest'
     }
@@ -1414,15 +1424,7 @@ try {
         throw 'package signature differs from the published release signature'
     }
 
-    $actualFiles = @{}
-    foreach ($item in Get-ChildItem -LiteralPath $stage -Recurse -File) {
-        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw ('package contains a reparse point: ' + $item.FullName)
-        }
-        $rel = $item.FullName.Substring($stage.Length).TrimStart('\').Replace('\','/')
-        if ($rel -eq 'SHA256SUMS.txt' -or $rel -eq 'SHA256SUMS.txt.sig') { continue }
-        $actualFiles[$rel] = $item.FullName
-    }
+    $actualFiles = Get-ReleaseFileMap $stage
     if ($actualFiles.Count -ne $remote.Count) {
         throw 'package file set does not match the signed manifest'
     }

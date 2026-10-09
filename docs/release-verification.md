@@ -11,7 +11,7 @@ reviewed, pinned source. Do not use the executable inside a newly downloaded,
 unverified package as the sole verifier of that same package.
 
 The release key is in [release_pubkey.h](../include/crypto/release_pubkey.h).
-For the 3.3.2 source, the SHA-256 fingerprint of its decoded 1,952-byte public
+For the 3.3.3 source, the SHA-256 fingerprint of its decoded 1,952-byte public
 key is:
 
 ```text
@@ -24,8 +24,8 @@ The release key and snapshot key are different trust anchors.
 
 ## Authenticate the records
 
-Open the [versioned 3.3.2 release](https://github.com/veldnetwork/Veld-Mainnet/releases/tag/v3.3.2).
-Download `RELEASE-IDENTITY-3.3.2.json`, `RELEASE-ASSETS-SHA256.txt`, their `.sig`
+Open the [versioned 3.3.3 release](https://github.com/veldnetwork/Veld-Mainnet/releases/tag/v3.3.3).
+Download `RELEASE-IDENTITY-3.3.3.json`, `RELEASE-ASSETS-SHA256.txt`, their `.sig`
 files, and the intended package and its corresponding checksum records. Keep
 GUI and terminal packages in separate directories; do not interchange their
 manifests or mix files from different releases.
@@ -39,7 +39,7 @@ On Linux, replace the verifier path with your independently trusted executable:
 ```sh
 set -eu
 VERIFIER=/absolute/path/to/trusted/veld-node
-"$VERIFIER" --verify-release RELEASE-IDENTITY-3.3.2.json RELEASE-IDENTITY-3.3.2.json.sig
+"$VERIFIER" --verify-release RELEASE-IDENTITY-3.3.3.json RELEASE-IDENTITY-3.3.3.json.sig
 "$VERIFIER" --verify-release RELEASE-ASSETS-SHA256.txt RELEASE-ASSETS-SHA256.txt.sig
 ```
 
@@ -48,7 +48,7 @@ On Windows, use PowerShell and explicitly check each native exit code:
 ```powershell
 $ErrorActionPreference = 'Stop'
 $Verifier = 'C:\Path\To\Trusted\bin\veld-node.exe'
-$Records = @('RELEASE-IDENTITY-3.3.2.json', 'RELEASE-ASSETS-SHA256.txt')
+$Records = @('RELEASE-IDENTITY-3.3.3.json', 'RELEASE-ASSETS-SHA256.txt')
 foreach ($Record in $Records) {
     & $Verifier --verify-release $Record ($Record + '.sig')
     if ($LASTEXITCODE -ne 0) {

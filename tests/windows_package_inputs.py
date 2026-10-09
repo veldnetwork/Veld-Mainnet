@@ -133,10 +133,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--previous-version", default="3.3.2")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     assert os.environ.get("GITHUB_ACTIONS") == "true"
     assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version)
+    assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.previous_version)
+    assert tuple(map(int, args.previous_version.split('.'))) < tuple(
+        map(int, args.version.split('.'))
+    )
     assert re.fullmatch(r"[0-9a-f]{40}", args.source_commit)
     args.output.mkdir()
     old = api("releases/tags/v3.2.9")
@@ -144,14 +149,18 @@ def main():
     releases = api("releases?per_page=100")
     new = next(r for r in releases if r["tag_name"] == "v" + args.version)
     assert new["draft"], "Qualification requires the unpublished draft candidate"
-    previous, old_identity = download(old, args.output / "previous")
-    old_node = previous / "bin/veld-node.exe"
+    trust_package, trust_identity = download(old, args.output / "verifier-input")
+    old_node = trust_package / "bin/veld-node.exe"
     assert sha(old_node.read_bytes()) == TRUSTED_329_NODE, "Trusted verifier pin mismatch"
     trusted = args.output / "trusted"
     trusted.mkdir()
     verifier = trusted / "veld-node.exe"
     shutil.copyfile(old_node, verifier)
-    authenticate(previous, verifier, "3.2.9")
+    authenticate(trust_package, verifier, "3.2.9")
+    previous_release = api("releases/tags/v" + args.previous_version)
+    assert not previous_release["draft"] and not previous_release["prerelease"]
+    previous, old_identity = download(previous_release, args.output / "previous")
+    authenticate(previous, verifier, args.previous_version)
     target, new_identity = download(new, args.output / "target")
     authenticate(target, verifier, args.version)
     checksum = args.output / "feed/VeldClient-Windows-x64.zip.sha256"
@@ -189,6 +198,8 @@ def main():
         "target": str(target.resolve()),
         "verifier": str(verifier.resolve()),
         "previous_identity": old_identity,
+        "previous_version": args.previous_version,
+        "trusted_verifier_identity": trust_identity,
         "target_identity": new_identity,
         "source_identity": identity,
     }

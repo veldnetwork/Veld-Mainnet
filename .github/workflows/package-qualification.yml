@@ -11,10 +11,15 @@ on:
         description: Exact release source commit to qualify
         required: true
         type: string
+      previous_version:
+        description: Published signed version to upgrade from
+        required: true
+        default: '3.3.2'
+        type: string
       flow:
         description: Staged Commit or complete automatic and manual update
         required: true
-        default: commit
+        default: complete
         type: choice
         options:
           - commit
@@ -60,9 +65,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE_VERSION: ${{ inputs.version }}
           RELEASE_SOURCE_COMMIT: ${{ inputs.source_commit }}
+          PREVIOUS_PACKAGE_VERSION: ${{ inputs.previous_version }}
         shell: pwsh
         run: |
-          python tests/windows_package_inputs.py --version $env:PACKAGE_VERSION --source-commit $env:RELEASE_SOURCE_COMMIT --output "$env:RUNNER_TEMP/package-inputs"
+          python tests/windows_package_inputs.py --version $env:PACKAGE_VERSION --previous-version $env:PREVIOUS_PACKAGE_VERSION --source-commit $env:RELEASE_SOURCE_COMMIT --output "$env:RUNNER_TEMP/package-inputs"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise complete Commit with actual GUI and node processes
         env:
@@ -70,7 +76,7 @@ jobs:
         shell: pwsh
         run: |
           $inputs = Get-Content -LiteralPath "$env:RUNNER_TEMP/package-inputs/inputs.json" -Raw | ConvertFrom-Json
-          python tests/windows_package_restart_tests.py --previous $inputs.previous --target $inputs.target --verifier $inputs.verifier --ticket-writer "$env:RUNNER_TEMP/resume-ticket.exe" --output "$env:RUNNER_TEMP/package-results" --flow $env:QUALIFICATION_FLOW
+          python tests/windows_package_restart_tests.py --previous $inputs.previous --target $inputs.target --verifier $inputs.verifier --ticket-writer "$env:RUNNER_TEMP/resume-ticket.exe" --output "$env:RUNNER_TEMP/package-results" --flow $env:QUALIFICATION_FLOW --temp-path all
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
@@ -84,6 +90,7 @@ jobs:
             ${{ runner.temp }}/package-results/**/datadir-entries.json
             ${{ runner.temp }}/package-results/**/diagnostics.json
             ${{ runner.temp }}/package-results/**/ownership.json
+            ${{ runner.temp }}/package-results/**/environment.json
             ${{ runner.temp }}/package-results/**/node-diagnostic.log
             ${{ runner.temp }}/package-results/**/update-*.log
             ${{ runner.temp }}/package-results/**/requests.json
