@@ -1,0 +1,17 @@
+[Unit]
+Description=Veld issuer-signer verification node
+After=network-online.target
+
+[Service]
+User=veld
+Group=veld
+EnvironmentFile=/etc/veld/signer-node.env
+# Define VELD_SIGNER_P2P_PORT, VELD_SIGNER_RPC_PORT, and four approved
+# VELD_SIGNER_PEER_* host:port values in the root-owned environment file.
+ExecStart=/usr/local/bin/veld-node --datadir /var/lib/veld-node --no-prompt --no-snapshot --p2pport ${VELD_SIGNER_P2P_PORT} --rpcport ${VELD_SIGNER_RPC_PORT} --connect ${VELD_SIGNER_PEER_1} --connect ${VELD_SIGNER_PEER_2} --connect ${VELD_SIGNER_PEER_3} --connect ${VELD_SIGNER_PEER_4}
+Restart=always
+RestartSec=5
+StandardInput=null
+
+[Install]
+WantedBy=multi-user.target

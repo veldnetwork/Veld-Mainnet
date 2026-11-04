@@ -1,0 +1,44 @@
+# /root/.ssh/authorized_keys on each SIGNER box.
+#
+# Capability keys are each pinned to ONE forced-command. A forced-command ignores whatever
+# the client asks to run and runs ONLY the named program, so each key's authority
+# is exactly one capability and nothing else (no shell, no scp, no port-forward).
+#
+# 1) The MINTER's key -> can request only token-mint signatures. This is
+#    the only key that can cause a mint, and even it is gated by the signer's
+#    independent re-derivation + caps + the watchtower heartbeat.
+#    Production additionally requires this host to be the one signer named by
+#    the root-owned mode-0600 active-mint-signer marker and to obtain a durable
+#    receipt from the shared witness before signing. See
+#    MINT-SIGNER-WITNESS-RUNBOOK.md; never install this key on two active hosts.
+command="/usr/bin/python3 /opt/veld-signer/veld_signerd.py --capability mint",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,restrict ssh-ed25519 AAAA...MINTER_PUBKEY... minter@custody-box
+
+# 2) The C1 reservation coordinator's DISTINCT SSH key -> can request only C1
+#    RESERVE/EXPOSE/CANCEL/FUND carrier signatures and durable acknowledgements.
+#    Never reuse the minter SSH private key for this capability: the two forced
+#    commands are intentionally separate authority channels even when installed
+#    on the same isolated signer host.
+command="/usr/bin/python3 /opt/veld-signer/veld_signerd.py --capability c1-reservation",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,restrict ssh-ed25519 AAAA...C1_RESERVATION_COORDINATOR_PUBKEY... c1-reservationd@coordinator
+
+# Each threshold custody signer is a separate host/key share with its own Veld
+# node and durable accepted-obligation index. The coordinator key can only invoke
+# the root-owned wallet-unlocking policy wrapper; it cannot request a shell or
+# forward traffic. Never point this key directly at veld_payout_signerd.py: the
+# wrapper sources the required root-owned Veld environment, unlocks for one
+# request, and re-locks the wallet on every exit path.
+command="/opt/veld-signer/sign-wrapper.sh",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,restrict ssh-ed25519 AAAA...REDEEM_COORDINATOR_PUBKEY... redeemd@coordinator
+
+# 3) The WATCHTOWER's key -> can ONLY pause/HALT (runs veld_wt_recv.py). It can
+#    write a heartbeat or set HALT; it can NEVER sign, read the key, or run a
+#    shell. So granting the watchtower a way to stop minting does NOT grant it any
+#    way to cause minting.
+command="/usr/bin/python3 /opt/veld-signer/veld_wt_recv.py",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,restrict ssh-ed25519 AAAA...WATCHTOWER_PUBKEY... veldwt@watchtower-box
+#
+# Beat signature pin: veld_wt_recv.py additionally requires every beat to
+# carry a valid ML-DSA signature from the watchtower's dedicated beat-signing key
+# (separate from the SSH key above). Pin that key's PUBLIC hex on this box at
+#    /opt/veld-signer/watchtower-beat-pubkey.hex
+# (from `veld-keygen show <watchtower beat.key> --full-pubkey-hex`). veld-keygen must
+# be present beside veld_wt_recv.py. If the pin is absent the receiver FAILS CLOSED
+# (rejects every beat -> signer goes stale -> refuses to sign). A dev/regtest signer
+# may bypass by touching /opt/veld-signer/beat-unsigned-ok.

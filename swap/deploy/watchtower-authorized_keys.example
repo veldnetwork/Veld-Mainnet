@@ -1,0 +1,12 @@
+# On the independent WATCHTOWER host, authorize every permitted mint-signer
+# instance only for the one durable reservation endpoint. All instances must
+# reach this same state_dir/ledger; never run a per-signer witness replica.
+#
+# Install veld_wt_reserve.py + veld_peg_solvency.py + veld-keygen under
+# /opt/veld-wt and set VELD_WITNESS_CONFIG in the root-owned wrapper/environment.
+command="/usr/bin/env VELD_WITNESS_CONFIG=/opt/veld-wt/watchtowerd.conf /usr/bin/python3 /opt/veld-wt/veld_wt_reserve.py",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,restrict ssh-ed25519 AAAA...ACTIVE_MINT_SIGNER_PUBKEY... mint-signer-primary
+
+# The public wrap allocator gets a different key and a different forced command.
+# It can append the next immutable descriptor allocation, but cannot reserve
+# mint headroom, commit a transaction, publish a heartbeat, or invoke a signer.
+command="/usr/bin/env VELD_WITNESS_CONFIG=/opt/veld-wt/watchtowerd.conf /usr/bin/python3 /opt/veld-wt/veld_wt_allocate.py",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,restrict ssh-ed25519 AAAA...WRAP_ALLOCATOR_PUBKEY... wrapd@custody-box

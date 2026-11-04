@@ -1,0 +1,23 @@
+# btcVELD 3-of-5 custody — canonical PUBLIC key expressions (ALL 5 VALIDATED)
+#
+# Each line is the taproot public key expression from one signer's own keygen.
+# Private keys never left their custody boundary. These are the five public
+# expressions in custody-descriptor.txt.
+# The descriptor and all five extended keys were validated by Bitcoin Core's
+# getdescriptorinfo. The [fp/path] prefix is origin metadata; derivation uses xpub+/0/*.
+#
+# DESCRIPTOR ORDER for tr(NUMS, multi_a(3, ...)) is custody-signer-1..5 as listed below.
+# Hostnames, IP addresses, wallet names, and rollout state are maintained only
+# in the access-controlled operations inventory.
+# format: <signer-id> <taproot pub expression> [validation status]
+
+custody-signer-1 [6fb9d44d/86h/0h/0h]xpub6DSb4y5KqULWHBPwHeNxPemNxPqLXtLPEjn2Brp2HbnwbAqTs3U3Tqz36B5po31cF2mbN6uUa6zLV8BvtYAn2GjuiHwCBp3QticGPUagGrr/0/*   # [VALIDATED PUBLIC KEY]
+custody-signer-2 [13a9e08c/86h/0h/0h]xpub6Cbk3ubH39rpLEjWkV5XoV4dBAjKXZUTu8y21Y6fKnBW1dtWkJckpTWToeKwVWjdRHJkvfbqLwWwuY8Te923KPWpERG49d4XvMnGFKfKKnX/0/*   # [VALIDATED PUBLIC KEY]
+custody-signer-3 [97cc0c0d/86h/0h/0h]xpub6D66nVws6S3dWSBaBGjhDTPmGEJPLZzXfjViXMTgmhx3qZJWnwUAcsBqhAp7sihBUyRDHqyG9N4QpVSS6iKAyamb3YFDi7hAezUWVpfQ4r8/0/*   # [VALIDATED PUBLIC KEY]
+custody-signer-4 [618e7136/86h/0h/0h]xpub6CyT537ioEFTpRKaKr45MTa5QQiwDV9bdy8Ehhp5jJxheuaRKZKvfDPa9nFCVQengTvu6GpfNdUckaGQNRDHZfcVBqy8nke53B4iyEz1dcs/0/*   # [VALIDATED PUBLIC KEY]
+custody-signer-5 [963ae5bc/86h/0h/0h]xpub6D5WzEFra1qpGAuPQWG8V6zMPosXDKjpbXoU8wp2cLxKT63XzLqgVdkhVTfd6vGwDW6D9X2MzmC5mSDySS7c4hiEhSsnqsnsfdLzm6u6Zhy/0/*   # [VALIDATED PUBLIC KEY]
+
+# Rebuild only through custody-build-descriptor.sh, which rejects private/duplicate keys,
+# requires a ranged public-only descriptor, derives index 0 explicitly, imports
+# the full C1 operational range [0,10999] at launch, and emits a separate exact
+# [0,999] consensus/SPV prefix manifest.
