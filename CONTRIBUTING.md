@@ -1,0 +1,70 @@
+# Contributing to Veld
+
+Veld accepts narrowly scoped, reviewable changes that preserve explicit
+deployment and consensus boundaries.
+
+## Before proposing a change
+
+- Start from the intended branch and record its commit and tree.
+- Keep production, public-testnet, btcVELD-regtest, and developer profiles
+  separate.
+- Do not include wallets, keys, credentials, runtime datadirs, private evidence,
+  generated binaries, or build output.
+- Explain any consensus, supply, finality, reserve, state-digest, network
+  identity, or updater impact. A display-only version change must not alter a
+  consensus version, genesis, network magic, address encoding, or wire format.
+- Add deterministic boundary tests for consensus changes and failure-path tests
+  for security-sensitive changes.
+
+## Build and test
+
+Use [BUILDING.md](BUILDING.md) for production-role builds. Build into empty
+directories outside the source tree and retain the controller's source,
+compiler, dependency, definition, deployment, and hash evidence. Validation
+profiles and sanitizers are separate gates and are never release artifacts.
+
+Run the tests relevant to the changed surface on every supported platform.
+Consensus changes should cover the value immediately below a boundary, the
+boundary itself, and the value immediately above it. Security regressions
+should demonstrate both the accepted path and fail-closed rejection.
+
+## Change discipline
+
+Keep commits small and describe the user-visible or security-relevant outcome.
+Do not weaken compile-time profile interlocks, signature checks, TLS/RPC
+authentication, fleet no-mine exclusions, or secret-handling rules to make a
+test pass. Do not add production shortcuts or hidden activation switches.
+
+Security reports must follow [SECURITY.md](SECURITY.md). Do not open a public
+issue for a suspected vulnerability.
+
+## Coding style and organization
+
+Use descriptive names based on the behavior being implemented or tested.
+Comments should explain an invariant, tradeoff, or non-obvious operation.
+Issue numbers and review discussion belong in commits or pull requests;
+internal review labels and development-session notes do not belong in source.
+Keep protocol identifiers and serialized formats stable.
+
+Follow `.editorconfig` and the surrounding code. New C++ code uses four-space
+indentation and the checked-in `.clang-format` style. Format changed regions
+without mixing repository-wide formatting into functional patches. Do not
+format vendored code, generated cryptographic assets, or byte-pinned inputs;
+their exclusions are listed in `.clang-format-ignore` and `.editorconfig`.
+
+The [source-style check](docs/source-style.md) pins formatter versions and
+checks parsed content before accepting layout changes. Run it before opening
+a formatting pull request. Changes to behavior, comments or test expectations
+need their own review; they are not covered by formatting equivalence.
+
+Keep public technical documentation in `docs/` and describe tests in
+[tests/README.md](tests/README.md). Store build output, runtime data, credentials,
+and operator evidence outside the checkout. Update the changelog when a change
+affects users or maintainers. Preserve historical release records.
+
+## Licensing
+
+By contributing material you have the right to submit, you agree that it may be
+distributed under `AGPL-3.0-only` for Veld-authored source. Preserve all
+third-party copyright, attribution, and license notices. Do not contribute
+material with incompatible or unknown terms.

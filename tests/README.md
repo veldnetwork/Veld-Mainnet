@@ -1,0 +1,266 @@
+# Testing
+
+Tests are named for the behavior they cover. Native unit tests, process
+fixtures, browser-script checks, and platform-specific checks share this
+directory; fixture data is under [fixtures/](fixtures/).
+
+## Address-only mining
+
+`windows_address_mining_tests.cpp` uses the isolated GUI test constructor and a
+fresh explicit state directory. It checks payout validation/persistence, wallet
+mode defaults, launch arguments, update identity binding, real Windows DPAPI
+storage, corrupt-credential refusal, unchanged wallet bytes, credential removal,
+active-node change refusal and a native Settings render. It never starts a
+production GUI, miner or wallet.
+
+`address_only_node_tests.cpp` reuses the bounded private peer/admission fixture
+from `local_work_path_equivalence_tests.cpp`. With `VELD_TEST_HOOKS` and that
+fixture's isolated compile profile, it exercises actual native block production
+and checks the selected coinbase payout, absence of signing files, invalid-key
+refusal in ordinary wallet mode and switching back to validated wallet mining.
+Run in a private network namespace with a fresh owner-only Linux directory and
+umask 077. Do not define `VELD_ASERT_TESTCHAIN`: this fixture deliberately uses
+a small private dataset and the incompatible-profile interlock must remain on.
+Neither test is signed-package or live mainnet payout qualification.
+
+## Windows startup and update handoff
+
+`windows_startup_settings_tests.cpp` includes the actual GUI implementation in
+the existing isolated GUI qualification profile. It checks settings persistence,
+Unicode command quoting, bounded Run registration in a disposable registry key,
+Windows Credential Manager storage/revocation with a disposable credential,
+identity/context refusal and real native window hide/restore behavior. Its
+rendered Settings bitmap is layout evidence, not a Windows reboot test. It must
+not be combined with a public release or the owner's live GUI profile.
+
+The handoff regression scripts accept an explicit updater path and evidence
+directory. `windows_updater_handoff_timeout_tests.ps1` reproduces the old
+cleanup/lock race against retained released source.
+`windows_updater_handoff_ready_tests.ps1` exercises a native helper and named
+event, including delayed cleanup, child exit and timeout.
+`windows_updater_install_handoff_tests.ps1` exercises the exact Install handoff
+tail and complete Commit entry with a fixture parent. It does not claim a real
+GUI or mining restart. Retain both failing baseline and corrected receipts.
+
+## Portable source and web checks
+
+Install Python 3.10 or later and Node.js 22 or later. In a Python virtual
+environment, install the portal test dependency and run the checks:
+
+```sh
+python3 -m pip install -r tests/requirements.txt
+python3 tests/run_checks.py
+```
+
+Use `--suite source`, `--suite web`, or `--suite provenance` to run one group,
+and `--list` to inspect the selected checks. Windows can use `python` in place
+of `python3`. The runner reports every failure and returns a nonzero status if
+any check fails. It does not install dependencies or start production services.
+
+The source group includes source-level checks for Windows client behavior;
+running them on Linux does not establish Windows runtime compatibility. The
+web group uses JavaScript fixtures and DOM substitutes, not a complete browser
+or installed PWA. Mobile layout changes also need rendered narrow-viewport and
+safe-area checks.
+
+`topology_active_peers_tests.py` covers current-tip membership, a two-block
+canonical propagation allowance, outdated-peer exclusion and automatic reentry,
+malformed and stale reports, address-group deduplication, reorganizations, and
+bounded local-reference failure. The collector reads the local node's public
+API on loopback port 8080. Missing canonical history permits exact-tip-only
+membership through the local stats API; failure of both preserves the old
+document, which the Explorer stops displaying after its freshness limit.
+The public graph counts reported address groups, not unique people or mining
+workers. Filtering the graph does not ban, disconnect, or change node validation.
+
+`wallet_outbox_browser_controls.cjs` additionally uses Playwright and a fresh
+browser profile. It serves only a disposable loopback page, blocks external
+page requests, and substitutes inert input scripts and transaction transport.
+Run it with `node tests/wallet_outbox_browser_controls.cjs`; set
+`VELD_TEST_BROWSER=webkit` to exercise WebKit, or set
+`VELD_TEST_BROWSER_EXECUTABLE` to a supported Chromium executable. It never
+opens an operator's browser profile or wallet. Browser profiles and result
+receipts are retained outside the source tree for review.
+
+`validator_settlement_state_controls.cpp` checks seven-member finality warm-up,
+the separate peg activation latch, and principal/yield settlement scheduling.
+It uses disposable public identities and injected component state, keeps the
+10,000 VELD bond and seven-validator requirements, and creates no slashing
+evidence. Build it with the pinned PQC objects and OpenSSL under the isolated
+test toolchain. Passing it does not qualify funded admission, real validator
+operators, block-level slashing, or physical power-loss recovery.
+
+The [Source checks workflow](../.github/workflows/source-checks.yml) runs these
+checks on Linux and Windows for pushes and pull requests. It also compiles
+and runs the work-admission unit test on Linux. This is separate from the
+production release-build process.
+
+## Native tests
+
+Mining optimization checks use the unchanged production parameters. Build
+`mining_chacha_bulk_tests.cpp` normally, with `VELD_MINING_DISABLE_AVX2`, and
+with `VELD_MINING_SCALAR_CHACHA` to cover runtime dispatch and both fallbacks.
+It compares against the preserved scalar stream across counter wrap, unaligned
+buffers, vector/tail boundaries and simultaneous first dispatch. A forced
+fallback build is not a test on physically older CPU hardware.
+
+`mining_primitive_tests.cpp` additionally compares integer square roots against
+the preserved restoring algorithm over the full 128-bit input domain samples,
+perfect-square neighbors and the actual Q24 input range. `mining_hash_vectors.cpp`
+checks the 28 frozen released full-size VeldHash vectors. Keep all three public
+profile definitions and never shrink the dataset to measure production performance.
+
+`mining_benchmark.cpp --path vm` exercises the retained VM loop used by solo
+workers; `--path pool` uses the pool's workspace-aware canonical hash entry point;
+`--path fresh` uses a new workspace for each hash. Compare alternating baseline
+and candidate runs with identical nonce sequences and checksum equality. Record
+background load and compiler identity. These offline paths neither acquire
+public pool leases nor submit shares, transactions or blocks.
+
+Use a C++20 compiler, the dependencies in [BUILDING.md](../BUILDING.md), and
+an output directory outside the checkout. For example:
+
+```sh
+mkdir -p ../veld-test-out
+c++ -std=c++20 -O1 -pthread -Iinclude tests/work_admission_tests.cpp \
+  -o ../veld-test-out/work_admission_tests
+../veld-test-out/work_admission_tests
+```
+
+Do not define `NDEBUG`: native tests use assertions. Each test's includes and
+preprocessor definitions establish its profile; some require the production
+profile, while others explicitly require isolated test hooks. Do not apply a
+single profile to every test or add test hooks to a production build.
+
+| Area | Test families |
+| --- | --- |
+| Work and mining | `work_admission_*`, `local_work_*`, `mining_preflight_*`, `mining_nonce_*`, `pow_*` |
+| State and consensus | `security_consensus_*`, `snapshot_*`, `public_snapshot_*`, `staking_*`, `finality_*` |
+| btcVELD | `reserve_*`, `reopen_*`, `signing_policy_*`, `amm_market_seed_*` |
+| Network and RPC | `peer_*`, `rpc_*`, `connect_trust_*`, `trusted_proxy_*`, `punch_*` |
+| Wallet and keys | `wallet_*`, `offline_signer_*`, `seed_*`, `desktop_rpc_*` |
+| Distribution | `pqc_*`, `version_identity_*`, `network_identity_*`, `updater_*`, `release_controller_*` |
+
+## Mining correctness and performance
+
+`mining_primitive_tests.cpp` compares stream buffering and integer square roots
+with the prior implementations, published known answers, and arithmetic bounds.
+`mining_work_header_tests.cpp` exercises concurrent timestamp refreshes, equal
+and backward clock readings, and the identity of headers reported by workers.
+`mining_search_tests.cpp` runs the
+actual search loop in a disposable in-memory chain, including concurrent seven-
+and eight-worker groups and accounting for canceled searches. It does not open
+network connections or submit blocks.
+`mining_solution_tests.cpp` uses the existing fixed-difficulty test profile to
+check found blocks after slow template preparation, including fresh timestamps,
+the exact hashed header and canonical coinbase split, with one, seven, eight,
+fifteen and sixteen workers. Both search tests link the C
+objects listed in `vendor/pqc/provenance/release-c-sources.txt`, as shown in the
+source-checks workflow.
+
+`nms_submission_tests.cpp` checks concurrent submission control, pending and
+confirmed entries, restart recovery, expiry retries and template refresh limits.
+`nms_mempool_lifecycle_tests.cpp` uses real signed transactions to exercise
+confirmation, redundant entries, rollback and the payout boundary.
+`nms_template_refresh_tests.cpp` exercises an active proof search, arrival of a
+new claim, candidate rebuilding, confirmation and a sole participant's payout.
+Its disposable chain uses a reduced dataset and synthetic admission proofs.
+`address_history_index_tests.cpp` verifies pool-funded reward classification,
+near-miss fees, history migration and bounded queries without changing layout.
+
+`mining_worker_policy_tests.cpp` checks worker bounds, physical-core presets,
+SMT/non-SMT/mixed-core masks, partial affinity and the native Windows detector.
+Its Windows affinity check changes only the disposable test process. The
+existing conservative estimate is retained when native topology is unavailable;
+no affinity or priority is changed in the running miner.
+
+`mining_process_nonce_probe.cpp` is a small standalone fixture. Compile it and
+pass its path to `mining_process_nonce_tests.py` to check the production random
+origin and worker partitioning in 24 independent processes. This validates a
+finite sample of searches rather than claiming that random collisions are
+mathematically impossible. The portal worker-limit tests check browser and
+server boundaries and saved next-start preferences.
+
+`mining_hash_vectors.cpp` checks full-size VeldHash outputs against the frozen
+3.0.9 fixture in `fixtures/veldhash-3.0.9-vectors.txt`. Compile it with
+`VELD_MAINNET_POW`, `VELD_PUBLIC_RELEASE`, and `VELD_PUBLIC_MAINNET`; pass the
+fixture path as its only argument. It requires a 1 GiB dataset. Do not substitute
+a reduced test dataset when checking compatibility with released hashes.
+
+The default leaves one physical core available for other node work. Eco and
+Balanced use 25% and 75% of detected physical cores, rounded up; Maximum uses one
+worker per physical core. Custom counts from 1 to 64 can use additional logical
+processors. These presets are capacity choices, not a measured hardware
+autotuner: compare sustained rates before assuming more workers are faster.
+
+The offline benchmark uses production parameters and reuses one virtual machine
+per worker as the active miner does:
+
+```sh
+c++ -std=c++20 -O2 -DNDEBUG -pthread -Iinclude \
+  -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -DVELD_PUBLIC_MAINNET \
+  tests/mining_benchmark.cpp -o ../mining_benchmark
+../mining_benchmark --workers 7 --hashes 256 --trials 3
+```
+
+It prints completed hashes, elapsed time, dataset initialization time and a
+deterministic output checksum. `--profile` also measures initialization,
+execution and finalization separately. Compare repeated runs with identical
+worker counts, compiler options and machine load; timing one run does not
+establish a hardware-wide speedup. Benchmarking consumes CPU and memory but does
+not load wallets, change settings, connect to peers or publish work.
+
+## Process and platform checks
+
+Python wrappers ending in `_process_tests.py` run separately built fixtures
+and may require paths such as `--fixture` or `--keygen`; inspect `--help` and
+the wrapper before running them. TLS and download wrappers use local fixture
+servers. Windows `.ps1` checks require PowerShell, and Windows native process
+fixtures must run on Windows.
+
+Keep fixture keys, journals, certificates, and data directories disposable and
+separate from real wallets and node data. Never point a process test at an
+operator's data directory or public infrastructure.
+
+## Reporting results
+
+`windows_node_gui_scroll_tests.py` checks the actual GUI layout/paint ordering
+and minimized-window recovery contract. `pool_scroll_paint_tests.cpp` exercises
+the real panel in a native Windows clipping fixture at 96/120/144/192 DPI and
+checks exposed background pixels and minimized/legacy-hidden restoration.
+It creates only a disposable profile and never starts a mining worker. Keep
+interactive production GUI scrolling and screenshot verification separate.
+
+Validator signing safety has a reproducible native gate:
+
+```sh
+python3 tests/run_validator_signing_safety.py --output ../validator-safety-results
+```
+
+Run separately on Linux (GCC) and Windows (MSYS2 CLANG64 compiler/runtime on
+PATH, native Python). `--cc` and `--cxx` accept explicit compiler paths. The
+output directory must be new and outside the source tree. The gate compiles
+fresh PQC objects, records commands, source/binary hashes and logs, and uses
+only disposable safety directories and keys. Chain callbacks are synthetic;
+signatures, journal code, quorum assembly and verification are production paths.
+See [validator signing safety](../docs/operations/validator-signing-safety.md).
+
+Include the source commit, platform, commands, and results in a pull request.
+Distinguish source checks, native execution, browser rendering, and release
+build validation. A skipped platform or unavailable dependency is an unrun
+check, not a passing result. See [CONTRIBUTING.md](../CONTRIBUTING.md) for
+consensus-boundary and compatibility expectations.
+## Mining performance follow-up
+
+Compile `mining_primitive_tests.cpp` and `mining_hash_vectors.cpp` with
+`VELD_MINING_PORTABLE_DIVISION` to exercise the portable integer-division path
+alongside the default guarded native path. Both must retain identical results.
+The native division guard requires a 64-bit divisor greater than the high word
+of its 128-bit dividend; larger roots or quotients use portable arithmetic.
+
+`python tests/pool_verifier_reuse_tests.py --binary PATH` tests repeated frozen
+hash vectors, inspection, rejected requests and recovery against the native
+`veld-pool-work` helper. `pool_verifier_scan_tests.py` additionally interleaves
+full-size scans and light verification in the same process, including maximum
+nonces. These checks use real hashing and private stdin/stdout. They do not
+contact a pool, earn rewards or establish mining/payment end-to-end operation.

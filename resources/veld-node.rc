@@ -1,0 +1,18 @@
+#include <windows.h>
+
+101 ICON "resources/veld-node.ico"
+
+201 DIALOGEX 0, 0, 258, 136
+STYLE DS_SETFONT | WS_POPUP
+EXSTYLE WS_EX_CONTROLPARENT
+FONT 10, "Segoe UI"
+BEGIN
+    LTEXT           "VELD NODE",1006,16,9,226,8
+    LTEXT           "Unlock identity",1003,16,21,226,16
+    LTEXT           "Enter the passphrase for this identity.",1002,16,40,226,14
+    LTEXT           "PASSPHRASE",1004,16,58,226,8
+    CONTROL         "",1001,"Edit",WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL,16,69,226,23
+    CONTROL         "Show",1005,"Button",WS_TABSTOP | BS_OWNERDRAW,202,71,38,19
+    CONTROL         "Cancel",IDCANCEL,"Button",WS_TABSTOP | BS_OWNERDRAW,114,101,60,22
+    CONTROL         "Continue",IDOK,"Button",WS_TABSTOP | BS_OWNERDRAW,182,101,60,22
+END

@@ -1,0 +1,336 @@
+## 3.3.3 - Windows update package verification
+
+- Windows updates use one consistent file-list check for downloaded and staged
+  packages, including shortened folder names and hidden files.
+- Automatic and manual update qualification now covers inherited temporary
+  folders, paths with spaces and Unicode, and real Windows short paths.
+
+## 3.3.2 - Near-miss submissions and client recovery
+
+- Address-only miners can export near-miss proofs on Windows and Linux for
+  review and signing in the payout wallet. The wallet checks eligibility and
+  shows the submission fee before signing.
+- The wallet preserves pending near-miss submissions across reloads and offers
+  recovery when a proof expires.
+- Constellation replaces the crowded peer graph in Veld Node and the portal.
+- Staking refreshes spendable funds and identifies pending transactions before
+  preparing a new stake.
+- Windows updates detect an early GUI exit, retry startup and retain mining
+  resume information when installation succeeds but relaunch fails.
+
+## 3.3.1 - Linux graphical wallet launcher
+
+- Install a Veld Wallet shortcut in the application menu and open the graphical
+  wallet in your default browser.
+- Create or import a wallet through an authorized local browser session.
+- Reopening the app reuses its wallet service; Stop Wallet shuts it down.
+- See the [Linux wallet guide](operations/linux-wallet.md) for setup.
+
+## 3.3.0 - Linux wallet startup
+
+- Importing an encrypted mining identity preserves the matching portable wallet keyfile instead of failing on encryption differences.
+- The Linux package includes the node, browser wallet and pool worker.
+
+## 3.2.9 - Reliable restarts and Linux pool mining
+
+- After an automatic Windows update, Veld Node restores a previously running node and its saved solo-mining intent without requiring a manual start.
+- The Linux client includes a standalone pool miner. It can connect to an authenticated HTTPS pool with a payout address and a private local account, without a local wallet or full node.
+
+## 3.2.8 - First sync and pool connection recovery
+
+- Initial sync continues requesting the canonical chain when a peer's download cursor runs ahead of the local header chain.
+- Address-only settings saves wait through short Windows file locks and retain the prior settings if a save cannot complete.
+- The pool gateway and private coordinator admit larger bounded request bursts.
+
+## 3.2.7 - Address-only mining, startup and pool reliability
+
+- Solo mining can pay a chosen address without creating or unlocking a wallet
+  on the mining computer. Full validation remains required before mining or
+  node services are enabled; the signed snapshot remains quarantined during
+  independent validation from genesis.
+- Windows startup offers app, solo mining, saved pool mining and node-only
+  modes. Startup unlock is optional and stored in the current user's Windows
+  Credential Manager. Diagnostics are local and upload nothing.
+- Update handoff now waits for the helper to own both install locks before the
+  client closes, and the client stays open if handoff readiness fails.
+- Pool work lifetime begins when the authenticated request is sent. The pool
+  also groups durable work reservations and bounds coordinator maintenance.
+- The cached solo-mining epoch seed produces the same canonical proofs as the
+  previous path in the tested fixtures. No measured real-hardware hashrate
+  increase is claimed.
+
+## 3.2.2 - Pool client and portal maintenance
+
+- Buffered Pool-page scrolling, charcoal scrollbar and controls, green Paid accent.
+- Clear distinction between configured CPU workers and workers currently hashing.
+- Bounded 256-nonce work batches and retry of transient template-publication races.
+- Current pool worker telemetry, stable Pool page rendering, restored Pool icon,
+  and removal of How To from the portal only.
+- Preserve deployed remote-update controls and ownership/capability checks.
+- Correct native CI dependencies and mandatory-settlement test assumptions.
+
+No consensus, supply, reward, custody, fee or activation-height change from 3.2.1.
+Signed package identity and
+executed checks are recorded in [source identity](source-identity.md) and
+[qualification scope](release-3.2.2-qualification.md).
+
+## 3.2.1 - Pool mining and block 9,500 upgrade
+
+Published Windows client and terminal downloads are available at
+https://veld.network/#download.
+
+- Integrated Pool mode alongside Solo mode, configurable HTTPS endpoint,
+  payout address and CPU controls; no key disclosure or member deposit.
+- Improved pool status, rewards/payment views, window recovery and scrolling.
+- Durable payment recovery and payout eligibility aggregated by destination.
+- At 9,500: opt-in SHA-384 key destinations with ML-DSA-65 signatures;
+  removal of the aggregate validator registration stake prerequisite;
+  flat 0.30% AMM fee in either direction.
+- Individual validator bonds and all other governance, finality, co-mining
+  and custody gates remain unchanged.
+
+Automatic updating remains opt-in, with hourly checks while the app is open.
+This release does not assert general security clearance or authorize custody activation.
+See [exact source and binaries](source-identity.md) and
+[qualification scope](release-3.2.1-qualification.md).
+
+## 3.2.0 - Automatic updates with mining resume
+
+Mining now re-evaluates the clock guard after local time corrections, without
+waiting for a peer reconnect. Worker status text stays within its column.
+
+Enable **Automatic updates** in Node Settings or the paired portal. While the
+app stays open, it checks hourly and keeps mining during download and
+verification. Once the signed package is ready, it updates the client. A stopped node stays stopped.
+
+The session unlock crosses the update through a one-use Windows-protected
+handoff. No passphrase is sent to the update service or saved in settings.
+Installation waits while the local wallet is open. Download failures retry
+without stopping mining, and an installation failure rolls back when possible.
+
+Clients on 3.1.10 or earlier need one initial update and sign-in. The feature
+does not enable mining after a normal Windows reboot. Keep the app open and
+Automatic updates enabled; disk, permission, or integrity failures may still
+need attention. No consensus rules or mining parameters change.
+
+Near-miss submissions now use confirmed participation and pending claims to
+avoid redundant fees after a restart. An expired, unconfirmed claim can be
+retried in the same window. Mining candidates refresh when eligible near-miss
+claims arrive. Wallet history identifies staking and co-mining distributions
+from their pool funding, including older payouts.
+
+After a send, available funds and the output list refresh in the sending tab
+and other open wallet tabs. Older responses cannot overwrite the current
+balance. Explorer transaction history accepts the rebuilt reward index.
+
+## 3.1.10 - Unattended portal control
+
+Completing the pair-code setup now enables remote start, stop, encrypted
+sign-in, and signed updates. These actions no longer ask for approval on the
+paired PC. Existing pairings keep their command key and replay protection.
+
+Keep the Veld Node app open with Remote access enabled. From the portal, choose
+**Settings → Release and updates → Check now → Update now**. After the app
+reconnects, use **Sign in & mine** and enter the node passphrase in the portal.
+The browser encrypts it for that PC; the relay cannot read it and the passphrase
+is not saved to disk. Mining starts after identity and chain checks pass.
+
+An older installed client that still asks for PC approval needs this update
+once before it can accept unattended commands. Existing pairing, worker count,
+identity, chain data, and other settings are retained. Disabling Remote access
+or creating a new pair code revokes control. Other settings changes retain their
+existing local confirmation. No consensus or mining rules change.
+
+## 3.1.9 - Portal control
+
+The Windows node supports remote start, stop, sign-in, and signed updates.
+Install this client locally once, enable Remote access in Settings, and pair it
+with the portal. Approve the first control request on the PC. After that, the
+paired browser can perform these actions without further prompts on the PC.
+The Veld Node app must remain open and connected, even when the node is stopped.
+
+Use **Sign in & mine** when the app is locked, including after an update or PC
+restart. Enter the node passphrase in the portal; the browser encrypts it for
+the paired PC before sending the signed command. The relay stores only the
+encrypted command and removes that ciphertext after completion or expiry.
+The passphrase is not saved to disk. Mining begins after the identity and chain
+checks pass.
+
+Remote updates use the same signed feed, package checks, and recovery procedure
+as Settings. Worker count, identity, chain data, pairing, and the control grant
+remain saved. Turning off Remote access blocks commands; generating a new pair
+code revokes the old pairing. Existing clients continue reporting normally.
+
+The hosted Explorer also recovers complete block pages when an individual valid
+block exceeds the bulk API's display budget. Its layout is unchanged.
+No consensus rules, stake requirements, or mining parameters change.
+
+## 3.1.8 - Mining and wallet reliability
+
+Mining workers refresh their block timestamp as the clock advances, including
+on slow CPUs and after a paused search. This prevents a long hash search from
+submitting a stale timestamp that distorts the following difficulty adjustment.
+The 180-second target remains an average; individual block times still vary.
+
+Stopping the node also cancels every active hash worker. Previously, the
+monitoring thread could exit on node shutdown without forwarding cancellation,
+leaving the search running until the shutdown watchdog ended the process.
+
+Failed near-miss submissions can be retried within the same co-mining window.
+The local submission allowance is consumed only when the transaction enters
+the mempool. Pool metadata reports the existing 20% reward allocation.
+
+Expired near-miss claims are removed from the mempool and excluded from new
+mining candidates. Previously, a claim left pending after its target block
+passed could invalidate repeated block attempts. Valid claims and ordinary
+transactions remain eligible, and local rejection logs include the reason.
+Authenticated claims for an older canonical parent are discarded without
+penalizing the sending peer. Invalid signatures and invalid targets retain
+their existing rejection and peer penalties.
+
+The Windows package removes the separate update-repair launcher. Updates and
+interrupted-update recovery remain available through Settings and the normal
+launcher. Existing chain data, identity, worker count, and pairing are retained.
+The wallet login dialog no longer offers biometric removal while locked.
+
+Staking checks the final signed transaction size before requesting signatures.
+Wallets with too many small outputs receive a short cleanup instruction instead
+of failing after signing. Transaction hex validation handles large valid inputs
+consistently in mobile browsers. Automatic cleanup remains opt-in.
+
+Includes the intervening connection, checkpoint publisher, and wallet display
+maintenance in published source. No consensus rules, stake requirements,
+reward allocations, or activation heights change. No hard fork is required.
+
+## 3.1.7 - Connection and update reliability
+
+Independent background validation now sends tip announcements from each
+connection's own timer. Valid background peers remain connected through the
+normal handshake deadline, including after reconnects and while the foreground
+supervisor is busy. Network identity checks and IP-distinct admission remain
+unchanged.
+
+Windows updates retry temporary file locks, verify installed payloads, and
+retain actionable transaction results. Settings, worker count, sync preference,
+remote monitoring, and protected pairing state survive saves and replacement.
+Unreadable persistent identity is reported rather than silently replaced.
+Repair uses the verifier from the fresh complete package, so an older node's
+missing runtime DLL cannot prevent signed verification of its replacement.
+
+Shutdown closes queued validation before waiting for the active chain commit,
+also cancels direct peer validation that has not started its commit,
+interrupts outstanding RPC work, and uses a cancellable watchdog. The validation
+worker retains normal Windows scheduling and I/O priority instead of making
+networking and shutdown wait for a background-priority lock owner.
+Prewarm and reorganization notifications share their respective wait mutexes,
+preventing missed shutdown wakes.
+Logs distinguish current-chain catch-up from independent historical validation.
+Peer diagnostics describe the exact connection. The wallet's lockup API reports
+the effective ordinary staking minimum consistently.
+
+This release retains static Windows runtime dependencies and local-chain
+preservation. Snapshot receipt validation and mining admission remain enforced.
+No consensus rules, validator bond amounts, or activation heights change.
+
+# Release notes
+
+## 3.1.6 - Consolidated Windows updater repair
+
+Fixes a race between update handoff and the transaction lock. Commit now
+waits for the installing process to finish preparing the transaction.
+Healthy slow archive downloads can continue beyond 30 seconds, with bounded
+total and idle deadlines and retries for transient failures. Signature,
+checksum, path, archive-size and downgrade protections remain enforced.
+
+Settings update checks and installs recover interrupted transactions under
+the existing exclusive lock. Failed installs display the helper's actual
+reason. A signed Repair Veld Update helper lets a fresh complete package
+update an existing installation while preserving its data directory.
+
+The GUI identifies the node from its selected installation, and the Logs
+view renders connection diagnostics in plain language. Warnings, unknown
+events, and the complete raw log remain available.
+
+Includes the 3.1.4 static Windows runtime and 3.1.5 local-chain preservation
+fixes. There are no changes to network consensus or activation heights.
+
+To update, open **Settings**, check for updates, and choose **Install** when
+the signed update is offered. If an older updater cannot complete the update,
+extract the complete 3.1.6 Windows package and run **Repair Veld Update.bat**
+against the existing installation. Keep the existing data directory and
+identity backup.
+
+Snapshot bootstrap still requires independent background verification before
+mining. Version 3.1.6 does not bypass that requirement. A node shutdown can
+still reach its twenty-second fallback timeout; a follow-up repair is under
+investigation. These notes describe the released fixes, not every possible
+failure on an uninspected installation.
+
+## 3.1.5 - Preserve local synchronization progress
+
+Windows startup now limits automatic signed snapshot import to a fresh
+datadir. Existing chain storage and pending verification are retained even
+when a newer official snapshot exists. This prevents an ordinary restart or
+update from replacing previously verified history and starting another
+independent genesis verification. Partial local databases remain available
+for normal recovery or inspection instead of being overwritten.
+
+Existing snapshot validation obligations remain enforced. This update does
+not automatically restore a previously replaced database or bypass proof
+verification. The DLL and signed updater repairs from 3.1.4 are included.
+There are no changes to consensus rules or activation heights.
+
+## 3.1.4 - Windows runtime packaging
+
+Windows packaging correction: OpenSSL is now linked into each executable, so
+the node and wallet do not require `libcrypto-3-x64.dll` or a developer PATH.
+The build rejects non-system DLL imports and runs command-line startup checks
+with only Windows system directories on PATH. This fixes the missing-DLL
+startup failure and the resulting signed-updater rollback to the older client.
+Terminal launcher version declarations are also synchronized with the signed
+package. Keep existing wallet and chain data when updating.
+
+The 3.1.3 network rules and block-3,840 activation schedule are unchanged.
+
+## Retained 3.1.3 network correction
+
+This correction preserves the intended distinction between ordinary staking
+and the co-mining lottery.
+
+## Stake requirements
+
+| Requirement | Before block 3,840 | From block 3,840 |
+| --- | --- | --- |
+| Ordinary staking | 1,000 VELD | 500 VELD |
+| Co-mining lottery | 1,000 VELD | 1,000 VELD |
+| Validator bond | 10,000 VELD | 10,000 VELD |
+
+The initial 3.1.2 binary incorrectly applied the ordinary-staking reduction to
+co-mining eligibility. Version 3.1.3 uses the independent co-mining threshold
+for near-miss admission, alternate-branch validation, local share submission,
+and payout selection. The wallet reads a separate co-mining requirement and
+reports unavailable policy explicitly. A stake below 1,000 VELD does not meet
+the lottery requirement, including a shortfall of one atomic unit.
+
+## Network upgrade
+
+From block **3,840**, ASERT adjusts
+difficulty after each block toward the **180-second** target with a
+**2,700-second** half-life. Ordinary staking drops to 500 VELD at that height;
+the coordinated coinbase and validator/governance state migrations remain on
+the same settlement boundary. Reward allocations, maximum stake, maturity,
+lockups, and the historical block-2,880 rules are unchanged.
+
+The correction restores the existing pre-activation lottery rule and prevents
+3.1.2 from introducing the unintended lower threshold. Mixed 3.1.2/3.1.3
+validation after activation can disagree on near-miss submissions or payouts
+involving stakes below 1,000 VELD.
+
+## Updating
+
+Use the signed updater or the [official download](https://veld.network/#download).
+Close the existing client before replacing it. Keep your chain data and wallet
+backups; a routine update does not require a full resynchronization.
+
+The client recovery, checkpoint, GUI/daemon diagnostics, and mining improvements
+from 3.1.2 are retained.

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="panel" x1="156" y1="112" x2="860" y2="912" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#242825"/>
+      <stop offset="0.55" stop-color="#151817"/>
+      <stop offset="1" stop-color="#0b0d0c"/>
+    </linearGradient>
+    <linearGradient id="veld" x1="512" y1="180" x2="512" y2="820" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#97D222"/>
+      <stop offset="0.52" stop-color="#5FAC18"/>
+      <stop offset="1" stop-color="#329418"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="22" stdDeviation="22" flood-color="#000" flood-opacity="0.44"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#panel)"/>
+  <rect x="46" y="46" width="932" height="932" rx="220" fill="none" stroke="#3d433f" stroke-width="12"/>
+  <g filter="url(#shadow)">
+    <text x="512" y="692" text-anchor="middle" fill="url(#veld)" font-family="Segoe UI Symbol, Apple Symbols, sans-serif" font-size="520" font-weight="400">⛏︎</text>
+  </g>
+</svg>

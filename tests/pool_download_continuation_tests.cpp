@@ -1,0 +1,166 @@
+#define VELD_MAINNET_POW 1
+#define VELD_TEST_CHAIN_BUILD 1
+#define VELD_TEST_HOOKS 1
+#include "network/tcp.h"
+#include <iostream>
+#include <stdexcept>
+
+using namespace veld;
+void Check(bool value, const char* label) {
+    if (!value)
+        throw std::runtime_error(label);
+}
+Block Child(const Block& parent, const char* branch) {
+    Block block;
+    block.height = parent.height + 1;
+    block.header.prev_block_hash = parent.GetHash();
+    block.header.timestamp = parent.header.timestamp + 180;
+    block.header.bits = parent.header.bits;
+    Transaction coinbase;
+    coinbase.inputs.push_back(
+        TxInput::Coinbase(std::string(branch) + std::to_string(block.height)));
+    coinbase.outputs.emplace_back(1, std::vector<uint8_t>{0x51});
+    block.transactions.push_back(coinbase);
+    block.UpdateMerkleRoot();
+    return block;
+}
+Hash256 First(const P2PMessage& message) {
+    Check(message.payload.size() >= 69 && message.payload[4] <= 32, "bounded locator wire");
+    Hash256 hash;
+    std::copy_n(message.payload.begin() + 5, 32, hash.begin());
+    return hash;
+}
+int main() {
+    try {
+        compat::InitNetwork();
+        Blockchain chain;
+        auto block = CreateGenesisBlock();
+        Check(
+            chain.AddBlockDirect(block, true, true, false, mining::PowAdmissionContext::Internal())
+                .IsAccepted(),
+            "synthetic genesis");
+        for (int i = 0; i < 320; ++i) {
+            block = Child(block, "main");
+            Check(chain
+                      .AddBlockDirect(block, true, true, false,
+                                      mining::PowAdmissionContext::Internal())
+                      .IsAccepted(),
+                  "synthetic canonical history");
+        }
+        Mempool pool;
+        net::NodeServer server(0, MAINNET_MAGIC, chain, pool);
+        const auto serving_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        Check(compat::IsValidSocket(serving_fd), "serving-peer fixture socket");
+        net::Connection serving(serving_fd, "127.0.0.8", 1);
+        serving.MarkHandshakeReady();
+        Check(!server.TestIbdContinuationPeerEligible(serving),
+              "handshake without accepted canonical work cannot claim continuation");
+        server.TestRememberValidatedDownload(serving, chain.GetBlock(319).GetHash());
+        Check(!server.TestIbdContinuationPeerEligible(serving),
+              "known canonical duplicate cannot claim the shared batch");
+        server.TestRecordCanonicalContribution(serving, chain.GetBlock(287).GetHash());
+        Check(!server.TestIbdContinuationPeerEligible(serving),
+              "old accepted work cannot repeatedly claim later batches");
+        server.TestRecordCanonicalContribution(serving, chain.GetBlock(289).GetHash());
+        Check(server.TestIbdContinuationPeerEligible(serving),
+              "recent accepted canonical sender may request the next batch");
+        const auto inbound_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        Check(compat::IsValidSocket(inbound_fd), "inbound-peer fixture socket");
+        net::Connection inbound(inbound_fd, "127.0.0.9", 1, true);
+        inbound.MarkHandshakeReady();
+        server.TestRecordCanonicalContribution(inbound, chain.GetBlock(319).GetHash());
+        Check(!server.TestIbdContinuationPeerEligible(inbound),
+              "inbound contribution does not bypass outbound continuation policy");
+        auto response_frames = [&](const P2PMessage& request, const char* address) {
+            const auto socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            Check(compat::IsValidSocket(socket), "unconnected response queue socket");
+            net::Connection queued(socket, address, 1);
+            queued.EnableEventLoopIO();
+            server.TestDispatchPeerMessage(queued, request);
+            // Exercise the actual handler and bounded serialization queue.
+            // Nothing is transmitted on this unconnected local socket.
+            return queued.QueuedSendFrames();
+        };
+        PeerManager messages(MAINNET_MAGIC, chain.Height());
+        const auto start = chain.GetBlock(224).GetHash();
+        const auto fallback = chain.GetBlock(227).GetHash();
+        Check(response_frames(messages.BuildGetBlocksMessage(start, std::vector<Hash256>{fallback}),
+                              "127.0.0.2") == 33,
+              "remaining locator must not be interpreted as stop hash");
+        Check(response_frames(
+                  messages.BuildGetBlocksMessage(start, {fallback}, chain.GetBlock(226).GetHash()),
+                  "127.0.0.3") == 3,
+              "explicit stop hash is read after every locator");
+        auto truncated = messages.BuildGetBlocksMessage(start, std::vector<Hash256>{fallback});
+        truncated.payload.resize(truncated.payload.size() - 1);
+        Check(response_frames(truncated, "127.0.0.4") == 0,
+              "truncated locator envelope cannot trigger block work");
+        const auto fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        Check(compat::IsValidSocket(fd), "unconnected local socket");
+        net::Connection connection(fd, "127.0.0.1", 1);
+        const auto original = server.TestDownloadLocator(connection);
+        Check(First(original) == chain.TipCopy().GetHash(),
+              "fresh connection starts with canonical tip");
+        Hash256 unknown{};
+        unknown[0] = 12;
+        server.TestRememberValidatedDownload(connection, unknown);
+        Check(connection.ValidatedDownloadCount() == 0,
+              "unknown body cannot grant continuation credit");
+        Check(server.TestDownloadLocator(connection).payload == original.payload,
+              "unknown cursor rejected");
+        // A 92-block fork's exponential locator first matches at h192. Its
+        // first 32-body response ends at h224, entirely shared history.
+        const auto common = chain.GetBlock(224).GetHash();
+        server.TestRememberValidatedDownload(connection, common);
+        Check(connection.ValidatedDownloadCount() == 1,
+              "locally validated body grants one continuation receipt");
+        server.TestRememberValidatedDownload(connection, common);
+        Check(connection.ValidatedDownloadCount() == 1,
+              "exact duplicate cannot multiply continuation receipts");
+        Check(First(server.TestDownloadLocator(connection)) == chain.TipCopy().GetHash(),
+              "uncommitted download cursor cannot replace canonical locator");
+        const auto late = chain.GetBlock(223).GetHash();
+        server.TestRememberValidatedDownload(connection, late);
+        Check(connection.ValidatedDownloadCount() == 1,
+              "lower history cannot multiply continuation receipts");
+        const auto continued = server.TestDownloadLocator(connection);
+        Check(First(continued) == chain.TipCopy().GetHash(),
+              "late duplicate cannot rewind canonical locator");
+        Hash256 second{};
+        std::copy_n(continued.payload.begin() + 37, 32, second.begin());
+        Check(second == chain.GetBlock(chain.Height() - 1).GetHash(),
+              "canonical ancestor remains the first fallback");
+        // This focused fixture covers cursor ordering on locally indexed
+        // bodies. Genuine fork validation is covered by native co-mining and
+        // payment reorganization exercises, not synthetic PoW-free branches.
+        const auto higher = chain.GetBlock(227).GetHash();
+        server.TestRememberValidatedDownload(connection, higher);
+        Check(connection.ValidatedDownloadCount() == 2,
+              "height jump counts one actual body rather than missing heights");
+        Check(First(server.TestDownloadLocator(connection)) == chain.TipCopy().GetHash(),
+              "higher uncommitted body cannot skip canonical parents");
+        server.TestRememberValidatedDownload(connection, common);
+        const auto changed_branch = server.TestDownloadLocator(connection);
+        Check(First(changed_branch) == chain.TipCopy().GetHash(),
+              "lower duplicate preserves canonical primary");
+        std::copy_n(changed_branch.payload.begin() + 37, 32, second.begin());
+        Check(second == chain.GetBlock(chain.Height() - 1).GetHash(),
+              "canonical parent remains fallback");
+        server.TestRememberValidatedDownload(connection, chain.GetBlock(0).GetHash());
+        Check(First(server.TestDownloadLocator(connection)) == chain.TipCopy().GetHash(),
+              "ancient duplicate cannot rewind canonical locator");
+        Check(server.GetPeerHeightView().verified_height == 0,
+              "download cursor never grants trusted peer-height evidence");
+        const auto next_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        net::Connection replacement(next_fd, "127.0.0.1", 1);
+        Check(replacement.ValidatedDownloadCount() == 0,
+              "reconnection cannot inherit continuation receipts");
+        Check(First(server.TestDownloadLocator(replacement)) == chain.TipCopy().GetHash(),
+              "reconnection owns a fresh cursor");
+        std::cout
+            << "PASS canonical download locator despite peer download cursors; synthetic headers, no network/PoW claim\n";
+    } catch (const std::exception& error) {
+        std::cerr << "FAIL " << error.what() << '\n';
+        return 1;
+    }
+}

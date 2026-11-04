@@ -1,0 +1,19 @@
+diff --git a/vendor/pqc/mldsa65/sign.c b/vendor/pqc/mldsa65/sign.c
+--- a/vendor/pqc/mldsa65/sign.c
++++ b/vendor/pqc/mldsa65/sign.c
+@@ -316,8 +316,13 @@ int PQCLEAN_MLDSA65_CLEAN_crypto_sign_verify_ctx(const uint8_t *sig,
+     shake256_inc_finalize(&state);
+     shake256_inc_squeeze(c2, CTILDEBYTES, &state);
+     shake256_inc_ctx_release(&state);
+-    for (i = 0; i < CTILDEBYTES; ++i) {
+-        if (c[i] != c2[i]) {
++    /* Compare the challenge without data-dependent early exit. */
++    {
++        volatile uint8_t diff = 0;
++        for (i = 0; i < CTILDEBYTES; ++i) {
++            diff |= (uint8_t)(c[i] ^ c2[i]);
++        }
++        if (diff != 0) {
+             return -1;
+         }
+     }

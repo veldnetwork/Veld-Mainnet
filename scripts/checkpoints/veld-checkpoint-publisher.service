@@ -1,0 +1,56 @@
+[Unit]
+Description=Publish independently verified Veld checkpoints
+After=network-online.target veld-node.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=veld-checkpoint
+Group=veld-checkpoint
+ExecStart=/usr/bin/python3 /opt/veld-checkpoints/publisher.py
+WorkingDirectory=/var/lib/veld-checkpoint-signer
+StateDirectory=veld-checkpoint-signer
+StateDirectoryMode=0700
+LoadCredentialEncrypted=fleet-ssh-key:/etc/credstore.encrypted/veld-checkpoint-fleet-ssh-key.cred
+LoadCredentialEncrypted=checkpoint-keystore:/etc/credstore.encrypted/veld-checkpoint-keystore.cred
+LoadCredentialEncrypted=checkpoint-password:/etc/credstore.encrypted/veld-checkpoint-password.cred
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+LimitCORE=0
+ProtectProc=invisible
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadWritePaths=/var/lib/veld-checkpoint-signer
+IPAddressDeny=any
+IPAddressAllow=5.78.107.166
+IPAddressAllow=5.78.97.56
+IPAddressAllow=5.78.127.51
+IPAddressAllow=127.0.0.0/8
+IPAddressAllow=::1/128
+Nice=10
+CPUQuota=25%
+MemoryMax=256M
+TasksMax=32
+TimeoutStartSec=240
+
+[Install]
+WantedBy=multi-user.target

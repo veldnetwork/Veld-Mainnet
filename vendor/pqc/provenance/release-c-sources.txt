@@ -1,0 +1,13 @@
+# Canonical order used by both public release build controllers and the
+# deterministic WebAssembly rebuild controller.
+vendor/pqc/fips202.c
+vendor/pqc/randombytes.c
+vendor/pqc/mldsa65/ntt.c
+vendor/pqc/mldsa65/packing.c
+vendor/pqc/mldsa65/poly.c
+vendor/pqc/mldsa65/polyvec.c
+vendor/pqc/mldsa65/reduce.c
+vendor/pqc/mldsa65/rounding.c
+vendor/pqc/mldsa65/sign.c
+vendor/pqc/mldsa65/symmetric-shake.c
+vendor/pqc/mldsa65/veld_seedgen.c

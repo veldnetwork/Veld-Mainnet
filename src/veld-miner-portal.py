@@ -1,0 +1,3166 @@
+#!/usr/bin/env python3
+"""Authenticated remote operations portal for Veld node operators."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import hmac
+import ipaddress
+import json
+import logging
+import os
+import re
+import secrets
+import sqlite3
+import stat
+import threading
+import time
+from collections import defaultdict, deque
+from contextlib import contextmanager
+from http.cookies import CookieError, SimpleCookie
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec, utils
+
+LOGGER = logging.getLogger(__name__)
+
+VELD_OPERATOR_VERSION = "3.3.3"
+VELD_OPERATOR_PROFILE = "veld-public-mainnet-v2"
+
+MAX_MINING_WORKERS = 64
+MAX_BODY = 32 * 1024
+SESSION_SECONDS = 12 * 60 * 60
+PAIR_SECONDS = 15 * 60
+ONLINE_SECONDS = 45
+COMMAND_SECONDS = 3 * 60
+COMMAND_CLOCK_SKEW = 2 * 60
+AUTH_CONCURRENCY = 4
+REQUEST_CONCURRENCY = 64
+PREPARSE_CONNECTIONS_PER_MINUTE = 12_000
+PAIR_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+COOKIE_NAME = "__Host-veld_portal"
+DEV_COOKIE_NAME = "veld_portal_dev"
+ACCOUNT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,47}$")
+VERSION_RE = re.compile(r"^[0-9A-Za-z.+_-]{1,32}$")
+DEVICE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43,96}$")
+P256_COORDINATE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+COMMAND_NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{22}$")
+COMMAND_SIGNATURE_RE = re.compile(r"^[A-Za-z0-9_-]{86}$")
+COMMAND_KEY_ID_RE = re.compile(r"^[0-9a-f]{64}$")
+
+NO_PAYLOAD_ACTIONS = {
+    "node.start",
+    "node.stop",
+    "pool.start",
+    "pool.stop",
+    "updates.check",
+    "updates.install",
+}
+BOOL_ACTIONS = {
+    "mining.enabled",
+    "privacy.tor",
+    "network.reachable",
+    "display.reference",
+    "updates.automatic",
+}
+ALLOWED_ACTIONS = (
+    NO_PAYLOAD_ACTIONS
+    | BOOL_ACTIONS
+    | {
+        "mining.workers",
+        "sync.mode",
+        "node.signin",
+    }
+)
+
+
+def supports_automatic_updates(version: str, snapshot: dict[str, Any]) -> bool:
+    match = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)", version)
+    return bool(
+        match
+        and tuple(int(part) for part in match.groups()) >= (3, 2, 0)
+        and isinstance(snapshot.get("automatic_updates"), bool)
+    )
+
+
+def command_key_id(x_coordinate: str, y_coordinate: str) -> str:
+    material = (
+        "VELD_PORTAL_KEY_V1\n" + x_coordinate + "\n" + y_coordinate
+    ).encode("ascii")
+    return hashlib.sha256(material).hexdigest()
+
+
+def decode_base64url_canonical(value: str, expected_bytes: int) -> bytes:
+    try:
+        decoded = base64.urlsafe_b64decode(value + "=" * ((4 - len(value) % 4) % 4))
+    except (ValueError, TypeError):
+        raise ValueError("invalid base64url value") from None
+    canonical = base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii")
+    if len(decoded) != expected_bytes or not hmac.compare_digest(value, canonical):
+        raise ValueError("invalid base64url value")
+    return decoded
+
+
+def validate_command_key(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict) or set(value) != {"kty", "crv", "x", "y"}:
+        raise ValueError("invalid command key")
+    if value["kty"] != "EC" or value["crv"] != "P-256":
+        raise ValueError("unsupported command key")
+    x_coordinate, y_coordinate = value["x"], value["y"]
+    if (
+        not isinstance(x_coordinate, str)
+        or not P256_COORDINATE_RE.fullmatch(x_coordinate)
+        or not isinstance(y_coordinate, str)
+        or not P256_COORDINATE_RE.fullmatch(y_coordinate)
+    ):
+        raise ValueError("invalid command key")
+    try:
+        decode_base64url_canonical(x_coordinate, 32)
+        decode_base64url_canonical(y_coordinate, 32)
+    except ValueError:
+        raise ValueError("invalid command key")
+    return {
+        "x": x_coordinate,
+        "y": y_coordinate,
+        "id": command_key_id(x_coordinate, y_coordinate),
+    }
+
+
+def validate_unlock_payload(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict) or set(value) != {"ciphertext", "identity", "iv", "key_id", "wrapped_key"}:
+        raise ValueError("invalid encrypted sign-in")
+    if not all(isinstance(item, str) for item in value.values()):
+        raise ValueError("invalid encrypted sign-in")
+    for field in ("identity", "key_id"):
+        if not COMMAND_KEY_ID_RE.fullmatch(value[field]):
+            raise ValueError("invalid sign-in identity")
+    decode_base64url_canonical(value["iv"], 12)
+    decode_base64url_canonical(value["wrapped_key"], 256)
+    size = len(value["ciphertext"]) * 3 // 4
+    if not 17 <= size <= 1040:
+        raise ValueError("invalid encrypted passphrase size")
+    decode_base64url_canonical(value["ciphertext"], size)
+    return value
+
+
+def validate_unlock_key(value: Any) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"alg", "n", "e", "id", "identity"}:
+        raise ValueError("invalid node encryption key")
+    if not all(isinstance(item, str) for item in value.values()) or value["alg"] != "RSA-OAEP-256" or value["e"] != "AQAB":
+        raise ValueError("invalid node encryption key")
+    modulus = decode_base64url_canonical(value["n"], 256)
+    if not modulus[0] & 0x80 or not COMMAND_KEY_ID_RE.fullmatch(value["identity"]):
+        raise ValueError("invalid node identity")
+    digest = hashlib.sha256(("VELD_PORTAL_UNLOCK_KEY_V1\n" + value["n"] + "\n" + value["e"]).encode()).hexdigest()
+    if value["id"] != digest:
+        raise ValueError("invalid node key fingerprint")
+    return dict(value)
+
+
+def canonical_command_payload(action: str, payload: dict[str, Any]) -> str:
+    if action == "node.signin":
+        validate_unlock_payload(payload)
+    elif action in NO_PAYLOAD_ACTIONS:
+        if payload:
+            raise ValueError("unexpected command payload")
+    elif action in BOOL_ACTIONS:
+        if set(payload) != {"enabled"} or not isinstance(payload["enabled"], bool):
+            raise ValueError("invalid command payload")
+    elif action == "mining.workers":
+        if set(payload) != {"workers"}:
+            raise ValueError("invalid command payload")
+        bounded_int(payload["workers"], 1, MAX_MINING_WORKERS, "workers")
+    elif action == "sync.mode":
+        if set(payload) != {"mode"} or payload["mode"] not in {
+            "full",
+            "snapshot",
+        }:
+            raise ValueError("invalid synchronization mode")
+    else:
+        raise ValueError("unsupported command")
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def command_envelope(command: dict[str, Any]) -> str:
+    payload = canonical_command_payload(command["action"], command["payload"])
+    return "\n".join(
+        (
+            "VELD_PORTAL_COMMAND_V3",
+            str(command["id"]),
+            str(command["sequence"]),
+            str(command["issued_at"]),
+            str(command["expires_at"]),
+            command["nonce"],
+            command["action"],
+            payload,
+        )
+    )
+
+
+def verify_command_signature(
+    command: dict[str, Any], key_x: str, key_y: str
+) -> bool:
+    try:
+        x_coordinate = int.from_bytes(
+            decode_base64url_canonical(key_x, 32), "big"
+        )
+        y_coordinate = int.from_bytes(
+            decode_base64url_canonical(key_y, 32), "big"
+        )
+        raw_signature = decode_base64url_canonical(command["signature"], 64)
+        der_signature = utils.encode_dss_signature(
+            int.from_bytes(raw_signature[:32], "big"),
+            int.from_bytes(raw_signature[32:], "big"),
+        )
+        public_key = ec.EllipticCurvePublicNumbers(
+            x_coordinate, y_coordinate, ec.SECP256R1()
+        ).public_key()
+        public_key.verify(
+            der_signature,
+            command_envelope(command).encode("utf-8"),
+            ec.ECDSA(hashes.SHA256()),
+        )
+        return True
+    except (InvalidSignature, KeyError, TypeError, ValueError):
+        return False
+
+PORTAL_ICON_PATH = (
+    Path(__file__).resolve().parents[1] / "resources" / "veld-portal-icon.png"
+)
+PORTAL_MANIFEST = {
+    "id": "/",
+    "name": "Veld Node Portal",
+    "short_name": "Veld Portal",
+    "description": "Secure remote monitoring and control for Veld nodes and miners.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#080a09",
+    "theme_color": "#0d100e",
+    "orientation": "any",
+    "icons": [
+        {
+            "src": "/icon.png?v=6",
+            "sizes": "1024x1024",
+            "type": "image/png",
+            "purpose": "any maskable",
+        }
+    ],
+}
+PORTAL_OFFLINE_HTML = b"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a09"><title>Veld Portal offline</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#080a09;color:#f2f5f2;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(430px,100%);padding:25px;border:1px solid #343a36;border-radius:10px;background:#101311}h1{margin:0 0 8px;font:700 24px ui-monospace,Consolas,monospace}p{margin:0;color:#c5cbc7}
+</style><main class="card"><h1>Portal offline</h1><p>Reconnect to the internet, then reopen or refresh the app. Your node continues running independently.</p></main></html>"""
+PORTAL_SERVICE_WORKER = b"""const CACHE='veld-portal-shell-v23';
+const ASSETS=['/manifest.webmanifest','/icon.png?v=6','/offline'];
+self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
+self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
+self.addEventListener('fetch',event=>{
+  const request=event.request;
+  if(request.method!=='GET')return;
+  const url=new URL(request.url);
+  if(url.origin!==self.location.origin||url.pathname.startsWith('/api/'))return;
+  if(request.mode==='navigate'){
+    event.respondWith(fetch(request).catch(()=>caches.match('/offline')));
+    return;
+  }
+  if(ASSETS.includes(url.pathname))event.respondWith(caches.match(request).then(hit=>hit||fetch(request)));
+});
+"""
+
+
+PORTAL_HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0d100e">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Veld Portal">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.png?v=6" type="image/png">
+  <link rel="apple-touch-icon" href="/icon.png?v=6">
+  <title>Veld Node Portal</title>
+  <style>
+    .network-note{color:var(--muted);margin:12px 0 0;line-height:1.5}
+    :root{color-scheme:dark;--bg:#080a09;--side:#0d100e;--panel:#101311;--panel2:#151916;--line:#343a36;--soft:#252b27;--text:#f2f5f2;--sub:#c5cbc7;--muted:#89928c;--green:#7ed949;--warn:#d8a64a;--bad:#e16b62;--button:#2d322f;--button-hover:#383e3a}
+    *,*::before,*::after{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}button,input,select{font:inherit}button{cursor:pointer}.hidden{display:none!important}
+    .app{min-height:100vh;display:grid;grid-template-columns:248px minmax(0,1fr)}.side{position:fixed;inset:0 auto 0 0;width:248px;background:var(--side);border-right:1px solid var(--soft);padding:28px 20px;display:flex;flex-direction:column;z-index:4}.brand{display:flex;align-items:center;gap:13px;margin-bottom:34px}.mark{width:47px;height:47px;border:1px solid #39423c;border-radius:12px;display:grid;place-items:center;background:linear-gradient(145deg,#171b18,#090c0a);box-shadow:inset 0 0 0 1px rgba(255,255,255,.025),0 8px 20px rgba(0,0,0,.28);flex:0 0 47px}.mark svg{width:31px;height:31px;display:block;fill:none;stroke-linejoin:miter}.brand b{font:700 20px ui-monospace,Consolas,monospace}.nav{display:grid;gap:6px}.nav button{border:0;border-left:2px solid transparent;background:transparent;color:var(--sub);text-align:left;padding:12px 14px;border-radius:0}.nav button:hover{color:var(--text);background:#121613}.nav button.active{border-left-color:var(--text);color:var(--text);background:#101311}.nav-icon,.nav-glyph{display:none}.side-foot{margin-top:auto;color:var(--muted);font-size:12px;display:grid;gap:10px}.side-foot a{color:var(--sub);text-decoration:none}.main{grid-column:2;padding:30px clamp(24px,4vw,58px) 70px;min-width:0}.top{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:28px}.page-title h1{font:700 29px ui-monospace,Consolas,monospace;margin:0}.page-title p{color:var(--sub);margin:5px 0 0}.top-actions{display:flex;align-items:center;gap:10px}.device-select{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:10px 34px 10px 12px;min-width:180px}.button{border:1px solid #59625c;background:var(--button);color:var(--text);border-radius:6px;padding:10px 16px;min-height:40px}.button:hover{background:var(--button-hover)}.button.ghost{background:transparent}.button.danger{border-color:#734943;color:#f0b2ac}.button:disabled{opacity:.45;cursor:not-allowed}.status{display:inline-flex;align-items:center;color:var(--muted)}.status.online{color:var(--green)}.status.warn{color:var(--warn)}
+    .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.cards.network-cards{grid-template-columns:repeat(3,minmax(0,1fr))}.card{background:linear-gradient(145deg,var(--panel),#0d100e);border:1px solid var(--line);border-radius:8px;padding:20px;min-width:0}.card h2,.section h2{font:700 19px ui-monospace,Consolas,monospace;margin:0}.card .value{font:700 29px ui-monospace,Consolas,monospace;margin-top:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.card .label{color:var(--muted);margin-top:5px}.wide{grid-column:span 2}.full{grid-column:1/-1}.section{margin-top:15px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:18px}.section-head p{color:var(--muted);margin:4px 0 0}.kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--soft);border:1px solid var(--soft);border-radius:6px;overflow:hidden}.kv div{background:#0d100e;padding:15px}.kv b{display:block;font:700 18px ui-monospace,Consolas,monospace}.kv span{color:var(--muted);font-size:12px}.control-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;align-items:center;padding:15px 0;border-top:1px solid var(--soft)}.control-row:first-child{border-top:0}.control-row h3{margin:0;font:700 16px ui-monospace,Consolas,monospace}.control-row p{margin:4px 0 0;color:var(--muted)}.controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}.toggle{width:54px;height:29px;border:1px solid var(--line);border-radius:15px;background:#202521;padding:3px;position:relative}.toggle:after{content:"";position:absolute;top:4px;left:4px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:.15s}.toggle.on{background:#323e34}.toggle.on:after{left:29px;background:var(--text)}.pill{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:20px;padding:6px 10px;color:var(--sub);font-size:12px}.warning{color:#f1c778;background:#1b1710;border:1px solid #49381b;border-radius:6px;padding:11px 13px;margin-top:12px}.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:13px;border-bottom:1px solid var(--soft)}.table th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}.mono{font-family:ui-monospace,Consolas,monospace}.green{color:var(--green)}.warn{color:var(--warn)}.muted{color:var(--muted)}.empty{text-align:center;color:var(--muted);padding:55px 20px}.log{background:#080a09;border:1px solid var(--soft);border-radius:6px;padding:14px;min-height:260px;white-space:pre-wrap;color:var(--sub);font:13px/1.65 ui-monospace,Consolas,monospace}.local-only{border:1px solid var(--soft);background:#0d100e;border-radius:6px;padding:12px;color:var(--muted)}
+    .chart{height:230px;border:1px solid var(--soft);border-radius:7px;background:#0a0d0b;padding:10px}.chart svg,.topology svg{width:100%;height:100%;display:block}.chart .axis{stroke:#3a423d;stroke-width:1}.chart .trace{fill:none;stroke:#dfe5e1;stroke-width:2;vector-effect:non-scaling-stroke}.chart text,.topology text{fill:var(--sub);font:600 12px ui-monospace,Consolas,monospace}.topology{height:430px;border:1px solid var(--soft);border-radius:7px;background:radial-gradient(circle at 50% 48%,#111713 0,#090c0a 58%);padding:4px;overflow:hidden}.topology .orbit{fill:none;stroke-width:1;stroke-dasharray:3 7;vector-effect:non-scaling-stroke}.topology .orbit.fleet{stroke:#283631}.topology .orbit.validator{stroke:#302b38}.topology .orbit.operator{stroke:#303a35}.topology .edge-underlay{fill:none;stroke:#101411;stroke-width:4;vector-effect:non-scaling-stroke}.topology .edge{fill:none;stroke:#81938a;stroke-width:1.25;opacity:.72;vector-effect:non-scaling-stroke}.topology .edge.one{stroke-dasharray:5 7;opacity:.48}.topology .edge.differs{stroke:var(--warn)}.topology .center-ring{fill:none;stroke:#36453d;stroke-width:1}.topology .center-core{fill:url(#topology-center);stroke:#71917f;stroke-width:1.5}.topology .center-label{fill:var(--text);font-size:10px;letter-spacing:.08em}.topology .center-sub{fill:var(--sub);font-size:8px;letter-spacing:.11em}.topology .peer .halo{fill:none;stroke:currentColor;stroke-width:7;opacity:.08}.topology .peer .direct-ring{fill:none;stroke:currentColor;stroke-width:1.4;opacity:.8}.topology .peer .core{stroke-width:1.7}.topology .peer.fleet{color:#79a9c2}.topology .peer.fleet .core{fill:url(#topology-fleet);stroke:#79a9c2}.topology .peer.node{color:#6ab38f}.topology .peer.node .core{fill:url(#topology-node);stroke:#6ab38f}.topology .peer.miner{color:#7ed949}.topology .peer.miner .core{fill:url(#topology-miner);stroke:#7ed949}.topology .peer.validator{color:#9f82cf}.topology .peer.validator .core{fill:url(#topology-validator);stroke:#9f82cf}.topology .peer.differs .core{stroke:var(--warn)}.topology .peer.stale .core,.topology .peer.unavailable .core{fill:#282d2a;stroke:#737b76}.topology .peer text{fill:currentColor;font-size:12px}.topology .peer:hover .core{stroke:#fff;stroke-width:2.4}.topology-legend{display:grid;grid-template-columns:repeat(4,minmax(0,max-content));align-items:center;gap:10px 22px;margin-top:13px;color:var(--muted);font-size:12px}.topology-legend+.topology-legend{padding-top:12px;border-top:1px solid var(--soft)}.topology-legend span{display:inline-flex;align-items:center;min-width:0;white-space:nowrap}.legend-line{display:inline-block;width:27px;border-top:1px solid #81938a;margin-right:8px}.legend-line.one{border-top-style:dashed;opacity:.7}.legend-dot{width:9px;height:9px;border-radius:50%;margin-right:8px;border:1px solid currentColor}.legend-dot.node{color:#6ab38f;background:#203d31}.legend-dot.fleet{color:#79a9c2;background:#21343e}.legend-dot.miner{color:#7ed949;background:#27431a}.legend-dot.validator{color:#9f82cf;background:#3c2d51}.legend-dot.differs{color:var(--warn);background:#503c23}.legend-dot.unavailable{color:#737b76;background:#282d2a}.auth-shell{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% -20%,#142018 0,#080a09 42%)}.auth{width:min(440px,100%);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:26px}.auth h1{font:700 24px ui-monospace,Consolas,monospace;margin:0 0 6px}.auth p{color:var(--muted);margin:0 0 20px}.field{display:grid;gap:7px;margin:13px 0}.field label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.field input{width:100%;background:#070908;border:1px solid #454d47;border-radius:6px;color:var(--text);padding:12px}.actions{display:flex;gap:9px;align-items:center;margin-top:18px}.error{color:#ef8b82;min-height:22px;margin-top:10px}.pair{display:grid;grid-template-columns:1fr auto;gap:10px}.pair input{text-transform:uppercase;letter-spacing:.15em;font:700 17px ui-monospace,Consolas,monospace;background:#070908;border:1px solid #454d47;border-radius:6px;color:var(--text);padding:11px;min-width:0}.more-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.portal-more{display:none}.toast{position:fixed;right:22px;bottom:90px;z-index:1200;background:#151916}
+    @media(max-width:1050px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.kv{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:900px){
+      :root{--portal-nav-row:56px;--portal-nav-safe:min(8px,env(safe-area-inset-bottom,0px));--portal-nav-total:calc(var(--portal-nav-row) + var(--portal-nav-safe) + 1px)}
+      html{background:#0d100e!important}
+      html,body{width:100%;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important;position:static!important;overscroll-behavior-y:none}
+      body,.app,.main{background:var(--bg)!important}
+      .app{display:block;min-height:100vh;min-height:100dvh}
+      .side{display:none!important}
+      #mobile-nav{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;bottom:0;left:0;right:0;z-index:500;width:auto;max-width:100%;height:var(--portal-nav-total);min-height:var(--portal-nav-total);max-height:var(--portal-nav-total);background:linear-gradient(0deg,rgba(3,5,3,.98),rgba(7,10,7,.95));backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-top:1px solid rgba(50,240,110,.15);box-shadow:0 -8px 32px rgba(50,240,110,.06),0 -2px 8px rgba(50,240,110,.04);padding:0 env(safe-area-inset-right,0px) var(--portal-nav-safe) env(safe-area-inset-left,0px);box-sizing:border-box;animation:navGlow 3s ease infinite;transform:translateZ(0);will-change:transform}
+      #mobile-nav .mob-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--muted);font-size:9.5px;letter-spacing:.35px;text-transform:uppercase;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:600;border:none;background:none;padding:4px 1px;transition:all .15s;-webkit-tap-highlight-color:transparent;width:100%;height:var(--portal-nav-row);min-height:var(--portal-nav-row);max-height:var(--portal-nav-row);min-width:0;overflow:hidden;position:relative;box-sizing:border-box}
+      #mobile-nav .mob-tab .mob-icon{width:22px;height:22px;line-height:1;transition:all .2s;display:grid;place-items:center;flex:0 0 22px}
+      #mobile-nav .mob-tab .mob-icon svg{display:block;width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+      #mobile-nav .mob-tab .mob-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+      #mobile-nav .mob-tab.active{color:var(--green)}
+      #mobile-nav .mob-tab.active::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:3px;background:var(--green);border-radius:0 0 5px 5px;box-shadow:0 4px 20px rgba(50,240,110,.7),0 0 6px var(--green)}
+      #mobile-nav .mob-tab.active .mob-icon{filter:drop-shadow(0 0 14px rgba(50,240,110,.8));transform:translateY(-2px) scale(1.08)}
+      #mobile-nav .mob-tab:active{opacity:.4}
+      .main{padding:max(20px,env(safe-area-inset-top)) 14px 0;height:auto!important;min-height:100vh;min-height:100dvh;overflow:visible!important}
+      .main{padding-bottom:calc(var(--portal-nav-total) + 18px)!important}
+      .app.unpaired .main{padding-bottom:20px!important}
+      .top{align-items:stretch;flex-direction:column;gap:14px;margin-bottom:18px}
+      .top-actions{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+      .device-select{width:100%;min-width:0}
+      .status{padding:0 2px;white-space:nowrap}
+      .top-actions .button{padding-inline:12px}
+      .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+      .cards.network-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .card{padding:15px;min-height:104px}
+      .card .value{font-size:22px;white-space:normal;overflow-wrap:anywhere}
+      .section{padding:15px;margin-top:12px}
+      .section-head{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-bottom:15px}
+      .section-head>.pill,.section-head>.controls{justify-self:start}
+      .kv{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .kv div{padding:13px}
+      .control-row{grid-template-columns:1fr;gap:12px}
+      .controls{justify-content:flex-start}
+      .wide{grid-column:span 2}
+      .table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain}
+      .pair{grid-template-columns:1fr}
+      .pair .button{width:100%}
+      .field input,.pair input,.device-select{font-size:16px}
+      .page-title h1{font-size:25px}
+      .page-title p{font-size:13px}
+      .more-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .more-grid .button{min-height:50px}
+      .chart{height:190px}
+      .topology{height:auto;aspect-ratio:760/430;padding:2px}
+      .topology .peer text{font-size:13px}
+      .topology-legend{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 14px}
+      .auth-shell{align-items:start;padding:max(22px,env(safe-area-inset-top)) 14px}
+      .auth{padding:22px 18px;margin-top:5vh}
+      .portal-more{position:fixed;left:env(safe-area-inset-left,0px);right:env(safe-area-inset-right,0px);bottom:var(--portal-nav-total);z-index:1100;display:none;max-height:calc(100dvh - var(--portal-nav-total) - max(16px,env(safe-area-inset-top,0px)));overflow-y:auto;overscroll-behavior:contain;padding:14px;background:rgba(13,16,14,.98);border-top:1px solid var(--line);box-shadow:0 -14px 28px rgba(0,0,0,.35);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+      .portal-more[data-open="1"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+      .portal-more button{min-height:58px;border:1px solid var(--line);border-radius:7px;background:var(--button);color:var(--text);display:flex;align-items:center;justify-content:flex-start;gap:11px;padding:11px 14px;text-align:left}
+      .portal-more button:hover{background:var(--button-hover)}
+      .portal-more svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+    }
+    @media(max-width:900px){.portal-more{padding:16px 18px 18px;background:rgba(9,14,11,.985);border-top:1px solid #28332b;box-shadow:0 -12px 40px rgba(0,0,0,.55)}.portal-more[data-open="1"]{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px}.portal-more button{min-height:94px;border:.5px solid #28332b;border-radius:12px;background:#171c18;color:var(--text);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:13px 7px;text-align:center}.portal-more button:hover,.portal-more button:active{background:#1d241f;border-color:#3d4a40}.portal-more button span{font:700 10.5px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.05em;text-transform:uppercase}.portal-more svg{width:26px;height:26px;flex:0 0 26px;stroke-width:1.7}}
+    @media(max-width:900px){html,body{background:#0d100e!important}.app,.main,.auth-shell{background:var(--bg)!important}}
+    @media(max-width:520px){.topology{aspect-ratio:420/390}}
+    @media(max-width:390px){.top-actions{grid-template-columns:minmax(0,1fr) auto}.top-actions .status{grid-row:2;grid-column:1}.cards{grid-template-columns:1fr}.cards.network-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.wide{grid-column:auto}.card{min-height:0}.kv{grid-template-columns:1fr}.more-grid{grid-template-columns:1fr 1fr}}
+    @media(max-width:340px){.cards.network-cards{grid-template-columns:1fr}}
+    @keyframes navGlow{0%,100%{box-shadow:0 -4px 20px rgba(50,240,110,.05),0 -1px 6px rgba(50,240,110,.04)}50%{box-shadow:0 -6px 28px rgba(50,240,110,.1),0 -2px 10px rgba(50,240,110,.06)}}
+    #mobile-nav{display:none}#mobile-nav[hidden]{display:none!important}
+    .unpaired-more{display:none}.portal-more.unpaired [data-more-page]{display:none}
+    @media(max-width:900px){.app.unpaired .unpaired-more{display:inline-flex;justify-content:center}}
+    @media(min-width:901px){#mobile-nav{display:none!important}.portal-more{position:fixed;left:20px;bottom:110px;width:208px;max-height:calc(100dvh - 140px);overflow:auto;z-index:1100;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 8px 24px #0008}.portal-more[data-open="1"]{display:grid;gap:6px}.portal-more button{display:flex;align-items:center;gap:10px;min-height:42px;padding:10px;border:0;border-radius:5px;background:var(--button);color:var(--text);text-align:left}.portal-more button:hover{background:var(--button-hover)}.portal-more svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}}
+    .pair-dialog{width:440px;max-width:calc(100% - 28px);max-height:calc(100dvh - 32px);padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);overflow:auto}
+    .pair-dialog::backdrop{background:rgba(0,0,0,.7)}
+    .pair-dialog h2{margin:0 0 10px;font-size:21px}.pair-dialog p{color:var(--sub);line-height:1.5;margin:0 0 20px}
+    .pair-dialog input{font-size:16px;text-transform:uppercase}.pair-dialog .controls{justify-content:flex-end;margin-top:18px;gap:8px}
+  .pool-page{max-width:1120px;margin:0 auto;padding:12px 0 24px}
+.pool-page h2{margin:0 0 8px}.pool-intro{margin:0 0 22px;color:var(--fg2,var(--muted));line-height:1.6}
+.pool-status{padding:18px 20px;margin:0 0 16px;border:1px solid var(--line,var(--border,#343b36));border-radius:12px;background:var(--surf,var(--panel,#111713))}
+.pool-status strong{font-size:14px;font-weight:600}.pool-status p{margin:6px 0 0;color:var(--fg2,var(--muted))}
+.pool-page .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:32px}.pool-page .tile{min-width:0;padding:20px;display:flex;flex-direction:column;gap:12px;border:1px solid var(--line,var(--border,#343b36));border-radius:12px;background:var(--surf,var(--panel,#111713))}
+.pool-page .tile .l{font-size:11px;letter-spacing:1px;text-transform:uppercase;line-height:1.5;margin:0;color:var(--fg2,var(--muted))}.pool-page .tile .v{font-size:clamp(24px,5.8vw,36px);font-weight:700;line-height:1.2;overflow-wrap:anywhere}
+.pool-page .tile .pool-word{font-family:var(--sans,system-ui,sans-serif);font-size:clamp(18px,4.4vw,24px)!important;overflow-wrap:normal;word-break:normal}
+.pool-page h3{margin:28px 0 14px}.pool-page .card,.pool-page .section{padding:22px;border:1px solid var(--line,var(--border,#343b36));background:var(--surf,var(--panel,#111713));border-radius:12px;line-height:1.65}
+.pool-page ol{margin:0;padding-left:1.4em}.pool-page li{padding-left:4px;margin:0 0 10px}.pool-page li:last-child{margin-bottom:0}
+.pool-page p{line-height:1.65}.pool-page .pool-note{color:var(--fg2,var(--muted));font-size:14px;margin:16px 0 0}
+.pool-page code{overflow-wrap:anywhere;font-size:.9em}.pool-page .btn,.pool-page .button{display:inline-flex;align-items:center;justify-content:center;min-height:46px;margin-top:8px;padding:10px 18px;border:1px solid #5b6166;border-radius:10px;background:#34383c;color:#f3f4f5;text-decoration:none;font-weight:600}
+.pool-page .btn:hover,.pool-page .button:hover{background:#41464b}.pool-page .btn:focus-visible,.pool-page .button:focus-visible{outline:2px solid currentColor;outline-offset:3px}
+@media(max-width:480px){.pool-page .tile{padding:16px}.pool-status{padding:16px}.pool-page .card,.pool-page .section{padding:18px}.pool-page .grid2{gap:12px}}
+
+.portal-more .pool-how-to{display:flex;align-items:center;justify-content:center;gap:6px;color:var(--text);text-decoration:none;border:1px solid var(--line);border-radius:10px;min-height:48px}
+.pool-nav-icon{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;margin-right:9px}.pool-machine{margin-bottom:16px}.pool-machine p{margin:8px 0 0}
+.portal-more .pool-nav-icon{margin:0}.portal-more [data-more-page="pool"] span{display:block;align-self:center}
+
+/* Optional reading stays available without crowding the page. */
+details.veld-details{margin:10px 0 14px;min-width:0;color:inherit}
+details.veld-details>summary{display:list-item;width:fit-content;max-width:100%;padding:8px 2px;cursor:pointer;color:var(--muted,var(--text-dim,#87968b));font:500 12px/1.5 var(--font,inherit);letter-spacing:0;text-transform:none;background:transparent;border:0;border-radius:3px;box-shadow:none;list-style:disclosure-closed}
+details.veld-details[open]>summary{list-style:disclosure-open;color:var(--em,#75b943);margin-bottom:6px}
+details.veld-details>summary:hover{color:var(--em,#75b943)}
+details.veld-details>summary:focus-visible{outline:2px solid var(--em,#75b943);outline-offset:3px}
+details.veld-details>summary::marker{font-size:9px}
+details.veld-details>p:last-child{margin-bottom:0}
+details.veld-details:not([open])>*:not(summary){display:none!important}
+html[data-theme="light"] details.veld-details>summary{color:#45604c;background:transparent;box-shadow:none}
+
+.dl>details.veld-details{flex-basis:100%;width:100%}
+.vc-shell{box-sizing:border-box;--vc-bg:#0a100c;--vc-panel:#101812;--vc-text:#edf3e9;--vc-muted:#98a697;--vc-line:#2a362b;--vc-soft:#172219;--vc-miner:#a1df60;--vc-node:#70b49a;--vc-fleet:#7fbbdb;--vc-validator:#bd9ad9;--vc-warn:#efc367;color:var(--vc-text);font:14px/1.5 Inter,Arial,sans-serif;width:100%;max-width:700px;margin:0 auto;background:var(--vc-bg);border:1px solid var(--vc-line);border-radius:18px;overflow:hidden}
+html[data-theme="light"] .vc-shell{--vc-bg:#f4f7f1;--vc-panel:#fff;--vc-text:#142119;--vc-muted:#526252;--vc-line:#d5ded1;--vc-soft:#eaf0e5;--vc-miner:#427d15;--vc-node:#247961;--vc-fleet:#246b9a;--vc-validator:#8954a8;--vc-warn:#93640c}
+.vc-shell *{box-sizing:border-box}.vc-chrome{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--vc-line)}.vc-wordmark{display:flex;gap:12px;align-items:center;font:600 14px/1 'IBM Plex Mono',ui-monospace,Consolas,monospace;letter-spacing:.14em}.vc-logo{width:16px;height:16px;border:2px solid var(--vc-miner);transform:rotate(45deg);position:relative}.vc-logo:after{content:'';position:absolute;inset:3px;border:1px solid var(--vc-miner)}.vc-chrome-label{font:11px/1 'IBM Plex Mono',ui-monospace,Consolas,monospace;letter-spacing:.06em;color:var(--vc-muted)}
+.vc-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 20px 10px}.vc-shell h3{font:500 20px/1.25 'IBM Plex Mono',ui-monospace,Consolas,monospace;letter-spacing:-.05em;margin:0 0 6px}.vc-meta{color:var(--vc-muted);font-size:12px}.vc-stat{text-align:right;flex-shrink:0}.vc-stat strong{display:block;font:500 25px/1.05 'IBM Plex Mono',ui-monospace,Consolas,monospace;letter-spacing:-.06em}.vc-stat span{font-size:11px;color:var(--vc-muted)}
+.vc-plot{position:relative;width:100%;height:330px;touch-action:pan-y}.vc-plot svg{display:block;width:100%;height:100%}.vc-plot text{fill:var(--vc-text);font:11px 'IBM Plex Mono',ui-monospace,Consolas,monospace}.vc-plot .vc-hint{fill:var(--vc-muted)}.vc-label-box{fill:var(--vc-panel);stroke:var(--vc-line)}.vc-edge{fill:none;stroke:var(--vc-muted);stroke-width:1;opacity:.15}.vc-edge.vc-active{stroke:var(--vc-miner);stroke-width:1.25;opacity:.7}.vc-edge.vc-one{stroke-dasharray:3 5}.vc-miner{color:var(--vc-miner)}.vc-node{color:var(--vc-node)}.vc-fleet{color:var(--vc-fleet)}.vc-validator{color:var(--vc-validator)}.vc-differs{color:var(--vc-warn)}.vc-unknown{opacity:.3}
+.vc-inspect{display:flex;align-items:center;gap:12px;margin:0 16px;padding:14px;border:1px solid var(--vc-line);background:var(--vc-panel);border-radius:10px;min-height:74px}.vc-marker{display:block;width:10px;height:10px;background:currentColor;border-radius:50%;flex-shrink:0}.vc-description{flex:1;min-width:0}.vc-description strong{display:block;font:500 13px/1.5 'IBM Plex Mono',ui-monospace,Consolas,monospace}.vc-description small{display:block;color:var(--vc-muted);font:11px/1.5 Inter,Arial,sans-serif}.vc-shell button.vc-next{font:500 12px/1 Inter,Arial,sans-serif;color:var(--vc-text);background:var(--vc-soft);border:1px solid var(--vc-line);border-radius:7px;min-height:38px;padding:0 12px;flex-shrink:0;box-shadow:none}.vc-next:hover{border-color:var(--vc-miner)}.vc-next:focus-visible,.vc-plot:focus-visible{outline:2px solid var(--vc-miner);outline-offset:-3px}
+.vc-legend{display:flex;flex-wrap:wrap;gap:8px 16px;padding:16px 20px 12px;color:var(--vc-muted);font-size:11px}.vc-legend span{display:inline-flex;align-items:center;gap:7px}.vc-key{width:6px;height:6px;border-radius:50%;background:var(--vc-node)}.vc-key.miner{background:var(--vc-miner)}.vc-key.fleet{background:var(--vc-fleet);border-radius:1px}.vc-key.validator{background:var(--vc-validator);border-radius:0;transform:rotate(45deg)}.vc-foot{border-top:1px solid var(--vc-line);margin:0 20px;padding:11px 0 14px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;color:var(--vc-muted);font:11px/1.5 'IBM Plex Mono',ui-monospace,Consolas,monospace}.vc-foot span{display:inline-flex;align-items:center;gap:6px}.vc-link-key{display:inline-block;width:16px;height:0;border-top:1px solid var(--vc-muted)}.vc-link-key.one{border-top-style:dashed}.vc-empty{padding:60px 15px;text-align:center;color:var(--vc-muted)}
+@media(min-width:540px){.vc-plot{height:360px}}@media(max-width:360px){.vc-chrome{padding:15px}.vc-heading{padding:18px 15px 8px}.vc-shell h3{font-size:18px}.vc-inspect{margin:0 10px;padding:12px;gap:8px}.vc-shell button.vc-next{padding:0 9px}.vc-legend{gap:8px 12px;padding:14px 15px 10px}}@media(pointer:coarse){.vc-shell button.vc-next{min-height:44px}}
+</style>
+</head>
+<body>
+<section id="auth-view" class="auth-shell hidden"><div class="auth"><div class="brand"><div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><defs><linearGradient id="auth-veld-mark" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse"><stop stop-color="#97D222"/><stop offset=".52" stop-color="#5FAC18"/><stop offset="1" stop-color="#329418"/></linearGradient></defs><path d="M12 2.5 21.5 12 12 21.5 2.5 12Z" stroke="url(#auth-veld-mark)" stroke-width="2.2"/><path d="M12 7 17 12 12 17 7 12Z" stroke="url(#auth-veld-mark)" stroke-width="1.9"/></svg></div><div><b>VELD NODE</b></div></div><h1>Remote access</h1><p>Sign in to manage your paired nodes and miners.</p><div class="field"><label for="account">Account</label><input id="account" maxlength="48" autocomplete="username"></div><div class="field"><label for="password">Password</label><input id="password" type="password" maxlength="128" autocomplete="current-password"></div><div class="actions"><button id="login" class="button">Log in</button><button id="register" class="button ghost">Create account</button></div><div id="auth-error" class="error"></div></div></section>
+<div id="app-view" class="app hidden">
+  <aside class="side"><div class="brand"><div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><defs><linearGradient id="side-veld-mark" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse"><stop stop-color="#97D222"/><stop offset=".52" stop-color="#5FAC18"/><stop offset="1" stop-color="#329418"/></linearGradient></defs><path d="M12 2.5 21.5 12 12 21.5 2.5 12Z" stroke="url(#side-veld-mark)" stroke-width="2.2"/><path d="M12 7 17 12 12 17 7 12Z" stroke="url(#side-veld-mark)" stroke-width="1.9"/></svg></div><div><b>VELD NODE</b></div></div><nav class="nav" id="nav"><button data-page="overview" class="active mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20h-6v-5h-4v5H4z"/></svg><span>Overview</span></button><button data-page="blockchain" class="mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4-8 4-8-4 8-4Z"/><path d="m4 12 8 4 8-4M4 17l8 4 8-4"/></svg><span>Chain</span></button><button data-page="mining" class="mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M1308 1634Q1362 1634 1408.0 1630.0Q1454 1626 1486 1621Q1525 1617 1554 1610V1577Q1539 1577 1496.5 1575.0Q1454 1573 1392.5 1560.5Q1331 1548 1251.0 1525.0Q1171 1502 1081.5 1459.0Q992 1416 894.0 1353.0Q796 1290 697 1199L1897 1L1786 -108L588 1090Q519 1015 466.0 939.0Q413 863 373.5 787.5Q334 712 306.5 641.5Q279 571 260 509Q217 363 207 228H174Q166 257 162 296Q157 329 154.0 374.5Q151 420 151 476Q151 555 162.0 651.5Q173 748 204.0 851.5Q235 955 289.5 1061.0Q344 1167 432 1266L251 1497L283 1530L520 1353Q619 1439 723.5 1494.5Q828 1550 931.5 1580.5Q1035 1611 1131.0 1622.5Q1227 1634 1308 1634Z" transform="translate(0.270332 20.739977) scale(0.01145475 -0.01145475)" fill="currentColor" stroke="none"/></svg><span>Mining</span></button><button data-page="workers">Workers</button><button data-page="explorer" class="mobile"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></svg><span>Explorer</span></button><button data-page="network">Network</button><button data-page="logs">Logs</button><button data-page="settings">Settings</button><button data-page="pool"><svg class="pool-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="m10.7 7.2-4.4 8.6m7-8.6 4.4 8.6M7.5 18h9"/></svg><span>Pool</span></button><button data-page="more" class="mobile" aria-expanded="false" aria-controls="portal-more-menu"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button></nav><div class="side-foot"><span>Remote operations portal</span><a href="https://x.com/VeldNetwork" rel="noreferrer">Follow on X @VeldNetwork</a></div></aside>
+  <main class="main"><header class="top"><div class="page-title"><h1 id="page-title">Overview</h1><p id="page-subtitle">Your node at a glance.</p></div><div class="top-actions"><select id="device-select" class="device-select" aria-label="Machine"></select><button id="add-machine" type="button" class="button ghost" data-portal-action="addMachine">+ Add machine</button><span id="online" class="status">Offline</span><button id="unpaired-more" type="button" class="button ghost unpaired-more" data-page="more" aria-expanded="false" aria-controls="portal-more-menu">More</button></div></header><div id="page"></div></main>
+</div>
+<nav id="mobile-nav" aria-label="Primary" hidden>
+  <button type="button" class="mob-tab active" data-page="overview"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20h-6v-5h-4v5H4z"/></svg></span><span class="mob-label">Overview</span></button>
+  <button type="button" class="mob-tab" data-page="blockchain"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4-8 4-8-4 8-4Z"/><path d="m4 12 8 4 8-4M4 17l8 4 8-4"/></svg></span><span class="mob-label">Chain</span></button>
+  <button type="button" class="mob-tab" data-page="mining"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1308 1634Q1362 1634 1408.0 1630.0Q1454 1626 1486 1621Q1525 1617 1554 1610V1577Q1539 1577 1496.5 1575.0Q1454 1573 1392.5 1560.5Q1331 1548 1251.0 1525.0Q1171 1502 1081.5 1459.0Q992 1416 894.0 1353.0Q796 1290 697 1199L1897 1L1786 -108L588 1090Q519 1015 466.0 939.0Q413 863 373.5 787.5Q334 712 306.5 641.5Q279 571 260 509Q217 363 207 228H174Q166 257 162 296Q157 329 154.0 374.5Q151 420 151 476Q151 555 162.0 651.5Q173 748 204.0 851.5Q235 955 289.5 1061.0Q344 1167 432 1266L251 1497L283 1530L520 1353Q619 1439 723.5 1494.5Q828 1550 931.5 1580.5Q1035 1611 1131.0 1622.5Q1227 1634 1308 1634Z" transform="translate(0.270332 20.739977) scale(0.01145475 -0.01145475)" fill="currentColor" stroke="none"/></svg></span><span class="mob-label">Mining</span></button>
+  <button type="button" class="mob-tab" data-page="explorer"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></svg></span><span class="mob-label">Explorer</span></button>
+  <button type="button" class="mob-tab" data-page="more" aria-expanded="false" aria-controls="portal-more-menu"><span class="mob-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span><span class="mob-label">More</span></button>
+</nav>
+<div class="portal-more" id="portal-more-menu" data-open="0" aria-hidden="true">
+  <button type="button" data-more-page="workers"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14v10H5zM8 4v3m8-3v3M8 17v3m8-3v3"/></svg><span>Workers</span></button>
+  <button type="button" data-more-page="network"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="17" r="2"/><path d="m10.9 7.7-3.8 7.6m6-7.6 3.8 7.6M8 17h8"/></svg><span>Network</span></button>
+  <button type="button" data-more-page="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg><span>Logs</span></button>
+  <button type="button" data-more-page="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1A7 7 0 0 0 15 6l-.4-2.6h-4L10 6a7 7 0 0 0-1.6 1L6 6 4 9.4 6.1 11a7 7 0 0 0 0 2L4 14.6 6 18l2.4-1a7 7 0 0 0 1.6 1l.5 2.6h4L15 18a7 7 0 0 0 1.6-1l2.4 1 2-3.4-2.1-1.6a7 7 0 0 0 .1-1Z"/></svg><span>Settings</span></button>
+<button id="logout" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v16h5M13 8l4 4-4 4M8 12h12"/></svg><span>Log out</span></button>
+
+  <button type="button" data-more-page="pool"><svg class="pool-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="m10.7 7.2-4.4 8.6m7-8.6 4.4 8.6M7.5 18h9"/></svg><span>Pool</span></button>
+</div>
+<dialog id="node-signin-dialog" class="pair-dialog" aria-labelledby="node-signin-title">
+  <form id="node-signin-form">
+    <h2 id="node-signin-title">Sign in &amp; mine</h2>
+    <p id="node-signin-machine"></p>
+    <div class="field"><label for="node-signin-password">Node passphrase</label><input id="node-signin-password" type="password" maxlength="512" autocomplete="off" spellcheck="false" required style="text-transform:none"></div>
+    <p>Your browser encrypts the passphrase for this paired PC. It is not saved by the portal.</p>
+    <div id="node-signin-error" class="error" role="alert"></div>
+    <div class="controls"><button type="button" class="button ghost" data-portal-action="cancelNodeSignIn">Cancel</button><button id="node-signin-submit" type="submit" class="button">Sign in &amp; mine</button></div>
+  </form>
+</dialog>
+<dialog id="pair-dialog" class="pair-dialog" aria-labelledby="pair-dialog-title">
+  <form id="pair-form">
+    <h2 id="pair-dialog-title">Add machine</h2>
+    <p>On the other machine, open Veld Node Settings, enable Remote access, and copy its one-time pair code. On current clients, pairing enables remote start, stop, sign-in, and signed updates.</p>
+    <div class="field"><label for="add-pair-code">Pair code</label><input id="add-pair-code" maxlength="9" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" required></div>
+    <div id="add-pair-error" class="error" role="alert"></div>
+    <div class="controls"><button id="cancel-pair" type="button" class="button ghost" data-portal-action="cancelPair">Cancel</button><button id="add-pair-submit" type="submit" class="button">Pair machine</button></div>
+  </form>
+</dialog>
+<script>
+const $=id=>document.getElementById(id);let csrf="",devices=[],selected=0,page="overview",installPrompt=null;
+const portalHtmlPolicy=globalThis.trustedTypes?trustedTypes.createPolicy("portal-render",{createHTML:value=>value}):null;
+function setHtml(element,value){element.innerHTML=portalHtmlPolicy?portalHtmlPolicy.createHTML(value):value}
+const titles={overview:["Overview","Your node at a glance."],blockchain:["Blockchain","Verified chain state and synchronization."],mining:["Mining","VeldHash performance and work admission."],workers:["Workers","CPU mining threads owned by this node."],explorer:["Explorer","Recent verified chain activity."],network:["Network","Peer reachability and connection health."],logs:["Logs","Sanitized operational events from this client."],settings:["Settings","Remote-safe client preferences and release controls."],pool:["Pool","Live pool activity, setup and rewards."],more:["More","Workers, network, logs, and settings."]};
+async function api(path,method="GET",body){const h={Accept:"application/json"};if(body!==undefined)h["Content-Type"]="application/json";if(csrf&&method!=="GET")h["X-CSRF-Token"]=csrf;const r=await fetch(path,{method,headers:h,body:body===undefined?undefined:JSON.stringify(body),credentials:"same-origin"});let j={};try{j=await r.json()}catch{}if(!r.ok)throw new Error(j.error||"Request failed");return j}
+const commandDbName="veld-portal-command-v1",commandStore="keys",commandKeyName="operator";let commandKeyPromise=null,actionQueue=Promise.resolve();
+function b64url(bytes){let binary="";for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"")}
+function hex(bytes){return Array.from(bytes,byte=>byte.toString(16).padStart(2,"0")).join("")}
+function openCommandDb(){return new Promise((resolve,reject)=>{const request=indexedDB.open(commandDbName,1);request.onupgradeneeded=()=>request.result.createObjectStore(commandStore);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(new Error("Secure command storage is unavailable"))})}
+async function commandKey(){if(commandKeyPromise)return commandKeyPromise;commandKeyPromise=(async()=>{if(!window.isSecureContext||!crypto?.subtle||!window.indexedDB)throw new Error("Secure command signing is unavailable in this browser");const db=await openCommandDb();let pair=await new Promise((resolve,reject)=>{const request=db.transaction(commandStore,"readonly").objectStore(commandStore).get(commandKeyName);request.onsuccess=()=>resolve(request.result||null);request.onerror=()=>reject(new Error("Secure command key could not be read"))});if(!pair){pair=await crypto.subtle.generateKey({name:"ECDSA",namedCurve:"P-256"},false,["sign","verify"]);await new Promise((resolve,reject)=>{const transaction=db.transaction(commandStore,"readwrite");transaction.objectStore(commandStore).put(pair,commandKeyName);transaction.oncomplete=resolve;transaction.onerror=()=>reject(new Error("Secure command key could not be saved"));transaction.onabort=transaction.onerror})}if(!pair.privateKey||pair.privateKey.extractable||!pair.privateKey.usages.includes("sign"))throw new Error("Secure command key is invalid");const jwk=await crypto.subtle.exportKey("jwk",pair.publicKey);if(jwk.kty!=="EC"||jwk.crv!=="P-256"||!jwk.x||!jwk.y)throw new Error("Secure command public key is invalid");const key={kty:"EC",crv:"P-256",x:jwk.x,y:jwk.y};const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(`VELD_PORTAL_KEY_V1\n${key.x}\n${key.y}`));return {pair,key,id:hex(new Uint8Array(digest))}})().catch(error=>{commandKeyPromise=null;throw error});return commandKeyPromise}
+function normalizeEcdsaSignature(buffer){const bytes=new Uint8Array(buffer);if(bytes.length===64)return bytes;if(bytes.length<8||bytes[0]!==0x30||bytes[1]!==bytes.length-2)throw new Error("Browser returned an invalid command signature");let offset=2;const integer=()=>{if(bytes[offset++]!==0x02)throw new Error("Browser returned an invalid command signature");const length=bytes[offset++];if(!length||offset+length>bytes.length)throw new Error("Browser returned an invalid command signature");let value=bytes.slice(offset,offset+length);offset+=length;while(value.length>32&&value[0]===0)value=value.slice(1);if(value.length>32)throw new Error("Browser returned an invalid command signature");const out=new Uint8Array(32);out.set(value,32-value.length);return out};const r=integer(),s=integer();if(offset!==bytes.length)throw new Error("Browser returned an invalid command signature");const out=new Uint8Array(64);out.set(r);out.set(s,32);return out}
+function canonicalPayload(action,payload){if(action==="node.signin"){const fields=["ciphertext","identity","iv","key_id","wrapped_key"];if(Object.keys(payload).length!==5||fields.some(key=>typeof payload[key]!=="string")||!/^[a-f0-9]{64}$/.test(payload.identity)||!/^[a-f0-9]{64}$/.test(payload.key_id)||!/^[A-Za-z0-9_-]{16}$/.test(payload.iv)||!/^[A-Za-z0-9_-]{342}$/.test(payload.wrapped_key)||!/^[A-Za-z0-9_-]{23,1387}$/.test(payload.ciphertext))throw new Error("Invalid encrypted sign-in");return JSON.stringify(Object.fromEntries(fields.map(key=>[key,payload[key]])))}if(["node.start","node.stop","pool.start","pool.stop","updates.check","updates.install"].includes(action)){if(Object.keys(payload).length)throw new Error("Invalid command payload");return "{}"}if(["mining.enabled","privacy.tor","network.reachable","display.reference","updates.automatic"].includes(action)){if(Object.keys(payload).length!==1||typeof payload.enabled!=="boolean")throw new Error("Invalid command payload");return JSON.stringify({enabled:payload.enabled})}if(action==="mining.workers"){const workers=Number(payload.workers);if(Object.keys(payload).length!==1||!Number.isInteger(workers)||workers<1||workers>64)throw new Error("Invalid command payload");return JSON.stringify({workers})}if(action==="sync.mode"&&Object.keys(payload).length===1&&payload.mode==="full")return JSON.stringify({mode:"full"});throw new Error("Unsupported command")}
+function commandEnvelope(command){return `VELD_PORTAL_COMMAND_V3\n${command.id}\n${command.sequence}\n${command.issued_at}\n${command.expires_at}\n${command.nonce}\n${command.action}\n${canonicalPayload(command.action,command.payload)}`}
+async function ensureDeviceCommandKey(device,keyInfo){if(device.command_key_id&&device.command_key_id!==keyInfo.id)throw new Error("This browser does not hold the command key trusted by this machine. Remove and pair the machine again locally.");if(!device.command_key_id){await api("/api/v1/devices/trust-key","POST",{id:device.id,command_key:keyInfo.key});device.command_key_id=keyInfo.id;device.command_sequence=0}}
+function portalControlStatus(d){const s=snap(d);return s.remote_control?"Remote start, stop, sign-in, and updates are enabled.":s.pairing_control?"Pairing is finishing. Commands will run when the node reconnects.":"This client needs one update on the PC to enable unattended portal control."}
+async function signedAction(name,payload={},preparePayload=null,targetDevice=null,quiet=false){
+  const device=targetDevice||current();
+  if(!device)throw new Error("Select a paired machine");
+  const keyInfo=await commandKey();
+  await ensureDeviceCommandKey(device,keyInfo);
+  const issued=Math.floor(Date.now()/1000),command={id:device.id,action:name,payload,
+    sequence:Number(device.command_sequence||0)+1,issued_at:issued,expires_at:issued+180,
+    nonce:b64url(crypto.getRandomValues(new Uint8Array(16))),key_id:keyInfo.id};
+  if(preparePayload)command.payload=await preparePayload(command);
+  const signature=await crypto.subtle.sign({name:"ECDSA",hash:"SHA-256"},keyInfo.pair.privateKey,
+    new TextEncoder().encode(commandEnvelope(command)));
+  command.signature=b64url(normalizeEcdsaSignature(signature));
+  const reply=await api("/api/v1/devices/command","POST",command);
+  device.command_sequence=command.sequence;
+  if(!quiet)toast(["node.start","node.stop","pool.start","pool.stop","node.signin","updates.check","updates.install","updates.automatic"].includes(name)?
+    (snap(device).remote_control?"Signed command sent to the node":portalControlStatus(device)):
+    "Approve this settings change on the paired PC");
+  await refresh();
+  return {id:reply?.command_id,device_id:device.id,action:name,sequence:command.sequence};
+}
+const updateJobs=new Map();
+function updateNotice(device){
+  const job=updateJobs.get(device.id);
+  return job?`<div class="${job.failed?"warning":"local-only"}" role="status" aria-live="polite">${esc(job.message)}</div>`:"";
+}
+function updateProgress(job,message){
+  job.message=message;
+  if(updateJobs.get(job.deviceId)===job)render();
+}
+function assertUpdateActive(job){
+  if(updateJobs.get(job.deviceId)!==job)throw new Error("Update monitoring was cancelled. Check the machine before retrying.");
+}
+function updatePause(milliseconds){return new Promise(resolve=>setTimeout(resolve,milliseconds))}
+async function sendUpdateCommand(job,action){
+  const pending=actionQueue.then(async()=>{
+    assertUpdateActive(job);
+    await refresh();
+    assertUpdateActive(job);
+    const device=devices.find(item=>item.id===job.deviceId);
+    if(!device)throw new Error("This machine is no longer paired to your account.");
+    if(!device.online)throw new Error("This machine is offline. Keep Veld Node open and retry when it reconnects.");
+    const receipt=await signedAction(action,{},null,device,true);
+    if(!Number.isSafeInteger(receipt.id)||receipt.id<1)throw new Error("The portal did not return a command receipt.");
+    return receipt;
+  });
+  actionQueue=pending.catch(()=>{});
+  return pending;
+}
+async function waitUpdateCommand(job,receipt){
+  const deadline=Date.now()+190000;
+  while(Date.now()<deadline){
+    assertUpdateActive(job);
+    const reply=await api("/api/v1/devices/command-status","POST",{id:job.deviceId,command_id:receipt.id});
+    const command=reply.command;
+    if(!command||command.id!==receipt.id||command.device_id!==job.deviceId||
+       command.action!==receipt.action||command.sequence!==receipt.sequence)
+      throw new Error("The portal returned a different command receipt. Refresh before retrying.");
+    if(["completed","failed"].includes(command.state))return command;
+    if(command.state==="local_confirmation")throw new Error("This client requires approval on the paired PC before it can update remotely.");
+    if(["expired","superseded"].includes(command.state))
+      throw new Error("The update command "+command.state+" before the machine completed it. Refresh and retry.");
+    if(!["queued","delivered"].includes(command.state))throw new Error("Unknown update command state.");
+    await updatePause(2500);
+  }
+  throw new Error("The machine did not acknowledge the update command. Refresh and check its connection before retrying.");
+}
+function newerRelease(version,previous){
+  const a=/^(\d+)\.(\d+)\.(\d+)$/.exec(String(version||""));
+  const b=/^(\d+)\.(\d+)\.(\d+)$/.exec(String(previous||""));
+  if(!a||!b)return false;
+  for(let i=1;i<=3;i++)if(Number(a[i])!==Number(b[i]))return Number(a[i])>Number(b[i]);
+  return false;
+}
+async function waitUpdatedDevice(job){
+  const deadline=Date.now()+600000;
+  while(Date.now()<deadline){
+    assertUpdateActive(job);
+    await refresh();
+    const device=devices.find(item=>item.id===job.deviceId);
+    if(!device)throw new Error("This machine is no longer paired. Check its installed version before retrying.");
+    const gui=device.gui_version||device.version,daemon=device.daemon_version;
+    if(device.online&&device.last_seen>job.startedAt&&newerRelease(gui,job.previousVersion)){
+      if(daemon===gui){
+        updateProgress(job,"Update confirmed on "+job.name+": GUI and daemon v"+gui+". "+
+          (snap(device).mining_active?"Mining is active.":"Use Sign in & mine if the node is locked."));
+        return;
+      }
+      if(snap(device).process_running===false){
+        updateProgress(job,"GUI v"+gui+" is installed on "+job.name+". The node is stopped; use Sign in & mine, then confirm the daemon version on Overview.");
+        return;
+      }
+      updateProgress(job,"GUI v"+gui+" has reconnected on "+job.name+". Waiting for the daemon version; use Sign in & mine if it is locked.");
+    }
+    await updatePause(5000);
+  }
+  throw new Error("Installation was requested, but both updated versions have not been confirmed. Check the machine's status before retrying.");
+}
+async function runRemoteUpdate(install){
+  const device=current();
+  if(!device)throw new Error("Select a paired machine");
+  if(updateJobs.get(device.id)?.busy)return;
+  if(!device.online)throw new Error("This machine is offline. Keep Veld Node open and retry when it reconnects.");
+  if(install&&!window.confirm("Check for a signed update and install it on "+device.name+"? This will restart that node."))return;
+  const job={deviceId:device.id,name:device.name,previousVersion:device.gui_version||device.version,
+    startedAt:Math.floor(Date.now()/1000),busy:true,failed:false,message:""};
+  updateJobs.set(device.id,job);
+  try{
+    updateProgress(job,"Checking for a signed release on "+job.name+". Keep this portal open until installation starts.");
+    let checked;
+    for(let attempt=0;attempt<12;attempt++){
+      checked=await waitUpdateCommand(job,await sendUpdateCommand(job,"updates.check"));
+      if(checked.state==="completed"||checked.result!=="An update operation is already running")break;
+      updateProgress(job,"Waiting for the current update check on "+job.name+" to finish.");
+      await updatePause(5000);
+    }
+    if(checked.state!=="completed")throw new Error(checked.result||"The signed release check could not start.");
+    if(!install){
+      updateProgress(job,"The signed release check started on "+job.name+". Update now will check again and wait for verification before installing.");
+      return;
+    }
+    // Older clients acknowledge the check before verification finishes. Their
+    // existing install gate remains the authority for signed release readiness.
+    const deadline=Date.now()+180000;
+    let accepted=false;
+    for(let attempt=0;attempt<12&&Date.now()<deadline;attempt++){
+      const reported=devices.find(item=>item.id===job.deviceId);
+      if(reported&&newerRelease(reported.gui_version||reported.version,job.previousVersion)){
+        await waitUpdatedDevice(job);
+        return;
+      }
+      updateProgress(job,"Waiting for signed release verification on "+job.name+". Keep this portal open.");
+      await updatePause(5000);
+      const result=await waitUpdateCommand(job,await sendUpdateCommand(job,"updates.install"));
+      if(result.state==="completed"){
+        accepted=true;
+        break;
+      }
+      if(!["An update operation is already running","Check for an available signed update first"].includes(result.result))
+        throw new Error(result.result||"The node could not start the signed update.");
+    }
+    if(!accepted)throw new Error("The node did not make a verified update available. It may already be current, or release verification failed. Retry Check now and review the node's update status.");
+    updateProgress(job,"Installation started on "+job.name+". Waiting for it to reconnect and report the new GUI and daemon versions.");
+    await waitUpdatedDevice(job);
+  }catch(error){
+    job.failed=true;
+    updateProgress(job,error.message);
+  }finally{
+    job.busy=false;
+    if(updateJobs.get(job.deviceId)===job)render();
+  }
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}function n(v,d=0){return v==null||!Number.isFinite(Number(v))?"—":Number(v).toLocaleString(undefined,{maximumFractionDigits:d})}function bytes(v){let x=Number(v||0),u="B";for(const k of ["KB","MB","GB","TB"]){if(x<1024)break;x/=1024;u=k}return n(x,1)+" "+u}function current(){return devices.find(x=>x.id===selected)||devices[0]||null}function snap(d){return d&&d.snapshot||{}}
+async function refresh(){const j=await api("/api/v1/devices");csrf=j.csrf||csrf;devices=j.devices||[];if(!devices.some(d=>d.id===selected))selected=devices[0]?.id||0;renderSelector();render()}
+async function encryptNodePassphrase(passphrase, key, deviceId, nonce) {
+  const plain = new TextEncoder().encode(passphrase);
+  let rawKey;
+  try {
+    if (!plain.length || plain.length > 1024 || plain.includes(0)) throw new Error("Enter a valid node passphrase.");
+    const publicKey = await crypto.subtle.importKey("jwk", {kty:"RSA", n:key.n, e:key.e, alg:"RSA-OAEP-256", ext:true},
+      {name:"RSA-OAEP", hash:"SHA-256"}, false, ["encrypt"]);
+    const aesKey = await crypto.subtle.generateKey({name:"AES-GCM", length:256}, true, ["encrypt"]);
+    rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", aesKey));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const context = new TextEncoder().encode(`VELD_PORTAL_UNLOCK_V1\n${deviceId}\n${nonce}\n${key.id}\n${key.identity}`);
+    const ciphertext = await crypto.subtle.encrypt({name:"AES-GCM", iv, additionalData:context, tagLength:128}, aesKey, plain);
+    const wrapped = await crypto.subtle.encrypt({name:"RSA-OAEP"}, publicKey, rawKey);
+    return {ciphertext:b64url(new Uint8Array(ciphertext)), identity:key.identity,
+      iv:b64url(iv), key_id:key.id, wrapped_key:b64url(new Uint8Array(wrapped))};
+  } finally {
+    plain.fill(0);
+    if (rawKey) rawKey.fill(0);
+  }
+}
+
+async function pinUnlockKey(device) {
+  const key = snap(device).unlock_key;
+  if (!key || key.alg !== "RSA-OAEP-256" || key.e !== "AQAB" || !/^[A-Za-z0-9_-]{342}$/.test(key.n) ||
+      !/^[a-f0-9]{64}$/.test(key.id) || !/^[a-f0-9]{64}$/.test(key.identity))
+    throw new Error("Update this node to a client that supports remote sign-in.");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`VELD_PORTAL_UNLOCK_KEY_V1\n${key.n}\n${key.e}`));
+  if (hex(new Uint8Array(digest)) !== key.id) throw new Error("The node encryption key could not be verified.");
+  const db = await openCommandDb(), name = `node-unlock-${device.id}`;
+  await new Promise((resolve,reject)=>{
+    const transaction = db.transaction(commandStore,"readwrite"), store = transaction.objectStore(commandStore);
+    const read = store.get(name);
+    read.onsuccess = ()=>{
+      if (read.result && read.result !== key.id) {
+        transaction.abort();
+        reject(new Error("This node's encryption key changed. Verify the machine and pair it again locally."));
+      } else if (!read.result) store.put(key.id,name);
+    };
+    transaction.oncomplete=resolve;
+    transaction.onerror=()=>reject(new Error("The node encryption key could not be saved."));
+    transaction.onabort=()=>reject(new Error("The node encryption key could not be verified."));
+  });
+  return {...key};
+}
+
+let nodeSignInTarget = null, nodeSignInBusy = false;
+async function openNodeSignIn() {
+  const device = current();
+  if (!device || !device.online) throw new Error("The paired node app must be online.");
+  const key = await pinUnlockKey(device);
+  nodeSignInTarget = {deviceId:device.id, key};
+  $("node-signin-machine").textContent = device.name;
+  $("node-signin-password").value = "";
+  $("node-signin-error").textContent = "";
+  $("node-signin-dialog").showModal();
+  $("node-signin-password").focus();
+}
+function closeNodeSignIn() {
+  if (nodeSignInBusy) return;
+  $("node-signin-password").value = "";
+  nodeSignInTarget = null;
+  $("node-signin-dialog").close();
+}
+async function submitNodeSignIn(event) {
+  event.preventDefault();
+  if (nodeSignInBusy || !nodeSignInTarget) return;
+  const target = nodeSignInTarget, input = $("node-signin-password"), submit = $("node-signin-submit");
+    let passphrase = input.value;
+  input.value = "";
+  nodeSignInBusy = true;
+  submit.disabled = true;
+  let sent = false;
+  try {
+    if (current()?.id !== target.deviceId) throw new Error("Select the same paired machine and retry.");
+    const pending = actionQueue.then(async ()=>{
+      if (current()?.id !== target.deviceId) throw new Error("Select the same paired machine and retry.");
+      await signedAction("node.signin", {}, command=>encryptNodePassphrase(passphrase, target.key, command.id, command.nonce));
+    });
+    actionQueue = pending.catch(()=>{});
+    await pending;
+    sent = true;
+  } catch (error) {
+    $("node-signin-error").textContent = error.message || "Sign-in could not be sent.";
+  } finally {
+    passphrase = "";
+    nodeSignInBusy = false;
+    submit.disabled = false;
+    if (sent) closeNodeSignIn();
+  }
+}
+
+function renderSelector(){const s=$("device-select");setHtml(s,devices.length?devices.map(d=>`<option value="${d.id}" ${d.id===selected?"selected":""}>${esc(d.name)}</option>`).join(""):'<option>No paired machines</option>');s.disabled=!devices.length}
+function metric(value,label,cls=""){return `<article class="card"><div class="value ${cls}">${value}</div><div class="label">${label}</div></article>`}
+function spark(history,key,label,formatter=n){
+  const samples=Array.isArray(history)?history:[],known=x=>x[key]!=null&&Number.isFinite(Number(x[key])),points=samples.filter(known);
+  if(points.length<2)return `<div class="chart empty">History needs two known readings.</div>`;
+  const values=points.map(x=>Number(x[key])),lo=Math.min(...values),hi=Math.max(...values),span=Math.max(hi-lo,1);
+  const segments=[];let segment=[];
+  samples.forEach((x,i)=>{if(!known(x)){if(segment.length)segments.push(segment);segment=[];return}segment.push(`${42+i*748/Math.max(samples.length-1,1)},${15+(hi-Number(x[key]))*170/span}`)});
+  if(segment.length)segments.push(segment);
+  const traces=segments.map(points=>`<polyline class="trace" points="${points.join(" ")}"/>`).join("");
+  return `<div class="chart"><svg viewBox="0 0 810 210" preserveAspectRatio="none" role="img" aria-label="${esc(label)}"><line class="axis" x1="42" y1="185" x2="790" y2="185"/><line class="axis" x1="42" y1="15" x2="42" y2="185"/>${traces}<text x="6" y="20">${esc(formatter(hi,1))}</text><text x="6" y="188">${esc(formatter(lo,1))}</text><text x="42" y="205">Earlier</text><text x="735" y="205">Latest</text></svg></div>`;
+}
+function inboundMapping(d,s){
+  if(d.online!==true)return {value:'Not current',detail:'Waiting for a fresh machine report.'};
+  if(s.process_running!==true)return {value:'Not running',detail:'Start the node to check its connections.'};
+  if(s.port_mapped===true)return {value:'Mapped',detail:'The client reports an automatic inbound port mapping.'};
+  if(s.port_mapped!==false)return {value:'Not reported',detail:'This client has not reported automatic port mapping status.'};
+  const detail=Number(d.inbound)>0?'Inbound peers are connected; automatic port mapping is not reported.':Number(s.outbound)>0?'Outbound peers are connected. Automatic inbound port mapping is not required for mining.':'Automatic inbound port mapping is not reported. No outbound peers are currently reported.';
+  return {value:'Not mapped',detail};
+}
+// BEGIN VELD CONSTELLATION
+/* Constellation uses only sanitized public topology records. */
+(function(global){
+'use strict';
+const names={fleet:'Fleet',miner:'Miner',node:'Node',validator:'Validator'};
+const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const id=x=>typeof x==='string'&&/^[1-9][0-9]{0,19}$/.test(x)&&BigInt(x)<=18446744073709551615n;
+function layout(count,width,height){
+ count=Math.min(count,512);width=Math.max(240,width);height=Math.max(240,height);
+ const slots=[[.19,.22],[.60,.17],[.81,.53],[.46,.51],[.35,.82],[.13,.58]],aw=width-76,ah=height-60;
+ return Array.from({length:count},(_,i)=>{const g=i%6,local=Math.floor(i/6),total=Math.ceil((count-g)/6),a=local*2.399963+.5*g,r=Math.sqrt((local+.55)/(total+.5));return {x:38+slots[g][0]*aw+Math.cos(a)*r*aw*.145,y:30+slots[g][1]*ah+Math.sin(a)*r*ah*.19}});
+}
+function normalize(raw){
+ const seen=new Set(),nodes=[];
+ for(const n of (Array.isArray(raw?.nodes)?raw.nodes:[]).slice(0,512)){
+  if(!n||!id(n.id)||seen.has(n.id))continue;seen.add(n.id);
+  nodes.push({id:n.id,role:Object.hasOwn(names,n.role)?n.role:'node',tip_state:['exact','differs','stale','unavailable'].includes(n.tip_state)?n.tip_state:'unavailable'});
+ }
+ nodes.sort((a,b)=>a.id.length-b.id.length||(a.id<b.id?-1:a.id>b.id?1:0));
+ nodes.forEach((n,i)=>n.label=names[n.role]+' '+String(i+1).padStart(3,'0'));
+ const edges=[],edgeKeys=new Set();
+ for(const e of (Array.isArray(raw?.edges)?raw.edges:[]).slice(0,8192)){
+  if(!e)continue;const a=e.first??e.a,b=e.second??e.b;
+  if(!id(a)||!id(b)||a===b||!seen.has(a)||!seen.has(b))continue;
+  const pair=[a,b].sort(),k=pair.join('/');if(edgeKeys.has(k))continue;edgeKeys.add(k);
+  edges.push({a:pair[0],b:pair[1],confirmed:e.confirmed===true});
+ }
+ return {nodes,edges};
+}
+function nearest(points,x,y){let best=-1,distance=32**2;points.forEach((p,i)=>{const d=(p.x-x)**2+(p.y-y)**2;if(d<distance){best=i;distance=d}});return best;}
+function scene(raw,selected,width,height=330){
+ const data=normalize(raw),points=layout(data.nodes.length,width,height);
+ let index=data.nodes.findIndex(n=>n.id===selected);if(index<0)index=Math.max(0,data.nodes.findIndex(n=>n.role==='miner'));
+ const n=data.nodes[index],byId=new Map(data.nodes.map((n,i)=>[n.id,points[i]])),linked=new Set();
+ const links=n?data.edges.filter(e=>e.a===n.id||e.b===n.id):[];links.forEach(e=>linked.add(e.a===n.id?e.b:e.a));
+ let svg='';
+ function line(e,active){const a=byId.get(e.a),b=byId.get(e.b);return `<path d="M${a.x},${a.y}L${b.x},${b.y}" class="vc-edge${active?' vc-active':''}${active&&!e.confirmed?' vc-one':''}"/>`;}
+ if(data.nodes.length<200)data.edges.forEach((e,i)=>{if(i%3===0)svg+=line(e,false)});
+ links.forEach(e=>svg+=line(e,true));
+ data.nodes.forEach((p,i)=>{
+  const at=points[i],chosen=i===index,bright=chosen||linked.has(p.id),r=chosen?7:linked.has(p.id)?4.5:data.nodes.length>200?2:3.1;
+  svg+=`<g class="vc-peer vc-${p.role}${p.tip_state==='differs'?' vc-differs':''}${p.tip_state==='stale'||p.tip_state==='unavailable'?' vc-unknown':''}" opacity="${bright?1:.48}"><title>${esc(p.label+' · '+(p.tip_state==='exact'?'Exact tip':p.tip_state==='differs'?'Tip differs':'No recent tip report'))}</title>`;
+  if(chosen)svg+=`<circle cx="${at.x}" cy="${at.y}" r="${r+13}" fill="currentColor" opacity=".055"/><circle cx="${at.x}" cy="${at.y}" r="${r+7}" fill="none" stroke="currentColor" opacity=".7"/>`;
+  svg+=p.role==='fleet'?`<rect x="${at.x-r}" y="${at.y-r}" width="${r*2}" height="${r*2}" rx="2" fill="currentColor"/>`:p.role==='validator'?`<path d="M${at.x},${at.y-r*1.25}L${at.x+r*1.25},${at.y}L${at.x},${at.y+r*1.25}L${at.x-r*1.25},${at.y}Z" fill="currentColor"/>`:`<circle cx="${at.x}" cy="${at.y}" r="${r}" fill="currentColor"/>`;
+  svg+='</g>';
+ });
+ if(n){const p=points[index],lw=n.label.length*6.7+20,lx=Math.max(12,Math.min(width-lw-12,p.x-lw/2)),ly=p.y>height-75?p.y-46:p.y+22;
+  svg+=`<rect class="vc-label-box" x="${lx}" y="${ly}" width="${lw}" height="25" rx="5"/><text x="${lx+lw/2}" y="${ly+16}" text-anchor="middle">${esc(n.label)}</text>`;
+ }
+ svg+=`<text class="vc-hint" x="20" y="${height-12}">TAP A PEER TO TRACE ITS LINKS</text>`;
+ return {data,points,index,node:n,links,svg:`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Reported network connections; select a peer to trace its links">${svg}</svg>`};
+}
+global.VeldConstellation={layout,normalize,nearest,scene};
+if(typeof module!=='undefined')module.exports=global.VeldConstellation;
+})(typeof window!=='undefined'?window:globalThis);
+/* The portal supplies the authenticated device report; no additional requests. */
+let constellationReport=null,constellationScene=null,constellationFrame=0;
+const constellationSelections=new Map();
+function constellationDevice(){return String(current()?.id||'network');}
+function paintConstellation(){
+ const plot=document.querySelector('.vc-plot');if(!plot)return;
+ const key=constellationDevice(),width=Math.max(240,plot.clientWidth),height=plot.clientHeight;
+ const scene=VeldConstellation.scene(constellationReport,constellationSelections.get(key),width,height);
+ constellationScene=scene;
+ if(!scene.node){setHtml(plot,'<div class="vc-empty">Waiting for a fresh topology report.</div>');return;}
+ constellationSelections.set(key,scene.node.id);if(constellationSelections.size>64)constellationSelections.delete(constellationSelections.keys().next().value);
+ setHtml(plot,scene.svg);
+ const shell=plot.closest('.vc-shell');shell.querySelector('.vc-name').textContent=scene.node.label;
+ shell.querySelector('.vc-detail').textContent=scene.links.length+' reported links · '+({exact:'tip agrees',differs:'tip differs',stale:'no recent tip report',unavailable:'no recent tip report'}[scene.node.tip_state]);
+ shell.querySelector('.vc-marker').className='vc-marker vc-'+scene.node.role+(scene.node.tip_state==='differs'?' vc-differs':'');
+ shell.querySelector('.vc-total').textContent=scene.data.nodes.length.toLocaleString();
+}
+function queueConstellation(){cancelAnimationFrame(constellationFrame);constellationFrame=requestAnimationFrame(paintConstellation);}
+function topologyGraph(t,device=current()){
+ constellationReport=t;queueConstellation();
+ const direct=Number.isSafeInteger(device?.peers)&&device.peers>=0?device.peers.toLocaleString():'—';
+ return '<section class="vc-shell"><div class="vc-chrome"><div class="vc-wordmark"><span class="vc-logo" aria-hidden="true"></span>VELD</div><span class="vc-chrome-label">NETWORK / MAP</span></div><div class="vc-heading"><div><h3>Peer topology</h3><div class="vc-meta">'+direct+' direct · selected peer connections</div></div><div class="vc-stat"><strong class="vc-total">'+VeldConstellation.normalize(t).nodes.length+'</strong><span>reported peers</span></div></div><div class="vc-plot" tabindex="0" role="group" aria-label="Peer constellation. Select a peer with the pointer, Left and Right keys, or Next peer."></div><div class="vc-inspect" aria-live="polite"><span class="vc-marker vc-miner" aria-hidden="true"></span><div class="vc-description"><strong class="vc-name">Peer topology</strong><small class="vc-detail">Select a peer to trace its links</small></div><button type="button" class="vc-next">Next peer →</button></div><div class="vc-legend"><span><i class="vc-key miner"></i>Miner</span><span><i class="vc-key"></i>Node</span><span><i class="vc-key fleet"></i>Fleet</span><span><i class="vc-key validator"></i>Validator</span></div><div class="vc-foot"><span><i class="vc-link-key"></i>Both report</span><span><i class="vc-link-key one"></i>One-sided report</span></div></section>';
+}
+function stepConstellation(delta){
+ const s=constellationScene;if(!s?.data.nodes.length)return;
+ const next=(s.index+delta+s.data.nodes.length)%s.data.nodes.length;
+ constellationSelections.set(constellationDevice(),s.data.nodes[next].id);queueConstellation();
+}
+document.addEventListener('click',event=>{
+ if(event.target.closest('.vc-next')){stepConstellation(1);return;}
+ const plot=event.target.closest('.vc-plot');if(!plot||!constellationScene)return;
+ const bounds=plot.getBoundingClientRect(),i=VeldConstellation.nearest(constellationScene.points,event.clientX-bounds.left,event.clientY-bounds.top);
+ if(i>=0){constellationSelections.set(constellationDevice(),constellationScene.data.nodes[i].id);queueConstellation();}
+});
+document.addEventListener('keydown',event=>{
+ if(!event.target.matches('.vc-plot')||!['ArrowLeft','ArrowRight'].includes(event.key))return;
+ event.preventDefault();stepConstellation(event.key==='ArrowRight'?1:-1);
+});
+window.addEventListener('resize',queueConstellation);
+// END VELD CONSTELLATION
+
+function action(name,payload={}){
+  if(name==="pool.start"||name==="pool.stop")return runPoolAction(name);
+  if(name==="updates.check"||name==="updates.install")
+    return runRemoteUpdate(name==="updates.install").catch(error=>toast(error.message,true));
+  const device=current();
+  if(!device)return Promise.resolve();
+  const deviceId=device.id;
+  if(updateJobs.get(deviceId)?.busy){toast("Wait for this machine's update operation to finish.",true);return Promise.resolve()}
+  actionQueue=actionQueue.then(()=>{
+    const target=devices.find(item=>item.id===deviceId);
+    if(!target)throw new Error("This machine is no longer paired.");
+    return signedAction(name,payload,null,target);
+  }).catch(error=>toast(error.message,true));
+  return actionQueue;
+}
+function confirmAction(name,question){if(window.confirm(question))return action(name)}function toggle(name,value){action(name,{enabled:!value})}function toast(msg,bad=false){let t=document.createElement("div");t.className="toast "+(bad?"warning":"pill");t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3600)}
+function firstPair(){return `<section class="section"><div class="section-head"><div><h2>Pair your first machine</h2><p>Connect a Veld node or miner with its one-time pair code.</p></div><button type="button" class="button" data-portal-action="addMachine">Add machine</button></div><div class="local-only">Your existing machines stay paired when you add another. Keys stay on each machine. Remote sign-in encrypts your passphrase for the paired PC.</div></section>`}
+function pageScrollState(){const state={};document.querySelectorAll("#page [data-scroll-key]").forEach(el=>state[el.dataset.scrollKey]=el.scrollLeft);return state}
+function restorePageScroll(state){requestAnimationFrame(()=>document.querySelectorAll("#page [data-scroll-key]").forEach(el=>{const value=state[el.dataset.scrollKey];if(Number.isFinite(value))el.scrollLeft=value}))}
+function render(){const scroll=pageScrollState();const d=current();$("mobile-nav").hidden=!d;$("app-view").classList.toggle("unpaired",!d);$("portal-more-menu").classList.toggle("unpaired",!d);const meta=d?titles[page]:["Pair a machine","Connect your first Veld node or miner."];$("page-title").textContent=meta[0];$("page-subtitle").textContent=meta[1];const extra=["workers","network","logs","settings","pool"];document.querySelectorAll("#nav button,#mobile-nav button").forEach(b=>b.classList.toggle("active",!!d&&(b.dataset.page===page||(b.dataset.page==="more"&&extra.includes(page)))));if(!d){$("online").className="status";$("online").textContent="Offline";setHtml($("page"),firstPair());return}$("online").className="status "+(d.online?"online":"");$("online").textContent=d.online?(snap(d).pool?.current&&snap(d).pool?.running?"Online · pool mining":"App online"):"Offline";const fn={overview,blockchain,mining,workers,explorer,network,logs,settings,more,pool}[page];if(page!=="pool"||!$("pool-public-status")){setHtml($("page"),fn(d,snap(d)));restorePageScroll(scroll)}if(page==="pool"){updatePoolMachine(d,snap(d));refreshPoolView()}}
+function overview(d,s){return `${s.pool?`<section class="section"><h2>${esc(poolMachine(d,s).status)}</h2><p>${esc(poolMachine(d,s).detail)}</p></section>`:""}<div class="cards">${metric(n(d.height),"Block height","green")}${metric(d.sync_lag==null?"Unknown":d.sync_lag?n(d.sync_lag)+" behind":s.diagnostics?.daemon?.ibd_complete?"100.0%":"Verifying","Synchronization")}${metric(n(d.peers),"P2P peers")}${metric(n(d.hashrate,1)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(d.workers),"CPU workers")}${metric(n(s.mempool),"Mempool transactions")}${metric(n(s.supply,2)+" VELD","Circulating supply")}</div><section class="section"><div class="section-head"><div><h2>Local node status</h2><p>${esc(d.warning||(s.process_running?"Consensus validation runs in your local node.":"Local node stopped. Pool mining uses the pool backend."))}</p></div><div class="controls"><span class="status ${d.online?'online':''}">${esc(d.mining_state)}</span><button class="button" data-command="${s.process_running?'node.stop':'node.start'}"${s.process_running?' data-confirm="Stop this node gracefully?"':''}>${s.process_running?'Stop node':'Start node'}</button>${!s.process_running&&s.unlock_key?'<button type="button" class="button" data-portal-action="signIn">Sign in &amp; mine</button>':''}</div></div><div class="kv"><div><b>${d.sync_lag==null?'Unknown':d.sync_lag?'Syncing':s.diagnostics?.daemon?.historical_validated?'Validated':'Reported'}</b><span>Chain</span></div><div><b>${n(d.peers)}</b><span>Connections</span></div><div><b>${s.mining_ready==null?'Unknown':s.mining_ready?'Ready':'Waiting'}</b><span>Work admission</span></div><div><b>v${esc(d.gui_version||d.version)}</b><span>GUI version</span></div><div><b>${d.daemon_version?"v"+esc(d.daemon_version):"Unknown"}</b><span>Daemon version</span></div></div>${updateNotice(d)}${d.last_command&&!updateJobs.has(d.id)?`<div class="warning">Last command: ${esc(d.last_command.action)} | ${esc(d.last_command.state)}${d.last_command.result?" · "+esc(d.last_command.result):""}</div>`:""}</section><section class="section"><div class="section-head"><div><h2>Chain activity</h2><p>Locally reported verified chain height over the last hour.</p></div></div>${spark(d.history,"height","Verified chain height")}</section>`}
+function blockchain(d,s){return `<div class="cards">${metric(n(d.height),"Locally verified height","green")}${metric(d.sync_lag?n(d.sync_lag):"0","Blocks behind")}${metric(bytes(s.chain_bytes),"Chain storage")}${metric("Signed + verified","Snapshot bootstrap")}</div><section class="section"><div class="section-head"><div><h2>Synchronization mode</h2><p>Snapshot starts remain quarantined until an independent genesis validation matches exactly.</p></div></div><div class="control-row"><div><h3>Signed snapshot</h3><p>Fast startup with independent full-chain validation in the background.</p></div><button class="button" data-command="sync.mode" data-mode="snapshot">Select</button></div><div class="control-row"><div><h3>Full initial block download</h3><p>Download and validate the complete chain from genesis before services open.</p></div><button class="button" data-command="sync.mode" data-mode="full">Select</button></div></section>`}
+function mining(d,s){return `<div class="cards">${metric(esc(d.mining_state),"Mining status",s.mining_active?"green":"")}${metric(n(d.hashrate,2)+" H/s","Total hashrate",d.hashrate?"green":"")}${metric(n(d.workers),"CPU workers")}${metric(n(d.blocks),"Accepted blocks")}${metric(n(s.total_hashes),"Session hashes","wide")}${metric(s.mining_ready==null?"Unknown":s.mining_ready?"Admitted":"Waiting","Work admission","wide")}</div><section class="section"><div class="section-head"><div><h2>Hashrate history</h2><p>Measured aggregate VeldHash rate over the last hour.</p></div></div>${spark(d.history,"hashrate","VeldHash rate",(x,p)=>n(x,p)+" H/s")}</section><section class="section"><div class="control-row"><div><h3>CPU mining</h3><p>Enable mining for the next app-managed start.</p></div><button class="toggle ${s.mining_enabled?'on':''}" aria-label="Toggle mining" data-command="mining.enabled" data-enabled="${!!s.mining_enabled}"></button></div><div class="control-row"><div><h3>Worker count</h3><p>Choose 1 to 64 workers. Applies on the next node start.</p></div><div class="controls"><button class="button ghost" data-worker-delta="-1">-</button><span class="pill">${n(s.configured_workers||d.workers||1)} workers</span><button class="button ghost" data-worker-delta="1">+</button></div></div></section>`}
+function setWorkers(delta){const d=current(),s=snap(d);const value=Math.max(1,Math.min(64,Number(s.configured_workers||d.workers||1)+delta));action('mining.workers',{workers:value})}
+function workers(d,s){let count=Number(d.workers||s.configured_workers||0),rate=d.hashrate==null?null:count?Number(d.hashrate)/count:0;let rows=Array.from({length:count},(_,i)=>`<tr><td>CPU ${i+1}</td><td class="green">${s.mining_active==null?'Unknown':s.mining_active?'Hashing':'Waiting'}</td><td>${n(rate,2)} H/s</td><td>VeldHash</td></tr>`).join("");return `<section class="section"><div class="section-head"><div><h2>Local VeldHash workers</h2><p>Per-worker rates are estimates from the measured aggregate.</p></div><span class="status ${s.mining_active?'online':''}">${s.mining_active==null?'Unknown':s.mining_active?'Running':'Paused'}</span></div>${rows?`<table class="table"><thead><tr><th>Worker</th><th>State</th><th>Est. rate</th><th>Algorithm</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">No mining workers are configured.</div>'}</section>`}
+function poolMachine(d,s){const p=s.pool,live=d.online===true&&p&&p.current===true;
+  const states={hashing:'Pool mining',waiting:'Waiting for work',retrying:'Reconnecting to pool',stopped:'Pool worker stopped',error:'Pool worker needs attention',unavailable:'Waiting for a current pool report'};
+  return {status:!d.online?'Machine offline':p?states[live?p.state:p.running?'unavailable':'stopped']:'Pool status needs client 3.2.2',
+    detail:!d.online?'Showing the last machine report.':!p?'This client reports solo-node status only. Online means the app is reachable.':
+      live?(n(p.configured_workers)+' configured workers · '+n(p.active_workers)+' on work · '+n(p.hashrate,1)+' H/s'):'Waiting for a fresh report from the pool worker.'};
+}
+const poolJobs=new Map();
+function poolControlReason(d,s){return !d.online?"Machine offline. Veld must be open and connected for remote control.":s.pool_remote_control!==true?"Update this machine to a client with remote pool controls. Its current client only supports remote solo-node controls.":s.remote_control!==true?"Waiting for this machine to finish remote-control pairing.":""}
+function updatePoolMachine(d,s){
+  const m=poolMachine(d,s),job=poolJobs.get(d.id),reason=poolControlReason(d,s),busy=!!job?.busy||!!updateJobs.get(d.id)?.busy;
+  const last=d.last_command,receipt=!job&&last&&["pool.start","pool.stop"].includes(last.action)?last.action+" · "+last.state+(last.result?" · "+last.result:""):"";
+  for(const [id,value] of [['pool-machine-name',d.name],['pool-machine-status',m.status],['pool-machine-detail',m.detail],['pool-control-note',reason||'Start uses the pool endpoint, payout address and CPU settings already saved on this machine. Stop also turns off automatic pool resume.'],['pool-command-status',job?.message||receipt]]){
+    const el=$(id);if(el&&el.textContent!==String(value))el.textContent=String(value);
+  }
+  const start=$('pool-start'),stop=$('pool-stop');
+  if(start)start.disabled=!!reason||busy||s.pool?.running===true||s.process_running===true;
+  if(stop)stop.disabled=!!reason||busy;
+  if(start)start.title=s.process_running?'Stop the solo node before starting pool mining.':'';
+}
+async function runPoolAction(name){
+  const selectedDevice=current();if(!selectedDevice)return;
+  const id=selectedDevice.id;if(poolJobs.get(id)?.busy||updateJobs.get(id)?.busy)return;
+  const job={busy:true,message:'Sending signed pool command…'};poolJobs.set(id,job);render();
+  try{
+    const pending=actionQueue.then(async()=>{
+      await refresh();const device=devices.find(d=>d.id===id);
+      if(!device)throw new Error('This machine is no longer paired.');
+      const reason=poolControlReason(device,snap(device));if(reason)throw new Error(reason);
+      return signedAction(name,{},null,device,true);
+    });
+    actionQueue=pending.catch(()=>{});const receipt=await pending;
+    if(!Number.isSafeInteger(receipt.id)||receipt.id<1)throw new Error('Missing pool command receipt. Check the machine status before retrying.');
+    const deadline=Date.now()+190000;let acknowledged=false,ackSeenAt=0;
+    while(Date.now()<deadline){
+      if(poolJobs.get(id)!==job)throw new Error('Pool command monitoring ended. Check the machine status before retrying.');
+      const reply=await api('/api/v1/devices/command-status','POST',{id,command_id:receipt.id}),c=reply.command;
+      if(!c||c.id!==receipt.id||c.device_id!==id||c.action!==name||c.sequence!==receipt.sequence)
+        throw new Error('Pool command receipt mismatch. Refresh before retrying.');
+      if(['failed','expired','superseded','local_confirmation'].includes(c.state))throw new Error(c.result||'Pool command '+c.state+'.');
+      if(!['queued','delivered','completed'].includes(c.state))throw new Error('Unknown pool command state.');
+      await refresh();const device=devices.find(d=>d.id===id);if(!device)throw new Error('This machine is no longer paired.');
+      if(c.state==='completed'&&!acknowledged){acknowledged=true;ackSeenAt=device.last_seen;}
+      const p=snap(device).pool;
+      // Require a later device report as well as the exact command's receipt.
+      // A process launch alone is never reported as successful mining.
+      if(acknowledged&&device.online&&device.last_seen>ackSeenAt&&p){
+        if(name==='pool.stop'&&p.running===false){job.message='Pool mining stopped. Automatic pool resume is off.';return;}
+        if(name==='pool.start'&&p.running&&p.current&&p.state==='hashing'){job.message='Pool mining resumed. This machine is processing pool work.';return;}
+        if(name==='pool.start'&&!p.running)throw new Error('The pool worker stopped after the start request. Check its connection and saved pool settings.');
+      }
+      job.message=acknowledged?(name==='pool.start'?'Start accepted. Waiting for the machine to report pool work…':'Stop accepted. Waiting for the worker to exit…'):'Waiting for the machine to acknowledge the signed command…';render();
+      await updatePause(2500);
+    }
+    throw new Error('Pool operation was not confirmed in time. Check the current status before retrying.');
+  }catch(error){job.message=error.message;toast(error.message,true);}
+  finally{job.busy=false;render();}
+}
+let refreshPoolView=()=>{};
+function pool(){return `<section class="pool-page"><h2>Veld Pool</h2><p class="pool-intro">Live pool activity, setup and rewards.</p>
+<div class="card pool-machine"><strong id="pool-machine-name"></strong><p id="pool-machine-status" role="status"></p><p class="pool-note" id="pool-machine-detail"></p>
+<div class="controls" style="margin-top:16px"><button id="pool-start" class="button" data-command="pool.start" disabled>Start pool mining</button><button id="pool-stop" class="button" data-command="pool.stop" disabled>Stop pool mining</button></div>
+<p class="pool-note" id="pool-control-note"></p><p id="pool-command-status" role="status" aria-live="polite"></p></div>
+<div class="pool-status"><strong>Pool status</strong><p id="pool-public-status" role="status">Connecting to Veld Pool…</p></div>
+<div class="grid2">
+<div class="tile"><div class="l">Active accounts · 2 min</div><div class="v" id="pool-public-active_accounts">—</div></div>
+<div class="tile"><div class="l">Verified shares</div><div class="v" id="pool-public-verified_shares">—</div></div>
+<div class="tile"><div class="l">Pool chain height</div><div class="v" id="pool-public-reconciled_height">—</div></div>
+<div class="tile"><div class="l">Payments</div><div class="v pool-word" id="pool-public-payments">Unknown</div></div>
+<div class="tile"><div class="l">Co-mining lottery</div><div class="v pool-word" id="pool-public-comining">Unknown</div></div>
+<div class="tile"><div class="l">Minimum payout</div><div class="v pool-word" id="pool-public-minimum">—</div></div>
+</div>
+<p class="pool-note" id="pool-public-comining-note">The pool needs 1,000 VELD staked to qualify for co-mining. Lottery winnings and staking rewards are shared with contributors.</p>
+<h3>Start pool mining</h3><div class="card"><ol><li>Open Veld Node and select <strong>Pool</strong>.</li><li>Use <code>https://pool.veld.network</code> and enter your own payout address.</li><li>Choose your CPU workers, then select <strong>Start pool mining</strong>.</li></ol><p class="pool-note">No deposit or personal stake required. Multiple machines can use the same payout address. Keep your private keys.</p></div>
+<h3>Your rewards</h3><div class="card"><p>Select <strong>Copy view access</strong> in your node, then open the dashboard to see your balances and payment history.</p><details class="veld-details"><summary>Payment timing</summary><p><span id="pool-public-policy">Loading payment policy…</span> Earned receipts need at least 120 confirmations and must be spendable. Daily processing does not guarantee daily earnings.</p></details><a class="btn" href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Open pool dashboard →</a></div></section>
+`;}
+// Shared public Pool-tab view, embedded in Explorer and portal by the source generator.
+// No account identifiers, cookies, pairing credentials or private tokens leave the page.
+(function(){
+  'use strict';
+  var busy=false, next=0, last=null, failed=false;
+  function put(id,value){var e=document.getElementById(id);if(e)e.textContent=value;}
+  function render(){
+    put('pool-public-status',failed?'Pool status unavailable. Retrying.':last?last.status:'Connecting to Veld Pool…');
+    ['active_accounts','verified_shares','reconciled_height'].forEach(function(k){
+      put('pool-public-'+k,!failed&&last&&last[k]!==null?BigInt(last[k]).toLocaleString():'—');
+    });
+    put('pool-public-payments',failed||!last?'Unknown':last.payments_enabled?'Enabled':'Not enabled');
+    put('pool-public-comining',failed||!last?'Unknown':last.co_mining_enabled?'Participating':'Not participating yet');
+    var p=!failed&&last&&last.payment_policy;
+    put('pool-public-minimum',p?amount(p.minimum_units,8)+' VELD':'—');
+    function amount(v,scale){var n=BigInt(v),d=10n**BigInt(scale);return (n/d+'.'+(n%d).toString().padStart(scale,'0')).replace(/\.?0+$/,'');}
+    put('pool-public-policy',p?amount(p.fee_ppm,4)+'% service fee · '+amount(p.minimum_units,8)+' VELD minimum · batches every '+(Number(p.batch_seconds)/3600)+' hours.':'Payment policy unavailable. Check the pool dashboard.');
+  }
+  async function refresh(){
+    if(!document.getElementById('pool-public-status')||document.hidden)return;
+    render();if(busy||Date.now()<next)return;busy=true;next=Date.now()+15000;
+    var stop=new AbortController(),timer=setTimeout(function(){stop.abort();},5000);
+    try{
+      var r=await fetch('https://pool.veld.network/v1/public',{credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',redirect:'error',signal:stop.signal});
+      if(!r.ok||!r.body)throw Error('unavailable');
+      var reader=r.body.getReader(),parts=[],size=0;
+      for(;;){var part=await reader.read();if(part.done)break;size+=part.value.length;if(size>32768){await reader.cancel();throw Error('response limit');}parts.push(part.value);}
+      var bytes=new Uint8Array(size),offset=0;parts.forEach(function(p){bytes.set(p,offset);offset+=p.length;});
+      var j=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),s=j&&j.result;
+      if(j.ok!==true||!s||s.chain!=='7be77ab9e820bd9ffb60b269b45ced48288056e5839a1135fafc2f8557000a88')throw Error('network');
+      ['active_accounts','verified_shares','reconciled_height'].forEach(function(k){if(k==='reconciled_height'&&s[k]===null)return;if(typeof s[k]!=='string'||!/^(0|[1-9][0-9]{0,19})$/.test(s[k]))throw Error('count');});
+      if(typeof s.payments_enabled!=='boolean'||typeof s.co_mining_enabled!=='boolean')throw Error('flags');
+      if(!['Service responding','Reconciliation paused or starting'].includes(s.status))throw Error('status');
+      if(s.payment_policy!==undefined){
+        if(!s.payment_policy||typeof s.payment_policy!=='object'||Array.isArray(s.payment_policy))throw Error('policy');
+        ['fee_ppm','minimum_units','batch_seconds','revision'].forEach(function(k){if(typeof s.payment_policy[k]!=='string'||!/^(0|[1-9][0-9]{0,19})$/.test(s.payment_policy[k]))throw Error('policy value');});
+        if(BigInt(s.payment_policy.fee_ppm)>100000n||BigInt(s.payment_policy.minimum_units)<100000000n||BigInt(s.payment_policy.minimum_units)>1000000000000n||BigInt(s.payment_policy.batch_seconds)<3600n||BigInt(s.payment_policy.batch_seconds)>604800n)throw Error('policy bounds');
+      }
+      last=s;failed=false;
+    }catch(_){failed=true;last=null;}finally{clearTimeout(timer);busy=false;render();}
+  }
+  refreshPoolView=render;setInterval(refresh,1000);refresh();
+})();
+
+function explorer(d,s){const blocks=Array.isArray(s.recent_blocks)?s.recent_blocks:[];const rows=blocks.map(b=>`<tr><td>#${n(b.height)}</td><td>${esc(b.hash||"")}</td><td>${n(b.tx_count)} tx</td><td>${n(b.reward,4)} VELD</td><td>${esc(b.winner||"")}</td></tr>`).join("");return `<div class="cards">${metric(n(d.height),"Chain height","green")}${metric(n(s.mempool),"Mempool")}${metric(n(s.supply,2)+" VELD","Supply")}${metric(n(d.blocks),"Session blocks")}</div><section class="section"><div class="section-head"><div><h2>Recent blocks</h2><p>Locally verified block feed.</p></div><a class="button ghost" href="https://explorer.veld.network" target="_blank" rel="noreferrer">Open public explorer</a></div>${rows?`<table class="table" data-scroll-key="recent-blocks"><thead><tr><th>Height</th><th>Hash</th><th>Transactions</th><th>Reward</th><th>Winner</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">Recent block data will appear after the next report.</div>'}</section>`}
+function topologyRoles(t,fallback={}){const roles={fleet:0,node:0,miner:0,validator:0},seen=new Set();if(t&&Array.isArray(t.nodes)&&t.nodes.length){for(const peer of t.nodes){const id=String(peer.id);if(seen.has(id))continue;seen.add(id);if(Object.prototype.hasOwnProperty.call(roles,peer.role))roles[peer.role]++}return roles}for(const role of Object.keys(roles))roles[role]=Number(fallback[role]||0);return roles}
+function network(d,s){
+  const topology=s.topology||{},roles=topologyRoles(topology,s.peer_roles||{}),mapping=inboundMapping(d,s);
+  const nodeCount=Array.isArray(topology.nodes)?topology.nodes.length:0,eligible=Math.max(Number(topology.eligible_nodes)||0,nodeCount),reporting=Number(topology.reporting_nodes)||0;
+  const coverage=eligible?`${n(reporting)} / ${n(eligible)} reporting`:`${n(reporting)} reporting`;
+  return `<div class="cards network-cards">${metric(n(d.peers),"Direct peers","green")}${metric(n(d.inbound),"Inbound")}${metric(n(s.outbound),"Outbound")}${metric(`${n(s.exact_tip)} / ${n(d.peers)}`,"Exact tip agreement")}${metric(mapping.value,"Automatic port mapping")}${metric(s.tor?'Tor only':'Clearnet',"Transport")}</div><p class="network-note">${mapping.detail}</p>${topologyGraph(topology,d)}<section class="section"><div class="section-head"><div><h2>Peer classes</h2><p>Network-wide identities in the current report.</p></div></div><div class="kv"><div><b>${n(roles.fleet)}</b><span>Fleet</span></div><div><b>${n(roles.node)}</b><span>Nodes</span></div><div><b>${n(roles.miner)}</b><span>Miners</span></div><div><b>${n(roles.validator)}</b><span>Validators</span></div></div></section>`;
+}
+
+function logs(d,s){const events=Array.isArray(s.events)?s.events:[];return `<section class="section"><div class="section-head"><div><h2>Operational events</h2><p>Sanitized status events only. Raw logs and local paths stay on the machine.</p></div></div><div class="log">${events.length?events.map(esc).join("\n"):"Waiting for sanitized client events..."}</div></section>`}
+function settingRow(title,detail,actionName,value,disabled=false){return `<div class="control-row"><div><h3>${title}</h3><p>${detail}</p></div><button class="toggle ${value?'on':''}" ${disabled?'disabled':''} data-command="${actionName}" data-enabled="${!!value}"></button></div>`}
+function installedPortal(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true}
+function settings(d,s){const pair=`<section class="section"><div class="section-head"><div><h2>Pair another machine</h2><p>Connect another Veld node or miner using its one-time code.</p></div><button type="button" class="button" data-portal-action="addMachine">Add machine</button></div></section>`;return `<section class="section"><div class="section-head"><div><h2>Node preferences</h2><p>Changes that affect transport or sync apply on the next start.</p></div></div>${settingRow("CPU mining","Run VeldHash workers when the node starts.","mining.enabled",s.mining_enabled)}${settingRow("Tor-only privacy","Route peer traffic through Tor.","privacy.tor",s.tor,s.process_running)}${settingRow("Attempt inbound reachability","Ask the router for an inbound P2P mapping.","network.reachable",s.reachable,s.process_running||s.tor)}${settingRow("Show public height reference","Use the public explorer for visual sync progress only.","display.reference",s.reference)}</section><section class="section"><div class="section-head"><div><h2>Release and updates</h2><p>GUI v${esc(d.gui_version||d.version)} · Daemon ${d.daemon_version?"v"+esc(d.daemon_version):"unknown"}</p></div><div class="controls"><button class="button" data-command="updates.check" ${updateJobs.get(d.id)?.busy||!d.online?"disabled":""}>Check now</button><button class="button" data-command="updates.install" ${updateJobs.get(d.id)?.busy||!d.online?"disabled":""}>${updateJobs.get(d.id)?.busy?"Update in progress":"Update now"}</button></div></div><p>${esc(portalControlStatus(d))}</p><p>Update now checks the signed release on this machine before installing. Keep this portal open until installation starts.</p>${updateNotice(d)}${typeof s.automatic_updates==="boolean"?settingRow("Automatic updates","Install signed updates and resume mining with your saved workers while Veld is open.","updates.automatic",s.automatic_updates):""}<div class="local-only">Signed feed verification and package installation run on the paired machine. Identity creation and keyfile import stay local. Remote sign-in encrypts your passphrase for the paired PC.</div></section>${pair}<section class="section"><div class="section-head"><div><h2>Current machine</h2><p>Rename or remove this paired machine.</p></div></div><div class="control-row"><div><h3>Machine name</h3><p>${esc(d.name)}</p></div><div class="controls"><button class="button ghost" data-portal-action="rename">Rename</button><button class="button danger" data-portal-action="remove">Remove</button></div></div></section>`}
+function more(){const installed=installedPortal();return `<section class="section"><div class="more-grid"><button class="button" data-open-page="workers">Workers</button><button class="button" data-open-page="network">Network</button><button class="button" data-open-page="logs">Logs</button><button class="button" data-open-page="settings">Settings</button>${installed?'':`<button class="button" data-portal-action="install">Install portal</button>`}<button class="button" data-open-page="pool"><svg class="pool-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="m10.7 7.2-4.4 8.6m7-8.6 4.4 8.6M7.5 18h9"/></svg><span>Pool</span></button></div></section>`}
+async function installPortal(){if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;render();return}toast('Open your browser menu and choose Add to Home Screen')}
+let pairingBusy=false;
+function openAddMachine(){
+  if(pairingBusy)return;
+  closePortalMore();
+  const dialog=$("pair-dialog");
+  if(dialog.open)return;
+  $("add-pair-code").value="";
+  $("add-pair-error").textContent="";
+  dialog.showModal();
+  $("add-pair-code").focus();
+}
+function closeAddMachine(){
+  if(pairingBusy)return;
+  $("pair-dialog").close();
+  $("add-machine").focus();
+}
+async function claimMachine(event){
+  event.preventDefault();
+  if(pairingBusy)return;
+  const input=$("add-pair-code"),submit=$("add-pair-submit"),cancel=$("cancel-pair"),error=$("add-pair-error");
+  const code=input.value.trim().toUpperCase();
+  if(!code){error.textContent="Enter the pair code from the other machine.";input.focus();return;}
+  const previousIds=new Set(devices.map(device=>device.id));
+  pairingBusy=true;submit.disabled=true;cancel.disabled=true;input.readOnly=true;
+  submit.textContent="Pairing…";error.textContent="";
+  let paired=false;
+  try{
+    const keyInfo=await commandKey();
+    await api("/api/v1/devices/claim","POST",{code,command_key:keyInfo.key});
+    paired=true;input.value="";
+    await refresh();
+    const added=devices.find(device=>!previousIds.has(device.id));
+    if(added){selected=added.id;page="overview";renderSelector();render();}
+    toast("Machine added");
+  }catch(e){
+    if(paired)toast("Machine paired. Refresh the portal to load it.",true);
+    else error.textContent=e.message||"Could not pair this machine.";
+  }finally{
+    pairingBusy=false;submit.disabled=false;cancel.disabled=false;input.readOnly=false;
+    submit.textContent="Pair machine";
+    if(paired)closeAddMachine();
+  }
+}
+async function renameDevice(){const d=current(),name=prompt("Machine name",d.name);if(name){await api("/api/v1/devices/rename","POST",{id:d.id,name});refresh()}}async function removeDevice(){const d=current();if(confirm("Remove this machine from your portal?")){await api("/api/v1/devices/revoke","POST",{id:d.id});selected=0;refresh()}}
+function showAuth(){closePortalMore();updateJobs.clear();poolJobs.clear();csrf="";$("auth-view").classList.remove("hidden");$("app-view").classList.add("hidden");$("mobile-nav").hidden=true}function showApp(){$("auth-view").classList.add("hidden");$("app-view").classList.remove("hidden");$("mobile-nav").hidden=true;refresh()}async function auth(mode){$("auth-error").textContent="";try{const j=await api("/api/v1/"+mode,"POST",{account:$("account").value,password:$("password").value});csrf=j.csrf;$("password").value="";showApp()}catch(e){$("auth-error").textContent=e.message}}
+window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event});
+window.addEventListener('appinstalled',()=>{installPrompt=null;if(page==='more')render()});
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).catch(()=>{}));
+function closePortalMore(){const menu=$("portal-more-menu");menu.dataset.open="0";menu.setAttribute("aria-hidden","true");document.querySelectorAll('[data-page="more"]').forEach(button=>button.setAttribute("aria-expanded","false"))}
+function togglePortalMore(){const menu=$("portal-more-menu"),opening=menu.dataset.open!=="1";menu.dataset.open=opening?"1":"0";menu.setAttribute("aria-hidden",opening?"false":"true");document.querySelectorAll('[data-page="more"]').forEach(button=>button.setAttribute("aria-expanded",opening?"true":"false"))}
+function handlePortalClick(event){if(!(event.target instanceof Element))return;const target=event.target.closest("[data-portal-action],[data-command],[data-worker-delta],[data-open-page]");if(!target||target.disabled)return;if(target.dataset.openPage){page=target.dataset.openPage;render();return}if(target.dataset.workerDelta){setWorkers(Number(target.dataset.workerDelta));return}if(target.dataset.portalAction){const handlers={signIn:openNodeSignIn,cancelNodeSignIn:closeNodeSignIn,addMachine:openAddMachine,cancelPair:closeAddMachine,install:installPortal,rename:renameDevice,remove:removeDevice},handler=handlers[target.dataset.portalAction];if(handler)Promise.resolve(handler()).catch(error=>toast(error.message,true));return}if(target.dataset.command){if(target.dataset.confirm&&!window.confirm(target.dataset.confirm))return;const payload={};if(Object.prototype.hasOwnProperty.call(target.dataset,"enabled"))payload.enabled=target.dataset.enabled!=="true";if(target.dataset.mode)payload.mode=target.dataset.mode;action(target.dataset.command,payload)}}
+$("node-signin-form").addEventListener("submit",submitNodeSignIn);$("node-signin-dialog").addEventListener("cancel",event=>{if(nodeSignInBusy)event.preventDefault();else closeNodeSignIn()});
+$("pair-form").addEventListener("submit",claimMachine);$("pair-dialog").addEventListener("cancel",event=>{if(pairingBusy)event.preventDefault()});
+document.addEventListener("click",handlePortalClick);document.querySelectorAll("#nav button,#mobile-nav button,#unpaired-more").forEach(b=>b.addEventListener("click",e=>{if(b.dataset.page==="more"){e.stopPropagation();togglePortalMore();return}closePortalMore();page=b.dataset.page;render()}));document.querySelectorAll("[data-more-page]").forEach(b=>b.addEventListener("click",()=>{page=b.dataset.morePage;closePortalMore();render()}));document.addEventListener("click",e=>{const menu=$("portal-more-menu"),buttons=[...document.querySelectorAll('[data-page="more"]')];if(menu.dataset.open==="1"&&!menu.contains(e.target)&&!buttons.some(button=>button.contains(e.target)))closePortalMore()});document.addEventListener("keydown",e=>{if(e.key==="Escape")closePortalMore()});$("device-select").addEventListener("change",e=>{selected=Number(e.target.value);render()});$("login").addEventListener("click",()=>auth("login"));$("register").addEventListener("click",()=>auth("register"));$("logout").addEventListener("click",async()=>{try{await api("/api/v1/logout","POST",{})}catch{}showAuth()});api("/api/v1/session").then(j=>{csrf=j.csrf;showApp()}).catch(showAuth);setInterval(()=>{if(!$("app-view").classList.contains("hidden"))refresh()},5000);
+</script></body></html>"""
+
+
+class RateLimiter:
+    def __init__(self) -> None:
+        self._entries: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def allow_many(
+        self, checks: tuple[tuple[str, str, int, int], ...]
+    ) -> bool:
+        now = time.monotonic()
+        if not checks:
+            return True
+        for identity, bucket, limit, seconds in checks:
+            if (
+                not isinstance(identity, str)
+                or not 1 <= len(identity) <= 96
+                or not isinstance(bucket, str)
+                or not 1 <= len(bucket) <= 96
+                or not 1 <= limit <= 1_000_000
+                or not 1 <= seconds <= 3600
+            ):
+                return False
+        keys = [(identity, bucket) for identity, bucket, _, _ in checks]
+        if len(set(keys)) != len(keys):
+            return False
+        with self._lock:
+            if len(self._entries) >= 4096:
+                for stale_key, stale_entries in list(self._entries.items()):
+                    while stale_entries and stale_entries[0] <= now - 3600:
+                        stale_entries.popleft()
+                    if not stale_entries:
+                        self._entries.pop(stale_key, None)
+            new_keys = sum(key not in self._entries for key in keys)
+            if len(self._entries) + new_keys > 8192:
+                return False
+            # Inspect every bucket before appending to any of them.  A denied
+            # account/device charge cannot partially burn an unrelated global
+            # or client quota.
+            for identity, bucket, limit, seconds in checks:
+                entries = self._entries.get((identity, bucket))
+                if entries is None:
+                    continue
+                while entries and entries[0] <= now - seconds:
+                    entries.popleft()
+                if len(entries) >= limit:
+                    return False
+            for identity, bucket, _, _ in checks:
+                self._entries[(identity, bucket)].append(now)
+            return True
+
+    def allow(self, address: str, bucket: str, limit: int, seconds: int) -> bool:
+        return self.allow_many(((address, bucket, limit, seconds),))
+
+
+def rate_identity(value: str) -> str:
+    """Return one bounded canonical direct-socket identity."""
+    try:
+        parsed = ipaddress.ip_address(value)
+    except ValueError:
+        return "unknown"
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped:
+        parsed = parsed.ipv4_mapped
+    canonical = str(parsed)
+    return canonical if len(canonical) <= 45 else "unknown"
+
+
+def account_rate_identity(account: str) -> str:
+    """Case-insensitive, fixed-size key for pre-scrypt account budgets."""
+    normalized = account.lower().encode("ascii")
+    return "account:" + hashlib.sha256(normalized).hexdigest()
+
+
+def route_rate_bucket(path: str) -> str:
+    known = {
+        "/", "/healthz", "/manifest.webmanifest", "/service-worker.js",
+        "/offline.html", "/icon.png", "/api/v1/session", "/api/v1/devices",
+        "/api/v1/register", "/api/v1/login", "/api/v1/logout",
+        "/api/v1/device/report", "/api/v1/device/reset-pairing",
+        "/api/v1/devices/claim",
+        "/api/v1/devices/trust-key", "/api/v1/devices/command",
+        "/api/v1/devices/command-status",
+        "/api/v1/devices/rename", "/api/v1/devices/revoke",
+    }
+    return path if path in known else "/other"
+
+
+class ProxyMetadataError(ValueError):
+    pass
+
+
+def _header_values(headers: Any, name: str) -> list[str]:
+    if hasattr(headers, "get_all"):
+        return list(headers.get_all(name, []))
+    return [
+        str(value)
+        for key, value in dict(headers).items()
+        if str(key).lower() == name.lower()
+    ]
+
+
+def load_proxy_token(path: Path) -> bytes:
+    """Read a regular, single-link, owner-only 32-byte hex proxy token."""
+    if os.name == "nt":
+        # The production portal topology is nginx on Linux.  Python's Windows
+        # stat API cannot prove a protected owner-only DACL; do not silently
+        # downgrade that file boundary on an unsupported host.
+        raise ValueError("protected proxy token files require the production POSIX host")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or (hasattr(os, "geteuid") and info.st_uid != os.geteuid())
+            or info.st_mode & 0o077
+            or info.st_size > 66
+        ):
+            raise ValueError("proxy token file must be regular, single-link, owner-only, and bounded")
+        raw = os.read(fd, 67)
+    finally:
+        os.close(fd)
+    encoded = raw.rstrip(b"\r\n")
+    if not re.fullmatch(rb"[0-9a-f]{64}", encoded):
+        raise ValueError("proxy token must be exactly 64 lowercase hex characters")
+    return bytes.fromhex(encoded.decode("ascii"))
+
+
+class TrustedProxyBoundary:
+    def __init__(self, peer: str | None = None, token: bytes | None = None) -> None:
+        if (peer is None) != (token is None):
+            raise ValueError("trusted proxy peer and token must be configured together")
+        self.peer = rate_identity(peer) if peer is not None else None
+        if peer is not None and self.peer == "unknown":
+            raise ValueError("trusted proxy peer must be one IP literal")
+        if token is not None and len(token) != 32:
+            raise ValueError("trusted proxy token must be 32 bytes")
+        self.token = token
+
+    def resolve(self, socket_peer: str, headers: Any) -> str:
+        peer = rate_identity(socket_peer)
+        if peer == "unknown":
+            raise ProxyMetadataError("invalid socket peer")
+        authorization = _header_values(headers, "X-Veld-Proxy-Authorization")
+        clients = _header_values(headers, "X-Veld-Client-IP")
+        legacy = sum(
+            (_header_values(headers, name) for name in
+             ("X-Forwarded-For", "X-Real-IP", "Forwarded")),
+            [],
+        )
+        if legacy or len(authorization) > 1 or len(clients) > 1:
+            raise ProxyMetadataError("ambiguous or untrusted forwarding metadata")
+        if bool(authorization) != bool(clients):
+            raise ProxyMetadataError("incomplete forwarding metadata")
+        if not authorization:
+            # No authenticated metadata: every request from the proxy peer is
+            # deliberately one shared, rate-limited identity.
+            return "peer:" + peer
+        if self.peer is None or peer != self.peer or self.token is None:
+            raise ProxyMetadataError("forwarding metadata from an untrusted peer")
+        value = authorization[0]
+        match = re.fullmatch(r"VeldProxy v1=([0-9a-f]{64})", value)
+        if not match:
+            raise ProxyMetadataError("proxy authentication failed")
+        supplied = bytes.fromhex(match.group(1))
+        if not hmac.compare_digest(self.token, supplied):
+            raise ProxyMetadataError("proxy authentication failed")
+        client = rate_identity(clients[0])
+        if client == "unknown":
+            raise ProxyMetadataError("invalid forwarded client identity")
+        return "client:" + client
+
+
+class ConcurrentBudget:
+    def __init__(self, memory_limit: int = 128, work_limit: int = 64) -> None:
+        self.memory_limit = memory_limit
+        self.work_limit = work_limit
+        self.memory = 0
+        self.work = 0
+        self.history = 0
+        self._lock = threading.Lock()
+
+    def acquire(self, memory: int, work: int, history: bool = False) -> bool:
+        with self._lock:
+            if (
+                self.memory + memory > self.memory_limit
+                or self.work + work > self.work_limit
+                or history and self.history >= 4
+            ):
+                return False
+            self.memory += memory
+            self.work += work
+            self.history += int(history)
+            return True
+
+    def release(self, memory: int, work: int, history: bool = False) -> None:
+        with self._lock:
+            self.memory -= memory
+            self.work -= work
+            self.history -= int(history)
+
+
+class PortalStore:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.lock = threading.RLock()
+        self._initialize()
+        self._dummy_password_hash = self.password_hash(secrets.token_urlsafe(32))
+
+    def connect(self) -> sqlite3.Connection:
+        db = sqlite3.connect(self.path, timeout=10)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys=ON")
+        db.execute("PRAGMA journal_mode=WAL")
+        return db
+
+    @contextmanager
+    def database(self):
+        db = self.connect()
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
+
+    def _initialize(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.database() as db:
+            db.executescript("""
+                CREATE TABLE IF NOT EXISTS accounts(
+                  id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
+                  password_hash TEXT NOT NULL, created_at INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS sessions(
+                  token_hash TEXT PRIMARY KEY, account_id INTEGER NOT NULL,
+                  csrf TEXT NOT NULL, expires_at INTEGER NOT NULL,
+                  FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE);
+                CREATE TABLE IF NOT EXISTS devices(
+                  id INTEGER PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL,
+                  account_id INTEGER, pair_code TEXT UNIQUE, pair_expires INTEGER,
+                  command_key_x TEXT NOT NULL DEFAULT '',
+                  command_key_y TEXT NOT NULL DEFAULT '',
+                  command_key_id TEXT NOT NULL DEFAULT '',
+                  command_sequence INTEGER NOT NULL DEFAULT 0,
+                  name TEXT NOT NULL, version TEXT NOT NULL DEFAULT '',
+                  last_seen INTEGER NOT NULL DEFAULT 0, height INTEGER NOT NULL DEFAULT 0,
+                  sync_lag INTEGER NOT NULL DEFAULT 0, hashrate REAL NOT NULL DEFAULT 0,
+                  workers INTEGER NOT NULL DEFAULT 0, peers INTEGER NOT NULL DEFAULT 0,
+                  inbound INTEGER NOT NULL DEFAULT 0, blocks INTEGER NOT NULL DEFAULT 0,
+                  mining_state TEXT NOT NULL DEFAULT 'Waiting', warning TEXT NOT NULL DEFAULT '',
+                  snapshot_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL,
+                  FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE);
+                CREATE INDEX IF NOT EXISTS devices_account ON devices(account_id);
+                CREATE TABLE IF NOT EXISTS commands(
+                  id INTEGER PRIMARY KEY, device_id INTEGER NOT NULL,
+                  account_id INTEGER NOT NULL, action TEXT NOT NULL,
+                  payload_json TEXT NOT NULL DEFAULT '{}', state TEXT NOT NULL,
+                  sequence INTEGER NOT NULL DEFAULT 0,
+                  issued_at INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+                  nonce TEXT NOT NULL DEFAULT '', key_id TEXT NOT NULL DEFAULT '',
+                  signature TEXT NOT NULL DEFAULT '',
+                  delivered_at INTEGER, completed_at INTEGER, result TEXT NOT NULL DEFAULT '',
+                  FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE,
+                  FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE);
+                CREATE INDEX IF NOT EXISTS commands_device ON commands(device_id,state,id);
+                CREATE INDEX IF NOT EXISTS commands_completed ON commands(completed_at);
+                CREATE TABLE IF NOT EXISTS samples(
+                  id INTEGER PRIMARY KEY, device_id INTEGER NOT NULL,
+                  captured_at INTEGER NOT NULL, height INTEGER NOT NULL,
+                  hashrate REAL NOT NULL, peers INTEGER NOT NULL,
+                  inbound INTEGER NOT NULL, mining_active INTEGER NOT NULL,
+                  FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE);
+                CREATE INDEX IF NOT EXISTS samples_device_time
+                  ON samples(device_id,captured_at);
+            """)
+            device_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(devices)")
+            }
+            device_migrations = {
+                "snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+                "command_key_x": "TEXT NOT NULL DEFAULT ''",
+                "command_key_y": "TEXT NOT NULL DEFAULT ''",
+                "command_key_id": "TEXT NOT NULL DEFAULT ''",
+                "command_sequence": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for name, declaration in device_migrations.items():
+                if name not in device_columns:
+                    db.execute(f"ALTER TABLE devices ADD COLUMN {name} {declaration}")
+            command_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(commands)")
+            }
+            sample_columns = {row["name"] for row in db.execute("PRAGMA table_info(samples)")}
+            for name, declaration in {
+                "diagnostics_json": "TEXT NOT NULL DEFAULT '{}'",
+                "warning": "TEXT NOT NULL DEFAULT ''",
+                "mining_state": "TEXT NOT NULL DEFAULT ''",
+            }.items():
+                if name not in sample_columns:
+                    db.execute(f"ALTER TABLE samples ADD COLUMN {name} {declaration}")
+            command_migrations = {
+                "sequence": "INTEGER NOT NULL DEFAULT 0",
+                "issued_at": "INTEGER NOT NULL DEFAULT 0",
+                "nonce": "TEXT NOT NULL DEFAULT ''",
+                "key_id": "TEXT NOT NULL DEFAULT ''",
+                "signature": "TEXT NOT NULL DEFAULT ''",
+            }
+            for name, declaration in command_migrations.items():
+                if name not in command_columns:
+                    db.execute(f"ALTER TABLE commands ADD COLUMN {name} {declaration}")
+            db.execute(
+                """CREATE UNIQUE INDEX IF NOT EXISTS commands_device_sequence
+                   ON commands(device_id,sequence) WHERE sequence>0"""
+            )
+            # Protocol 3 never delivers legacy unsigned mutations. They remain
+            # visible in history, but are permanently retired during migration.
+            db.execute(
+                """UPDATE commands SET state='superseded',completed_at=?
+                   WHERE state IN ('queued','delivered') AND signature=''""",
+                (int(time.time()),),
+            )
+
+    @staticmethod
+    def password_hash(password: str, salt: bytes | None = None) -> str:
+        salt = salt or secrets.token_bytes(16)
+        derived = hashlib.scrypt(
+            password.encode(),
+            salt=salt,
+            n=32768,
+            r=8,
+            p=1,
+            maxmem=64 * 1024 * 1024,
+            dklen=32,
+        )
+        return (
+            "scrypt$32768$"
+            + base64.urlsafe_b64encode(salt).decode()
+            + "$"
+            + base64.urlsafe_b64encode(derived).decode()
+        )
+
+    @staticmethod
+    def verify_password(password: str, encoded: str) -> bool:
+        try:
+            kind, rounds, salt_text, hash_text = encoded.split("$")
+            if kind != "scrypt" or rounds != "32768":
+                return False
+            expected = base64.urlsafe_b64decode(hash_text)
+            candidate = hashlib.scrypt(
+                password.encode(),
+                salt=base64.urlsafe_b64decode(salt_text),
+                n=32768,
+                r=8,
+                p=1,
+                maxmem=64 * 1024 * 1024,
+                dklen=32,
+            )
+            return hmac.compare_digest(candidate, expected)
+        except (ValueError, TypeError):
+            return False
+
+    @staticmethod
+    def token_hash(token: str) -> str:
+        return hashlib.sha256(token.encode("ascii")).hexdigest()
+
+    def create_account(self, name: str, password: str) -> int | None:
+        try:
+            with self.lock, self.database() as db:
+                cur = db.execute(
+                    "INSERT INTO accounts(name,password_hash,created_at) VALUES(?,?,?)",
+                    (name.lower(), self.password_hash(password), int(time.time())),
+                )
+                return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            return None
+
+    def authenticate(self, name: str, password: str) -> int | None:
+        with self.database() as db:
+            row = db.execute(
+                "SELECT id,password_hash FROM accounts WHERE name=?", (name.lower(),)
+            ).fetchone()
+        valid = self.verify_password(
+            password, row["password_hash"] if row else self._dummy_password_hash
+        )
+        return int(row["id"]) if row and valid else None
+
+    def new_session(self, account_id: int) -> tuple[str, str]:
+        token, csrf, now = (
+            secrets.token_urlsafe(32),
+            secrets.token_urlsafe(24),
+            int(time.time()),
+        )
+        with self.lock, self.database() as db:
+            db.execute("DELETE FROM sessions WHERE expires_at<?", (now,))
+            db.execute(
+                "INSERT INTO sessions(token_hash,account_id,csrf,expires_at) VALUES(?,?,?,?)",
+                (self.token_hash(token), account_id, csrf, now + SESSION_SECONDS),
+            )
+            db.execute(
+                """DELETE FROM sessions WHERE account_id=? AND token_hash NOT IN (
+                       SELECT token_hash FROM sessions WHERE account_id=?
+                       ORDER BY expires_at DESC LIMIT 8)""",
+                (account_id, account_id),
+            )
+        return token, csrf
+
+    def session(self, token: str) -> sqlite3.Row | None:
+        if not token:
+            return None
+        with self.database() as db:
+            return db.execute(
+                "SELECT account_id,csrf FROM sessions WHERE token_hash=? AND expires_at>=?",
+                (self.token_hash(token), int(time.time())),
+            ).fetchone()
+
+    def delete_session(self, token: str) -> None:
+        with self.lock, self.database() as db:
+            db.execute(
+                "DELETE FROM sessions WHERE token_hash=?", (self.token_hash(token),)
+            )
+
+    @staticmethod
+    def pair_code() -> str:
+        return (
+            "".join(secrets.choice(PAIR_ALPHABET) for _ in range(4))
+            + "-"
+            + "".join(secrets.choice(PAIR_ALPHABET) for _ in range(4))
+        )
+
+    def device_known(self, token: str) -> bool:
+        with self.database() as db:
+            return (
+                db.execute(
+                    "SELECT 1 FROM devices WHERE token_hash=?",
+                    (self.token_hash(token),),
+                ).fetchone()
+                is not None
+            )
+
+    def device_belongs(self, account_id: int, device_id: int) -> bool:
+        with self.database() as db:
+            return (
+                db.execute(
+                    "SELECT 1 FROM devices WHERE id=? AND account_id=?",
+                    (device_id, account_id),
+                ).fetchone()
+                is not None
+            )
+
+    def report(self, token: str, report: dict[str, Any]) -> dict[str, Any]:
+        now, token_hash = int(time.time()), self.token_hash(token)
+        with self.lock, self.database() as db:
+            db.execute(
+                "DELETE FROM devices WHERE account_id IS NULL AND pair_expires<?",
+                (now - PAIR_SECONDS,),
+            )
+            row = db.execute(
+                """SELECT id,account_id,pair_code,pair_expires,
+                          command_key_x,command_key_y,command_key_id,command_sequence
+                   FROM devices WHERE token_hash=?""",
+                (token_hash,),
+            ).fetchone()
+            if row is None:
+                for _ in range(8):
+                    code = self.pair_code()
+                    try:
+                        cur = db.execute(
+                            "INSERT INTO devices(token_hash,pair_code,pair_expires,name,created_at) VALUES(?,?,?,?,?)",
+                            (token_hash, code, now + PAIR_SECONDS, report["name"], now),
+                        )
+                        row = {
+                            "id": int(cur.lastrowid),
+                            "account_id": None,
+                            "pair_code": code,
+                            "pair_expires": now + PAIR_SECONDS,
+                            "command_key_x": "",
+                            "command_key_y": "",
+                            "command_key_id": "",
+                            "command_sequence": 0,
+                        }
+                        break
+                    except sqlite3.IntegrityError:
+                        continue
+                else:
+                    raise RuntimeError("pair code allocation failed")
+            device_id = int(row["id"])
+            code, expires = row["pair_code"], int(row["pair_expires"] or 0)
+            if row["account_id"] is None and (not code or expires < now):
+                code, expires = self.pair_code(), now + PAIR_SECONDS
+            db.execute(
+                """UPDATE devices SET pair_code=?,pair_expires=?,name=?,version=?,last_seen=?,height=?,sync_lag=?,hashrate=?,workers=?,peers=?,inbound=?,blocks=?,mining_state=?,warning=?,snapshot_json=? WHERE id=?""",
+                (
+                    code if row["account_id"] is None else None,
+                    expires if row["account_id"] is None else None,
+                    report["name"],
+                    report["version"],
+                    now,
+                    report["height"],
+                    report["sync_lag"],
+                    report["hashrate"],
+                    report["workers"],
+                    report["peers"],
+                    report["inbound"],
+                    report["blocks"],
+                    report["mining_state"],
+                    report["warning"],
+                    json.dumps(report["snapshot"], separators=(",", ":")),
+                    device_id,
+                ),
+            )
+            latest_sample = db.execute(
+                "SELECT captured_at,warning,mining_state,diagnostics_json FROM samples WHERE device_id=? ORDER BY captured_at DESC,id DESC LIMIT 1",
+                (device_id,),
+            ).fetchone()
+            if (latest_sample is None or int(latest_sample["captured_at"]) <= now - 10
+                    or latest_sample["warning"] != report["warning"]
+                    or latest_sample["mining_state"] != report["mining_state"]
+                    or diagnostic_transition(json.loads(latest_sample["diagnostics_json"])) !=
+                       diagnostic_transition(report["snapshot"].get("diagnostics", {}))):
+                snapshot = report["snapshot"]
+                db.execute(
+                    """INSERT INTO samples(
+                    device_id,captured_at,height,hashrate,peers,inbound,mining_active,
+                    diagnostics_json,warning,mining_state)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        device_id,
+                        now,
+                        report["height"],
+                        report["hashrate"],
+                        report["peers"],
+                        report["inbound"],
+                        1 if snapshot.get("mining_active") else 0,
+                        json.dumps(snapshot.get("diagnostics", {}), separators=(",", ":")),
+                        report["warning"], report["mining_state"],
+                    ),
+                )
+                db.execute("DELETE FROM samples WHERE captured_at<?", (now - 86400,))
+            ack_id = report.get("ack_id", 0)
+            if ack_id:
+                db.execute(
+                    """UPDATE commands SET state=?,completed_at=?,result=?
+                              WHERE id=? AND device_id=? AND state IN ('queued','delivered')""",
+                    (
+                        report["ack_status"],
+                        now,
+                        report["ack_message"],
+                        ack_id,
+                        device_id,
+                    ),
+                )
+            db.execute(
+                "UPDATE commands SET state='expired',completed_at=? WHERE device_id=? AND expires_at<? AND state IN ('queued','delivered')",
+                (now, device_id, now),
+            )
+            if report["snapshot"].get("pool_remote_control") is not True:
+                db.execute(
+                    """UPDATE commands SET state='failed',completed_at=?,result=?
+                       WHERE device_id=? AND action IN ('pool.start','pool.stop')
+                         AND state IN ('queued','delivered')""",
+                    (now, "This client does not support remote pool controls. Update the client first.", device_id),
+                )
+            if not supports_automatic_updates(report["version"], report["snapshot"]):
+                # A legacy client cannot acknowledge an unsupported action.
+                # Retire it before selecting the next signed command.
+                db.execute(
+                    """UPDATE commands SET state='failed',completed_at=?,result=?
+                       WHERE device_id=? AND action='updates.automatic'
+                         AND state IN ('queued','delivered')""",
+                    (now, "Automatic updates require Veld 3.2.0 or later. Use Update now first.", device_id),
+                )
+            db.execute(
+                "UPDATE commands SET payload_json='{}' WHERE device_id=? AND action='node.signin' AND state NOT IN ('queued','delivered')",
+                (device_id,),
+            )
+            db.execute(
+                "DELETE FROM commands WHERE completed_at IS NOT NULL AND completed_at<?",
+                (now - 30 * 86400,),
+            )
+            db.execute(
+                """DELETE FROM commands
+                   WHERE device_id=? AND state NOT IN ('queued','delivered')
+                     AND id NOT IN (
+                       SELECT id FROM commands WHERE device_id=?
+                       ORDER BY id DESC LIMIT 256)""",
+                (device_id, device_id),
+            )
+            protocol = int(report.get("portal_protocol", 1))
+            command = None
+            if protocol >= 3 and row["account_id"] is not None:
+                pending = db.execute(
+                    """SELECT id,action,payload_json,sequence,issued_at,expires_at,
+                              nonce,key_id,signature
+                       FROM commands
+                       WHERE device_id=? AND state IN ('queued','delivered')
+                         AND expires_at>=? AND signature<>''
+                         AND (action<>'node.signin' OR ?>=4)
+                       ORDER BY sequence LIMIT 1""",
+                    (device_id, now, protocol),
+                ).fetchone()
+                if pending:
+                    db.execute(
+                        "UPDATE commands SET state='delivered',delivered_at=COALESCE(delivered_at,?) WHERE id=?",
+                        (now, pending["id"]),
+                    )
+                    command = {
+                        "id": int(pending["id"]),
+                        "action": pending["action"],
+                        "payload": json.loads(pending["payload_json"]),
+                        "sequence": int(pending["sequence"]),
+                        "issued_at": int(pending["issued_at"]),
+                        "expires_at": int(pending["expires_at"]),
+                        "nonce": pending["nonce"],
+                        "key_id": pending["key_id"],
+                        "signature": pending["signature"],
+                    }
+            paired = row["account_id"] is not None
+        response = {
+            "portal_protocol": min(protocol, 4),
+            "paired": paired,
+            "pair_code": None if paired else code,
+            "pair_expires": 0 if paired else expires,
+            "report_interval": 5 if protocol >= 2 else 15,
+        }
+        if protocol >= 2:
+            response["command"] = command
+        if protocol >= 3:
+            response["device_id"] = device_id
+            response["command_key"] = (
+                {
+                    "x": row["command_key_x"],
+                    "y": row["command_key_y"],
+                    "id": row["command_key_id"],
+                }
+                if paired and row["command_key_id"]
+                else None
+            )
+        return response
+
+    def claim(self, account_id: int, code: str, key: dict[str, str]) -> bool:
+        with self.lock, self.database() as db:
+            cur = db.execute(
+                """UPDATE devices SET account_id=?,pair_code=NULL,pair_expires=NULL,
+                       command_key_x=?,command_key_y=?,command_key_id=?,command_sequence=0
+                   WHERE pair_code=? AND pair_expires>=? AND account_id IS NULL""",
+                (
+                    account_id,
+                    key["x"],
+                    key["y"],
+                    key["id"],
+                    code,
+                    int(time.time()),
+                ),
+            )
+            return cur.rowcount == 1
+
+    def reset_pairing(self, token: str) -> dict[str, int | str] | None:
+        """Detach one authenticated device and issue exactly one fresh code."""
+        now, token_hash = int(time.time()), self.token_hash(token)
+        with self.lock, self.database() as db:
+            row = db.execute(
+                "SELECT id FROM devices WHERE token_hash=?", (token_hash,)
+            ).fetchone()
+            if row is None:
+                return None
+            device_id = int(row["id"])
+            for _ in range(8):
+                code = self.pair_code()
+                expires = now + PAIR_SECONDS
+                try:
+                    db.execute(
+                        """UPDATE devices
+                           SET account_id=NULL,pair_code=?,pair_expires=?,
+                               command_key_x='',command_key_y='',command_key_id='',
+                               command_sequence=0
+                           WHERE id=?""",
+                        (code, expires, device_id),
+                    )
+                    db.execute(
+                        """UPDATE commands SET state='superseded',completed_at=?
+                           WHERE device_id=? AND state IN ('queued','delivered')""",
+                        (now, device_id),
+                    )
+                    return {"pair_code": code, "pair_expires": expires}
+                except sqlite3.IntegrityError:
+                    continue
+        raise RuntimeError("pair code allocation failed")
+
+    def enroll_command_key(
+        self, account_id: int, device_id: int, key: dict[str, str]
+    ) -> str:
+        with self.lock, self.database() as db:
+            row = db.execute(
+                "SELECT command_key_id FROM devices WHERE id=? AND account_id=?",
+                (device_id, account_id),
+            ).fetchone()
+            if row is None:
+                return "missing"
+            current = row["command_key_id"]
+            if current and current != key["id"]:
+                return "conflict"
+            if not current:
+                db.execute(
+                    """UPDATE devices SET command_key_x=?,command_key_y=?,
+                           command_key_id=?,command_sequence=0
+                       WHERE id=? AND account_id=? AND command_key_id=''""",
+                    (key["x"], key["y"], key["id"], device_id, account_id),
+                )
+            return "ok"
+
+    def devices(self, account_id: int) -> list[dict[str, Any]]:
+        now = int(time.time())
+        with self.database() as db:
+            rows = db.execute(
+                """SELECT id,name,version,last_seen,height,sync_lag,hashrate,workers,
+                          peers,inbound,blocks,mining_state,warning,snapshot_json,
+                          command_key_id,command_sequence
+                   FROM devices WHERE account_id=? ORDER BY name COLLATE NOCASE,id""",
+                (account_id,),
+            ).fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                try:
+                    item["snapshot"] = json.loads(item.pop("snapshot_json"))
+                except (ValueError, TypeError):
+                    item["snapshot"] = {}
+                    item.pop("snapshot_json", None)
+                command = db.execute(
+                    "SELECT action,state,result,created_at FROM commands WHERE device_id=? ORDER BY id DESC LIMIT 1",
+                    (item["id"],),
+                ).fetchone()
+                item["last_command"] = dict(command) if command else None
+                history = db.execute(
+                    """SELECT captured_at,height,hashrate,peers,inbound,mining_active,
+                                        diagnostics_json,warning,mining_state
+                                        FROM samples WHERE device_id=? AND captured_at>=?
+                                        ORDER BY captured_at""",
+                    (item["id"], now - 3600),
+                ).fetchall()
+                item["history"] = [present_sample(dict(sample)) for sample in history]
+                present_device(item)
+                item["online"] = now - int(item["last_seen"]) <= ONLINE_SECONDS
+                result.append(item)
+        return result
+
+    def command_status(
+        self, account_id: int, device_id: int, command_id: int
+    ) -> dict[str, Any] | None:
+        with self.database() as db:
+            row = db.execute(
+                """SELECT c.id,c.device_id,c.action,c.sequence,c.state,c.result,
+                          c.created_at,c.expires_at,c.completed_at
+                   FROM commands c JOIN devices d ON d.id=c.device_id
+                   WHERE c.id=? AND c.device_id=? AND c.account_id=?
+                         AND d.account_id=?""",
+                (command_id, device_id, account_id, account_id),
+            ).fetchone()
+        if row is None:
+            return None
+        command = dict(row)
+        if (command["state"] in {"queued", "delivered"}
+                and command["expires_at"] < int(time.time())):
+            command["state"] = "expired"
+        return command
+
+    def queue_command(
+        self, account_id: int, command: dict[str, Any]
+    ) -> int | None:
+        now = int(time.time())
+        device_id = command["id"]
+        with self.lock, self.database() as db:
+            owned = db.execute(
+                """SELECT command_key_x,command_key_y,snapshot_json,version,last_seen,
+                          command_key_id,command_sequence FROM devices
+                   WHERE id=? AND account_id=?""",
+                (device_id, account_id),
+            ).fetchone()
+            if not owned:
+                return None
+            if command["action"] == "node.signin":
+                snapshot = json.loads(owned["snapshot_json"])
+                key = validate_unlock_key(snapshot.get("unlock_key"))
+                if key is None:
+                    raise ValueError("Update this node to enable remote sign-in")
+                if key["id"] != command["payload"]["key_id"] or key["identity"] != command["payload"]["identity"]:
+                    raise ValueError("Node sign-in identity changed; refresh and retry")
+            if not owned["command_key_id"]:
+                raise ValueError("Secure control key is not enrolled")
+            if not hmac.compare_digest(owned["command_key_id"], command["key_id"]):
+                raise ValueError("Command key does not match this machine")
+            if not verify_command_signature(
+                command, owned["command_key_x"], owned["command_key_y"]
+            ):
+                raise ValueError("Command signature is invalid")
+            if command["sequence"] != int(owned["command_sequence"]) + 1:
+                raise ValueError("Refresh the portal before sending another command")
+            if command["action"] in {"pool.start", "pool.stop"}:
+                snapshot = json.loads(owned["snapshot_json"])
+                if snapshot.get("pool_remote_control") is not True:
+                    raise ValueError("Update this machine to a client with remote pool controls first.")
+                if snapshot.get("remote_control") is not True:
+                    raise ValueError("Remote control pairing is not ready on this machine.")
+                if now - int(owned["last_seen"]) > ONLINE_SECONDS:
+                    raise ValueError("This machine is offline. Pool controls need the Veld app online.")
+            if command["action"] == "updates.automatic" and not supports_automatic_updates(
+                owned["version"], json.loads(owned["snapshot_json"])
+            ):
+                raise ValueError("Automatic updates require Veld 3.2.0 or later. Use Update now first.")
+            active = db.execute(
+                "SELECT COUNT(*) FROM commands WHERE device_id=? AND state IN ('queued','delivered') AND expires_at>=?",
+                (device_id, now),
+            ).fetchone()[0]
+            if active >= 5:
+                raise ValueError("Wait for the pending client command to finish")
+            db.execute(
+                "UPDATE commands SET state='superseded',completed_at=? WHERE device_id=? AND action=? AND state='queued'",
+                (now, device_id, command["action"]),
+            )
+            db.execute(
+                "UPDATE commands SET payload_json='{}' WHERE device_id=? AND action='node.signin' AND state='superseded'",
+                (device_id,),
+            )
+            cur = db.execute(
+                """INSERT INTO commands(
+                       device_id,account_id,action,payload_json,state,sequence,
+                       issued_at,created_at,expires_at,nonce,key_id,signature)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    device_id,
+                    account_id,
+                    command["action"],
+                    canonical_command_payload(command["action"], command["payload"]),
+                    "queued",
+                    command["sequence"],
+                    command["issued_at"],
+                    now,
+                    command["expires_at"],
+                    command["nonce"],
+                    command["key_id"],
+                    command["signature"],
+                ),
+            )
+            db.execute(
+                "UPDATE devices SET command_sequence=? WHERE id=? AND account_id=?",
+                (command["sequence"], device_id, account_id),
+            )
+            return int(cur.lastrowid)
+
+    def rename(self, account_id: int, device_id: int, name: str) -> bool:
+        with self.lock, self.database() as db:
+            return (
+                db.execute(
+                    "UPDATE devices SET name=? WHERE id=? AND account_id=?",
+                    (name, device_id, account_id),
+                ).rowcount
+                == 1
+            )
+
+    def revoke(self, account_id: int, device_id: int) -> bool:
+        with self.lock, self.database() as db:
+            return (
+                db.execute(
+                    "DELETE FROM devices WHERE id=? AND account_id=?",
+                    (device_id, account_id),
+                ).rowcount
+                == 1
+            )
+
+
+def bounded_int(value: Any, minimum: int, maximum: int, field: str) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not minimum <= value <= maximum
+    ):
+        raise ValueError(f"invalid {field}")
+    return value
+
+
+def bounded_number(value: Any, maximum: float, field: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not 0 <= float(value) <= maximum
+    ):
+        raise ValueError(f"invalid {field}")
+    return float(value)
+
+
+def clean_text(value: Any, maximum: int, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) > maximum
+        or any(ord(c) < 32 and c not in "\t" for c in value)
+    ):
+        raise ValueError(f"invalid {field}")
+    return value
+
+
+def validate_diagnostics(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    required = {"schema", "local_status_valid", "mining_status_valid", "peer_status_valid",
+                "status_updated_at", "process_running", "last_exit_at", "last_exit_code",
+                "work_state", "total_hashes", "mining_ready", "daemon"}
+    if (not isinstance(value, dict) or set(value) != required
+            or type(value["schema"]) is not int or value["schema"] != 1):
+        raise ValueError("invalid status diagnostics")
+    out = {"schema": 1}
+    for key in ("local_status_valid", "mining_status_valid", "peer_status_valid", "process_running"):
+        if not isinstance(value[key], bool):
+            raise ValueError("invalid status validity")
+        out[key] = value[key]
+    for key, maximum in {"status_updated_at": 10**12, "last_exit_at": 10**12,
+                         "last_exit_code": 2**32-1, "total_hashes": 10**19}.items():
+        out[key] = None if value[key] is None else bounded_int(value[key], 0, maximum, key)
+    out["work_state"] = None if value["work_state"] is None else clean_text(value["work_state"], 48, "work state")
+    if value["mining_ready"] is not None and not isinstance(value["mining_ready"], bool):
+        raise ValueError("invalid mining readiness")
+    out["mining_ready"] = value["mining_ready"]
+    if not out["mining_status_valid"] and any(out[k] is not None for k in
+            ("status_updated_at", "work_state", "total_hashes", "mining_ready")):
+        raise ValueError("unavailable mining status must be unknown")
+    daemon = value["daemon"]
+    out["daemon"] = None
+    if daemon is not None:
+        integers = {"network_magic", "protocol_height", "asert_height", "migration_height",
+                    "security_height", "verification_height", "verification_target"}
+        fields = integers | {"version", "profile", "executable_sha256", "ibd_complete", "historical_validated"}
+        if not out["mining_status_valid"] or not isinstance(daemon, dict) or set(daemon) != fields:
+            raise ValueError("invalid daemon identity")
+        version = clean_text(daemon["version"], 32, "daemon version")
+        profile = clean_text(daemon["profile"], 64, "daemon profile")
+        digest = clean_text(daemon["executable_sha256"], 64, "daemon build hash")
+        if not VERSION_RE.fullmatch(version) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", profile) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("invalid daemon build identity")
+        result = {k: bounded_int(daemon[k], 0, 2**32-1 if k == "network_magic" else 10**12, k) for k in integers}
+        for key in ("ibd_complete", "historical_validated"):
+            if not isinstance(daemon[key], bool):
+                raise ValueError("invalid daemon validation state")
+            result[key] = daemon[key]
+        result.update(version=version, profile=profile, executable_sha256=digest)
+        out["daemon"] = result
+    return out
+
+
+def diagnostic_transition(value: dict[str, Any]) -> tuple:
+    daemon = value.get("daemon") or {}
+    return tuple(value.get(k) for k in (
+        "local_status_valid", "mining_status_valid", "peer_status_valid",
+        "process_running", "last_exit_at", "last_exit_code", "work_state", "mining_ready")) + tuple(
+        daemon.get(k) for k in ("version", "profile", "executable_sha256", "ibd_complete", "historical_validated"))
+
+
+def present_device(item: dict[str, Any]) -> None:
+    """Apply validity to legacy storage columns before exposing any readings."""
+    snapshot = item.get("snapshot", {})
+    # Decimal strings preserve all 64 bits of a public peer identity in browsers.
+    topology = snapshot.get("topology", {})
+    if isinstance(topology, dict):
+        if "local_id" in topology:
+            topology["local_id"] = str(topology["local_id"])
+        for node in topology.get("nodes", []):
+            node["id"] = str(node["id"])
+        for edge in topology.get("edges", []):
+            edge["first"] = str(edge["first"])
+            edge["second"] = str(edge["second"])
+    diagnostic = snapshot.get("diagnostics", {})
+    item["gui_version"] = item.get("version")
+    if not supports_automatic_updates(str(item.get("version", "")), snapshot):
+        snapshot.pop("automatic_updates", None)
+    daemon = diagnostic.get("daemon") or {}
+    item["daemon_version"] = daemon.get("version")
+    local = diagnostic.get("local_status_valid")
+    mining = diagnostic.get("mining_status_valid")
+    peers = diagnostic.get("peer_status_valid")
+    for key in ("height", "sync_lag"):
+        if local is False or (local is None and not item.get(key)):
+            item[key] = None
+    for key in ("hashrate", "workers", "blocks"):
+        if mining is False or (mining is None and not item.get(key)):
+            item[key] = None
+    if not (local or peers) and not (local is None and item.get("peers")):
+        item["peers"] = None
+    if peers is False or (peers is None and not item.get("inbound")):
+        item["inbound"] = None
+    for key in ("mining_active", "mining_ready", "total_hashes"):
+        if mining is False or (mining is None and not snapshot.get(key)):
+            snapshot[key] = None
+    for key in ("mempool", "supply", "last_block_age"):
+        if local is False or (local is None and not snapshot.get(key)):
+            snapshot[key] = None
+    for key in ("outbound", "exact_tip"):
+        if peers is False or (peers is None and not snapshot.get(key)):
+            snapshot[key] = None
+
+
+def present_sample(item: dict[str, Any]) -> dict[str, Any]:
+    try:
+        diagnostic = json.loads(item.pop("diagnostics_json", "{}"))
+    except (ValueError, TypeError):
+        diagnostic = {}
+    item["diagnostics"] = diagnostic
+    for key, validity in (("height", "local_status_valid"), ("hashrate", "mining_status_valid"),
+                          ("peers", "peer_status_valid"), ("inbound", "peer_status_valid"),
+                          ("mining_active", "mining_status_valid")):
+        valid = diagnostic.get(validity)
+        if key == "peers" and diagnostic.get("local_status_valid"):
+            valid = True
+        if valid is False or (valid is None and not item.get(key)):
+            item[key] = None
+    return item
+
+
+def validate_pool_snapshot(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None  # Older clients do not report pool state; never infer it.
+    integers = {"configured_workers": 64, "active_workers": 64, "total_hashes": 2**64-1,
+                "accepted": 2**64-1, "verified_shares": 2**64-1,
+                "retry_count": 2**64-1, "updated_at": 10**12}
+    fields = set(integers) | {"schema", "running", "current", "state", "hashrate"}
+    if not isinstance(value, dict) or set(value) != fields or type(value["schema"]) is not int or value["schema"] != 1:
+        raise ValueError("invalid pool report schema")
+    if type(value["running"]) is not bool or type(value["current"]) is not bool:
+        raise ValueError("invalid pool report validity")
+    states = {"hashing", "waiting", "retrying", "stopped", "error", "unavailable"}
+    if not isinstance(value["state"], str) or value["state"] not in states:
+        raise ValueError("invalid pool report state")
+    out = {key: bounded_int(value[key], 0, limit, key) for key, limit in integers.items()}
+    rate = bounded_number(value["hashrate"], 1e18, "pool hashrate")
+    if not out["configured_workers"] or out["active_workers"] > out["configured_workers"]:
+        raise ValueError("invalid pool worker counts")
+    if not value["running"] and (value["state"] != "stopped" or out["active_workers"] or rate):
+        raise ValueError("stopped pool worker cannot report live hashing")
+    if value["state"] == "hashing" and (not value["current"] or not out["active_workers"]):
+        raise ValueError("invalid live pool work state")
+    if not value["current"] and (out["active_workers"] or rate):
+        raise ValueError("stale pool status cannot report live hashing")
+    out.update(schema=1, running=value["running"], current=value["current"], state=value["state"], hashrate=rate)
+    return out
+
+
+def validate_snapshot(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or len(value) > 30:
+        raise ValueError("invalid client snapshot")
+    bool_fields = {
+        "process_running",
+        "snapshot_eligible",
+        "full_ibd",
+        "tor",
+        "reachable",
+        "reference",
+        "mining_enabled",
+        "mining_active",
+        "mining_ready",
+        "port_mapped",
+        "remote_control",
+        "pairing_control",
+        "pool_remote_control",
+        "automatic_updates",
+        "identity_unlocked",
+    }
+    int_limits = {
+        "mempool": 10**7,
+        "chain_bytes": 10**16,
+        "outbound": 10000,
+        "exact_tip": 10000,
+        "last_block_age": 10**9,
+        "total_hashes": 10**19,
+        "configured_workers": 64,
+    }
+    number_limits = {"supply": 21_000_000.0}
+    allowed = (
+        bool_fields
+        | set(int_limits)
+        | set(number_limits)
+        | {"peer_roles", "topology", "recent_blocks", "events", "diagnostics", "unlock_key", "pool"}
+    )
+    if set(value) - allowed:
+        raise ValueError("unexpected client snapshot field")
+    out: dict[str, Any] = {}
+    out["diagnostics"] = validate_diagnostics(value.get("diagnostics"))
+    out["unlock_key"] = validate_unlock_key(value.get("unlock_key"))
+    out["pool"] = validate_pool_snapshot(value.get("pool"))
+    for field in bool_fields:
+        if field == "automatic_updates" and field not in value:
+            continue
+        item = value.get(field, False)
+        if not isinstance(item, bool):
+            # Request-schema violations consistently map to HTTP 400.
+            raise ValueError(f"invalid {field}")  # noqa: TRY004
+        out[field] = item
+    for field, maximum in int_limits.items():
+        out[field] = bounded_int(value.get(field, 0), 0, maximum, field)
+    for field, maximum in number_limits.items():
+        out[field] = bounded_number(value.get(field, 0), maximum, field)
+    roles = value.get("peer_roles", {})
+    if not isinstance(roles, dict) or set(roles) - {
+        "fleet",
+        "node",
+        "miner",
+        "validator",
+        "unknown",
+    }:
+        raise ValueError("invalid peer roles")
+    out["peer_roles"] = {
+        key: bounded_int(item, 0, 10000, "peer role") for key, item in roles.items()
+    }
+    topology = value.get("topology", {})
+    if not isinstance(topology, dict) or set(topology) - {
+        "generated_at",
+        "reporting_nodes",
+        "eligible_nodes",
+        "local_id",
+        "nodes",
+        "edges",
+    }:
+        raise ValueError("invalid topology")
+    clean_topology = {
+        "generated_at": bounded_int(
+            topology.get("generated_at", 0), 0, 10**12, "topology timestamp"
+        ),
+        "reporting_nodes": bounded_int(
+            topology.get("reporting_nodes", 0), 0, 10000, "reporting nodes"
+        ),
+        "eligible_nodes": bounded_int(
+            topology.get("eligible_nodes", 0), 0, 10000, "eligible nodes"
+        ),
+        "local_id": bounded_int(
+            topology.get("local_id", 0), 0, 2**64 - 1, "local topology id"
+        ),
+    }
+    nodes = topology.get("nodes", [])
+    if not isinstance(nodes, list) or len(nodes) > 64:
+        raise ValueError("invalid topology nodes")
+    clean_nodes, node_ids = [], set()
+    for node in nodes:
+        if not isinstance(node, dict) or set(node) != {
+            "id",
+            "role",
+            "role_index",
+            "tip_state",
+            "updated_at",
+        }:
+            raise ValueError("invalid topology node")
+        node_id = bounded_int(node.get("id"), 1, 2**64 - 1, "topology node id")
+        role = node.get("role")
+        tip_state = node.get("tip_state")
+        if role not in {"fleet", "node", "miner", "validator"} or tip_state not in {
+            "exact",
+            "differs",
+            "stale",
+            "unavailable",
+        }:
+            raise ValueError("invalid topology node state")
+        if node_id in node_ids:
+            raise ValueError("duplicate topology node")
+        node_ids.add(node_id)
+        clean_nodes.append(
+            {
+                "id": node_id,
+                "role": role,
+                "role_index": bounded_int(
+                    node.get("role_index"), 0, 10000, "topology role index"
+                ),
+                "tip_state": tip_state,
+                "updated_at": bounded_int(
+                    node.get("updated_at"), 0, 10**12, "topology node timestamp"
+                ),
+            }
+        )
+    edges = topology.get("edges", [])
+    if not isinstance(edges, list) or len(edges) > 192:
+        raise ValueError("invalid topology edges")
+    clean_edges, edge_keys = [], set()
+    for edge in edges:
+        if (
+            not isinstance(edge, dict)
+            or set(edge) != {"first", "second", "confirmed"}
+            or not isinstance(edge.get("confirmed"), bool)
+        ):
+            raise ValueError("invalid topology edge")
+        first = bounded_int(edge.get("first"), 1, 2**64 - 1, "topology edge")
+        second = bounded_int(edge.get("second"), 1, 2**64 - 1, "topology edge")
+        if first == second or first not in node_ids or second not in node_ids:
+            raise ValueError("invalid topology edge endpoint")
+        key = tuple(sorted((first, second)))
+        if key in edge_keys:
+            continue
+        edge_keys.add(key)
+        clean_edges.append(
+            {"first": first, "second": second, "confirmed": edge["confirmed"]}
+        )
+    clean_topology["nodes"] = clean_nodes
+    clean_topology["edges"] = clean_edges
+    out["topology"] = clean_topology
+    blocks = value.get("recent_blocks", [])
+    if not isinstance(blocks, list) or len(blocks) > 12:
+        raise ValueError("invalid recent blocks")
+    clean_blocks = []
+    for block in blocks:
+        if not isinstance(block, dict) or set(block) - {
+            "height",
+            "timestamp",
+            "tx_count",
+            "reward",
+            "hash",
+            "winner",
+        }:
+            raise ValueError("invalid recent block")
+        clean_blocks.append(
+            {
+                "height": bounded_int(
+                    block.get("height", 0), 0, 10**12, "block height"
+                ),
+                "timestamp": bounded_int(
+                    block.get("timestamp", 0), 0, 10**12, "block timestamp"
+                ),
+                "tx_count": bounded_int(
+                    block.get("tx_count", 0), 0, 10**7, "transaction count"
+                ),
+                "reward": bounded_number(
+                    block.get("reward", 0), 21_000_000.0, "block reward"
+                ),
+                "hash": clean_text(block.get("hash", ""), 72, "block hash"),
+                "winner": clean_text(block.get("winner", ""), 72, "block winner"),
+            }
+        )
+    out["recent_blocks"] = clean_blocks
+    events = value.get("events", [])
+    if not isinstance(events, list) or len(events) > 20:
+        raise ValueError("invalid events")
+    out["events"] = [clean_text(item, 160, "event") for item in events]
+    return out
+
+
+def validate_report(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict) or len(data) > 20:
+        raise ValueError("invalid report")
+    allowed = {
+        "portal_protocol",
+        "name",
+        "version",
+        "height",
+        "sync_lag",
+        "hashrate",
+        "workers",
+        "peers",
+        "inbound",
+        "blocks",
+        "mining_state",
+        "warning",
+        "snapshot",
+        "ack_id",
+        "ack_status",
+        "ack_message",
+    }
+    if set(data) - allowed:
+        raise ValueError("unexpected report field")
+    name, version, state = (
+        data.get("name"),
+        data.get("version"),
+        data.get("mining_state"),
+    )
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 48:
+        raise ValueError("invalid machine name")
+    if not isinstance(version, str) or not VERSION_RE.fullmatch(version):
+        raise ValueError("invalid version")
+    if state not in {"Mining", "Syncing", "Paused", "Node only", "Stopped", "Warning"}:
+        raise ValueError("invalid mining state")
+    warning = clean_text(data.get("warning", ""), 160, "warning")
+    ack_id = bounded_int(data.get("ack_id", 0), 0, 2**63 - 1, "acknowledgement")
+    ack_status = data.get("ack_status", "")
+    ack_message = clean_text(
+        data.get("ack_message", ""), 160, "acknowledgement message"
+    )
+    if ack_id and ack_status not in {"completed", "failed", "local_confirmation"}:
+        raise ValueError("invalid acknowledgement status")
+    if not ack_id and (ack_status or ack_message):
+        raise ValueError("orphan acknowledgement")
+    protocol = bounded_int(data.get("portal_protocol", 1), 1, 4, "portal protocol")
+    return {
+        "portal_protocol": protocol,
+        "name": name.strip(),
+        "version": version,
+        "mining_state": state,
+        "warning": warning,
+        "hashrate": bounded_number(data.get("hashrate"), 1e18, "hashrate"),
+        "height": bounded_int(data.get("height"), 0, 10**12, "height"),
+        "sync_lag": bounded_int(data.get("sync_lag"), 0, 10**9, "sync lag"),
+        "workers": bounded_int(data.get("workers"), 0, 1024, "workers"),
+        "peers": bounded_int(data.get("peers"), 0, 10000, "peers"),
+        "inbound": bounded_int(data.get("inbound"), 0, 10000, "inbound"),
+        "blocks": bounded_int(data.get("blocks"), 0, 10**12, "blocks"),
+        "snapshot": validate_snapshot(data.get("snapshot")),
+        "ack_id": ack_id,
+        "ack_status": ack_status,
+        "ack_message": ack_message,
+    }
+
+
+def validate_command(data: Any) -> dict[str, Any]:
+    required = {
+        "id",
+        "action",
+        "payload",
+        "sequence",
+        "issued_at",
+        "expires_at",
+        "nonce",
+        "key_id",
+        "signature",
+    }
+    if not isinstance(data, dict) or set(data) != required:
+        raise ValueError("invalid command")
+    device_id = bounded_int(data["id"], 1, 2**63 - 1, "device")
+    action, payload = data["action"], data["payload"]
+    if action not in ALLOWED_ACTIONS or not isinstance(payload, dict):
+        raise ValueError("unsupported command")
+    canonical_command_payload(action, payload)
+    sequence = bounded_int(data["sequence"], 1, 2**63 - 1, "command sequence")
+    issued_at = bounded_int(data["issued_at"], 1, 2**63 - 1, "command time")
+    expires_at = bounded_int(data["expires_at"], 1, 2**63 - 1, "command expiry")
+    nonce, key_id, signature = data["nonce"], data["key_id"], data["signature"]
+    if not isinstance(nonce, str) or not COMMAND_NONCE_RE.fullmatch(nonce):
+        raise ValueError("invalid command nonce")
+    if not isinstance(key_id, str) or not COMMAND_KEY_ID_RE.fullmatch(key_id):
+        raise ValueError("invalid command key")
+    if not isinstance(signature, str) or not COMMAND_SIGNATURE_RE.fullmatch(signature):
+        raise ValueError("invalid command signature")
+    try:
+        decode_base64url_canonical(nonce, 16)
+        decode_base64url_canonical(signature, 64)
+    except ValueError:
+        raise ValueError("invalid signed command encoding") from None
+    now = int(time.time())
+    if abs(issued_at - now) > COMMAND_CLOCK_SKEW:
+        raise ValueError("Command time is outside the allowed window")
+    if expires_at <= now or not 30 <= expires_at - issued_at <= COMMAND_SECONDS:
+        raise ValueError("Command expiry is invalid")
+    command = {
+        "id": device_id,
+        "action": action,
+        "payload": payload,
+        "sequence": sequence,
+        "issued_at": issued_at,
+        "expires_at": expires_at,
+        "nonce": nonce,
+        "key_id": key_id,
+        "signature": signature,
+    }
+    command_envelope(command)
+    return command
+
+
+class PortalHandler(BaseHTTPRequestHandler):
+    server_version = "VeldPortal"
+    sys_version = ""
+
+    @property
+    def app(self) -> PortalServer:
+        return self.server  # type: ignore[return-value]
+
+    def log_message(self, _format: str, *_args: Any) -> None:
+        return
+
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(15)
+        self._client_rate_identity: str | None = None
+        self._budget_charge: tuple[int, int, bool] | None = None
+        self._handling_request = False
+        self._parsed_admission = False
+        self._malformed_charged = False
+        self._malformed_allowed = False
+        self._request_path = "/"
+
+    def finish(self) -> None:
+        self.release_request_budget()
+        super().finish()
+
+    def release_request_budget(self) -> None:
+        charge = getattr(self, "_budget_charge", None)
+        if charge is not None:
+            self.app.concurrent_budget.release(*charge)
+            self._budget_charge = None
+
+    def handle_one_request(self) -> None:
+        # BaseHTTPRequestHandler dispatches unsupported methods only after
+        # parse_request().  Reset identity and accounting per request so a
+        # keep-alive peer cannot reuse authenticated proxy metadata, and
+        # release the route work envelope after this request rather than only
+        # when the TCP connection finally closes.
+        self._client_rate_identity = None
+        self._parsed_admission = False
+        self._malformed_charged = False
+        self._malformed_allowed = False
+        self._request_path = "/"
+        self._handling_request = True
+        try:
+            super().handle_one_request()
+        finally:
+            self._handling_request = False
+            self.release_request_budget()
+
+    def parse_request(self) -> bool:
+        # This is the one method-independent parsed-request boundary.  It runs
+        # before GET, POST, HEAD, OPTIONS, PUT, or an arbitrary method can be
+        # dispatched, and therefore no parsed request can bypass proxy,
+        # client, route, global, or concurrent-work admission.
+        if not super().parse_request():
+            return False
+        if getattr(self.headers, "defects", ()):
+            self.send_error(400, "Malformed request headers")
+            return False
+        try:
+            self._request_path = urlsplit(self.path).path.rstrip("/") or "/"
+        except ValueError:
+            self.send_error(400, "Malformed request target")
+            return False
+        if not self.admit_or_reply(self._request_path):
+            self.close_connection = True
+            return False
+        self._parsed_admission = True
+        return True
+
+    def charge_malformed_request(self) -> bool:
+        if self._malformed_charged:
+            return self._malformed_allowed
+        identity = getattr(self, "_client_rate_identity", None)
+        if identity is None:
+            peer = rate_identity(
+                self.client_address[0] if self.client_address else "unknown"
+            )
+            identity = "peer:" + peer
+        self._malformed_allowed = self.app.limiter.allow_many(
+            (
+                (identity, "malformed-request", 60, 60),
+                ("global", "malformed-request", 300, 60),
+                ("global", "malformed-work", 600, 60),
+            )
+        )
+        self._malformed_charged = True
+        return self._malformed_allowed
+
+    def send_error(
+        self, code: int, message: str | None = None, explain: str | None = None
+    ) -> None:
+        del message, explain
+        # Errors raised before central parsed admission include invalid request
+        # lines, overlong lines, and malformed/oversized header sets.  Charge
+        # them to the direct peer plus the independent global malformed/work
+        # budgets; forwarding metadata is not trusted before parsing succeeds.
+        if self._handling_request and not self._parsed_admission:
+            if not self.charge_malformed_request():
+                code = 429
+        self.close_connection = True
+        body = json.dumps(
+            {
+                "error": (
+                    "Malformed request budget exceeded"
+                    if code == 429 else "Request refused"
+                )
+            },
+            separators=(",", ":"),
+        ).encode()
+        self._headers(code, "application/json; charset=utf-8", len(body))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def client_rate_identity(self) -> str:
+        if getattr(self, "_client_rate_identity", None) is None:
+            peer = self.client_address[0] if self.client_address else "unknown"
+            self._client_rate_identity = self.app.proxy.resolve(peer, self.headers)
+        return self._client_rate_identity
+
+    def admit_request(self, path: str) -> tuple[bool, bool]:
+        if self._budget_charge is not None:
+            return False, True
+        identity = self.client_rate_identity()
+        route = route_rate_bucket(path)
+        history = "history" in route
+        expensive = path in {
+            "/api/v1/register", "/api/v1/login", "/api/v1/device/report"
+        }
+        memory, work = ((16, 16) if history else ((8, 8) if expensive else (4, 1)))
+        # Charge concurrent resources before cookie parsing or the session DB.
+        if not self.app.concurrent_budget.acquire(memory, work, history):
+            return False, True
+        self._budget_charge = (memory, work, history)
+        try:
+            token = self.session_token()
+            row = self.app.store.session(token) if token else None
+        except Exception:
+            self.release_request_budget()
+            raise
+        checks: list[tuple[str, str, int, int]] = [
+            ("global", "requests", 6000, 60),
+            ("global", "route:" + route, 1200 if not expensive else 600, 60),
+        ]
+        if row:
+            account_id = int(row["account_id"])
+            session_identity = "session:" + hashlib.sha256(
+                token.encode("ascii", "ignore")
+            ).hexdigest()
+            checks.extend(
+                (
+                    (f"account:{account_id}", "authenticated", 600, 60),
+                    (session_identity, "authenticated", 300, 60),
+                )
+            )
+        else:
+            checks.append((identity, "unauthenticated", 120, 60))
+        if not self.app.limiter.allow_many(tuple(checks)):
+            self.release_request_budget()
+            return False, False
+        return True, False
+
+    def boundary_reply(self, status: int, value: dict[str, Any]) -> None:
+        self.close_connection = True
+        self.reply(status, value)
+
+    def admit_or_reply(self, path: str) -> bool:
+        try:
+            accepted, busy = self.admit_request(path)
+        except ProxyMetadataError:
+            peer = rate_identity(
+                self.client_address[0] if self.client_address else "unknown"
+            )
+            if self.app.limiter.allow_many(
+                (
+                    ("peer:" + peer, "invalid-proxy", 60, 60),
+                    ("global", "invalid-proxy", 600, 60),
+                    ("global", "boundary-work", 1200, 60),
+                )
+            ):
+                self.boundary_reply(403, {"error": "Proxy metadata refused"})
+            else:
+                self.boundary_reply(
+                    429, {"error": "Proxy metadata rate exceeded"}
+                )
+            return False
+        except (CookieError, ValueError):
+            if not self.charge_malformed_request():
+                self.boundary_reply(
+                    429, {"error": "Malformed request budget exceeded"}
+                )
+            else:
+                self.boundary_reply(400, {"error": "Invalid request"})
+            return False
+        if accepted:
+            return True
+        if busy:
+            self.boundary_reply(
+                503, {"error": "Portal resource budget exhausted"}
+            )
+        else:
+            self.boundary_reply(429, {"error": "Request rate exceeded"})
+        return False
+
+    def _headers(
+        self,
+        status: int,
+        content_type: str,
+        length: int = 0,
+        csp_nonce: str | None = None,
+    ) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(length))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header(
+            "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+        )
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.send_header("X-Permitted-Cross-Domain-Policies", "none")
+        if not self.app.insecure_http:
+            self.send_header(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+        if csp_nonce:
+            content_security_policy = (
+                "default-src 'none'; "
+                f"script-src 'nonce-{csp_nonce}'; script-src-attr 'none'; "
+                f"style-src 'nonce-{csp_nonce}'; style-src-attr 'none'; "
+                "connect-src 'self' https://pool.veld.network; img-src 'self'; manifest-src 'self'; "
+                "worker-src 'self'; object-src 'none'; frame-ancestors 'none'; "
+                "base-uri 'none'; form-action 'self'; trusted-types portal-render; "
+                "require-trusted-types-for 'script'"
+            )
+        else:
+            content_security_policy = (
+                "default-src 'none'; object-src 'none'; frame-ancestors 'none'; "
+                "base-uri 'none'; form-action 'none'"
+            )
+        self.send_header("Content-Security-Policy", content_security_policy)
+
+    def reply(
+        self, status: int, value: dict[str, Any], cookie: str | None = None
+    ) -> None:
+        body = json.dumps(value, separators=(",", ":")).encode()
+        self._headers(status, "application/json; charset=utf-8", len(body))
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
+        if self.close_connection:
+            self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def read_json(self) -> Any:
+        lengths = self.headers.get_all("Content-Length", [])
+        transfer_encodings = self.headers.get_all("Transfer-Encoding", [])
+        content_types = self.headers.get_all("Content-Type", [])
+        # The loopback backend sits behind a reverse proxy. Accept exactly one
+        # canonical length and no transfer coding so the proxy and backend can
+        # never disagree about where this request ends and the next begins.
+        if transfer_encodings or len(lengths) != 1 or len(content_types) != 1:
+            raise ValueError("ambiguous request framing")
+        length_text = lengths[0]
+        if not re.fullmatch(r"[1-9][0-9]*", length_text) or not (
+            0 < int(length_text) <= MAX_BODY
+        ):
+            raise ValueError("invalid request size")
+        if self.headers.get_content_type() != "application/json":
+            raise ValueError("JSON required")
+        return json.loads(self.rfile.read(int(length_text)).decode("utf-8"))
+
+    def session_token(self) -> str:
+        cookie = SimpleCookie(self.headers.get("Cookie", ""))
+        morsel = cookie.get(self.app.cookie_name)
+        return morsel.value if morsel else ""
+
+    def authenticated(self, csrf: bool = False) -> sqlite3.Row | None:
+        row = self.app.store.session(self.session_token())
+        if not row or (
+            csrf
+            and not hmac.compare_digest(
+                self.headers.get("X-CSRF-Token", ""), row["csrf"]
+            )
+        ):
+            return None
+        return row
+
+    def rate(self, bucket: str, limit: int, seconds: int) -> bool:
+        return self.app.limiter.allow(
+            self.client_rate_identity(), bucket, limit, seconds
+        )
+
+    def auth_rate(self, account: str, registration: bool) -> bool:
+        # These limits are evaluated before scrypt.  The global budget cannot
+        # be reset by source/header rotation, the account budget cannot be
+        # reset by IP rotation or ASCII case variants, and registration has a
+        # separate, tighter resource envelope.
+        if registration:
+            checks = (
+                ("portal-auth-global", "registration", 24, 3600),
+                (account_rate_identity(account), "registration-account", 3, 3600),
+            )
+            peer_limit = ("registration-peer", 12, 3600)
+        else:
+            checks = (
+                ("portal-auth-global", "login", 120, 600),
+                (account_rate_identity(account), "login-account", 8, 600),
+            )
+            peer_limit = ("login-peer", 60, 600)
+        return self.app.limiter.allow_many(
+            tuple(checks) +
+            ((self.client_rate_identity(), *peer_limit),) +
+            (("portal-password-global", "password-verification",
+              120 if not registration else 24, 600 if not registration else 3600),)
+        )
+
+    def device_rate(self, account_id: int, device_id: int) -> bool:
+        if not self.app.store.device_belongs(account_id, device_id):
+            return False
+        return self.app.limiter.allow_many(
+            (
+                (f"account:{account_id}", "device-operation", 300, 60),
+                (f"device:{device_id}", "device-operation", 120, 60),
+                ("global", "device-operation", 3000, 60),
+            )
+        )
+
+    def do_GET(self) -> None:
+        path = self._request_path
+        if path == "/healthz":
+            self.reply(200, {"ok": True})
+        elif path == "/api/v1/session":
+            row = self.authenticated()
+            self.reply(
+                200, {"authenticated": True, "csrf": row["csrf"]}
+            ) if row else self.reply(401, {"error": "Not signed in"})
+        elif path == "/api/v1/devices":
+            row = self.authenticated()
+            self.reply(
+                200,
+                {
+                    "csrf": row["csrf"],
+                    "devices": self.app.store.devices(int(row["account_id"])),
+                },
+            ) if row else self.reply(401, {"error": "Not signed in"})
+        elif path == "/manifest.webmanifest":
+            body = json.dumps(PORTAL_MANIFEST, separators=(",", ":")).encode()
+            self._headers(200, "application/manifest+json; charset=utf-8", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+        elif path == "/service-worker.js":
+            self._headers(
+                200, "application/javascript; charset=utf-8", len(PORTAL_SERVICE_WORKER)
+            )
+            self.send_header("Service-Worker-Allowed", "/")
+            self.end_headers()
+            self.wfile.write(PORTAL_SERVICE_WORKER)
+        elif path == "/icon.png":
+            try:
+                body = PORTAL_ICON_PATH.read_bytes()
+            except OSError:
+                return self.reply(404, {"error": "Not found"})
+            self._headers(200, "image/png", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+        elif path == "/offline":
+            nonce = base64.b64encode(secrets.token_bytes(24)).decode("ascii")
+            body = PORTAL_OFFLINE_HTML.replace(
+                b"<style>", f'<style nonce="{nonce}">'.encode("ascii"), 1
+            )
+            self._headers(
+                200, "text/html; charset=utf-8", len(body), csp_nonce=nonce
+            )
+            self.end_headers()
+            self.wfile.write(body)
+        elif path == "/":
+            nonce = base64.b64encode(secrets.token_bytes(24)).decode("ascii")
+            body = (
+                PORTAL_HTML.replace(
+                    "<style>", f'<style nonce="{nonce}">', 1
+                )
+                .replace("<script>", f'<script nonce="{nonce}">', 1)
+                .encode()
+            )
+            self._headers(
+                200, "text/html; charset=utf-8", len(body), csp_nonce=nonce
+            )
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.reply(404, {"error": "Not found"})
+
+    def do_POST(self) -> None:
+        path = self._request_path
+        try:
+            if path in {"/api/v1/register", "/api/v1/login"}:
+                data = self.read_json()
+                if not isinstance(data, dict):
+                    return self.reply(400, {"error": "Invalid request"})
+                name, password = data.get("account"), data.get("password")
+                if (
+                    not isinstance(name, str)
+                    or not ACCOUNT_RE.fullmatch(name)
+                    or not isinstance(password, str)
+                    or not 12 <= len(password) <= 128
+                ):
+                    return self.reply(
+                        400,
+                        {
+                            "error": "Use a 3 to 48 character account name and a password of at least 12 characters."
+                        },
+                    )
+                if not self.auth_rate(
+                    name, registration=path.endswith("register")
+                ):
+                    return self.reply(
+                        429, {"error": "Too many attempts. Try again later."}
+                    )
+                if not self.app.auth_slots.acquire(blocking=False):
+                    return self.reply(
+                        503, {"error": "Authentication service is busy. Try again."}
+                    )
+                try:
+                    if path.endswith("register"):
+                        account_id = self.app.store.create_account(name, password)
+                        if account_id is None:
+                            return self.reply(
+                                409, {"error": "Account name is unavailable"}
+                            )
+                    else:
+                        account_id = self.app.store.authenticate(name, password)
+                        if account_id is None:
+                            return self.reply(
+                                401, {"error": "Account or password is incorrect"}
+                            )
+                finally:
+                    self.app.auth_slots.release()
+                token, csrf = self.app.store.new_session(account_id)
+                flags = f"{self.app.cookie_name}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_SECONDS}"
+                if not self.app.insecure_http:
+                    flags += "; Secure"
+                return self.reply(200, {"ok": True, "csrf": csrf}, flags)
+
+            if path == "/api/v1/device/report":
+                authorizations = self.headers.get_all("Authorization", [])
+                if len(authorizations) != 1:
+                    return self.reply(401, {"error": "Invalid device credential"})
+                authorization = authorizations[0]
+                token = authorization[7:] if authorization.startswith("Bearer ") else ""
+                if not DEVICE_TOKEN_RE.fullmatch(token):
+                    return self.reply(401, {"error": "Invalid device credential"})
+                known = self.app.store.device_known(token)
+                token_identity = "device-token:" + hashlib.sha256(
+                    token.encode("ascii")
+                ).hexdigest()
+                report_checks: list[tuple[str, str, int, int]] = [
+                    ("global", "device-report", 2000, 60),
+                    (token_identity if known else self.client_rate_identity(),
+                     "device-report" if known else "device-enrollment",
+                     180 if known else 8, 60 if known else 3600),
+                ]
+                if not self.app.limiter.allow_many(tuple(report_checks)):
+                    return self.reply(429, {"error": "Report rate exceeded"})
+                return self.reply(
+                    200, self.app.store.report(token, validate_report(self.read_json()))
+                )
+
+            if path == "/api/v1/device/reset-pairing":
+                authorizations = self.headers.get_all("Authorization", [])
+                if len(authorizations) != 1:
+                    return self.reply(401, {"error": "Invalid device credential"})
+                authorization = authorizations[0]
+                token = authorization[7:] if authorization.startswith("Bearer ") else ""
+                if not DEVICE_TOKEN_RE.fullmatch(token):
+                    return self.reply(401, {"error": "Invalid device credential"})
+                if self.read_json() != {}:
+                    return self.reply(400, {"error": "Invalid reset request"})
+                token_identity = "device-token:" + hashlib.sha256(
+                    token.encode("ascii")
+                ).hexdigest()
+                if not self.app.limiter.allow_many(
+                    (
+                        (token_identity, "pairing-reset", 3, 3600),
+                        ("global", "pairing-reset", 300, 3600),
+                    )
+                ):
+                    return self.reply(429, {"error": "Pairing reset rate exceeded"})
+                replacement = self.app.store.reset_pairing(token)
+                if replacement is None:
+                    return self.reply(404, {"error": "Machine not found"})
+                return self.reply(200, {"ok": True, **replacement})
+
+            row = self.authenticated(csrf=True)
+            if not row:
+                return self.reply(401, {"error": "Not signed in"})
+            data, account_id = self.read_json(), int(row["account_id"])
+            if path == "/api/v1/logout":
+                self.app.store.delete_session(self.session_token())
+                flags = f"{self.app.cookie_name}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
+                if not self.app.insecure_http:
+                    flags += "; Secure"
+                return self.reply(200, {"ok": True}, flags)
+            if path == "/api/v1/devices/claim":
+                if not self.app.limiter.allow_many(
+                    (
+                        (f"account:{account_id}", "claim", 12, 600),
+                        (self.client_rate_identity(), "claim", 12, 600),
+                        ("global", "claim", 600, 600),
+                    )
+                ):
+                    return self.reply(
+                        429, {"error": "Too many pairing attempts. Try again later."}
+                    )
+                if not isinstance(data, dict) or set(data) != {
+                    "code",
+                    "command_key",
+                }:
+                    return self.reply(400, {"error": "Invalid pairing request"})
+                code = str(data["code"]).strip().upper()
+                if not re.fullmatch(
+                    r"[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}",
+                    code,
+                ):
+                    return self.reply(400, {"error": "Enter the complete pairing code"})
+                command_key = validate_command_key(data["command_key"])
+                return (
+                    self.reply(200, {"ok": True})
+                    if self.app.store.claim(account_id, code, command_key)
+                    else self.reply(404, {"error": "Code is invalid or expired"})
+                )
+            if path == "/api/v1/devices/trust-key":
+                if not isinstance(data, dict) or set(data) != {
+                    "id",
+                    "command_key",
+                }:
+                    return self.reply(400, {"error": "Invalid key enrollment"})
+                device_id = bounded_int(data["id"], 1, 2**63 - 1, "device")
+                if not self.app.store.device_belongs(account_id, device_id):
+                    return self.reply(404, {"error": "Machine not found"})
+                if not self.device_rate(account_id, device_id):
+                    return self.reply(429, {"error": "Device rate exceeded"})
+                result = self.app.store.enroll_command_key(
+                    account_id,
+                    device_id,
+                    validate_command_key(data["command_key"]),
+                )
+                if result == "missing":
+                    return self.reply(404, {"error": "Machine not found"})
+                if result == "conflict":
+                    return self.reply(
+                        409,
+                        {
+                            "error": "This machine already trusts a different command key. Re-pair it locally to replace that key."
+                        },
+                    )
+                return self.reply(200, {"ok": True})
+            if path == "/api/v1/devices/command-status":
+                if not isinstance(data, dict) or set(data) != {"id", "command_id"}:
+                    return self.reply(400, {"error": "Invalid command status request"})
+                device_id = bounded_int(data["id"], 1, 2**63 - 1, "device")
+                command_id = bounded_int(data["command_id"], 1, 2**63 - 1, "command")
+                if not self.app.store.device_belongs(account_id, device_id):
+                    return self.reply(404, {"error": "Machine not found"})
+                if not self.device_rate(account_id, device_id):
+                    return self.reply(429, {"error": "Device rate exceeded"})
+                command = self.app.store.command_status(account_id, device_id, command_id)
+                return (
+                    self.reply(200, {"command": command})
+                    if command is not None
+                    else self.reply(404, {"error": "Command not found"})
+                )
+            if path == "/api/v1/devices/command":
+                command = validate_command(data)
+                device_id = int(command["id"])
+                if not self.app.store.device_belongs(account_id, device_id):
+                    return self.reply(404, {"error": "Machine not found"})
+                if not self.device_rate(account_id, device_id):
+                    return self.reply(429, {"error": "Device rate exceeded"})
+                command_id = self.app.store.queue_command(account_id, command)
+                return (
+                    self.reply(200, {"ok": True, "command_id": command_id})
+                    if command_id
+                    else self.reply(404, {"error": "Machine not found"})
+                )
+            if path in {"/api/v1/devices/rename", "/api/v1/devices/revoke"}:
+                device_id = bounded_int(
+                    data.get("id") if isinstance(data, dict) else None,
+                    1,
+                    2**63 - 1,
+                    "device",
+                )
+                if not self.app.store.device_belongs(account_id, device_id):
+                    return self.reply(404, {"error": "Machine not found"})
+                if not self.device_rate(account_id, device_id):
+                    return self.reply(429, {"error": "Device rate exceeded"})
+                if path.endswith("rename"):
+                    name = data.get("name")
+                    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 48:
+                        return self.reply(400, {"error": "Machine name is invalid"})
+                    ok = self.app.store.rename(account_id, device_id, name.strip())
+                else:
+                    ok = self.app.store.revoke(account_id, device_id)
+                return (
+                    self.reply(200, {"ok": True})
+                    if ok
+                    else self.reply(404, {"error": "Machine not found"})
+                )
+            self.reply(404, {"error": "Not found"})
+        except (ValueError, json.JSONDecodeError) as exc:
+            if not self.charge_malformed_request():
+                self.reply(429, {"error": "Malformed request budget exceeded"})
+            else:
+                self.reply(400, {"error": str(exc) or "Invalid request"})
+        # Keep the service fail-closed and the client response generic at the
+        # outer HTTP boundary; the full exception stays in operator logs.
+        except Exception:
+            LOGGER.exception("Unhandled portal request failure")
+            self.reply(500, {"error": "Request could not be completed"})
+
+
+class PortalServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = 64
+
+    def __init__(
+        self,
+        address: tuple[str, int],
+        store: PortalStore,
+        insecure_http: bool = False,
+        trusted_proxy_peer: str | None = None,
+        proxy_token: bytes | None = None,
+    ) -> None:
+        super().__init__(address, PortalHandler)
+        self.store = store
+        self.insecure_http = insecure_http
+        self.cookie_name = DEV_COOKIE_NAME if insecure_http else COOKIE_NAME
+        self.limiter = RateLimiter()
+        self.proxy = TrustedProxyBoundary(trusted_proxy_peer, proxy_token)
+        self.concurrent_budget = ConcurrentBudget()
+        # request_slots remains the hard 64-thread pre-parse semaphore.  The
+        # separate explicit budget accounts for slow/partial TCP clients and
+        # is independently observable and fail-closed.
+        self.preparse_budget = ConcurrentBudget(
+            memory_limit=REQUEST_CONCURRENCY, work_limit=REQUEST_CONCURRENCY
+        )
+        self.auth_slots = threading.BoundedSemaphore(AUTH_CONCURRENCY)
+        self.request_slots = threading.BoundedSemaphore(REQUEST_CONCURRENCY)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self.request_slots.acquire(blocking=False):
+            request.close()
+            return
+        if not self.preparse_budget.acquire(1, 1):
+            self.request_slots.release()
+            request.close()
+            return
+        if not self.limiter.allow(
+            "global", "preparse-connections", PREPARSE_CONNECTIONS_PER_MINUTE, 60
+        ):
+            self.preparse_budget.release(1, 1)
+            self.request_slots.release()
+            request.close()
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self.preparse_budget.release(1, 1)
+            self.request_slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.preparse_budget.release(1, 1)
+            self.request_slots.release()
+
+
+def is_loopback_listener(value: str) -> bool:
+    if value.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Veld remote node operations portal")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"Veld Operator {VELD_OPERATOR_VERSION}",
+    )
+    parser.add_argument("--deployment-info", action="store_true")
+    parser.add_argument("--listen", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8787)
+    parser.add_argument(
+        "--database", type=Path, default=Path("/var/lib/veld-monitor/portal.sqlite3")
+    )
+    parser.add_argument("--trusted-proxy-peer")
+    parser.add_argument("--proxy-token-file", type=Path)
+    parser.add_argument("--insecure-http", action="store_true", help="development only")
+    args = parser.parse_args()
+    if args.deployment_info:
+        print(
+            json.dumps(
+                {
+                    "binary_role": "operator-portal",
+                    "client_version": VELD_OPERATOR_VERSION,
+                    "profile_id": VELD_OPERATOR_PROFILE,
+                    "public_gettxhistory_compiled": False,
+                    "snapshot_bootstrap_compiled": False,
+                    "upnp_compiled": False,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        return 0
+    if not is_loopback_listener(args.listen):
+        parser.error(
+            "the portal backend must listen on loopback behind a local HTTPS proxy"
+        )
+    if (args.trusted_proxy_peer is None) != (args.proxy_token_file is None):
+        parser.error(
+            "--trusted-proxy-peer and --proxy-token-file must be configured together"
+        )
+    if args.proxy_token_file is not None and not args.proxy_token_file.is_absolute():
+        parser.error("--proxy-token-file must be an absolute path")
+    try:
+        proxy_token = (
+            load_proxy_token(args.proxy_token_file)
+            if args.proxy_token_file is not None else None
+        )
+    except (OSError, ValueError) as exc:
+        parser.error(f"proxy token refused: {exc}")
+    old_umask = os.umask(0o077)
+    try:
+        server = PortalServer(
+            (args.listen, args.port), PortalStore(args.database), args.insecure_http,
+            args.trusted_proxy_peer, proxy_token,
+        )
+    finally:
+        os.umask(old_umask)
+    print(f"Veld Portal listening on {args.listen}:{args.port}", flush=True)
+    try:
+        server.serve_forever(poll_interval=0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

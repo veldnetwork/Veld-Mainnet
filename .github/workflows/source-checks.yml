@@ -1,0 +1,487 @@
+name: Source checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portal-unlock:
+    name: Windows portal sign-in interoperability
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: CLANG64
+          update: true
+          path-type: inherit
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-openssl
+      - name: Verify browser encryption and native command authorization
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          output=$(mktemp -d /tmp/veld-portal.XXXXXXXX)
+          for name in portal_unlock_windows_tests portal_command_windows_tests; do
+            clang++ -std=c++20 -O1 -D_WIN32_WINNT=0x0A00 -Iinclude "tests/$name.cpp" \
+              -lbcrypt -lcrypt32 -ladvapi32 -lws2_32 -lwinhttp -lshell32 \
+              -lcomdlg32 -ldwmapi -lgdi32 -luser32 -lcomctl32 -lssl -lcrypto -o "$output/$name.exe"
+          done
+          node tests/portal_unlock_interop_tests.js \
+            "$(cygpath -w "$output/portal_unlock_windows_tests.exe")" \
+            "$(cygpath -w "$output/fixture")" \
+            "$(cygpath -w "$output/portal_command_windows_tests.exe")"
+  windows-reliability:
+    name: Windows native reliability (${{ matrix.fixture }})
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      VELD_NO_NAT: '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - fixture: reliability_node_shutdown_tests
+            args: --stress
+          - fixture: reliability_prewarm_wake_tests
+          - fixture: reliability_reorg_wake_tests
+          - fixture: reliability_peer_shutdown_tests
+            standalone: true
+          - fixture: reliability_ingest_shutdown_tests
+          - fixture: reliability_server_restart_tests
+            standalone: true
+          - fixture: background_peer_liveness_tests
+            standalone: true
+          - fixture: self_dial_tests
+            standalone: true
+          - fixture: clock_drift_recovery_tests
+            standalone: true
+          - fixture: reliability_gui_state_tests
+          - fixture: windows_address_mining_tests
+          - fixture: windows_startup_settings_tests
+          - fixture: windows_auto_update_tests
+          - fixture: pool_monitor_tests
+            standalone: true
+          - fixture: page_scrollbar_tests
+            standalone: true
+          - fixture: pool_scroll_paint_tests
+            standalone: true
+          - fixture: stake_fragmentation_tests
+          - fixture: wallet_pending_spend_tests
+          - fixture: nms_mempool_lifecycle_tests
+            standalone: true
+          - fixture: nms_template_refresh_tests
+            standalone: true
+          - fixture: address_history_index_tests
+            standalone: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-openssl
+            mingw-w64-clang-x86_64-leveldb
+            mingw-w64-clang-x86_64-python
+      - name: Verify active mining cancellation
+        if: matrix.fixture == 'reliability_node_shutdown_tests'
+        shell: msys2 {0}
+        run: python tests/mining_monitor_shutdown_tests.py --cxx clang++
+      - name: Verify independent validation progress accounting
+        if: matrix.fixture == 'background_peer_liveness_tests'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          output=$(mktemp -d /tmp/veld-pow-progress.XXXXXXXX)
+          clang++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE \
+            -DVELD_PUBLIC_MAINNET -Iinclude -Ivendor/pqc -Ivendor/pqc/mldsa65 \
+            tests/ibd_pow_budget_tests.cpp -o "$output/progress.exe"
+          "$output/progress.exe"
+          clang++ -std=c++20 -O1 -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -DVELD_PUBLIC_MAINNET \
+            -Iinclude tests/datadir_identity_tests.cpp -lbcrypt -lcrypt32 -ladvapi32 -lssl -lcrypto \
+            -o "$output/datadir.exe"
+          "$output/datadir.exe"
+      - name: Compile and exercise the native Windows fixture
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          output=$(mktemp -d /tmp/veld-native.XXXXXXXX)
+          objects=()
+          index=0
+          while IFS= read -r source; do
+            [[ -n $source && $source != \#* ]] || continue
+            object="$output/pqc-$index.o"
+            clang -std=c11 -O2 -Ivendor/pqc -Ivendor/pqc/mldsa65 -c "$source" -o "$object"
+            objects+=("$object")
+            index=$((index + 1))
+          done < vendor/pqc/provenance/release-c-sources.txt
+          fixture_definitions=()
+          fixture_args=()
+          if [[ '${{ matrix.fixture }}' == windows_auto_update_tests ]]; then
+            clang++ -std=c++20 -O1 -municode \
+              -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 \
+              tests/windows_update_resume_node_stub.cpp -nostdlib++ \
+              /clang64/lib/libc++.a /clang64/lib/libc++abi.a \
+              /clang64/lib/libunwind.a -o "$output/node-stub.exe"
+            node_hash=$(sha256sum "$output/node-stub.exe" | cut -d ' ' -f1)
+            fixture_definitions+=("-DVELD_TRUSTED_NODE_SHA256=\"$node_hash\"")
+            fixture_args+=("$output/node-stub.exe")
+          fi
+          clang++ -std=c++20 -O1 -pthread -DVELD_USE_LEVELDB \
+            -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 \
+            "${fixture_definitions[@]}" \
+            -Iinclude -Ivendor/pqc -Ivendor/pqc/mldsa65 -Itests \
+            "tests/${{ matrix.fixture }}.cpp" "${objects[@]}" -nostdlib++ \
+            /clang64/lib/libleveldb.a /clang64/lib/libc++.a \
+            /clang64/lib/libc++abi.a /clang64/lib/libunwind.a \
+            -lssl -lcrypto -lws2_32 -ladvapi32 -lbcrypt -liphlpapi -lshell32 \
+            -lole32 -luuid -lgdi32 -lwinhttp -lcrypt32 -lcomctl32 \
+            -lcomdlg32 -ldwmapi -luser32 -o "$output/fixture.exe"
+          if [[ '${{ matrix.standalone }}' == 'true' ]]; then
+            "$output/fixture.exe" ${{ matrix.args }}
+          else
+            "$output/fixture.exe" "$output/data" "${fixture_args[@]}" ${{ matrix.args }}
+          fi
+
+  portable:
+    name: Source and web checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install test dependencies
+        run: |
+          python -m pip install --only-binary=:all: -r tests/requirements.txt
+      - name: Run portable checks
+        run: python tests/run_checks.py
+      - name: Verify wallet near-miss recovery in Chromium
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/veld-browser-tests" --ignore-scripts --no-audit --no-fund playwright@1.62.1
+          node "$RUNNER_TEMP/veld-browser-tests/node_modules/playwright/cli.js" install --with-deps chromium
+          VELD_PLAYWRIGHT_MODULE="$RUNNER_TEMP/veld-browser-tests/node_modules/playwright" node tests/wallet_nms_tests.js
+      - name: Verify checkpoint publication and recovery
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bash scripts/checkpoints/build-tool.sh "$RUNNER_TEMP/checkpoint-tool"
+          python3 tests/checkpoint_publication_tests.py
+          python3 tests/checkpoint_tool_tests.py "$RUNNER_TEMP/checkpoint-tool/veld-checkpoint-tool"
+      - name: Verify native mining launcher recovery limits
+        if: runner.os == 'Windows'
+        run: python tests/windows_mining_restart_tests.py
+      - name: Verify updater file locks and state protection
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          tests/updater_archive_tests.ps1
+          tests/windows_updater_durability_tests.ps1 -Output "$env:RUNNER_TEMP/veld-updater-durability"
+      - name: Verify actual updater relaunch process lifetime
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: tests/windows_updater_relaunch_process_tests.ps1 -Output "$env:RUNNER_TEMP/veld-updater-relaunch"
+      - name: Verify repair of a DLL-dependent historical client
+        if: runner.os == 'Windows'
+        run: python tests/windows_updater_signed_repair_tests.py
+      - name: Compile and run work-admission tests
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O1 -pthread -Iinclude tests/work_admission_tests.cpp -o "$RUNNER_TEMP/work_admission_tests"
+          "$RUNNER_TEMP/work_admission_tests"
+      - name: Verify compiled checkpoint boundaries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in VELD_PUBLIC_MAINNET VELD_PUBLIC_TESTNET; do
+            c++ -std=c++20 -O1 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -D"$profile" \
+              -Iinclude tests/compiled_checkpoint_tests.cpp -o "$RUNNER_TEMP/checkpoints-$profile"
+            "$RUNNER_TEMP/checkpoints-$profile"
+          done
+      - name: Compile and run mining nonce tests
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O1 -pthread -Iinclude tests/mining_nonce_tests.cpp -o "$RUNNER_TEMP/mining_nonce_tests"
+          "$RUNNER_TEMP/mining_nonce_tests"
+      - name: Verify scheduled release profiles
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in VELD_PUBLIC_MAINNET VELD_PUBLIC_TESTNET; do
+            c++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -D"$profile" \
+              -Iinclude tests/release_activation_tests.cpp -o "$RUNNER_TEMP/release-activation-$profile"
+            "$RUNNER_TEMP/release-activation-$profile"
+          done
+      - name: Verify mining primitives and concurrent work headers
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in mining_primitive_tests mining_work_header_tests nms_submission_tests address_history_index_tests mining_worker_policy_tests mining_hash_vectors; do
+            c++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -DVELD_PUBLIC_MAINNET \
+              -Iinclude "tests/$test.cpp" -o "$RUNNER_TEMP/$test"
+            if [[ $test == mining_hash_vectors ]]; then
+              "$RUNNER_TEMP/$test" tests/fixtures/veldhash-3.0.9-vectors.txt
+            else
+              "$RUNNER_TEMP/$test"
+            fi
+          done
+          c++ -std=c++20 -O2 -pthread -Iinclude tests/mining_process_nonce_probe.cpp \
+            -o "$RUNNER_TEMP/mining_process_nonce_probe"
+          python tests/mining_process_nonce_tests.py "$RUNNER_TEMP/mining_process_nonce_probe"
+      - name: Verify mining accounting and checkpoint signatures
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          objects=()
+          index=0
+          while IFS= read -r source; do
+            [[ -n $source && $source != \#* ]] || continue
+            object="$RUNNER_TEMP/mining-pqc-$index.o"
+            cc -std=c11 -O2 -Ivendor/pqc -Ivendor/pqc/mldsa65 -c "$source" -o "$object"
+            objects+=("$object")
+            index=$((index + 1))
+          done < vendor/pqc/provenance/release-c-sources.txt
+          for test in mining_search_tests mining_solution_tests; do
+            c++ -std=c++20 -O2 -pthread -Iinclude -Ivendor/pqc "tests/$test.cpp" "${objects[@]}" \
+              -lcrypto -o "$RUNNER_TEMP/$test"
+            "$RUNNER_TEMP/$test"
+          done
+          for test in co_mining_stake_floor_tests nms_mempool_lifecycle_tests nms_template_refresh_tests coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests constellation_layout_tests nms_proof_file_tests; do
+            c++ -std=c++20 -O1 -pthread -Iinclude -Ivendor/pqc "tests/$test.cpp" "${objects[@]}" \
+              -lssl -lcrypto -o "$RUNNER_TEMP/$test"
+            "$RUNNER_TEMP/$test"
+          done
+          for profile in VELD_PUBLIC_MAINNET VELD_PUBLIC_TESTNET; do
+            c++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -D"$profile" \
+              -Iinclude -Ivendor/pqc tests/signed_checkpoint_tests.cpp "${objects[@]}" \
+              -o "$RUNNER_TEMP/signed-checkpoints-$profile"
+            "$RUNNER_TEMP/signed-checkpoints-$profile" tests/fixtures/mainnet-checkpoint.json
+          done
+  coinbase-integration:
+    name: Consensus and recovery runtime (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: admission and replay
+            fixture: coinbase_chain_integration_tests
+            members: ''
+          - name: scheduled block 3840 admission and replay
+            fixture: coinbase_chain_integration_tests
+            defines: '-DVELD_PROTOCOL_UPGRADE_TEST_HEIGHT=3840'
+            members: ''
+          - name: address-only mining and wallet-mode isolation
+            fixture: address_only_node_tests
+            defines: '-DVELD_TEST_HOOKS=1'
+            members: ''
+          - name: address-only near-miss wallet signing and recovery
+            fixture: address_only_nms_rpc_tests
+            defines: '-DVELD_MAINNET_POW -DVELD_TEST_CHAIN_BUILD -DVELD_DSTATE_QUALIFICATION -DVELD_ASERT_TESTCHAIN -DVELD_LIGHT_VERIFY'
+            members: ''
+          - name: supply cap
+            fixture: coinbase_cap_admission_tests
+            members: ''
+          - name: finality certificates
+            fixture: coinbase_builder_metadata_tests
+            members: '7'
+          - name: large finality certificates
+            fixture: coinbase_builder_metadata_tests
+            members: '2000'
+          - name: snapshot recovery storage
+            fixture: snapshot_recovery_tests
+            members: ''
+          - name: snapshot recovery validator evidence
+            fixture: snapshot_recovery_finality_tests
+            members: ''
+          - name: expired finality journal authentication
+            fixture: finality_journal_expiry_tests
+            members: ''
+          - name: background verification restart progress
+            fixture: background_validation_progress_tests
+            members: ''
+          - name: snapshot restart and receipt consistency
+            fixture: snapshot_restart_consistency_tests
+            members: ''
+          - name: connection diagnostics
+            fixture: connection_diagnostics_tests
+            members: ''
+          - name: background peer heartbeat and reconnect
+            fixture: background_peer_liveness_tests
+            standalone: true
+            members: ''
+          - name: self-dial exclusion and local peer reconnect
+            fixture: self_dial_tests
+            standalone: true
+            members: ''
+          - name: background periodic tip wire protocol
+            fixture: reliability_background_peer_tests
+            standalone: true
+            defines: '-DVELD_RELIABILITY_IDENTITY_PROFILE'
+            members: '110'
+          - name: background peer identity rejection
+            fixture: reliability_background_peer_tests
+            standalone: true
+            defines: '-DVELD_RELIABILITY_IDENTITY_PROFILE'
+            members: '5 bad-identity'
+          - name: interrupted RPC stop and restart
+            fixture: reliability_rpc_shutdown_tests
+            members: ''
+          - name: background node stop and restart
+            fixture: reliability_node_shutdown_tests
+            members: ''
+          - name: shutdown during an active chain commit
+            fixture: reliability_ingest_shutdown_tests
+            members: ''
+          - name: shutdown at the prewarm wait boundary
+            fixture: reliability_prewarm_wake_tests
+            members: ''
+          - name: shutdown at the reorganization wait boundary
+            fixture: reliability_reorg_wake_tests
+            members: ''
+          - name: shutdown cancels late and waiting peer validation
+            fixture: reliability_peer_shutdown_tests
+            standalone: true
+            members: ''
+          - name: proof of work admission and reorganization retry
+            fixture: pow_reorg_admission_tests
+            standalone: true
+            defines: '-DVELD_TEST_DATASET_BYTES=1048576 -DVELD_TEST_HOOKS=1'
+            members: ''
+          - name: partial network startup and restart
+            fixture: reliability_server_restart_tests
+            standalone: true
+            members: ''
+          - name: exact connection tip diagnostics
+            fixture: reliability_peer_diagnostics_tests
+            standalone: true
+            members: ''
+          - name: snapshot disabled recovery barriers
+            fixture: snapshot_disabled_recovery_tests
+            members: ''
+          - name: rejected snapshot startup barrier
+            fixture: snapshot_startup_barrier_tests
+            members: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libleveldb-dev libssl-dev
+      - name: Verify direct, alternate-branch and durable replay state
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          objects=()
+          index=0
+          while IFS= read -r source; do
+            [[ -n $source && $source != \#* ]] || continue
+            object="$RUNNER_TEMP/coinbase-pqc-$index.o"
+            cc -std=c11 -O2 -Ivendor/pqc -Ivendor/pqc/mldsa65 -c "$source" -o "$object"
+            objects+=("$object")
+            index=$((index + 1))
+          done < vendor/pqc/provenance/release-c-sources.txt
+          c++ -std=c++20 -O1 -pthread -DVELD_USE_LEVELDB -Iinclude -Ivendor/pqc ${{ matrix.defines }} \
+            "tests/${{ matrix.fixture }}.cpp" "${objects[@]}" \
+            -lleveldb -lssl -lcrypto -o "$RUNNER_TEMP/${{ matrix.fixture }}"
+          fixture_args=("$RUNNER_TEMP/fixture-state")
+          if [[ '${{ matrix.standalone }}' == 'true' ]]; then fixture_args=(); fi
+          extra_args=()
+          if [[ -n '${{ matrix.members }}' ]]; then read -r -a extra_args <<< '${{ matrix.members }}'; fi
+          sudo unshare --net bash -eu -c '
+            ip link set lo up
+            if [[ "$1" == self_dial_tests ]]; then ip address add 192.0.2.1/32 dev lo; fi
+            shift
+            exec runuser -u "$1" -- "${@:2}"
+          ' _ '${{ matrix.fixture }}' "$(id -un)" "$RUNNER_TEMP/${{ matrix.fixture }}" "${fixture_args[@]}" "${extra_args[@]}"
+      - name: Verify active mining cancellation
+        if: matrix.fixture == 'reliability_node_shutdown_tests'
+        run: python3 tests/mining_monitor_shutdown_tests.py --cxx c++
+      - name: Verify independent validation progress accounting
+        if: matrix.fixture == 'pow_reorg_admission_tests'
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O2 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE \
+            -DVELD_PUBLIC_MAINNET -Iinclude -Ivendor/pqc -Ivendor/pqc/mldsa65 \
+            tests/ibd_pow_budget_tests.cpp -o "$RUNNER_TEMP/pow-progress"
+          "$RUNNER_TEMP/pow-progress"
+          c++ -std=c++20 -O1 -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -DVELD_PUBLIC_MAINNET \
+            -Iinclude tests/datadir_identity_tests.cpp -o "$RUNNER_TEMP/datadir-identity"
+          "$RUNNER_TEMP/datadir-identity"
+      - name: Verify private fixture exclusion from public profiles
+        if: matrix.fixture == 'coinbase_cap_admission_tests'
+        run: python3 tests/coinbase_fixture_profile_tests.py --compiler c++ --output-dir "$RUNNER_TEMP/coinbase-profiles"
+
+  source-style:
+    name: Source formatting and preservation controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install pinned formatting tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: clang-format==18.1.8 ruff==0.11.13 tinycss2==1.5.1 webencodings==0.5.1
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/source-style-node" prettier@3.5.3
+      - name: Check source and mutation controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/source_style_tests.py
+          python scripts/source-style.py --output "$RUNNER_TEMP/source-style-results" \
+            --prettier "$RUNNER_TEMP/source-style-node/node_modules/prettier"
