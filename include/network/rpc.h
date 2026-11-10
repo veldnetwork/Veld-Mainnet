@@ -1,4 +1,5 @@
 #pragma once
+#include "subsidy_view.h"
 
 #include "../core/blockchain.h"
 #include "../core/pow_target.h"
@@ -2318,6 +2319,8 @@ class RpcServer {
         });
 
         methods_["getmininginfo"] = RpcMethod([this](const P&) -> std::string {
+            const auto reward = SubsidyView::Next(chain_.Height(), chain_.TotalSupplyUnits());
+            const auto projection = SubsidyProjection::Next480(reward.height - 1, chain_.TotalSupplyUnits());
             bool is_bootstrap = chain_.TotalSupplyUnits() < chain_.GetStakingActivationUnits();
             bool emission_done = chain_.TotalSupplyUnits() >= MAX_SUPPLY_UNITS;
             return JB::Object({
@@ -2328,7 +2331,18 @@ class RpcServer {
                 // Compiled activation threshold in whole VELD for wallet status.
                 {"staking_activation_supply",
                  JB::Float((double)chain_.GetStakingActivationUnits() / VELD_UNITS)},
-                {"block_reward_veld", JB::Float((double)BLOCK_REWARD_UNITS / VELD_UNITS)},
+                {"block_reward_veld", JB::Float((double)reward.allocation.subsidy / VELD_UNITS)},
+                {"reward_height", JB::Number(reward.height)},
+                {"block_subsidy_units", JB::Number(reward.allocation.subsidy)},
+                {"miner_subsidy_units", JB::Number(reward.allocation.miner)},
+                {"miner_subsidy_next_480_units", JB::Number(projection.miner)},
+                {"vault_subsidy_next_480_units", JB::Number(projection.vault)},
+                {"subsidy_activation_height", JB::Number(SUBSIDY_ACTIVATION_HEIGHT)},
+                {"subsidy_schedule_active", JB::Bool(SubsidyScheduleActive(reward.height))},
+                {"subsidy_halvings", JB::Number((uint64_t)SubsidyHalvings(reward.height))},
+                {"first_halving_height", JB::Number(FIRST_HALVING_HEIGHT)},
+                {"second_halving_height", JB::Number(SECOND_HALVING_HEIGHT)},
+                {"miner_fees_active", JB::Bool(MinerFeesActive(reward.height))},
                 {"winner_pct", JB::Number((uint64_t)50)},
                 {"pool_pct", JB::Number((uint64_t)20)},
                 {"vault_pct", JB::Number((uint64_t)20)},

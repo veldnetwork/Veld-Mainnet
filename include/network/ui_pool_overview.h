@@ -65,9 +65,17 @@ inline constexpr const char* VELD_POOL_OVERVIEW_JS = R"VLDPOOLUI(/* Public pool 
     });
     document.getElementById('pool-block-rows').replaceChildren(rows);
     if (!o.recent_blocks.length) empty('No pool blocks recorded yet.');
-    put('pool-stats-updated', 'Statistics updated ' + new Date().toLocaleTimeString());
+    lastGoodAt = Date.now(); statisticsFailed = false; updateStatus();
   }
-  var busy = false, next = 0;
+  var busy = false, next = 0, lastGoodAt = 0, statisticsFailed = false;
+  function updateStatus() {
+    var paused = page.dataset.poolOperatorState === 'paused';
+    var text = paused ? 'Pool mining is paused. Statistics are not live.' : statisticsFailed ? 'Statistics refresh delayed. Retrying automatically.' : 'Statistics updated.';
+    if (lastGoodAt) text += ' Last received ' + new Date(lastGoodAt).toLocaleString() + '.';
+    if (lastGoodAt && (paused || statisticsFailed)) text += ' The last received figures and block history remain visible.';
+    put('pool-stats-updated', text);
+  }
+  document.addEventListener('veld-pool-state', updateStatus);
   async function refresh() {
     if (busy || document.hidden || Date.now() < next) return;
     busy = true; next = Date.now() + 30000;
@@ -80,9 +88,11 @@ inline constexpr const char* VELD_POOL_OVERVIEW_JS = R"VLDPOOLUI(/* Public pool 
       var bytes = new Uint8Array(size), offset = 0; chunks.forEach(function (c) { bytes.set(c, offset); offset += c.length; });
       render(validate(JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes))));
     } catch (_) {
-      ['pool-rate', 'pool-blocks', 'pool-earned', 'pool-paid', 'pool-lottery-earned', 'pool-stake-earned'].forEach(function (id) { put(id, '—'); });
-      put('pool-rate-note', 'Waiting for verified work statistics'); put('pool-paid-note', 'Confirmed payments · VELD');
-      put('pool-stats-updated', 'Statistics unavailable. Retrying automatically.'); empty('Block history is temporarily unavailable.');
+      statisticsFailed = true; updateStatus();
+      if (!lastGoodAt) {
+        put('pool-rate-note', 'Waiting for verified work statistics');
+        empty('Block history has not loaded yet. Retrying automatically.');
+      }
     } finally { clearTimeout(timer); busy = false; }
   }
   empty('Loading recent blocks…'); setInterval(refresh, 1000); refresh();

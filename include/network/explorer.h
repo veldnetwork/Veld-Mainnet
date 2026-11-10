@@ -1,4 +1,5 @@
 #pragma once
+#include "subsidy_view.h"
 
 #include "../core/blockchain.h"
 #include "../core/mempool.h"
@@ -2374,8 +2375,8 @@ private:
 
     HttpResponse ServeMiningPage() {
         double supply = (double)chain_.TotalSupplyUnits() / VELD_UNITS;
-        double reward = (double)BLOCK_REWARD_UNITS / VELD_UNITS;
         uint64_t height = chain_.Height();
+        const auto reward = SubsidyView::Next(height, chain_.TotalSupplyUnits());
 
         std::ostringstream page;
         page << "<div class=\"container\">";
@@ -2384,11 +2385,11 @@ private:
 
         page << "<div class=\"stat-grid\">";
         page << "<div class=\"stat\"><div class=\"stat-label\">Block Height</div><div class=\"stat-value em\">" << height << "</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Block Reward</div><div class=\"stat-value gold\" title=\"Exact block reward: 3.13926940 VELD; displayed to two decimals without rounding\">" << std::fixed << std::setprecision(2) << (static_cast<double>(BLOCK_REWARD_UNITS / (VELD_UNITS / 100)) / 100.0) << " VELD</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Next Block Subsidy</div><div class=\"stat-value gold\" title=\"Subsidy at block " << reward.height << ": " << std::fixed << std::setprecision(8) << (double)reward.allocation.subsidy / VELD_UNITS << " VELD, excluding transaction fees\">" << std::setprecision(2) << (static_cast<double>(reward.allocation.subsidy / (VELD_UNITS / 100)) / 100.0) << " VELD</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Miner Share</div><div class=\"stat-value\">50%</div><div class=\"stat-sub\">of block reward</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Algorithm</div><div class=\"stat-value sm\">VeldHash</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Total Supply</div><div class=\"stat-value\">" << std::setprecision(2) << supply << "</div><div class=\"stat-sub\">/ 21,000,000 VELD</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Hard Cap</div><div class=\"stat-value\">21M</div><div class=\"stat-sub\">flat reward, no halving</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Hard Cap</div><div class=\"stat-value\">21M</div><div class=\"stat-sub\">" << (SUBSIDY_ACTIVATION_HEIGHT == 0 ? "current emission schedule" : "two scheduled halvings") << "</div></div>";
         page << "</div>";
 
         page << "<div class=\"card\" style=\"margin-top:18px\">";
@@ -2594,8 +2595,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 
 <div class="card rule-card">
   <h2 id="emission">1. Block reward &amp; emission</h2><details class="veld-details"><summary>Details</summary>
-<p>Veld targets a block every <strong>180 seconds</strong>. The base subsidy is <strong>3.13926940 VELD</strong>, with no halving. A small rounding adjustment every 175,200 blocks gives 550,000 VELD per protocol year before the <strong>21,000,000 VELD hard cap</strong>; the last subsidy is limited by remaining issuance.</p>
-  <p>At target speed this is about 1,507 VELD per day and 38 years of issuance. These are estimates, not a fixed calendar schedule. There is no premine; new VELD is issued through block subsidy, which ends at the cap.</p>
+__VELD_SUBSIDY_RULES__
 </details></div>
 
 <div class="card rule-card">
@@ -2608,7 +2608,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <tr><td style="color:var(--gold);font-weight:600">Vault</td><td style="color:var(--gold)"><strong>20%</strong></td><td>Eligible staking distributions every 480 blocks</td></tr>
     <tr><td style="color:#B07CFF;font-weight:600">Validator pool</td><td style="color:#B07CFF"><strong>10%</strong></td><td>Eligible endorsement distributions every 480 blocks</td></tr>
   </table>
-  <p style="color:var(--muted);font-size:12px">During the subsidy era, transaction fees flow to the vault on top of its block share. When effective subsidy is zero, fee routing is 50% miner, 40% vault, and 10% validator pool, subject to integer rounding. The state-aware policy applies that fee-only allocation at every height, including every 100th block. Exact permitted subsidy plus authenticated fees remain mandatory.</p>
+  <p style="color:var(--muted);font-size:12px">__VELD_FEE_RULES__</p>
 </details></div>
 
 <div class="card rule-card">
@@ -2787,7 +2787,12 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
         // Render compiled identifiers with their matching RPC field names.
         // The launch anchor distinguishes histories sharing the same genesis.
         std::ostringstream identity;
-        identity << PAGE
+        std::string rules = PAGE;
+        const auto subsidy_pos = rules.find("__VELD_SUBSIDY_RULES__");
+        rules.replace(subsidy_pos, sizeof("__VELD_SUBSIDY_RULES__") - 1, SubsidyRulesHtml(chain_.Height()));
+        const auto fee_pos = rules.find("__VELD_FEE_RULES__");
+        rules.replace(fee_pos, sizeof("__VELD_FEE_RULES__") - 1, FeeRulesHtml(chain_.Height()));
+        identity << rules
                  << "<div class=\"card rule-card\">"
                     "<h2 id=\"chain-identity\">17. Chain identity</h2>"
                     "<p><strong>Network:</strong> <code>"
@@ -5964,7 +5969,10 @@ setInterval(loadStats,2000);
         j << "\"next_pool_dist_in\":" << next_pool_dist << ",";
         j << "\"staking_active\":" << (staking_active ? "true" : "false") << ",";
         j << "\"staking_activation_supply\":" << STAKING_ACTIVATION_VELD << ",";
-        j << "\"block_reward_veld\":" << std::setprecision(8) << (double)BLOCK_REWARD_UNITS / VELD_UNITS << ",";
+        const auto reward = SubsidyView::Next(height, s_units);
+        j << SubsidyProjection::Next480(height, s_units).Fields() << ",";
+        j << "\"block_reward_veld\":" << std::setprecision(8) << (double)reward.allocation.subsidy / VELD_UNITS << ",";
+        j << reward.Fields() << ",";
         uint64_t local_mempool = mempool_.Size();
         size_t   local_peers   = LivePeerCount();
         uint64_t fleet_mempool_max = local_mempool;
@@ -6050,16 +6058,18 @@ setInterval(loadStats,2000);
     }
 
     HttpResponse ServeAPIMining() {
+        const auto reward = SubsidyView::Next(chain_.Height(), chain_.TotalSupplyUnits());
         std::ostringstream j;
         j << "{";
         j << "\"algorithm\":\"VeldHash\",";
         j << "\"phase\":\"" << (chain_.TotalSupplyUnits() < chain_.GetStakingActivationUnits() ? "bootstrap" : "standard") << "\",";
 
         j << "\"max_reward_per_miner\":" << std::fixed << std::setprecision(8)
-          << (double)BLOCK_REWARD_UNITS / VELD_UNITS << ",";
+          << (double)reward.allocation.miner / VELD_UNITS << ",";
         j << "\"min_miners_per_block\":1,";
         j << "\"block_reward\":" << std::fixed << std::setprecision(8)
-          << (double)BLOCK_REWARD_UNITS / VELD_UNITS << ",";
+          << (double)reward.allocation.subsidy / VELD_UNITS << ",";
+        j << reward.Fields() << ",";
         j << "\"staking_active\":" << (chain_.TotalSupplyUnits() >= chain_.GetStakingActivationUnits() ? "true" : "false");
         j << "}";
         return HttpResponse::JSON(j.str());
@@ -6160,7 +6170,8 @@ setInterval(loadStats,2000);
                  << std::fixed << std::setprecision(4) << supply_pct << "%\"></div></div>";
             page << "<div style=\"margin-top:8px;font-size:11px;color:var(--muted)\">"
                  << std::setprecision(2) << supply_pct << "% complete &mdash; staking activates at &asymp; block ";
-            double blocks_left = (live_unlock_veld - supply) / 3.13926940;
+            const double next_subsidy = (double)SubsidyView::Next(chain_.Height(), chain_.TotalSupplyUnits()).allocation.subsidy / VELD_UNITS;
+            double blocks_left = next_subsidy > 0 ? (live_unlock_veld - supply) / next_subsidy : 0;
             if (blocks_left < 0) blocks_left = 0;
             uint64_t target_block = chain_.Height() + (uint64_t)(blocks_left + 0.5);
             page << target_block << " (" << std::setprecision(0) << blocks_left << " blocks to go)</div></div>";
@@ -6327,11 +6338,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         double vault_pct = supply > 0 ? vault_bal / supply * 100.0 : 0.0;
         uint64_t next_dist = VAULT_DISTRIBUTION_INTERVAL - (best_h % VAULT_DISTRIBUTION_INTERVAL);
         uint64_t next_vault_blk = VAULT_BLOCK_INTERVAL - (best_h % VAULT_BLOCK_INTERVAL);
-        constexpr double BLOCKS_PER_DAY      = 480.0;
-        constexpr double VAULT_BLOCK_FRACTION = 1.0 / 100.0;
-        const double reward_veld = (double)BLOCK_REWARD_UNITS / VELD_UNITS;
-        double daily_inflow = BLOCKS_PER_DAY * reward_veld * 0.20;
-        daily_inflow += BLOCKS_PER_DAY * VAULT_BLOCK_FRACTION * reward_veld * 0.80;
+        const double daily_inflow = (double)SubsidyProjection::Next480(best_h, chain_.TotalSupplyUnits()).vault / VELD_UNITS;
         double payout_rate = (best_h >= VAULT_INFLOW_CAP_ACTIVATION_HEIGHT)
                            ? (double)VAULT_INFLOW_PAYOUT_PPM / 1'000'000.0
                            : 0.90;
@@ -6344,7 +6351,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << "<div class=\"stat\"><div class=\"stat-label\">% of Supply</div><div class=\"stat-value\">" << std::setprecision(3) << vault_pct << "%</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Next Distribution</div><div class=\"stat-value em\">" << next_dist << "</div><div class=\"stat-sub\">blocks (~" << (next_dist*3) << " min)</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Next Vault Block</div><div class=\"stat-value\">" << next_vault_blk << "</div><div class=\"stat-sub\">blocks</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Inflow</div><div class=\"stat-value\">~" << std::setprecision(1) << daily_inflow << "</div><div class=\"stat-sub\">VELD/day into vault</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Inflow</div><div class=\"stat-value\">~" << std::setprecision(1) << daily_inflow << "</div><div class=\"stat-sub\">projected subsidy over next 480 blocks; fees excluded</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Daily Payout</div><div class=\"stat-value em\">~" << std::setprecision(1) << daily_payout << "</div><div class=\"stat-sub\">VELD/day to stakers (90% inflow cap)</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Daily Retention</div><div class=\"stat-value gold\">~" << std::setprecision(1) << daily_retention << "</div><div class=\"stat-sub\">VELD/day vault growth (10%)</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Dist. Interval</div><div class=\"stat-value\">480</div><div class=\"stat-sub\">blocks (~24h)</div></div>";
@@ -6572,24 +6579,58 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 // No account identifiers, cookies, pairing credentials or private tokens leave the page.
 (function(){
   'use strict';
-  var busy=false, next=0, last=null, failed=false;
+  var page=document.querySelector('.pool-page');
+  if(!page||page.dataset.poolStatusController)return;
+  page.dataset.poolStatusController='2';
+  var busy=false, next=0, last=null, failed=false, lastAt=0, operator=null, operatorFailed=false;
   function put(id,value){var e=document.getElementById(id);if(e)e.textContent=value;}
   function render(){
-    put('pool-public-status',failed?'Pool status unavailable. Retrying.':last?last.status:'Connecting to Veld Pool…');
+    var paused=operator&&operator.state==='paused_by_operator';
+    var stale=failed||paused;
+    page.dataset.poolOperatorState=paused?'paused':'unknown';
+    page.dataset.poolStatisticsState=last?(stale?'stale':'fresh'):'unavailable';
+    var message=paused?'Pool mining is paused by the operator. New work and payouts are stopped.':
+      failed?'The statistics refresh is delayed. This does not confirm a pool outage. Retrying automatically.':
+      last?last.status:'Connecting to Veld Pool…';
+    if(paused&&operatorFailed)message+=' The operator notice could not be refreshed.';
+    if(lastAt)message+=(stale?' Last received ':' Updated ')+new Date(lastAt).toLocaleString()+'.';
+    if(stale&&lastAt)message+=' Figures below are the last received values.';
+    put('pool-public-status',message);
     ['active_accounts','verified_shares','reconciled_height'].forEach(function(k){
-      put('pool-public-'+k,!failed&&last&&last[k]!==null?BigInt(last[k]).toLocaleString():'—');
+      put('pool-public-'+k,last&&last[k]!==null?BigInt(last[k]).toLocaleString():'—');
     });
-    put('pool-public-payments',failed||!last?'Unknown':last.payments_enabled?'Enabled':'Not enabled');
-    put('pool-public-comining',failed||!last?'Unknown':last.co_mining_enabled?'Participating':'Not participating yet');
-    var p=!failed&&last&&last.payment_policy;
+    put('pool-public-payments',paused?'Paused':!last?'Unknown':(failed?'Last reported: ':'')+(last.payments_enabled?'Enabled':'Not enabled'));
+    put('pool-public-comining',paused?'Paused':!last?'Unknown':(failed?'Last reported: ':'')+(last.co_mining_enabled?'Participating':'Not participating yet'));
+    put('pool-public-comining-note',paused?'Pool participation is paused. Earlier earned rewards remain recorded.':
+      last?(failed?'Last reported: ':'')+(last.co_mining_enabled?'The pool is participating in co-mining. Only confirmed winnings create earnings.':'The pool needs 1,000 VELD staked to qualify for co-mining.'):
+      'Co-mining participation has not loaded yet.');
+    var intro=page.querySelector('.pool-intro');if(intro)intro.textContent='Pool activity, setup and rewards.';
+    page.querySelectorAll('h3').forEach(function(h){if(h.textContent==='Start pool mining'||h.dataset.poolSetup){h.dataset.poolSetup='true';h.textContent=paused?'Pool setup for when mining resumes':'Start pool mining';}});
+    var p=last&&last.payment_policy;
     put('pool-public-minimum',p?amount(p.minimum_units,8)+' VELD':'—');
     function amount(v,scale){var n=BigInt(v),d=10n**BigInt(scale);return (n/d+'.'+(n%d).toString().padStart(scale,'0')).replace(/\.?0+$/,'');}
-    put('pool-public-policy',p?amount(p.fee_ppm,4)+'% service fee · '+amount(p.minimum_units,8)+' VELD minimum · batches every '+(Number(p.batch_seconds)/3600)+' hours.':'Payment policy unavailable. Check the pool dashboard.');
+    put('pool-public-policy',p?(stale?'Last reported policy: ':'')+amount(p.fee_ppm,4)+'% service fee · '+amount(p.minimum_units,8)+' VELD minimum per payout address · batches every '+(Number(p.batch_seconds)/3600)+' hours.':paused?'Payout processing is paused.':'Payment policy has not loaded yet.');
+  }
+  async function operatorStatus(){
+    if(document.hidden)return;
+    var stop=new AbortController(),timer=setTimeout(function(){stop.abort();},4000);
+    try{
+      var r=await fetch('/assets/pool-service-state.json',{credentials:'omit',redirect:'error',cache:'no-store',signal:stop.signal});
+      if(!r.ok||!r.body)throw Error('notice unavailable');
+      var reader=r.body.getReader(),parts=[],size=0;
+      for(;;){var part=await reader.read();if(part.done)break;size+=part.value.length;if(size>2048){await reader.cancel();throw Error('notice size');}parts.push(part.value);}
+      var bytes=new Uint8Array(size),offset=0;parts.forEach(function(p){bytes.set(p,offset);offset+=p.length;});
+      var value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+      if(value.version!==1||!['paused_by_operator','no_operator_pause'].includes(value.state)||
+         value.chain!=='7be77ab9e820bd9ffb60b269b45ced48288056e5839a1135fafc2f8557000a88'||
+         typeof value.updated_at!=='string'||!Number.isFinite(Date.parse(value.updated_at)))throw Error('notice invalid');
+      operator=value;operatorFailed=false;
+    }catch(_){operatorFailed=true;}finally{clearTimeout(timer);render();document.dispatchEvent(new Event('veld-pool-state'));}
   }
   async function refresh(){
     if(!document.getElementById('pool-public-status')||document.hidden)return;
     render();if(busy||Date.now()<next)return;busy=true;next=Date.now()+15000;
-    var stop=new AbortController(),timer=setTimeout(function(){stop.abort();},5000);
+    var stop=new AbortController(),timer=setTimeout(function(){stop.abort();},8000);
     try{
       var r=await fetch('https://pool.veld.network/v1/public',{credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',redirect:'error',signal:stop.signal});
       if(!r.ok||!r.body)throw Error('unavailable');
@@ -6606,10 +6647,10 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         ['fee_ppm','minimum_units','batch_seconds','revision'].forEach(function(k){if(typeof s.payment_policy[k]!=='string'||!/^(0|[1-9][0-9]{0,19})$/.test(s.payment_policy[k]))throw Error('policy value');});
         if(BigInt(s.payment_policy.fee_ppm)>100000n||BigInt(s.payment_policy.minimum_units)<100000000n||BigInt(s.payment_policy.minimum_units)>1000000000000n||BigInt(s.payment_policy.batch_seconds)<3600n||BigInt(s.payment_policy.batch_seconds)>604800n)throw Error('policy bounds');
       }
-      last=s;failed=false;
-    }catch(_){failed=true;last=null;}finally{clearTimeout(timer);busy=false;render();}
+      last=s;lastAt=Date.now();failed=false;
+    }catch(_){failed=true;}finally{clearTimeout(timer);busy=false;render();}
   }
-  setInterval(refresh,1000);refresh();
+  setInterval(refresh,1000);setInterval(operatorStatus,30000);operatorStatus();refresh();
 })();
 </script>)VLDPOOL";
         page += std::string("<style>") + VELD_POOL_OVERVIEW_CSS + "</style><script nonce=\"__CSP_NONCE__\">" + VELD_POOL_OVERVIEW_JS + "</script>";

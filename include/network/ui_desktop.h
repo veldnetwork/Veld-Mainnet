@@ -8368,9 +8368,9 @@ function updateYieldProjection() {
     // Live vault state for inflow + total weighted stake.
     fetch('/api/stats').then(function(r){ return r.json(); }).then(function(d){
       var blocksPerDay = 480;   // 180-second blocks
-      var reward = d.block_reward_veld || 3.13926940;
-      var inflow = blocksPerDay * reward * 0.20
-                 + blocksPerDay * (1.0/100.0) * reward * 0.80;  // every-100th-block whole-reward vault blocks
+      var inflowUnits = d.vault_subsidy_next_480_units;
+      if (!Number.isSafeInteger(inflowUnits) || inflowUnits < 0) { box.style.display = 'none'; return; }
+      var inflow = inflowUnits / 100000000;
       var dailyPayout = inflow * 0.90;  // inflow payout cap: vault keeps at least 10%
       var myWeight = amt * mult;
       // Total weighted stake = sum across network. /api/stats may
@@ -10271,6 +10271,25 @@ setInterval(refreshWalletNetworkRate, 5000);
 document.addEventListener('visibilitychange', function() { if (!document.hidden) refreshWalletNetworkRate(); });
 window.addEventListener('pageshow', refreshWalletNetworkRate);
 
+// The node projects exactly 480 protocol blocks, including halving, vault-only
+// blocks and the final supply-cap reward. Fees and changes in mining share are
+// excluded. A missing or stale observation is not an income estimate.
+var walletSubsidy = null, walletSubsidyPending = false;
+function refreshWalletSubsidy(height) {
+  if (walletSubsidyPending || (walletSubsidy && walletSubsidy.height === height && Date.now() - walletSubsidy.at < 30000)) return;
+  walletSubsidyPending = true;
+  rpc('getmininginfo').then(function(d) {
+    var units = d && d.miner_subsidy_next_480_units;
+    if (!Number.isSafeInteger(units) || units < 0 || !Number.isSafeInteger(d.reward_height) || d.reward_height < 1) throw new Error('Subsidy unavailable');
+    walletSubsidy = {height:d.reward_height - 1, at:Date.now(), minerNext480:units / 100000000};
+    var el = document.getElementById('m-daily-est');
+    if (el) { el.textContent = '~' + fmt(walletSubsidy.minerNext480, 0); el.title = 'Network miner subsidy over the next 480 blocks; transaction fees excluded.'; }
+  }).catch(function() {
+    walletSubsidy = null;
+    var el = document.getElementById('m-daily-est'); if (el) el.textContent = '—';
+  }).then(function() { walletSubsidyPending = false; });
+}
+
 function loadDashboard() {
   rpc('getblockchaininfo').then(function(d) {
     _dashFailCount = 0;
@@ -10299,20 +10318,7 @@ function loadDashboard() {
     document.getElementById('status-txt').textContent = 'h=' + h;
     loadDashBlocks(h);
     loadDashRecentBlocks(h);
-    // m-daily-est removed: Mining tab moved to explorer.veld.network
-    var mDaily2 = document.getElementById('m-daily-est');
-    if (mDaily2) {
-      // v2.7.0 — adapt the estimate to chain phase:
-      //   INACTIVE: 100% of subsidy per block to miner (no 50% split)
-      //   ACTIVE:   50% of subsidy per block (the canonical post-activation share)
-      //   POST-EMISSION: fees only — show "fees only" instead of a fabricated VELD/day estimate
-      if (emissionDone) {
-        mDaily2.textContent = 'fees only';
-      } else {
-        var share = stakingActive ? 0.50 : 1.00;  // 100% pre-activation, 50% post
-        mDaily2.textContent = '~' + fmt(480 * 3.13926940 * share, 0);
-      }
-    }
+    refreshWalletSubsidy(h);
   }).catch(function() {
     _dashFailCount++;
     if (_dashFailCount >= 8) {
@@ -10801,8 +10807,8 @@ function loadWalletAddr(addr) {
   //      payout_net × 1.
   //
   // New math:
-  //   * Mining/day  = (lifetime_blocks × 480 / chain_height) × 1.5696 VELD
-  //     — lifetime average daily blocks × flat coinbase share, no mult.
+  //   * Mining/day = lifetime block share × next 480 blocks' miner subsidy.
+  //     The node includes subsidy reductions, vault blocks and the supply cap.
   //     Falls back to 0 when chain_height is 0 (pre-genesis guard).
   //   * Staking/day = payout_net_veld × (480 / 480)
   //     — the authoritative per-cycle number from the node × cycles/day.
@@ -10821,15 +10827,11 @@ function loadWalletAddr(addr) {
       // history (== post-LWMA-bootstrap window) and at least 1 lifetime
       // block before projecting mining income.
       var miningPerDay = 0;
-      var miningReady = (chainH >= 60 && mBlocks >= 1);
+      var miningReady = (chainH >= 60 && mBlocks >= 1 && walletSubsidy &&
+                         walletSubsidy.height === chainH && Date.now() - walletSubsidy.at < 60000);
       if (miningReady) {
-        // lifetime-avg blocks per day × flat 1.5696 coinbase
-        // (50% of BLOCK_REWARD_UNITS = 3.13926940 VELD, rounded).
-        // Mining tier multiplier does NOT apply to coinbase — the
-        // miner's per-block share is flat. Multipliers only weight
-        // vault distribution, which is the staking leg below.
-        var dailyAvgBlocks = mBlocks * (480.0 / chainH);
-        miningPerDay = dailyAvgBlocks * 1.5696;  // winner cut: 50% of the 3.13926940 block reward
+        // Lifetime block share applied to the next 480 blocks of actual subsidy.
+        miningPerDay = (mBlocks / chainH) * walletSubsidy.minerNext480;
       }
       // Staking: per-cycle net payout from getstakinginfo × 1 cycle/day.
       // 480 blocks/day ÷ VAULT_DISTRIBUTION_INTERVAL (480) = 1.
@@ -10851,7 +10853,7 @@ function loadWalletAddr(addr) {
       if (subEl) {
         if (miningReady && stakingPerDay > 0)       subEl.textContent = 'mining (lifetime avg) + staking';
         else if (miningReady)                       subEl.textContent = 'mining (lifetime avg)';
-        else if (stakingPerDay > 0)                 subEl.textContent = 'staking only — mining needs ' + (60 - chainH) + ' more blocks of chain history';
+        else if (stakingPerDay > 0)                 subEl.textContent = 'staking only — mining estimate unavailable';
         else                                        subEl.textContent = 'no projection yet';
       }
     } catch (e) {}
@@ -15483,7 +15485,7 @@ function loadMinerInfo() {
       '<div class="stat-grid">' +
       '<div class="stat"><div class="stat-label">Blocks Mined</div><div class="stat-value em">' + blocksMined.toLocaleString() + '</div></div>' +
       '<div class="stat"><div class="stat-label">Balance</div><div class="stat-value gold">' + fmt(m.balance_veld||0,2) + ' VELD</div></div>' +
-      '<div class="stat"><div class="stat-label">VELD Earned</div><div class="stat-value em">' + fmt(blocksMined*3.13926940*0.50,2) + '</div><div class="stat-sub">est. lifetime</div></div>' +
+
       '</div>';
   }).catch(function(e) {
     document.getElementById('m-result').innerHTML = '<div class="alert alert-err">' + escHtml(e.message) + '</div>';
@@ -16426,14 +16428,7 @@ function loadDashboardAdaptive() {
     document.getElementById('dot').className = 'dot online';
     document.getElementById('status-txt').textContent = 'h=' + h;
     loadDashBlocks(h);
-    // fix: was hardcoded 0.63 (stale 63% miner share assumption).
-    // Actual post-PQC split is 50% winner of every block, so per-miner
-    // daily estimate assumes a miner wins a proportional share — this
-    // value is only meaningful if the miner owns 100% hashrate, which the
-    // explorer's mining dashboard handles better. Left here as best-case
-    // ceiling for the Mining tab if ever restored.
-    var mDaily = document.getElementById('m-daily-est');
-    if (mDaily) mDaily.textContent = '~' + fmt(480 * 3.13926940 * 0.50, 0);
+    refreshWalletSubsidy(h);
   }).catch(function() {
     _dashFailCount++;
     _pollMs = Math.min(_pollMs * 1.5, 30000); // Back off up to 30s

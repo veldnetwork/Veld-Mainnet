@@ -67,7 +67,11 @@ int main() {
         const std::vector<uint64_t> fees = {0,         1,     2,         3,          9,
                                             10,        99,    100,       MIN_TX_FEE, 5 * r,
                                             6 * r - 1, 6 * r, 6 * r + 1, 30 * r,     30 * r + 1};
-        const std::vector<uint64_t> heights = {3359, 3360, 3361, 3400, 3840, 3999, 4000, 4001, 4100, 4800, BLOCKS_PER_YEAR};
+        const std::vector<uint64_t> heights = {3359, 3360, 3361, 3400, 3840, 3999, 4000, 4001, 4100, 4800, BLOCKS_PER_YEAR
+#if defined(VELD_SUBSIDY_TEST_HEIGHT)
+            , 700799, 700800, 700801, 700900, 1401599, 1401600, 1401601, 1401700, 2102401
+#endif
+        };
         const std::vector<uint64_t> supplies = {STAKING_UNLOCK_SUPPLY - 1, STAKING_UNLOCK_SUPPLY,
                                                 MAX_SUPPLY_UNITS - 3 * r,  MAX_SUPPLY_UNITS - 17,
                                                 MAX_SUPPLY_UNITS - 1,      MAX_SUPPLY_UNITS};

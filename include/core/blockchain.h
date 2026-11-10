@@ -6,6 +6,7 @@
 #include "asert.h"
 #include "constants.h"
 #include "coinbase_allocation.h"
+#include "../consensus/subsidy_schedule.h"
 #include "script.h"
 #include "marker_composition.h"
 #include "appchain/bridge/parent.h"
@@ -6825,10 +6826,7 @@ class Blockchain {
 
   public:
     static uint64_t ExpectedBlockSubsidy(uint64_t height) noexcept {
-        uint64_t s = BLOCK_REWARD_UNITS;
-        if (height > 0 && (height % BLOCKS_PER_YEAR) == 0)
-            s += ANNUAL_EMISSION_REMAINDER;
-        return s;
+        return ScheduledBlockSubsidy(height);
     }
 
     // The single authoritative native-supply transition used by live commit,
