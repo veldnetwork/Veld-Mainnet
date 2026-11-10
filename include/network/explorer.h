@@ -2677,13 +2677,13 @@ __VELD_SUBSIDY_RULES__
 
 <div class="card rule-card">
   <h2 id="endorse">9. Validators &amp; the validator pool</h2><details class="veld-details"><summary>Details</summary>
-  <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool collects <strong>10% of ordinary block subsidy</strong> and pays it out every <strong>480 blocks</strong> in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle.</p>
+  <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool receives its share of ordinary block subsidy and pays it out every <strong>480 blocks</strong> in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle. The share is 10% before co-mining retirement and 20% afterward when the two-halving schedule above is activated.</p>
   <ul>
     <li><strong>Register on-chain.</strong> You submit a <span class="formula">VELD_VALIDATOR|REGISTER</span> transaction binding your ML-DSA-65 public key. A matching <span class="formula">DEREGISTER</span> exits cleanly.</li>
     <li><strong>Bond the minimum.</strong> Registration sends the required validator bond into the protocol custody vault. Check the current minimum on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a> before funding your wallet.</li>
     <li><strong>Stay online.</strong> Endorsement share is your count &divide; the network&#39;s count over the last 480 blocks &mdash; consistent uptime is what pays.</li>
   </ul>
-  <p style="color:var(--muted);font-size:12px">Endorsement is one of three independent reward streams: the <em>co-mining lottery</em> is a flat draw (&sect;11), the <em>vault</em> distributes by eligible stake weight (&sect;3), and only the <em>validator pool</em> is endorsement-gated. They do not overlap and you can earn from more than one.</p>
+  <p style="color:var(--muted);font-size:12px">While co-mining remains active, endorsement is one of three independent reward streams: the <em>co-mining lottery</em> is a flat draw (&sect;11), the <em>vault</em> distributes by eligible stake weight (&sect;3), and only the <em>validator pool</em> is endorsement-gated. They do not overlap and you can earn from more than one.</p>
 </details></div>
 
 <div class="card rule-card">
@@ -2712,7 +2712,7 @@ __VELD_SUBSIDY_RULES__
 
 <div class="card rule-card">
   <h2 id="poolflush">11. Co-mining lottery</h2><details class="veld-details"><summary>Details</summary>
-<p>The co-mining pool receives <strong>20% of ordinary block subsidies</strong>. A draw runs every <strong>100 blocks</strong>.</p>
+<p>While co-mining is active, its pool receives <strong>20% of ordinary block subsidies</strong> and a draw runs every <strong>100 blocks</strong>. Under an activated two-halving schedule, the final draw is immediately before the first halving. New entries and draws then stop; previous payouts, stake principal and the unassigned reserve remain intact. The following entry rules apply only while co-mining is active.</p>
   <ul><li>Keep at least <strong>1,000 VELD of ordinary stake locked at the mining address</strong>. The same stake can qualify for vault distributions.</li><li>The client submits qualifying near-miss proofs automatically. At least one valid proof must be <strong>included in the canonical chain during the draw window</strong>; submission alone does not qualify.</li><li>Each eligible address gets one entry regardless of its near-miss count. Up to four near-miss records can be included per block.</li></ul>
   <p>The draw selects up to five distinct addresses, or up to 20 when at least 1,000 addresses qualify. Each winner receives one slot; unfilled slots carry forward, subject to the protocol’s rounding rule. Finding a block or receiving a lottery payment is not guaranteed.</p>
 </details></div>

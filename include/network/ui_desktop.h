@@ -3620,7 +3620,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
         <div class="prev-row"><span class="k">Staking multiplier <span style="color:var(--muted);font-size:11px">(Diamond-only 3.00&times; cap)</span></span><span class="v em" id="sk-proj-combined">1.00&times;</span></div>
         <div class="prev-row"><span class="k">Predicted avg. staking multiplier</span><span class="v em" id="sk-proj-weighted">&mdash;</span></div>
         <div class="prev-row"><span class="k">Distribution interval</span><span class="v">480 blk &middot; ~24h</span></div>
-        <details class="veld-details"><summary>Projection details</summary><div class="prev-note">Projection assumes steady vault inflow (20% of ordinary block subsidy + the full subsidy every 100th block + transaction fees during issuance). Actual payouts depend on blocks mined and number of stakers.</div></details>
+        <details class="veld-details"><summary>Projection details</summary><div class="prev-note">The projection uses the current vault inflow estimate. Actual payouts depend on mined blocks, the active fee policy and eligible stake.</div></details>
       </div>
 
       <div class="prev" style="margin-top:12px">
@@ -13977,7 +13977,7 @@ function loadValidatorsPage() {
       var statusEl = document.getElementById('val-req-status');
       if (statusEl) statusEl.innerHTML = '<span style="color:var(--muted)">Unlock your keystore above to see your bond balance.</span>';
     }
-    // Endorsement pool is funded by the 10% coinbase slice, paid out
+    // Endorsement pool is funded by its height-dependent subsidy share, paid out
     // every 480 blocks (daily) proportional to each validator's
     // endorsement count. Show the current pool balance via getbalance
     // on the endorsement pool address.
@@ -14025,7 +14025,7 @@ function loadValidatorsPage() {
         document.getElementById('val-dereg-btn').style.display = '';
         if (_vTitle) _vTitle.textContent = 'Your Validator';
         if (_vHelp)  _vHelp.textContent =
-          'Your node is endorsing for a share of the 10% pool. ' +
+          'Your node is endorsing for a share of the validator reward pool. ' +
           'Deregister cleanly to return your bonded principal in full.';
         // Registered: hide the pre-register disclaimer (the deregister
         // note below carries the relevant copy for this state).
@@ -14098,7 +14098,7 @@ function loadValidatorsPage() {
         if (_vTitle) _vTitle.textContent = 'Become a Validator';
         if (_vHelp)  _vHelp.textContent =
           'Commits the required validator bond from your unlocked wallet and starts ' +
-          'endorsing for a share of the 10% pool. Slashable on a proven ' +
+          'endorsing for a share of the validator reward pool. Slashable on a proven ' +
           'double-sign; returned in full on a clean deregister.';
         // Not registered: show the pre-register disclaimer, hide the
         // deregister cooldown note.
