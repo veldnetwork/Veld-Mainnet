@@ -12111,7 +12111,7 @@ function onFromChange() {
     // v2: compact inline readout, just the spendable number.
     // Previously appended "(X staked)" suffix which was too loud now that
     // the field lives next to the Amount label.
-    if (available) available.textContent = fmt(spendable,2) + ' VELD';
+    if (available) available.textContent = fmt(spendable,8) + ' VELD';
   }).catch(function(){ if (stillCurrent() && available) available.textContent = 'Unavailable'; });
   var outputs = rpc('listunspent',[addr]).then(function(utxos) {
     if (!stillCurrent()) return;
@@ -12328,20 +12328,15 @@ function fillSendAmountPct(pct) {
   // s-avail is rendered as a decimal string like "12.34567890"; strip
   // any " VELD" suffix just in case the renderer ever adds it.
   var raw = (av.textContent || '').replace(/[^0-9.]/g, '');
-  var spendable = parseFloat(raw);
-  if (!isFinite(spendable) || spendable <= 0) return;
-  var MIN_FEE = 0.001;
-  var amount;
-  if (pct >= 100) {
-    amount = spendable - MIN_FEE;
-  } else {
-    amount = (spendable - MIN_FEE) * (pct / 100);
-  }
-  if (amount <= 0) return;
-  // Round to 8 decimals (VELD precision). Avoid toFixed trailing-zero
-  // padding — it makes the field look ugly. Strip trailing zeros.
-  var s = amount.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
-  el.value = s;
+  var spendable;
+  try { spendable = _veldParseVeldUnitsExact(raw); } catch (_) { return; }
+  if (!Number.isInteger(pct) || pct <= 0 || pct > 100) return;
+  var availableUnits = spendable - 100000n;
+  if (availableUnits <= 0n) return;
+  // Floor in native units so a percentage can never exceed its fee reserve.
+  var amount = availableUnits * BigInt(pct) / 100n;
+  if (amount <= 0n) return;
+  el.value = _veldUnitsToAmountString(amount);
   // Trigger the existing input handler so any downstream estimators
   // (fee, confirm-preview, etc.) re-run.
   try { el.dispatchEvent(new Event('input', {bubbles:true})); } catch(_){}

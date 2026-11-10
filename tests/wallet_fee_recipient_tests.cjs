@@ -61,5 +61,22 @@ vm.runInContext(extractFunction(source, 'refreshSendFeeRecipient'), context);
     assert.equal(sendRefreshes,1,'confirmed change refreshes the active Send screen');
     polling.document.getElementById=()=>({classList:{contains:()=>false}});
     polling.refreshActiveTab();assert.equal(sendRefreshes,1,'inactive Send screen does not poll');
-    console.log('PASS_WALLET_FEE_RECIPIENT cases=7 exact_preview_cases=11 send_refresh_cases=2');
+    nodes['s-avail']={textContent:''};nodes['s-from-row']={style:{display:'none'}};
+    const funds={document:{getElementById:id=>nodes[id]},currentAddr:'from',sendBalanceRevision:0,window:{},
+        renderSendUtxos:()=>{},updateConfirm:()=>{},fmt:(value,decimals)=>value.toFixed(decimals),
+        rpc:async method=>method==='getbalance'?{balance_veld:17.999,spendable_veld:17.999}:[],BigInt,Number};
+    vm.createContext(funds);
+    for(const name of ['sendSourceAddress','onFromChange','_veldParseVeldUnitsExact','_veldUnitsToAmountString','fillSendAmountPct'])
+        vm.runInContext(extractFunction(source,name),funds);
+    await funds.onFromChange();
+    assert.equal(nodes['s-avail'].textContent,'17.99900000 VELD','spendable display must not round up');
+    for(const [available,percent,expected] of [
+        ['17.99900000 VELD',100,'17.998'],['17.99900000 VELD',25,'4.4995'],
+        ['0.00100001 VELD',100,'0.00000001'],['0.00100003 VELD',50,'0.00000001'],
+        ['21,000,000.00000000 VELD',100,'20999999.999'],['0.00099999 VELD',100,''],
+    ]) {
+        nodes['s-avail'].textContent=available;nodes['s-amount'].value='';
+        funds.fillSendAmountPct(percent);assert.equal(nodes['s-amount'].value,expected);
+    }
+    console.log('PASS_WALLET_FEE_RECIPIENT cases=7 exact_preview_cases=11 send_refresh_cases=2 exact_spendable_cases=7');
 })().catch(error => {console.error(error); process.exitCode=1;});
