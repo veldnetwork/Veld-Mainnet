@@ -57,6 +57,23 @@ void Refuse(VeldNode& node,Block block,const std::string& reason){
           before.supply_digest==after.supply_digest&&before.durable_tip_hash==after.durable_tip_hash,
           reason+" changed live or durable state");
 }
+uint64_t YieldCredit(VeldNode& node,const Block& block,const RealKeyPair& owner,bool allow_principal){
+    uint64_t credited=0;
+    for(const auto& tx:block.transactions){
+        uint64_t owned=0;for(const auto& out:tx.outputs)if(out.script_pubkey==owner.GetP2PKHScript())owned+=out.value;
+        if(!owned)continue;
+        bool yield=!tx.inputs.empty(),principal=!tx.inputs.empty();
+        for(const auto& in:tx.inputs){
+            const auto coin=node.GetChain().GetUTXO(in.prev_tx_hash,in.prev_out_index);
+            Check(coin.has_value(),"owner credit has no canonical funding input");
+            yield=yield&&coin->script_pubkey==AddressToScript(BOND_YIELD_ESCROW);
+            principal=principal&&coin->script_pubkey==AddressToScript(STAKE_VAULT_ADDRESS);
+        }
+        Check(yield||(allow_principal&&principal),"unexpected or early principal payment to owner");
+        if(yield)credited+=owned;
+    }
+    return credited;
+}
 }
 int main(int argc,char** argv){
  try{
@@ -95,11 +112,18 @@ int main(int argc,char** argv){
     node.reset();node=Reopen(root/"primary",7004);Equal(*node,*branch);
     std::cout<<"PASS actual RPC, owner signing, request reorg and restart; return at "<<due<<std::endl;
     branch.reset();
+    uint64_t owner_yield=0;
     while(node->GetChain().Height()+1<due){
-        auto h=node->GetChain().Height()+1;auto b=Build(*node,miner,h);Admit(*node,b);history.push_back(b);
+        auto h=node->GetChain().Height()+1;
+        auto b=node->TestBuildDStateQualificationBlock(h,miner.GetP2PKHScript(),"-","-",
+            node->GetChain().TipCopy().header.timestamp+180,h);
+        Check(node->GetChain().ValidateMiningCoinbase(b),"window block coinbase preflight");
+        owner_yield+=YieldCredit(*node,b,owner,false);
+        Admit(*node,b);history.push_back(b);
+        if(h%480==0)Coherent(*node,node->GetChain().TotalSupplyUnits());
         if(h%4800==0)std::cout<<"PROGRESS full evidence window height="<<h<<std::endl;
     }
-    Check(Balance(*node,owner)==owner_pending,"principal returned before boundary");
+    Check(Balance(*node,owner)==owner_pending+owner_yield,"owner balance differs from separately funded yield");
     Check(node->GetValidators().GetBondReductionStatus(KeyHex(owner),due).bond_units==10000*VELD_UNITS,"early bond reduction");
     auto settlement=Build(*node,miner,due);size_t index=settlement.transactions.size(),output_index=0;
     for(size_t i=1;i<settlement.transactions.size();++i)for(size_t j=0;j<settlement.transactions[i].outputs.size();++j){
@@ -108,7 +132,7 @@ int main(int argc,char** argv){
     }
     Check(index<settlement.transactions.size(),"builder omitted mandatory excess payment");
     const auto payment=settlement.transactions[index];uint64_t ins=0,outs=0;
-    for(auto& in:payment.inputs){auto u=node->GetChain().GetUTXO(in.prev_tx_hash,in.prev_out_index);Check(u.has_value(),"settlement missing input");ins+=u->value;}
+    for(auto& in:payment.inputs){auto u=node->GetChain().GetUTXO(in.prev_tx_hash,in.prev_out_index);Check(u&&u->script_pubkey==AddressToScript(STAKE_VAULT_ADDRESS),"settlement missing custody input");ins+=u->value;}
     for(auto& out:payment.outputs)outs+=out.value;
     Check(ins==outs,"settlement minted or destroyed principal");
     auto missing=settlement;missing.transactions.erase(missing.transactions.begin()+index);Refuse(*node,missing,"missing partial return");
@@ -121,8 +145,8 @@ int main(int argc,char** argv){
     Check(node->TestObserveDStateQualificationState().utxo_digest==pre.utxo_digest,"failed settlement changed reopened funds");
     auto replay=Fresh(root/"replay");for(const auto& b:history)Admit(*replay,b);Equal(*node,*replay);
     std::cout<<"PASS full evidence window, malformed payments and persistence failure; independent replay"<<std::endl;
-    const auto supply=node->GetChain().TotalSupplyUnits();Admit(*node,settlement);
-    Check(Balance(*node,owner)==owner_pending+5000*VELD_UNITS,"wrong actual returned balance");
+    const auto supply=node->GetChain().TotalSupplyUnits();owner_yield+=YieldCredit(*node,settlement,owner,true);Admit(*node,settlement);
+    Check(Balance(*node,owner)==owner_pending+owner_yield+5000*VELD_UNITS,"wrong actual returned balance");
     status=node->GetValidators().GetBondReductionStatus(KeyHex(owner),due+1);
     Check(status.settled_at==due&&status.bond_units==5000*VELD_UNITS&&!status.pending,"settled state wrong");
     Coherent(*node,supply+BLOCK_REWARD_UNITS);
@@ -130,12 +154,12 @@ int main(int argc,char** argv){
     disconnected=0;
     for(uint64_t h=due;h<=due+2;++h){auto b=Build(*replay,miner,h+90000);Admit(*replay,b);Admit(*node,b);disconnected+=node->GetChain().LastReorgDisconnectCount();}
     Check(disconnected>0,"settlement reorg not exercised");Equal(*node,*replay);
-    Check(Balance(*node,owner)==owner_pending+5000*VELD_UNITS,"settlement reorg paid twice");
+    Check(Balance(*node,owner)==owner_pending+owner_yield+5000*VELD_UNITS,"settlement reorg paid twice");
     node.reset();node=Reopen(root/"primary",due+2);Equal(*node,*replay);
     auto record=node->GetValidators().SnapshotState().validators.at(KeyHex(owner));
     Check(record.active&&!record.slashed&&record.registered_height==6601&&record.principal_settled_at==0&&record.bond_units==5000*VELD_UNITS,"retained validator changed term or exited");
     Check(Failed(Call(*node,"preparereducevalidatorbond",{owner.address,KeyHex(owner)})),"second return allowed");
-    std::ofstream receipt(root/"result.json");receipt<<"{\"status\":\"passed\",\"checks\":"<<checks<<",\"return_height\":"<<due<<",\"final_height\":"<<due+2<<",\"injected_funds\":false,\"injected_registry\":false,\"network_started\":false,\"hash_work_bypassed\":true,\"evidence_window\":43200}\n";
+    std::ofstream receipt(root/"result.json");receipt<<"{\"status\":\"passed\",\"checks\":"<<checks<<",\"return_height\":"<<due<<",\"final_height\":"<<due+2<<",\"separate_yield_units\":"<<owner_yield<<",\"principal_return_units\":"<<5000*VELD_UNITS<<",\"injected_funds\":false,\"injected_registry\":false,\"network_started\":false,\"hash_work_bypassed\":true,\"evidence_window\":43200}\n";
     std::cout<<"PASS funded excess return admission, reorganization, replay and restart checks="<<checks<<std::endl;
  }catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<std::endl;return 1;}
 }
