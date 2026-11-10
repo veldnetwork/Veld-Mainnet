@@ -22,6 +22,9 @@ size_t checks = 0;
 constexpr uint64_t activation = MINER_FEE_ACTIVATION_HEIGHT;
 static_assert(PROTOCOL_UPGRADE_HEIGHT == 3360 && activation == 4000);
 constexpr uint64_t settlement = (activation / VAULT_BLOCK_INTERVAL + 1) * VAULT_BLOCK_INTERVAL;
+#ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
+static_assert(SUBSIDY_ACTIVATION_HEIGHT == 4000 && FIRST_HALVING_HEIGHT == 4001 && SECOND_HALVING_HEIGHT == 4101);
+#endif
 static_assert(activation > CONSENSUS_SECURITY_UPGRADE_HEIGHT);
 void Require(bool value, const std::string& message) {
     ++checks;
@@ -135,6 +138,23 @@ void CheckFeeAllocation(VeldNode& node, const Block& block,
     Require(block.transactions.front().TotalOutput() == subsidy + fee,
             "coinbase value is not subsidy plus recycled fees");
 }
+#ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
+void CheckSubsidyBoundary(VeldNode& node, const Block& block) {
+    const auto h = block.height;
+    // Literal independent monetary oracle at both shortened durable boundaries.
+    const uint64_t expected = h < 4001 ? 313926940 : h < 4101 ? 156963470 : 78481735;
+    Require(Blockchain::ExpectedBlockSubsidy(h) == expected, "durable subsidy boundary differs");
+    if (h != 4001 && h != 4101) return;
+    Block old = block;
+    const uint64_t difference = h == 4001 ? 156963470 : 78481735;
+    old.transactions.front().outputs.front().value += difference;
+    old.transactions.front().InvalidateTxIDCache();old.UpdateMerkleRoot();
+    const auto state = node.ConsensusStateDigest();
+    Require(!node.GetChain().ValidateMiningCoinbase(old), "old subsidy passed mining policy after halving");
+    Require(!node.TestIngestDStateQualificationFrame(old.Serialize(), h), "old subsidy entered durable chain after halving");
+    Require(node.ConsensusStateDigest() == state, "refused old subsidy changed state");
+}
+#endif
 void RejectFormerFeeRouting(VeldNode& node, const Block& candidate,
                            const RealKeyPair& owner, uint64_t fee) {
     Require(candidate.height >= activation && fee > 0, "active fee fixture required");
@@ -211,6 +231,9 @@ int main(int argc, char** argv) {
         for (uint64_t h = activation; h <= activation + 2; ++h) {
             if (h == activation + 1) Fee(*branch, owner, 2 * MIN_TX_FEE + 1);
             auto block = Candidate(*branch, owner, 200000 + h);
+#ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
+            CheckSubsidyBoundary(*branch, block);
+#endif
             Require(branch->GetChain().ValidateMiningCoinbase(block),
                     "mining policy rejected canonical candidate");
             if (h == activation) {
@@ -237,10 +260,13 @@ int main(int argc, char** argv) {
         for (size_t h = 1; h < history.size(); ++h)
             Accept(*independent, history[h]);
         Equal(*branch, *independent, "independent full admission replay differs");
-        for (uint64_t h = activation + 3; h <= settlement + 1; ++h) {
+        for (uint64_t h = activation + 3; h <= settlement + 2; ++h) {
             if (h == settlement)
                 Fee(*branch, owner, 30 * BLOCK_REWARD_UNITS + 1);
             auto block = Candidate(*branch, owner, h);
+#ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
+            CheckSubsidyBoundary(*branch, block);
+#endif
             if (h == settlement) {
                 Require(!branch->GetChain().ValidateLegacyMinerCaps(block),
                         "vault fee fixture missed old total boundary");
@@ -271,6 +297,10 @@ int main(int argc, char** argv) {
         Require(branch->GetTCPServer() == nullptr, "restart fixture opened a listener");
         std::ofstream receipt(root / "result.json");
         receipt << "{\"status\":\"passed\",\"height\":" << height << ",\"checks\":" << checks
+#ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
+                << ",\"isolated_first_halving_height\":" << FIRST_HALVING_HEIGHT
+                << ",\"isolated_second_halving_height\":" << SECOND_HALVING_HEIGHT
+#endif
                 << ",\"tip\":\"" << HashToHex(branch->GetChain().TipCopy().GetHash())
                 << "\",\"digest\":\"" << HashToHex(digest)
                 << "\",\"network_started\":false,\"hash_work_bypassed\":true}\n";

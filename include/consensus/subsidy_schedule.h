@@ -16,9 +16,25 @@
 #endif
 #endif
 
+// Shortened boundaries exercise the full durable node through both reductions
+// without constructing 1.4 million fixture blocks. Public builds cannot use
+// either override; production heights below remain source-pinned.
+#if defined(VELD_SUBSIDY_TEST_FIRST_HALVING) || defined(VELD_SUBSIDY_TEST_SECOND_HALVING)
+#if !defined(VELD_SUBSIDY_TEST_HEIGHT) || !defined(VELD_SUBSIDY_TEST_FIRST_HALVING) || \
+    !defined(VELD_SUBSIDY_TEST_SECOND_HALVING)
+#error "Both isolated subsidy boundaries and the guarded test activation are required"
+#endif
+#endif
+
 namespace veld {
+#if defined(VELD_SUBSIDY_TEST_FIRST_HALVING)
+inline constexpr uint64_t FIRST_HALVING_HEIGHT = VELD_SUBSIDY_TEST_FIRST_HALVING;
+inline constexpr uint64_t SECOND_HALVING_HEIGHT = VELD_SUBSIDY_TEST_SECOND_HALVING;
+static_assert(FIRST_HALVING_HEIGHT > 0 && SECOND_HALVING_HEIGHT > FIRST_HALVING_HEIGHT);
+#else
 inline constexpr uint64_t FIRST_HALVING_HEIGHT = 4ULL * BLOCKS_PER_YEAR + 1;
 inline constexpr uint64_t SECOND_HALVING_HEIGHT = 8ULL * BLOCKS_PER_YEAR + 1;
+#endif
 #if defined(VELD_SUBSIDY_TEST_HEIGHT)
 inline constexpr uint64_t SUBSIDY_ACTIVATION_HEIGHT = VELD_SUBSIDY_TEST_HEIGHT;
 #else
