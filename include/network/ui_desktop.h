@@ -13934,7 +13934,7 @@ function loadValidatorsPage() {
         if (minStake > 0) {
             minEl.innerHTML = fmt(minStake, 0) + ' VELD';
         } else {
-            minEl.textContent = '10,000 VELD';
+            minEl.textContent = 'Unavailable';
         }
     }
     if (currentAddr) {

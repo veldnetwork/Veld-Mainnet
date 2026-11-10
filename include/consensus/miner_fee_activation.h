@@ -1,8 +1,8 @@
 #pragma once
 #include "../core/constants.h"
 
-// Public activation belongs to the coordinated creator-token / merged-mining
-// release. Zero keeps the candidate inactive until that source-pinned schedule
+// Public activation belongs to the coordinated native protocol release.
+// Zero keeps the candidate inactive until that source-pinned schedule
 // has passed shipping qualification. Compiler flags cannot activate public fees.
 #if defined(VELD_MINER_FEE_ACTIVATION_HEIGHT)
 #error "Miner fee activation must be pinned in reviewed source"

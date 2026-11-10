@@ -29,6 +29,12 @@ async function test({activation=6601,height=6600,nodeMinimum=5000,spendable=6000
   assert.equal(signed[0][3][0].exact_hash160_count,1);assert.equal(signed[0][3][0].expected_hash160_hex,'11'.repeat(20));checks+=6;}
 }
 (async()=>{
+ const requirement=section('    var minStake = parseFloat(d.min_stake_veld || 0);','    if (currentAddr) {');
+ for(const [value,expected] of [[5000,'5000 VELD'],[10000,'10000 VELD'],[0,'Unavailable'],[null,'Unavailable'],[undefined,'Unavailable']]){
+  const element={innerHTML:'',textContent:''};
+  vm.runInNewContext(requirement,{d:{min_stake_veld:value},document:{getElementById:()=>element},fmt:String});
+  assert.equal(element.innerHTML||element.textContent,expected);checks++;
+ }
  await test({activation:0,height:2000000,nodeMinimum:10000,spendable:11000,expected:1000000000000});
  await test({height:6599,nodeMinimum:10000,spendable:11000,expected:1000000000000});
  await test({});await test({height:6601});
