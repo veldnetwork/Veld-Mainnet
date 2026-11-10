@@ -6335,7 +6335,12 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
             VELD_UNITS;
         std::ostringstream page;
         page << std::fixed << std::setprecision(2);
-        page << "<div class=\"stat-grid\" style=\"margin-bottom:20px\">";
+        page << R"HTML(<style>
+.vault-policy .tbl{width:100%;min-width:0;table-layout:fixed}
+.vault-policy .tbl th,.vault-policy .tbl td{white-space:normal;overflow-wrap:anywhere;vertical-align:top}
+.vault-policy .tbl th:first-child,.vault-policy .tbl td:first-child{width:32%}
+.vault-policy p+p{margin-top:12px}
+</style><div class="vault-policy"><div class="stat-grid" style="margin-bottom:20px">)HTML";
         auto stat = [&](const char* label, double value, const char* detail) {
             page << "<div class=\"stat\"><div class=\"stat-label\">" << label
                  << "</div><div class=\"stat-value\">" << value << "</div><div class=\"stat-sub\">"
@@ -6384,7 +6389,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 <tr><td>480-block interval</td><td>Settlement uses the parent block's state. Funds arriving in the settlement block enter a later cycle.</td></tr>
 <tr><td>75% recipient limit</td><td>No recipient receives more than 75% of the budget. Eligible validator bond yield shares the budget through its separate escrow.</td></tr>
 <tr><td>Unused funds remain</td><td>Rounding, recipient limits and absent eligible stake leave funds in the vault. Budgets below the minimum settle without a payout.</td></tr>
-</tbody></table></div></div>)HTML";
+</tbody></table></div></div></div>)HTML";
         return HttpResponse::HTML(HtmlWrapArcade("Vault", page.str(), "vault"));
     }
 
