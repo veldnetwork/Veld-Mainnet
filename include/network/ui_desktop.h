@@ -3504,7 +3504,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     <div class="stat"><div class="lbl">Total staked</div><div class="val em" id="sk-total">&mdash;</div><div class="sub">VELD network-wide</div></div>
     <div class="stat"><div class="lbl">Total bonded</div><div class="val" style="color:#B07CFF" id="sk-bonded">&mdash;</div><div class="sub">VELD &middot; validator bonds (draw yield)</div></div>
     <div class="stat"><div class="lbl">Vault balance</div><div class="val gold" id="sk-vault">&mdash;</div><div class="sub">pays stakers every 480 blocks</div></div>
-    <div class="stat"><div class="lbl">Est. APY</div><div class="val em" id="sk-apy">&mdash;</div><div class="sub">annualized</div></div>
+    <div class="stat"><div class="lbl">Est. APR</div><div class="val em" id="sk-apy">&mdash;</div><div class="sub">ordinary staking · not compounded</div></div>
   </div>
 
   <!-- YOUR POSITION — only rendered when user has an active stake -->
@@ -15139,13 +15139,24 @@ function loadStakingPage() {
       _veldRenderStakingCountdown(document.getElementById('sk-next'),
                                   d.next_distribution_in);
     }
-    // APY estimate: (net payout per daily 480-block cycle * 365 cycles/year) / total staked
-    if (active && staked > 0 && vault > 0) {
-      var distPerCycle = Number(d.distributable_veld);
+    // APR estimate: ordinary recipients' actual estimated payouts exclude bond
+    // escrow, concentration-cap leftovers and rounding retained by the vault.
+    if (active && staked > 0) {
+      var payoutRows = Array.isArray(d.stakers) ? d.stakers : [];
+      var distPerCycle = 0;
+      var validPayouts = payoutRows.length > 0 && payoutRows.every(function(row) {
+        var value = row && row.payout_veld;
+        if ((typeof value !== 'number' && typeof value !== 'string') ||
+            (typeof value === 'string' && value.trim() === '')) return false;
+        var payout = Number(value);
+        if (!Number.isFinite(payout) || payout < 0) return false;
+        distPerCycle += payout;
+        return true;
+      });
       var cyclesPerYear = 365; // one 480-block distribution cycle per day
-      var apy = (distPerCycle * cyclesPerYear / staked) * 100;
-      document.getElementById('sk-apy').textContent = Number.isFinite(distPerCycle) && distPerCycle >= 0
-        ? fmt(Math.min(apy, 9999), 1) + '%' : 'Unavailable';
+      var apr = (distPerCycle * cyclesPerYear / staked) * 100;
+      document.getElementById('sk-apy').textContent = validPayouts && Number.isFinite(apr)
+        ? fmt(apr, 1) + '%' : 'Unavailable';
     } else {
       document.getElementById('sk-apy').textContent = active ? 'Stake to earn' : 'N/A';
     }

@@ -62,8 +62,10 @@ it uses the last completed cycle and current balance. RPC responses identify the
 reference height, active policy, next-distribution policy and estimated budget.
 
 Wallet yield estimates preserve a zero budget and show unavailable data instead
-of inventing a percentage of the vault balance. Actual payouts still depend on
-the recipient weights at settlement.
+of inventing a percentage of the vault balance. The ordinary-staking APR uses
+the sum of estimated ordinary-recipient payouts, excluding bond-yield escrow
+and unused budget. It is annualized without compounding. Actual payouts still
+depend on the recipient weights at settlement.
 
 Qualification includes disabled and activated policies, integer extremes,
 concentration limits, rounding, absent recipients and bond-yield allocation.
