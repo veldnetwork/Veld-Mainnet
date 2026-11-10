@@ -1,3 +1,27 @@
+## 3.3.4 candidate - Consensus upgrade and vault accounting
+
+This candidate is not yet published. Protocol changes remain disabled until
+their coordinated activation heights are pinned and qualified.
+
+- Add the 5,000 VELD validator bond and equal capped finality weights, with a
+  five-key minimum and a strict greater-than-two-thirds quorum. Finality stays
+  in standby when the eligible quorum is unavailable.
+- Require at least ten participating upgrade votes, retain the approval
+  threshold and seven-protocol-day timelock, and preserve historical evidence.
+- Route native transaction fees entirely to miners after activation. Retain
+  the two launch-based halvings, retire co-mining at the first halving and use
+  the approved 60% miner / 20% vault / 20% validator ordinary subsidy allocation.
+  The every-100th-block vault allocation is unchanged.
+- Return eligible excess validator bonds after the complete evidence window,
+  preserving registration, principal accounting and slash/exit constraints.
+- Add a 20,000 VELD rewards-vault target. Surplus can increase payouts within
+  the existing 8% cycle limit and recipient caps; the target is not locked
+  principal or a guaranteed minimum balance.
+- Align vault RPC and explorer estimates with integer consensus accounting.
+  Wallet staking APR uses ordinary-recipient payouts, excludes bond escrow and
+  unused budget, and does not assume compounding. Vault explanations wrap on
+  mobile screens.
+
 ## 3.3.3 - Windows update package verification
 
 - Windows updates use one consistent file-list check for downloaded and staged
