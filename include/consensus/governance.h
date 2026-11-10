@@ -93,20 +93,22 @@ class GovernanceEngine {
         validators_ = v;
     }
 
-    // MAINNET governance-activation gate. Open once validators have bonded
-    // >= GOVERNANCE_ACTIVATION_BONDED_UNITS (each bond capped at MIN_VALIDATOR_STAKE
-    // ⇒ >= 5 validators × 10k = 50,000 VELD on mainnet). On the test chain
+    // MAINNET governance-activation gate. Each bond contributes at most the
+    // height-specific minimum: five 10,000-VELD bonds before the policy change,
+    // or five 5,000-VELD bonds after it. On the test chain
     // (GOVERNANCE_BOND_GATE_ACTIVE=false) it is ALWAYS open — governance stays
     // always-active for testing. Pure fn of the replayed validator set + the
-    // compile-time constants; consulted by every apply-path entry below so the
+    // height-specific policy; consulted by every apply-path entry below so the
     // whole system is dormant on mainnet until the bonded quorum exists.
     bool GovernanceBondGateOpen(uint64_t height) const {
         if (!GOVERNANCE_BOND_GATE_ACTIVE)
             return true;
-        return validators_ &&
-               validators_->GetGovernanceBondedTotal(height) >= ValidatorGovernanceBondFloor(height);
+        return validators_ && validators_->GetGovernanceBondedTotal(height) >=
+                                  ValidatorGovernanceBondFloor(height);
     }
-    bool GovernanceBondGateOpen() const { return GovernanceBondGateOpen(chain_.Height()); }
+    bool GovernanceBondGateOpen() const {
+        return GovernanceBondGateOpen(chain_.Height());
+    }
 
     using KVPut = std::function<void(const std::string& key, const std::string& val)>;
     using KVDel = std::function<void(const std::string& key)>;
@@ -630,7 +632,8 @@ class GovernanceEngine {
         // gate). On the test chain GovernanceBondGateOpen() is always true.
         if (!GovernanceBondGateOpen()) {
             e.reason = "Governance requires at least five eligible validator bonds totaling " +
-                       std::to_string(ValidatorGovernanceBondFloor(chain_.Height()) / VELD_UNITS) + " VELD";
+                       std::to_string(ValidatorGovernanceBondFloor(chain_.Height()) / VELD_UNITS) +
+                       " VELD";
             return e; // can_vote / can_propose stay false
         }
 
@@ -1478,7 +1481,7 @@ class GovernanceEngine {
         if (!validators_ || !validators_->IsValidatorByAddress(proposer))
             return false;
         if (!GovernanceBondGateOpen(block_height))
-            return false; // mainnet: dormant until 50k bonded
+            return false; // Mainnet: wait for the height-specific bonded quorum.
         if (ConsensusSecurityUpgradeActive(block_height) &&
             (!CanonicalIdentity(creation_identity) ||
              block_height > (uint64_t)std::numeric_limits<std::time_t>::max() -
@@ -1510,7 +1513,7 @@ class GovernanceEngine {
                             const std::string& pubkey_hex, const std::string& sig_hex,
                             const std::string& identity = {}) {
         if (!GovernanceBondGateOpen(block_height))
-            return false; // mainnet: dormant until 50k bonded
+            return false; // Mainnet: wait for the height-specific bonded quorum.
         if (block_height > signed_height + GOV_SIG_REPLAY_WINDOW_BLOCKS) {
             if (gov_debug_) {
                 std::cerr << "[VOTE-REJ] stale_sig bh=" << block_height

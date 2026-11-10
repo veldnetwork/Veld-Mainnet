@@ -183,17 +183,20 @@ int main(int argc, char** argv) {
                 input.script_sig.clear();
             included.InvalidateTxIDCache();
             for (size_t i = 0; i < included.inputs.size(); ++i)
-                included.inputs[i].script_sig = owner.SignInput(
-                    included, static_cast<uint32_t>(i), owner.GetP2PKHScript()).script_sig;
+                included.inputs[i].script_sig =
+                    owner.SignInput(included, static_cast<uint32_t>(i), owner.GetP2PKHScript())
+                        .script_sig;
             included.InvalidateTxIDCache();
         }
         underfunded.UpdateMerkleRoot();
         const auto before_underfunded = branch->TestObserveDStateQualificationState();
-        Check(!branch->TestIngestDStateQualificationFrame(underfunded.Serialize(), underfunded.height),
+        Check(!branch->TestIngestDStateQualificationFrame(underfunded.Serialize(),
+                                                          underfunded.height),
               "below-minimum funded bond accepted");
         const auto after_underfunded = branch->TestObserveDStateQualificationState();
         Check(before_underfunded.utxo_digest == after_underfunded.utxo_digest &&
-                  before_underfunded.consensus_state_digest == after_underfunded.consensus_state_digest &&
+                  before_underfunded.consensus_state_digest ==
+                      after_underfunded.consensus_state_digest &&
                   before_underfunded.durable_tip_hash == after_underfunded.durable_tip_hash,
               "below-minimum refusal changed funds or durable state");
 
@@ -281,6 +284,7 @@ int main(int argc, char** argv) {
             << ",\"network_started\":false,\"hash_work_bypassed\":true,\"injected_funds\":false}\n";
         std::cout << "PASS validator bond full accounting checks=" << checks
                   << " activation=" << activation << std::endl;
+        return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL " << error.what() << std::endl;
         return 1;

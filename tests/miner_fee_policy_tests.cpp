@@ -50,9 +50,11 @@ Amounts Oracle(uint64_t height, uint64_t supply, uint64_t fees) {
     if (height >= FIRST_HALVING_HEIGHT && height % 100 != 0) {
         const uint64_t annual = ANNUAL_EMISSION_UNITS >> (height >= SECOND_HALVING_HEIGHT ? 2 : 1);
         const uint64_t scheduled = annual / BLOCKS_PER_YEAR +
-            (height % BLOCKS_PER_YEAR == 0 ? annual % BLOCKS_PER_YEAR : 0);
+                                   (height % BLOCKS_PER_YEAR == 0 ? annual % BLOCKS_PER_YEAR : 0);
         const uint64_t reward = std::min(scheduled, MAX_SUPPLY_UNITS - supply);
-        out.pool = 0; out.vault = reward / 5; out.endorse = reward / 5;
+        out.pool = 0;
+        out.vault = reward / 5;
+        out.endorse = reward / 5;
         out.miner = reward - out.vault - out.endorse;
     }
 #endif
@@ -77,9 +79,28 @@ int main() {
         const std::vector<uint64_t> fees = {0,         1,     2,         3,          9,
                                             10,        99,    100,       MIN_TX_FEE, 5 * r,
                                             6 * r - 1, 6 * r, 6 * r + 1, 30 * r,     30 * r + 1};
-        const std::vector<uint64_t> heights = {3359, 3360, 3361, 3400, 3840, 3999, 4000, 4001, 4100, 4800, BLOCKS_PER_YEAR
+        const std::vector<uint64_t> heights = {3359,
+                                               3360,
+                                               3361,
+                                               3400,
+                                               3840,
+                                               3999,
+                                               4000,
+                                               4001,
+                                               4100,
+                                               4800,
+                                               BLOCKS_PER_YEAR
 #if defined(VELD_SUBSIDY_TEST_HEIGHT)
-            , 700799, 700800, 700801, 700900, 1401599, 1401600, 1401601, 1401700, 2102401
+                                               ,
+                                               700799,
+                                               700800,
+                                               700801,
+                                               700900,
+                                               1401599,
+                                               1401600,
+                                               1401601,
+                                               1401700,
+                                               2102401
 #endif
         };
         const std::vector<uint64_t> supplies = {STAKING_UNLOCK_SUPPLY - 1, STAKING_UNLOCK_SUPPLY,

@@ -23,7 +23,8 @@ constexpr uint64_t activation = MINER_FEE_ACTIVATION_HEIGHT;
 static_assert(PROTOCOL_UPGRADE_HEIGHT == 3360 && activation == 4000);
 constexpr uint64_t settlement = (activation / VAULT_BLOCK_INTERVAL + 1) * VAULT_BLOCK_INTERVAL;
 #ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
-static_assert(SUBSIDY_ACTIVATION_HEIGHT == 4000 && FIRST_HALVING_HEIGHT == 4001 && SECOND_HALVING_HEIGHT == 4101);
+static_assert(SUBSIDY_ACTIVATION_HEIGHT == 4000 && FIRST_HALVING_HEIGHT == 4001 &&
+              SECOND_HALVING_HEIGHT == 4101);
 #endif
 static_assert(activation > CONSENSUS_SECURITY_UPGRADE_HEIGHT);
 void Require(bool value, const std::string& message) {
@@ -117,12 +118,15 @@ void CheckFeeAllocation(VeldNode& node, const Block& block,
     if (periodic) vault = subsidy;
 #ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
     else if (block.height >= 4001) {
-        vault = subsidy / 5; endorsement = subsidy / 5;
+        vault = subsidy / 5;
+        endorsement = subsidy / 5;
         miner = subsidy - vault - endorsement;
     }
 #endif
-    else if (locked) { miner = subsidy / 2; vault = subsidy - miner; }
-    else {
+    else if (locked) {
+        miner = subsidy / 2;
+        vault = subsidy - miner;
+    } else {
         pool = subsidy / 5; vault = subsidy / 5; endorsement = subsidy / 10;
         miner = subsidy - pool - vault - endorsement;
     }
@@ -150,14 +154,18 @@ void CheckSubsidyBoundary(VeldNode& node, const Block& block) {
     // Literal independent monetary oracle at both shortened durable boundaries.
     const uint64_t expected = h < 4001 ? 313926940 : h < 4101 ? 156963470 : 78481735;
     Require(Blockchain::ExpectedBlockSubsidy(h) == expected, "durable subsidy boundary differs");
-    if (h != 4001 && h != 4101) return;
+    if (h != 4001 && h != 4101)
+        return;
     Block old = block;
     const uint64_t difference = h == 4001 ? 156963470 : 78481735;
     old.transactions.front().outputs.front().value += difference;
-    old.transactions.front().InvalidateTxIDCache();old.UpdateMerkleRoot();
+    old.transactions.front().InvalidateTxIDCache();
+    old.UpdateMerkleRoot();
     const auto state = node.ConsensusStateDigest();
-    Require(!node.GetChain().ValidateMiningCoinbase(old), "old subsidy passed mining policy after halving");
-    Require(!node.TestIngestDStateQualificationFrame(old.Serialize(), h), "old subsidy entered durable chain after halving");
+    Require(!node.GetChain().ValidateMiningCoinbase(old),
+            "old subsidy passed mining policy after halving");
+    Require(!node.TestIngestDStateQualificationFrame(old.Serialize(), h),
+            "old subsidy entered durable chain after halving");
     Require(node.ConsensusStateDigest() == state, "refused old subsidy changed state");
 }
 #endif

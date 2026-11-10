@@ -13869,8 +13869,9 @@ function loadValidatorsPage() {
     var ctEl = document.getElementById('bv-counts');
     if (ctEl) ctEl.textContent = String(b.custodial_validator_count || 0);
     var ctSub = document.getElementById('bv-counts-sub');
+    var pendingReturns = Number(b.pending_return_count || 0) + Number(b.pending_excess_return_count || 0);
     if (ctSub) ctSub.textContent = String(b.custodial_validator_count || 0) +
-      ' active · ' + String(b.pending_return_count || 0) + ' pending return';
+      ' active · ' + String(pendingReturns) + ' pending return';
     var vestDays = Math.round(((b.vest_horizon_blocks || 0) * 180) / 86400);
     var rEl = document.getElementById('bv-rules');
     if (rEl) rEl.innerHTML =
@@ -14640,84 +14641,175 @@ function doRegisterValidator() {
 }
 
 function _veldBondUnitsText(units) {
-  if (typeof units !== 'string' || !/^(0|[1-9][0-9]*)$/.test(units)) throw new Error('Exact bond amount is unavailable.');
-  var value=BigInt(units),fraction=(value%100000000n).toString().padStart(8,'0').replace(/0+$/,'');
-  return (value/100000000n).toLocaleString('en-US')+(fraction?'.'+fraction:'');
+    if (typeof units !== 'string' || !/^(0|[1-9][0-9]*)$/.test(units))
+        throw new Error('Exact bond amount is unavailable.');
+    var value = BigInt(units),
+        fraction = (value % 100000000n).toString().padStart(8, '0').replace(/0+$/, '');
+    return (value / 100000000n).toLocaleString('en-US') + (fraction ? '.' + fraction : '');
 }
 
 function _veldBondReductionReview(info, owner, pubkey) {
-  if (!info || !Number.isSafeInteger(info.current_height) || info.current_height < 0 ||
-      info.current_height >= Number.MAX_SAFE_INTEGER) throw new Error('Current bond state is unavailable.');
-  var row = (info.validators || []).find(function(v){return v.address === owner && v.pubkey === pubkey;});
-  if (!row || row.bond_reduction_eligible !== true || !row.active || row.slashed ||
-      !row.principal_held || row.bond_reduction_requested_at !== 0)
-    throw new Error('This validator has no available excess bond return. Refresh its status.');
-  var retained = _veldValidatorBondAtHeight(info.current_height + 1);
-  if (retained !== 500000000000 || !Number.isSafeInteger(row.registered_height) || row.registered_height < 1)
-    throw new Error('Excess bond returns are not active for this wallet build.');
-  for (var value of [row.bond_units,row.bond_retained_units,row.bond_reduction_units])
-    if (typeof value !== 'string' || !/^(0|[1-9][0-9]*)$/.test(value)) throw new Error('Exact bond amounts are unavailable.');
-  if (row.bond_retained_units !== String(retained) || BigInt(row.bond_reduction_units) <= 0n ||
-      BigInt(row.bond_units) !== BigInt(retained) + BigInt(row.bond_reduction_units))
-    throw new Error('Node bond amounts differ from this wallet policy.');
-  return {row:row,retained:String(retained),amount:row.bond_reduction_units,
-    operation:'VELD_VALIDATOR|REDUCE_BOND|'+pubkey+'|'+row.registered_height+'|'+retained};
+    if (
+        !info ||
+        !Number.isSafeInteger(info.current_height) ||
+        info.current_height < 0 ||
+        info.current_height >= Number.MAX_SAFE_INTEGER
+    )
+        throw new Error('Current bond state is unavailable.');
+    var row = (info.validators || []).find(function (v) {
+        return v.address === owner && v.pubkey === pubkey;
+    });
+    if (
+        !row ||
+        row.bond_reduction_eligible !== true ||
+        !row.active ||
+        row.slashed ||
+        !row.principal_held ||
+        row.bond_reduction_requested_at !== 0
+    )
+        throw new Error('This validator has no available excess bond return. Refresh its status.');
+    var retained = _veldValidatorBondAtHeight(info.current_height + 1);
+    if (
+        retained !== 500000000000 ||
+        !Number.isSafeInteger(row.registered_height) ||
+        row.registered_height < 1
+    )
+        throw new Error('Excess bond returns are not active for this wallet build.');
+    for (var value of [row.bond_units, row.bond_retained_units, row.bond_reduction_units])
+        if (typeof value !== 'string' || !/^(0|[1-9][0-9]*)$/.test(value))
+            throw new Error('Exact bond amounts are unavailable.');
+    if (
+        row.bond_retained_units !== String(retained) ||
+        BigInt(row.bond_reduction_units) <= 0n ||
+        BigInt(row.bond_units) !== BigInt(retained) + BigInt(row.bond_reduction_units)
+    )
+        throw new Error('Node bond amounts differ from this wallet policy.');
+    return {
+        row: row,
+        retained: String(retained),
+        amount: row.bond_reduction_units,
+        operation:
+            'VELD_VALIDATOR|REDUCE_BOND|' + pubkey + '|' + row.registered_height + '|' + retained,
+    };
 }
 
 function _veldRenderBondReduction(info, owner) {
-  if (owner !== currentAddr) return;
-  var button=document.getElementById('val-reduce-btn'),note=document.getElementById('val-reduce-note');
-  if (!button || !note) return;
-  button.hidden=true;note.hidden=true;note.textContent='';
-  if (!owner || !info) return;
-  var row=(info.validators || []).find(function(v){return v.address===owner;});
-  if (!row) return;
-  var amount;
-  try { amount=_veldBondUnitsText(row.bond_reduction_units);if(BigInt(row.bond_reduction_units)<=0n)return; }
-  catch (_) { return; }
-  if (row.bond_reduction_pending === true && Number.isSafeInteger(row.bond_reduction_boundary) && row.bond_reduction_boundary>0) {
-    note.textContent=amount+' VELD return pending at block '+row.bond_reduction_boundary+
-      '. Your validator remains active. The full bond stays held and slashable until settlement.';
-  } else if (row.bond_reduction_cancelled === true) {
-    note.textContent='The excess return was cancelled by a validator exit or slash. The full bond follows that settlement.';
-  } else if (Number.isSafeInteger(row.bond_reduction_settled_at) && row.bond_reduction_settled_at>0) {
-    note.textContent=amount+' VELD excess returned at block '+row.bond_reduction_settled_at+
-      '. The remaining bond follows the validator status shown above.';
-  } else {
+    if (owner !== currentAddr) return;
+    var button = document.getElementById('val-reduce-btn'),
+        note = document.getElementById('val-reduce-note');
+    if (!button || !note) return;
+    button.hidden = true;
+    note.hidden = true;
+    note.textContent = '';
+    if (!owner || !info) return;
+    var row = (info.validators || []).find(function (v) {
+        return v.address === owner;
+    });
+    if (!row) return;
+    var amount;
     try {
-      var reviewed=_veldBondReductionReview(info,owner,row.pubkey);
-      button.hidden=false;
-      note.textContent='Request '+amount+' VELD back and keep 5,000 VELD bonded. Your validator stays active. '+
-        'The excess returns after the evidence window for earlier votes has ended.';
-    } catch (_) { return; }
-  }
-  note.hidden=false;
+        amount = _veldBondUnitsText(row.bond_reduction_units);
+        if (BigInt(row.bond_reduction_units) <= 0n) return;
+    } catch (_) {
+        return;
+    }
+    if (
+        row.bond_reduction_pending === true &&
+        Number.isSafeInteger(row.bond_reduction_boundary) &&
+        row.bond_reduction_boundary > 0
+    ) {
+        note.textContent =
+            amount +
+            ' VELD return pending at block ' +
+            row.bond_reduction_boundary +
+            '. Your validator remains active. The full bond stays held and slashable until settlement.';
+    } else if (row.bond_reduction_cancelled === true) {
+        note.textContent =
+            'The excess return was cancelled by a validator exit or slash. The full bond follows that settlement.';
+    } else if (
+        Number.isSafeInteger(row.bond_reduction_settled_at) &&
+        row.bond_reduction_settled_at > 0
+    ) {
+        note.textContent =
+            amount +
+            ' VELD excess returned at block ' +
+            row.bond_reduction_settled_at +
+            '. The remaining bond follows the validator status shown above.';
+    } else {
+        try {
+            var reviewed = _veldBondReductionReview(info, owner, row.pubkey);
+            button.hidden = false;
+            note.textContent =
+                'Request ' +
+                amount +
+                ' VELD back and keep 5,000 VELD bonded. Your validator stays active. ' +
+                'The excess returns after the evidence window for earlier votes has ended.';
+        } catch (_) {
+            return;
+        }
+    }
+    note.hidden = false;
 }
 
 async function doReduceValidatorBond() {
-  var msg=document.getElementById('val-msg'),buttons=['val-reg-btn','val-dereg-btn','val-reduce-btn'];
-  if (!__opLock('validator-op',buttons,'Reviewing…')) return;
-  try {
-    var key=__veldKey.get() || '',identity=_veldRequireBoundIdentity(key,null,currentAddr);
-    var generation=_veldAssertActiveSignerSeed(key),pubkey=veldCrypto.derivePublicKey(key);
-    var info=await rpc('getbondvaultinfo');
-    _veldAssertActiveSignerSeed(key,generation);
-    if (currentAddr!==identity.address) throw new Error('Wallet changed. Review the request again.');
-    var review=_veldBondReductionReview(info,identity.address,pubkey);
-    if (!window.confirm('Request '+_veldBondUnitsText(review.amount)+' VELD of excess bond back? '+
-      '5,000 VELD stays bonded and your validator remains active. The full bond stays held and slashable '+
-      'through the evidence window for earlier votes. The return block appears after confirmation. '+
-      'Request fee: '+fmt(VELD_MIN_TX_FEE_UNITS/100000000,3)+' VELD.')) return;
-    _veldAssertActiveSignerSeed(key,generation);
-    var result=await signAndBroadcast('preparereducevalidatorbond',[identity.address,pubkey],key,
-      null,_veldAddrToKeyCommitmentHex(identity.address),null,null,
-      _veldBuildProtocolOpReturnHex(review.operation),null,generation);
-    msg.textContent='Excess return request submitted. The bond remains held until its settlement block.';
-    __waitForTxConfirm(result.txid,300,function(){loadValidatorsPage();},function(){
-      msg.textContent='The saved request is still awaiting confirmation. Check its status in wallet activity.';
-    });
-  } catch(error) { msg.textContent=error.message || 'The excess return request could not be prepared.'; }
-  finally { __opUnlock('validator-op',buttons);loadValidatorsPage(); }
+    var msg = document.getElementById('val-msg'),
+        buttons = ['val-reg-btn', 'val-dereg-btn', 'val-reduce-btn'];
+    if (!__opLock('validator-op', buttons, 'Reviewing…')) return;
+    try {
+        var key = __veldKey.get() || '',
+            identity = _veldRequireBoundIdentity(key, null, currentAddr);
+        var generation = _veldAssertActiveSignerSeed(key),
+            pubkey = veldCrypto.derivePublicKey(key);
+        var info = await rpc('getbondvaultinfo');
+        _veldAssertActiveSignerSeed(key, generation);
+        if (currentAddr !== identity.address)
+            throw new Error('Wallet changed. Review the request again.');
+        var review = _veldBondReductionReview(info, identity.address, pubkey);
+        if (
+            !window.confirm(
+                'Request ' +
+                    _veldBondUnitsText(review.amount) +
+                    ' VELD of excess bond back? ' +
+                    '5,000 VELD stays bonded and your validator remains active. The full bond stays held and slashable ' +
+                    'through the evidence window for earlier votes. The return block appears after confirmation. ' +
+                    'Request fee: ' +
+                    fmt(VELD_MIN_TX_FEE_UNITS / 100000000, 3) +
+                    ' VELD.',
+            )
+        )
+            return;
+        _veldAssertActiveSignerSeed(key, generation);
+        var result = await signAndBroadcast(
+            'preparereducevalidatorbond',
+            [identity.address, pubkey],
+            key,
+            null,
+            _veldAddrToKeyCommitmentHex(identity.address),
+            null,
+            null,
+            _veldBuildProtocolOpReturnHex(review.operation),
+            null,
+            generation,
+        );
+        msg.textContent =
+            'Excess return request submitted. The bond remains held until its settlement block.';
+        __waitForTxConfirm(
+            result.txid,
+            300,
+            function () {
+                loadValidatorsPage();
+            },
+            function () {
+                msg.textContent =
+                    'The saved request is still awaiting confirmation. Check its status in wallet activity.';
+            },
+        );
+    } catch (error) {
+        msg.textContent = error.message || 'The excess return request could not be prepared.';
+    } finally {
+        __opUnlock('validator-op', buttons);
+        loadValidatorsPage();
+    }
 }
 
 function doDeregisterValidator() {

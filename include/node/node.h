@@ -15524,9 +15524,11 @@ class VeldNode {
                 bool is_vault_block = (result.new_height % VAULT_BLOCK_INTERVAL == 0);
                 bool is_pool_dist = CoMiningPayoutDue(result.new_height);
 
-                uint64_t comine_cut = CoMiningRetired(result.new_height) ? 0 : (effective_reward * 20) / 100;
+                uint64_t comine_cut =
+                    CoMiningRetired(result.new_height) ? 0 : (effective_reward * 20) / 100;
                 uint64_t vault_cut = (effective_reward * 20) / 100;
-                uint64_t endorse_cut = (effective_reward * (CoMiningRetired(result.new_height) ? 20 : 10)) / 100;
+                uint64_t endorse_cut =
+                    (effective_reward * (CoMiningRetired(result.new_height) ? 20 : 10)) / 100;
                 uint64_t winner_cut = effective_reward - comine_cut - vault_cut - endorse_cut;
 
                 auto endorse_pool_script = AddressToScript(ENDORSEMENT_POOL_ADDRESS);

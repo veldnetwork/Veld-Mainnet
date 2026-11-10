@@ -16,23 +16,25 @@ struct SubsidyView {
             throw std::overflow_error("No next subsidy height");
         const auto h = tip + 1;
         const auto value = ComputeCoinbaseAllocation(h, ScheduledBlockSubsidy(h), supply, 0);
-        if (!value) throw std::invalid_argument("Invalid subsidy supply");
+        if (!value)
+            throw std::invalid_argument("Invalid subsidy supply");
         return {h, *value};
     }
     std::string Fields() const {
         return "\"reward_height\":" + std::to_string(height) +
-            ",\"block_subsidy_units\":" + std::to_string(allocation.subsidy) +
-            ",\"miner_subsidy_units\":" + std::to_string(allocation.miner) +
-            ",\"subsidy_activation_height\":" + std::to_string(SUBSIDY_ACTIVATION_HEIGHT) +
-            ",\"subsidy_schedule_active\":" + (SubsidyScheduleActive(height) ? "true" : "false") +
-            ",\"subsidy_halvings\":" + std::to_string(SubsidyHalvings(height)) +
-            ",\"first_halving_height\":" + std::to_string(FIRST_HALVING_HEIGHT) +
-            ",\"second_halving_height\":" + std::to_string(SECOND_HALVING_HEIGHT) +
-            ",\"co_mining_retired\":" + (CoMiningRetired(height) ? "true" : "false") +
-            ",\"co_mining_retirement_height\":" + std::to_string(CoMiningRetirementHeight()) +
-            ",\"co_mining_subsidy_units\":" + std::to_string(allocation.pool) +
-            ",\"validator_subsidy_units\":" + std::to_string(allocation.endorsement) +
-            ",\"miner_fees_active\":" + (MinerFeesActive(height) ? "true" : "false");
+               ",\"block_subsidy_units\":" + std::to_string(allocation.subsidy) +
+               ",\"miner_subsidy_units\":" + std::to_string(allocation.miner) +
+               ",\"subsidy_activation_height\":" + std::to_string(SUBSIDY_ACTIVATION_HEIGHT) +
+               ",\"subsidy_schedule_active\":" +
+               (SubsidyScheduleActive(height) ? "true" : "false") +
+               ",\"subsidy_halvings\":" + std::to_string(SubsidyHalvings(height)) +
+               ",\"first_halving_height\":" + std::to_string(FIRST_HALVING_HEIGHT) +
+               ",\"second_halving_height\":" + std::to_string(SECOND_HALVING_HEIGHT) +
+               ",\"co_mining_retired\":" + (CoMiningRetired(height) ? "true" : "false") +
+               ",\"co_mining_retirement_height\":" + std::to_string(CoMiningRetirementHeight()) +
+               ",\"co_mining_subsidy_units\":" + std::to_string(allocation.pool) +
+               ",\"validator_subsidy_units\":" + std::to_string(allocation.endorsement) +
+               ",\"miner_fees_active\":" + (MinerFeesActive(height) ? "true" : "false");
     }
 };
 
@@ -63,22 +65,27 @@ inline std::string SubsidyRulesHtml(uint64_t height) {
                 "No halving schedule is currently activated on this network. "
                 "A rounding adjustment every 175,200 blocks gives 550,000 VELD per protocol year.";
     } else {
-        text += SubsidyScheduleActive(height) ? "The two-halving schedule is active. " :
-            "The two-halving schedule activates at block " + std::to_string(SUBSIDY_ACTIVATION_HEIGHT) + ". ";
+        text += SubsidyScheduleActive(height)
+                    ? "The two-halving schedule is active. "
+                    : "The two-halving schedule activates at block " +
+                          std::to_string(SUBSIDY_ACTIVATION_HEIGHT) + ". ";
         text += "Annual issuance is 550,000 VELD for the first four protocol years, "
                 "275,000 VELD for the next four, then 137,500 VELD. "
-                "Reduced subsidies begin at blocks " + std::to_string(FIRST_HALVING_HEIGHT) +
-                " and " + std::to_string(SECOND_HALVING_HEIGHT) +
+                "Reduced subsidies begin at blocks " +
+                std::to_string(FIRST_HALVING_HEIGHT) + " and " +
+                std::to_string(SECOND_HALVING_HEIGHT) +
                 ". There is no third halving. Each protocol year contains 175,200 blocks; "
                 "its final block includes the integer rounding remainder.";
     }
     if (SUBSIDY_ACTIVATION_HEIGHT != 0)
-        text += " Co-mining retires at the first halving. From that block, ordinary subsidies "
-                "are 60% miner, 20% vault and 20% validator pool. Every 100th block still "
-                "sends its entire subsidy to the vault. Previous payouts and stake principal remain intact.";
-    return text + "</p><p>The <strong>21,000,000 VELD hard cap</strong> remains. "
-        "The last subsidy is limited to remaining issuance. Block heights determine the schedule; "
-        "calendar dates depend on mining. There is no premine.</p>";
+        text +=
+            " Co-mining retires at the first halving. From that block, ordinary subsidies "
+            "are 60% miner, 20% vault and 20% validator pool. Every 100th block still "
+            "sends its entire subsidy to the vault. Previous payouts and stake principal remain intact.";
+    return text +
+           "</p><p>The <strong>21,000,000 VELD hard cap</strong> remains. "
+           "The last subsidy is limited to remaining issuance. Block heights determine the schedule; "
+           "calendar dates depend on mining. There is no premine.</p>";
 }
 
 inline std::string FeeRulesHtml(uint64_t height) {

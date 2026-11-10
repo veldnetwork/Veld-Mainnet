@@ -1191,9 +1191,8 @@ class RpcServer {
         const bool supported = script.size() == 25;
         const auto tip = chain_.TipCopy();
         const auto proof = nms_proofs_.Read(script, tip.GetHash());
-        const bool eligible =
-            supported && !CoMiningRetired(NextInclusionHeight(tip.height)) &&
-            chain_.NmsBondSatisfied(script, NextInclusionHeight(tip.height));
+        const bool eligible = supported && !CoMiningRetired(NextInclusionHeight(tip.height)) &&
+                              chain_.NmsBondSatisfied(script, NextInclusionHeight(tip.height));
         const bool needed =
             supported && mining::NeedsNmsSubmission(chain_, mempool_, script, tip.GetHash());
         return JsonBuilder::Object({
@@ -1479,11 +1478,13 @@ class RpcServer {
         return height + 1;
     }
 
-    std::string PrepareValidatorFeeOperation_(const std::string& address, const std::string& operation) {
+    std::string PrepareValidatorFeeOperation_(const std::string& address,
+                                              const std::string& operation) {
         using JB = JsonBuilder;
         if (operation.size() <= 255 || operation.size() > 65535)
             throw std::runtime_error("Invalid validator instruction size");
-        std::vector<uint8_t> marker{0x6a, 0x4d, (uint8_t)operation.size(), (uint8_t)(operation.size() >> 8)};
+        std::vector<uint8_t> marker{0x6a, 0x4d, (uint8_t)operation.size(),
+                                    (uint8_t)(operation.size() >> 8)};
         marker.insert(marker.end(), operation.begin(), operation.end());
         const auto script = AddressToScript(address);
         const auto coins = SelectWalletCoins_(address, 0, MIN_TX_FEE);
@@ -1495,7 +1496,9 @@ class RpcServer {
             if (total > UINT64_MAX - utxo.value)
                 throw std::runtime_error("Validator request input total is out of range");
             total += utxo.value;
-            TxInput input; input.prev_tx_hash = utxo.tx_hash; input.prev_out_index = utxo.output_index;
+            TxInput input;
+            input.prev_tx_hash = utxo.tx_hash;
+            input.prev_out_index = utxo.output_index;
             tx.inputs.push_back(input);
         }
         if (coins.change_amount > 0)
@@ -1503,13 +1506,16 @@ class RpcServer {
         tx.outputs.emplace_back(0, marker);
         std::vector<std::string> inputs;
         for (uint32_t i = 0; i < tx.inputs.size(); ++i)
-            inputs.push_back(JB::Object({{"index", JB::Number((uint64_t)i)},
-                {"sighash_hex", JB::String(BytesToHex(ComputeSighash(tx, i, script)))},
-                {"prev_script_hex", JB::String(BytesToHex(script))}}));
+            inputs.push_back(
+                JB::Object({{"index", JB::Number((uint64_t)i)},
+                            {"sighash_hex", JB::String(BytesToHex(ComputeSighash(tx, i, script)))},
+                            {"prev_script_hex", JB::String(BytesToHex(script))}}));
         return JB::Object({{"unsigned_tx_hex", JB::String(BytesToHex(tx.Serialize()))},
-            {"inputs", JB::Array(inputs)}, {"total_input", JB::Number(total)},
-            {"total_output", JB::Number(coins.change_amount)}, {"fee", JB::Number((uint64_t)MIN_TX_FEE)},
-            {"change", JB::Number(coins.change_amount)}});
+                           {"inputs", JB::Array(inputs)},
+                           {"total_input", JB::Number(total)},
+                           {"total_output", JB::Number(coins.change_amount)},
+                           {"fee", JB::Number((uint64_t)MIN_TX_FEE)},
+                           {"change", JB::Number(coins.change_amount)}});
     }
 
     static CoinSelection SelectWalletStateCoins_(const WalletState& state, uint64_t target_units,
@@ -1978,7 +1984,8 @@ class RpcServer {
                 throw rpc_error(-32005,
                                 "Wait for full synchronization before submitting a near miss");
             if (CoMiningRetired(next))
-                throw std::invalid_argument("Co-mining retired at the first halving; no new entries are accepted");
+                throw std::invalid_argument(
+                    "Co-mining retired at the first halving; no new entries are accepted");
             if (!mining::NeedsNmsSubmission(chain_, mempool_, script,
                                             proof->header.prev_block_hash))
                 throw std::invalid_argument(
@@ -2049,7 +2056,8 @@ class RpcServer {
                 {"needs_submission", JB::Bool(needs)},
                 {"pending_submission", JB::Bool(pending)},
                 {"included_submission", JB::Bool(chain_.NmsGetCredit(BytesToHex(script)) > 0)},
-                {"eligible", JB::Bool(!CoMiningRetired(next) && chain_.NmsBondSatisfied(script, next))},
+                {"eligible",
+                 JB::Bool(!CoMiningRetired(next) && chain_.NmsBondSatisfied(script, next))},
                 {"co_mining_retired", JB::Bool(CoMiningRetired(next))},
                 {"co_mining_retirement_height", JB::Number(CoMiningRetirementHeight())},
                 {"window_blocks", JB::Number(COMINE_WINDOW_BLOCKS)},
@@ -2358,7 +2366,8 @@ class RpcServer {
 
         methods_["getmininginfo"] = RpcMethod([this](const P&) -> std::string {
             const auto reward = SubsidyView::Next(chain_.Height(), chain_.TotalSupplyUnits());
-            const auto projection = SubsidyProjection::Next480(reward.height - 1, chain_.TotalSupplyUnits());
+            const auto projection =
+                SubsidyProjection::Next480(reward.height - 1, chain_.TotalSupplyUnits());
             bool is_bootstrap = chain_.TotalSupplyUnits() < chain_.GetStakingActivationUnits();
             bool emission_done = chain_.TotalSupplyUnits() >= MAX_SUPPLY_UNITS;
             return JB::Object({
@@ -2813,6 +2822,7 @@ class RpcServer {
               << "\"min_evidence_window\":" << complete_evidence_window << ",";
             uint64_t custodial_count = 0;
             uint64_t pending_return_count = 0;
+            uint64_t pending_excess_return_count = 0;
             j << "\"validators\":[";
             if (validators_) {
                 bool first = true;
@@ -2827,8 +2837,8 @@ class RpcServer {
                         custodial_count++;
                     const auto lifecycle =
                         validators_->GetBondLifecycleStatus(v.pubkey_hex, height);
-                    const auto reduction = validators_->GetBondReductionStatus(v.pubkey_hex,
-                        height == UINT64_MAX ? height : height + 1);
+                    const auto reduction = validators_->GetBondReductionStatus(
+                        v.pubkey_hex, height == UINT64_MAX ? height : height + 1);
                     const uint64_t return_boundary = lifecycle.return_boundary;
                     const uint64_t settlement_boundary = lifecycle.settlement_boundary;
                     const bool principal_held = lifecycle.principal_held;
@@ -2836,6 +2846,8 @@ class RpcServer {
                         !v.slashed && v.deregistered_at_height > 0 && principal_held;
                     if (pending_return)
                         pending_return_count++;
+                    if (reduction.pending)
+                        pending_excess_return_count++;
                     uint64_t acc = 0;
                     auto it = accrued_by_pk.find(v.pubkey_hex);
                     if (it != accrued_by_pk.end())
@@ -2848,14 +2860,20 @@ class RpcServer {
                       << "\"bond_custodial\":" << (v.bond_custodial ? "true" : "false") << ","
                       << "\"bond_veld\":"
                       << (principal_held ? (double)v.bond_units / VELD_UNITS : 0.0) << ","
-                      << "\"original_bond_veld\":" << (double)(v.bond_units +
-                         (v.bond_reduction_settled_at ? v.bond_reduction_units : 0)) / VELD_UNITS << ","
+                      << "\"original_bond_veld\":"
+                      << (double)(v.bond_units +
+                                  (v.bond_reduction_settled_at ? v.bond_reduction_units : 0)) /
+                             VELD_UNITS
+                      << ","
                       << "\"bond_units\":\"" << v.bond_units << "\","
                       << "\"bond_retained_units\":\"" << reduction.retained_units << "\","
                       << "\"bond_reduction_units\":\"" << reduction.reduction_units << "\","
-                      << "\"bond_reduction_eligible\":" << (reduction.eligible ? "true" : "false") << ","
-                      << "\"bond_reduction_pending\":" << (reduction.pending ? "true" : "false") << ","
-                      << "\"bond_reduction_cancelled\":" << (reduction.cancelled ? "true" : "false") << ","
+                      << "\"bond_reduction_eligible\":" << (reduction.eligible ? "true" : "false")
+                      << ","
+                      << "\"bond_reduction_pending\":" << (reduction.pending ? "true" : "false")
+                      << ","
+                      << "\"bond_reduction_cancelled\":" << (reduction.cancelled ? "true" : "false")
+                      << ","
                       << "\"bond_reduction_requested_at\":" << reduction.requested_at << ","
                       << "\"bond_reduction_settled_at\":" << reduction.settled_at << ","
                       << "\"bond_reduction_boundary\":" << reduction.return_boundary << ","
@@ -2875,7 +2893,8 @@ class RpcServer {
             }
             j << "],"
               << "\"custodial_validator_count\":" << custodial_count << ","
-              << "\"pending_return_count\":" << pending_return_count << "}";
+              << "\"pending_return_count\":" << pending_return_count << ","
+              << "\"pending_excess_return_count\":" << pending_excess_return_count << "}";
             return j.str();
         });
 
@@ -6356,7 +6375,8 @@ class RpcServer {
                      VELD_UNITS
               << ",";
             j << "\"co_mining_min_stake_veld\":" << (double)NMS_MIN_BOND_UNITS / VELD_UNITS << ",";
-            j << "\"co_mining_retired\":" << (CoMiningRetired(NextInclusionHeight(height)) ? "true" : "false") << ",";
+            j << "\"co_mining_retired\":"
+              << (CoMiningRetired(NextInclusionHeight(height)) ? "true" : "false") << ",";
             j << "\"co_mining_retirement_height\":" << CoMiningRetirementHeight() << ",";
             j << "\"max_stake_veld\":" << (double)MAX_STAKE_UNITS / VELD_UNITS << ",";
             j << "\"lockup_blocks\":" << STAKE_LOCKUP_BLOCKS << ",";
@@ -6429,7 +6449,10 @@ class RpcServer {
               << ",";
             j << "\"total_staked_veld\":" << (double)total_staked / VELD_UNITS << ",";
             j << "\"min_stake_veld\":"
-              << (double)(validators_ ? validators_->GetEffectiveMinStake(NextInclusionHeight(chain_.Height())) : MinimumValidatorBond(NextInclusionHeight(chain_.Height()))) /
+              << (double)(validators_
+                              ? validators_->GetEffectiveMinStake(
+                                    NextInclusionHeight(chain_.Height()))
+                              : MinimumValidatorBond(NextInclusionHeight(chain_.Height()))) /
                      VELD_UNITS
               << ",";
             j << "\"validator_count\":"
@@ -8041,7 +8064,8 @@ class RpcServer {
 
         methods_["preparereducevalidatorbond"] = RpcMethod([this](const P& params) -> std::string {
             if (params.size() != 2)
-                throw std::invalid_argument("Usage: preparereducevalidatorbond <address> <pubkey_hex>");
+                throw std::invalid_argument(
+                    "Usage: preparereducevalidatorbond <address> <pubkey_hex>");
             const auto& address = params[0];
             const auto pubkey = ValidatorPreparationKey_(address, params[1]);
             auto transition = AcquireRpcReadTransitionGuard(chain_);
@@ -8051,8 +8075,8 @@ class RpcServer {
                 throw std::runtime_error(reduction.error);
             if (reduction.address != address)
                 throw std::runtime_error("Validator bond owner differs");
-            const auto operation = ValidatorRegistry::BuildReduceBondOp(pubkey,
-                reduction.registered_height, reduction.retained_units);
+            const auto operation = ValidatorRegistry::BuildReduceBondOp(
+                pubkey, reduction.registered_height, reduction.retained_units);
             if (mempool_.HasPendingOpReturn(operation))
                 throw std::runtime_error("Your excess bond return request is already pending");
             return PrepareValidatorFeeOperation_(address, operation);

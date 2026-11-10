@@ -10,9 +10,9 @@
 #error "Subsidy activation must be pinned in reviewed source"
 #endif
 #if defined(VELD_SUBSIDY_TEST_HEIGHT)
-#if !defined(VELD_MAINNET_POW) || !defined(VELD_TEST_CHAIN_BUILD) || \
-    !defined(VELD_TEST_HOOKS) || !defined(VELD_PROTOCOL_UPGRADE_TEST_HEIGHT) || \
-    defined(VELD_PUBLIC_RELEASE) || defined(VELD_PUBLIC_MAINNET) || defined(VELD_PUBLIC_TESTNET)
+#if !defined(VELD_MAINNET_POW) || !defined(VELD_TEST_CHAIN_BUILD) || !defined(VELD_TEST_HOOKS) ||  \
+    !defined(VELD_PROTOCOL_UPGRADE_TEST_HEIGHT) || defined(VELD_PUBLIC_RELEASE) ||                 \
+    defined(VELD_PUBLIC_MAINNET) || defined(VELD_PUBLIC_TESTNET)
 #error "Subsidy test height requires an isolated non-public qualification build"
 #endif
 #endif
@@ -21,7 +21,7 @@
 // without constructing 1.4 million fixture blocks. Public builds cannot use
 // either override; production heights below remain source-pinned.
 #if defined(VELD_SUBSIDY_TEST_FIRST_HALVING) || defined(VELD_SUBSIDY_TEST_SECOND_HALVING)
-#if !defined(VELD_SUBSIDY_TEST_HEIGHT) || !defined(VELD_SUBSIDY_TEST_FIRST_HALVING) || \
+#if !defined(VELD_SUBSIDY_TEST_HEIGHT) || !defined(VELD_SUBSIDY_TEST_FIRST_HALVING) ||             \
     !defined(VELD_SUBSIDY_TEST_SECOND_HALVING)
 #error "Both isolated subsidy boundaries and the guarded test activation are required"
 #endif
@@ -54,7 +54,8 @@ inline constexpr bool SubsidyScheduleActive(uint64_t height) noexcept {
 }
 
 inline constexpr unsigned SubsidyHalvings(uint64_t height) noexcept {
-    if (!SubsidyScheduleActive(height)) return 0;
+    if (!SubsidyScheduleActive(height))
+        return 0;
     return height >= SECOND_HALVING_HEIGHT ? 2 : height >= FIRST_HALVING_HEIGHT ? 1 : 0;
 }
 
@@ -64,7 +65,6 @@ inline constexpr unsigned SubsidyHalvings(uint64_t height) noexcept {
 inline constexpr uint64_t ScheduledBlockSubsidy(uint64_t height) noexcept {
     const uint64_t annual = ANNUAL_EMISSION_UNITS >> SubsidyHalvings(height);
     const uint64_t base = annual / BLOCKS_PER_YEAR;
-    return base + (height > 0 && height % BLOCKS_PER_YEAR == 0
-                       ? annual % BLOCKS_PER_YEAR : 0);
+    return base + (height > 0 && height % BLOCKS_PER_YEAR == 0 ? annual % BLOCKS_PER_YEAR : 0);
 }
 } // namespace veld

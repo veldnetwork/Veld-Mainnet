@@ -174,7 +174,8 @@ struct EpochSnapshot {
 
     bool Qualified() const {
         return entries.size() >= MinimumValidatorCountAt(snapshot_height) &&
-               entries.size() <= MAX_FINALITY_VALIDATOR_COUNT && total_weight >= TotalBondFloorAt(snapshot_height);
+               entries.size() <= MAX_FINALITY_VALIDATOR_COUNT &&
+               total_weight >= TotalBondFloorAt(snapshot_height);
     }
 };
 
