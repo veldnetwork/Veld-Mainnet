@@ -43,7 +43,7 @@ continues to share the rewards budget through its escrow. Existing weighted
 stake allocation, the 75% limit per recipient, minimum distribution amount and
 zero-fee consolidation remain in force. Unused funds return to the rewards vault.
 
-Settlement uses parent state. The boundary block's own subsidy, transfers and
+Settlement uses parent state. The boundary block's own subsidy and
 endorsement settlement cannot be spent by that block's rewards-vault payout.
 Those funds become available to subsequent distributions. Unclaimed endorsement
 rewards already received by the vault count toward its balance and surplus;

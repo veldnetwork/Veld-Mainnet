@@ -5,7 +5,7 @@
 #undef main
 
 namespace {
-constexpr uint64_t reserve_height = 15840;
+constexpr uint64_t reserve_height = 22560;
 uint64_t Ratio(uint64_t value, uint64_t numerator, uint64_t denominator) {
     return value / denominator * numerator + value % denominator * numerator / denominator;
 }
@@ -199,18 +199,16 @@ int main(int argc, char** argv) {
         auto direct = Fresh(root / "direct");
         std::vector<Block> history;
         for (uint64_t h = 1; h < reserve_height; ++h) {
-            if (h < 15000 && h % 128 == 0)
+            if (h < 22000 && h % 128 == 0)
                 Consolidate(*direct, owner);
-            if (h == 15000)
-                Spend(*direct, owner,
-                      {{15'000 * VELD_UNITS, AddressToScript(VaultAddressAtHeight(h))},
-                       {2000 * VELD_UNITS, second.GetP2PKHScript()}});
-            if (h == 15001)
+            if (h == 22000)
+                Spend(*direct, owner, {{2000 * VELD_UNITS, second.GetP2PKHScript()}});
+            if (h == 22001)
                 Stake(*direct, owner);
-            if (h == 15002)
+            if (h == 22002)
                 Stake(*direct, second);
-            const auto block = Build(*direct, h < 15000 ? owner : miner, h);
-            if (h == 15360) {
+            const auto block = Build(*direct, h < 22000 ? owner : miner, h);
+            if (h == 22080) {
                 View(*direct, root / "before-legacy");
                 Boundary(*direct, block, owner, second);
             }
@@ -232,7 +230,7 @@ int main(int argc, char** argv) {
         RejectPayout(*direct, original, false);
         Admit(*direct, original);
         uint64_t disconnected = 0;
-        for (uint64_t h = reserve_height; h <= 17762; ++h) {
+        for (uint64_t h = reserve_height; h <= 24482; ++h) {
             if (h == reserve_height)
                 Fee(*branch, miner, MIN_TX_FEE + 19);
             auto block = Build(*branch, miner, 200000 + h);
