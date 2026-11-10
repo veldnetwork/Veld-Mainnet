@@ -879,6 +879,8 @@ class Mempool {
         // above.  NMS claims are next-block only on fresh mainnet-v2, so stale
         // parents cannot rotate dataset identities.
         if (nms_rec_for_admission) {
+            if (CoMiningRetired(static_cast<uint64_t>(current_height) + 1))
+                return AddResult::EXPIRED_NMS;
             if (!all_inputs_on_chain_pre)
                 return AddResult::MISSING_INPUT;
             if (chain.NmsHasExpiredCanonicalParent(*nms_rec_for_admission))

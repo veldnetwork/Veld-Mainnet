@@ -2004,7 +2004,7 @@ class VeldNode {
             (void)BuildBondSettlementTx(settlement_probe);
             (void)BuildBondYieldSettlementTx(settlement_probe);
         }
-        if (expected_height % COMINE_WINDOW_BLOCKS == 0) {
+        if (CoMiningPayoutDue(expected_height)) {
             (void)BuildPoolPayoutTx(settlement_probe, AddressToScript(POOL_ADDRESS), mempool_);
         }
         std::vector<Transaction> mandatory_settlements = std::move(settlement_probe.transactions);
@@ -14358,7 +14358,7 @@ class VeldNode {
             (void)BuildBondSettlementTx(block);
             (void)BuildBondYieldSettlementTx(block);
         }
-        if (block.height > 0 && block.height % COMINE_WINDOW_BLOCKS == 0)
+        if (CoMiningPayoutDue(block.height))
             (void)BuildPoolPayoutTx(block, AddressToScript(POOL_ADDRESS), mempool_);
         return block;
     }
@@ -14743,8 +14743,8 @@ class VeldNode {
         uint64_t window_start = h - (h % COMINE_WINDOW_BLOCKS) + 1;
         uint64_t window_end = h;
         uint64_t blocks_in_window = (COMINE_WINDOW_BLOCKS == 0) ? 0 : (h % COMINE_WINDOW_BLOCKS);
-        uint64_t blocks_until_payout =
-            (COMINE_WINDOW_BLOCKS == 0) ? 0 : (COMINE_WINDOW_BLOCKS - blocks_in_window);
+        const bool retired = CoMiningRetired(NextInclusionHeight(h));
+        uint64_t blocks_until_payout = retired ? 0 : (COMINE_WINDOW_BLOCKS - blocks_in_window);
 
         double pool_veld = 0.0;
         {
@@ -14788,7 +14788,9 @@ class VeldNode {
           << "\"blocks_in_window\":" << blocks_in_window << ","
           << "\"blocks_until_payout\":" << blocks_until_payout << ","
           << "\"window_size\":" << COMINE_WINDOW_BLOCKS << ","
-          << "\"pool_pct\":20,"
+          << "\"co_mining_retired\":" << (retired ? "true" : "false") << ","
+          << "\"co_mining_retirement_height\":" << CoMiningRetirementHeight() << ","
+          << "\"pool_pct\":" << (retired ? 0 : 20) << ","
           << "\"participants\":" << chain_entries.size() << ","
           << "\"total_near_misses\":" << total_near_misses << ","
           << "\"entries\":[";
@@ -15403,12 +15405,14 @@ class VeldNode {
                 }
                 NmsBroadcastCb nms_cb = nullptr;
                 if constexpr (OPTION_B_CONSENSUS_GATE_ENABLED) {
-                    nms_cb = [this](const BlockHeader& hdr) {
-                        try {
-                            this->BuildAndBroadcastNmsTx(hdr);
-                        } catch (...) {
-                        }
-                    };
+                    if (!CoMiningRetired(NextInclusionHeight(chain_.Height()))) {
+                        nms_cb = [this](const BlockHeader& hdr) {
+                            try {
+                                this->BuildAndBroadcastNmsTx(hdr);
+                            } catch (...) {
+                            }
+                        };
+                    }
                 }
 
                 // Derive every mandatory protocol settlement against the

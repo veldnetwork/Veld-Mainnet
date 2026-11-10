@@ -1,6 +1,7 @@
 #pragma once
 #include "constants.h"
 #include "../consensus/miner_fee_activation.h"
+#include "../consensus/co_mining_policy.h"
 #include <algorithm>
 #include <optional>
 
@@ -33,6 +34,11 @@ ComputeCoinbaseAllocation(uint64_t height, uint64_t base_subsidy, uint64_t paren
         out.miner = legacy_fees - out.vault - out.endorsement;
     } else if (height > 0 && height % VAULT_BLOCK_INTERVAL == 0) {
         out.vault = out.subsidy + legacy_fees;
+    } else if (CoMiningRetired(height)) {
+        out.vault = (out.subsidy * 20) / 100;
+        out.endorsement = (out.subsidy * 20) / 100;
+        out.miner = out.subsidy - out.vault - out.endorsement;
+        out.vault += legacy_fees;
     } else if (parent_supply < STAKING_UNLOCK_SUPPLY) {
         out.miner = (out.subsidy * 50) / 100;
         out.vault = out.subsidy - out.miner + legacy_fees;
@@ -44,7 +50,7 @@ ComputeCoinbaseAllocation(uint64_t height, uint64_t base_subsidy, uint64_t paren
         out.vault += legacy_fees;
     }
     // This also covers vault-cadence and post-cap blocks. All issuance splits
-    // above remain unchanged; fees recycle existing units to the winning miner.
+    // above apply only to issuance; fees recycle existing units to the winning miner.
     if (miner_fees)
         out.miner += authenticated_fees;
     return out;

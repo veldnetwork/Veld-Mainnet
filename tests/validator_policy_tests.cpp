@@ -15,7 +15,27 @@ int main(){try{
   check(MinimumValidatorBond(3999)==10000ULL*VELD_UNITS,"historical registration amount");
   check(MinimumValidatorBond(4000)==(active?5000ULL:10000ULL)*VELD_UNITS,"activation registration amount");
   check(ValidatorGovernanceBondFloor(4000)==(active?25000ULL:50000ULL)*VELD_UNITS,"governance aggregate threshold");
-  ValidatorRegistry registry;auto original=registry.SnapshotState();std::vector<RealKeyPair> keys;
+  static_assert(GOV_QUORUM_PROTOCOL == 10 && GOV_PASS_PCT_PROTOCOL == 67);
+  static_assert(GOV_PROTOCOL_TIMELOCK == 7ULL * BLOCKS_PER_DAY);
+  ValidatorRegistry registry;
+  Blockchain governance_chain; StakingLedger governance_staking;
+  GovernanceEngine governance(governance_chain, governance_staking);
+  governance.SetValidators(&registry);
+  for (unsigned n : {0u, 3u, 5u, 7u, 9u, 10u, 14u, 15u, 20u, 100u}) {
+    auto state = registry.SnapshotState(); state.endorsements.clear();
+    for (unsigned i=0;i<n;++i) {
+      EndorsementRecord e; e.pubkey_hex="governance-fixture-"+std::to_string(i);
+      state.endorsements[4000].push_back(e);
+    }
+    registry.RestoreState(state);
+    const auto required = std::max(10u, (n*67u+99u)/100u);
+    check(governance.GetMinVotesRequired(4000, ProposalType::PROTOCOL_UPGRADE)==required,
+          "protocol upgrade retains ten-vote floor and rising participation threshold");
+    check(governance.GetMinVotesRequired(4000+7ULL*BLOCKS_PER_DAY+1, ProposalType::PROTOCOL_UPGRADE)==10,
+          "offline governance activity never collapses protocol quorum below ten");
+  }
+  registry.RestoreState(ValidatorRegistry{}.SnapshotState());
+  auto original=registry.SnapshotState();std::vector<RealKeyPair> keys;
   for(unsigned i=0;i<7;++i){
     keys.push_back(GenerateKeyPair(false));ValidatorRecord r;r.pubkey_hex=publicKey(keys.back());r.address=keys.back().address;
     r.active=true;r.bond_custodial=true;r.bond_units=10000ULL*VELD_UNITS;r.registered_height=1;

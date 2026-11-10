@@ -1192,7 +1192,8 @@ class RpcServer {
         const auto tip = chain_.TipCopy();
         const auto proof = nms_proofs_.Read(script, tip.GetHash());
         const bool eligible =
-            supported && chain_.NmsBondSatisfied(script, NextInclusionHeight(tip.height));
+            supported && !CoMiningRetired(NextInclusionHeight(tip.height)) &&
+            chain_.NmsBondSatisfied(script, NextInclusionHeight(tip.height));
         const bool needed =
             supported && mining::NeedsNmsSubmission(chain_, mempool_, script, tip.GetHash());
         return JsonBuilder::Object({
@@ -1943,6 +1944,8 @@ class RpcServer {
             if (ibd_complete_fn_ && !ibd_complete_fn_())
                 throw rpc_error(-32005,
                                 "Wait for full synchronization before submitting a near miss");
+            if (CoMiningRetired(next))
+                throw std::invalid_argument("Co-mining retired at the first halving; no new entries are accepted");
             if (!mining::NeedsNmsSubmission(chain_, mempool_, script,
                                             proof->header.prev_block_hash))
                 throw std::invalid_argument(
@@ -2013,7 +2016,9 @@ class RpcServer {
                 {"needs_submission", JB::Bool(needs)},
                 {"pending_submission", JB::Bool(pending)},
                 {"included_submission", JB::Bool(chain_.NmsGetCredit(BytesToHex(script)) > 0)},
-                {"eligible", JB::Bool(chain_.NmsBondSatisfied(script, next))},
+                {"eligible", JB::Bool(!CoMiningRetired(next) && chain_.NmsBondSatisfied(script, next))},
+                {"co_mining_retired", JB::Bool(CoMiningRetired(next))},
+                {"co_mining_retirement_height", JB::Number(CoMiningRetirementHeight())},
                 {"window_blocks", JB::Number(COMINE_WINDOW_BLOCKS)},
                 {"yield_blocks", JB::Number(VAULT_DISTRIBUTION_INTERVAL)},
                 {"window_first", JB::Number(tip.height - tip.height % COMINE_WINDOW_BLOCKS + 1)},
@@ -2342,11 +2347,15 @@ class RpcServer {
                 {"subsidy_halvings", JB::Number((uint64_t)SubsidyHalvings(reward.height))},
                 {"first_halving_height", JB::Number(FIRST_HALVING_HEIGHT)},
                 {"second_halving_height", JB::Number(SECOND_HALVING_HEIGHT)},
+                {"co_mining_retired", JB::Bool(CoMiningRetired(reward.height))},
+                {"co_mining_retirement_height", JB::Number(CoMiningRetirementHeight())},
+                {"co_mining_subsidy_units", JB::Number(reward.allocation.pool)},
+                {"validator_subsidy_units", JB::Number(reward.allocation.endorsement)},
                 {"miner_fees_active", JB::Bool(MinerFeesActive(reward.height))},
-                {"winner_pct", JB::Number((uint64_t)50)},
-                {"pool_pct", JB::Number((uint64_t)20)},
+                {"winner_pct", JB::Number(uint64_t(CoMiningRetired(reward.height) ? 60 : 50))},
+                {"pool_pct", JB::Number(uint64_t(CoMiningRetired(reward.height) ? 0 : 20))},
                 {"vault_pct", JB::Number((uint64_t)20)},
-                {"endorse_pct", JB::Number((uint64_t)10)},
+                {"endorse_pct", JB::Number(uint64_t(CoMiningRetired(reward.height) ? 20 : 10))},
                 {"supply_veld", JB::Float(chain_.TotalSupplyVeld())},
                 {"supply_pct_mined", JB::Float(chain_.TotalSupplyVeld() / MAX_SUPPLY * 100.0, 4)},
             });
@@ -2357,14 +2366,17 @@ class RpcServer {
                 return pool_info_fn_();
             uint64_t h = chain_.Height();
             uint64_t blocks_in_window = h % 100;
-            uint64_t blocks_until_payout = 100 - blocks_in_window;
+            const bool retired = CoMiningRetired(NextInclusionHeight(h));
+            uint64_t blocks_until_payout = retired ? 0 : 100 - blocks_in_window;
             return JB::Object({
                 {"pool_balance_veld", JB::Float(0.0)},
                 {"window_start_height", JB::Number((uint64_t)(h - blocks_in_window))},
                 {"blocks_in_window", JB::Number((uint64_t)blocks_in_window)},
                 {"blocks_until_payout", JB::Number((uint64_t)blocks_until_payout)},
                 {"window_size", JB::Number((uint64_t)100)},
-                {"pool_pct", JB::Number((uint64_t)27)},
+                {"pool_pct", JB::Number(uint64_t(retired ? 0 : 20))},
+                {"co_mining_retired", JB::Bool(retired)},
+                {"co_mining_retirement_height", JB::Number(CoMiningRetirementHeight())},
                 {"participants", JB::Number((uint64_t)0)},
                 {"total_near_misses", JB::Number((uint64_t)0)},
                 {"entries", JsonBuilder::Array({})},
@@ -6299,6 +6311,8 @@ class RpcServer {
                      VELD_UNITS
               << ",";
             j << "\"co_mining_min_stake_veld\":" << (double)NMS_MIN_BOND_UNITS / VELD_UNITS << ",";
+            j << "\"co_mining_retired\":" << (CoMiningRetired(NextInclusionHeight(height)) ? "true" : "false") << ",";
+            j << "\"co_mining_retirement_height\":" << CoMiningRetirementHeight() << ",";
             j << "\"max_stake_veld\":" << (double)MAX_STAKE_UNITS / VELD_UNITS << ",";
             j << "\"lockup_blocks\":" << STAKE_LOCKUP_BLOCKS << ",";
             j << "\"distribution_interval\":" << VAULT_DISTRIBUTION_INTERVAL << ",";

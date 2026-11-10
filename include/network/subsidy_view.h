@@ -28,6 +28,10 @@ struct SubsidyView {
             ",\"subsidy_halvings\":" + std::to_string(SubsidyHalvings(height)) +
             ",\"first_halving_height\":" + std::to_string(FIRST_HALVING_HEIGHT) +
             ",\"second_halving_height\":" + std::to_string(SECOND_HALVING_HEIGHT) +
+            ",\"co_mining_retired\":" + (CoMiningRetired(height) ? "true" : "false") +
+            ",\"co_mining_retirement_height\":" + std::to_string(CoMiningRetirementHeight()) +
+            ",\"co_mining_subsidy_units\":" + std::to_string(allocation.pool) +
+            ",\"validator_subsidy_units\":" + std::to_string(allocation.endorsement) +
             ",\"miner_fees_active\":" + (MinerFeesActive(height) ? "true" : "false");
     }
 };
@@ -68,9 +72,13 @@ inline std::string SubsidyRulesHtml(uint64_t height) {
                 ". There is no third halving. Each protocol year contains 175,200 blocks; "
                 "its final block includes the integer rounding remainder.";
     }
+    if (SUBSIDY_ACTIVATION_HEIGHT != 0)
+        text += " Co-mining retires at the first halving. From that block, ordinary subsidies "
+                "are 60% miner, 20% vault and 20% validator pool. Every 100th block still "
+                "sends its entire subsidy to the vault. Previous payouts and stake principal remain intact.";
     return text + "</p><p>The <strong>21,000,000 VELD hard cap</strong> remains. "
         "The last subsidy is limited to remaining issuance. Block heights determine the schedule; "
-        "calendar dates depend on mining. There is no premine. The existing subsidy allocation is unchanged.</p>";
+        "calendar dates depend on mining. There is no premine.</p>";
 }
 
 inline std::string FeeRulesHtml(uint64_t height) {

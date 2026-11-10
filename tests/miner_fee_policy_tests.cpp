@@ -46,6 +46,16 @@ Amounts Oracle(uint64_t height, uint64_t supply, uint64_t fees) {
     // Independently preserve the old issuance allocation, then award the fee.
     if (height < 4000) return HistoricalOracle(height, supply, fees);
     auto out = HistoricalOracle(height, supply, 0);
+#ifdef VELD_SUBSIDY_TEST_HEIGHT
+    if (height >= FIRST_HALVING_HEIGHT && height % 100 != 0) {
+        const uint64_t annual = ANNUAL_EMISSION_UNITS >> (height >= SECOND_HALVING_HEIGHT ? 2 : 1);
+        const uint64_t scheduled = annual / BLOCKS_PER_YEAR +
+            (height % BLOCKS_PER_YEAR == 0 ? annual % BLOCKS_PER_YEAR : 0);
+        const uint64_t reward = std::min(scheduled, MAX_SUPPLY_UNITS - supply);
+        out.pool = 0; out.vault = reward / 5; out.endorse = reward / 5;
+        out.miner = reward - out.vault - out.endorse;
+    }
+#endif
     out.miner += fees;
     return out;
 }

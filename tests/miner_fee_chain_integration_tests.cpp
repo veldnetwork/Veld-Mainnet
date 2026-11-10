@@ -115,6 +115,12 @@ void CheckFeeAllocation(VeldNode& node, const Block& block,
     uint64_t miner = 0, vault = 0, pool = 0, endorsement = 0;
     Require(subsidy > 0, "this durable fixture must still issue subsidy");
     if (periodic) vault = subsidy;
+#ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
+    else if (block.height >= 4001) {
+        vault = subsidy / 5; endorsement = subsidy / 5;
+        miner = subsidy - vault - endorsement;
+    }
+#endif
     else if (locked) { miner = subsidy / 2; vault = subsidy - miner; }
     else {
         pool = subsidy / 5; vault = subsidy / 5; endorsement = subsidy / 10;

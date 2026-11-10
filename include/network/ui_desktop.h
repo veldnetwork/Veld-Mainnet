@@ -3893,7 +3893,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       </div>
     </div>
   </div>
-  <div class="card">
+  <div class="card" id="cm-how-it-works">
     <div class="card-title">How Co-Mining Works</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
       <div style="background:var(--s2);border-radius:6px;padding:14px">
@@ -16048,16 +16048,23 @@ function loadCominingPage() {
     var blocksUntil = (d.blocks_until_payout != null)
                       ? poolCount(d.blocks_until_payout, 0)
                       : Math.max(0, windowSize - blocksIn);
+    var retired = d.co_mining_retired === true;
+    ['cm-nms-card', 'cm-how-it-works'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.hidden = retired;
+    });
     set('cm-balance', fmt(d.pool_balance_veld||0, 2) + ' VELD');
-    set('cm-window', blocksIn + ' / ' + windowSize);
-    set('cm-payout-in', blocksUntil + ' blocks');
+    set('cm-window', retired ? 'Retired' : blocksIn + ' / ' + windowSize);
+    set('cm-payout-in', retired ? 'Ended' : blocksUntil + ' blocks');
     var participants = d.participants||0;
     set('cm-participants', participants);
     // The summary reports eligible participants. Near-miss totals remain
     // informational because each eligible address has one uniform draw entry.
 
     var entries = Array.isArray(d.entries) ? d.entries : [];
-    if (!entries.length) {
+    if (retired) {
+      document.getElementById('cm-standings').innerHTML = '<div class="alert">Co-mining retired at the first halving. Previous payouts and your stake remain intact. Any undistributed pool reserve is retained; no new draws are scheduled.</div>';
+    } else if (!entries.length) {
       document.getElementById('cm-standings').innerHTML =
         '<div style="color:var(--muted);text-align:center;padding:20px;font-size:11px">No co-miners in current window.<br><span style="font-size:10px">Submit a valid near-miss to enter the current draw.</span></div>';
     } else {
@@ -16109,6 +16116,12 @@ function loadCominingEligibility() {
   if (!card || !body) return;
   // Missing policy data is unknown, never an ordinary-staking fallback.
   rpc('getstakinginfo').then(function(si) {
+    if (si && si.co_mining_retired === true) {
+      if (minEl) minEl.textContent = 'Retired';
+      card.style.borderLeftColor = 'var(--muted)';
+      body.innerHTML = '<span style="color:var(--muted)">Co-mining has ended. Ordinary staking remains available under its existing rules. Your staked funds and previous payouts are unchanged.</span>';
+      return;
+    }
     var minv = si && si.co_mining_min_stake_veld;
     if (typeof minv !== 'number' || !Number.isFinite(minv) || minv <= 0) {
       throw new Error('Co-mining policy unavailable');

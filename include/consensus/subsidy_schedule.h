@@ -2,7 +2,8 @@
 #include "../core/constants.h"
 
 // Two reductions after four and eight complete protocol years. Height zero
-// keeps its historical genesis subsidy. No balances or allocation shares change.
+// keeps its historical genesis subsidy. Co-mining retirement and its allocation
+// are defined separately in co_mining_policy.h and coinbase_allocation.h.
 // A reviewed future activation must precede the first reduction; zero keeps
 // public builds on the existing schedule while this candidate is qualified.
 #if defined(VELD_SUBSIDY_ACTIVATION_HEIGHT)

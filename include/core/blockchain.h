@@ -1345,7 +1345,8 @@ class Blockchain {
 
     bool NmsNeedsSubmission(const std::vector<uint8_t>& script, const Hash256& parent) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        if (script.empty() || chain_.empty() || chain_.back().GetHash() != parent)
+        if (script.empty() || chain_.empty() || chain_.back().GetHash() != parent ||
+            CoMiningRetired(chain_.size()))
             return false;
         // A payout is computed from the parent state. Claims included in the
         // payout block itself would be cleared without entering that draw.
@@ -1533,7 +1534,8 @@ class Blockchain {
     // even if its funding input is still unspent. This check does no PoW work.
     bool NmsMatchesNextBlockContext(const veld::NmsRecord& rec) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        if (chain_.empty() || rec.header.prev_block_hash != chain_.back().GetHash())
+        if (chain_.empty() || CoMiningRetired(chain_.size()) ||
+            rec.header.prev_block_hash != chain_.back().GetHash())
             return false;
         CanonicalPowTarget target;
         return DecodeExpectedVeldTarget(rec.header.bits, ComputeNextBitsAtLocked(chain_.size() - 1),
@@ -1808,7 +1810,7 @@ class Blockchain {
 #endif
         }
 
-        if ((block.height % COMINE_WINDOW_BLOCKS) != 0) {
+        if (!CoMiningPayoutDue(block.height)) {
             for (const auto& tx : block.transactions) {
                 if (tx.IsCoinbase())
                     continue;
@@ -3111,7 +3113,7 @@ class Blockchain {
     ComputeExpectedPoolOutputs_LockHeld(const Hash256& prev_block_hash, uint64_t pool_balance_units,
                                         uint64_t block_height) const {
         std::vector<std::pair<std::vector<uint8_t>, uint64_t>> out;
-        if (pool_balance_units == 0)
+        if (pool_balance_units == 0 || CoMiningRetired(block_height))
             return out;
 
         if (!IsStakingActive())
@@ -5574,6 +5576,8 @@ class Blockchain {
                     auto nms_rec = ExtractNmsFromTx(tx);
                     if (!nms_rec)
                         continue;
+                    if (CoMiningRetired(blk.height))
+                        return reject("nms_retired");
                     if (++nms_records > MAX_NMS_RECORDS_PER_BLOCK)
                         return reject("too_many_nms_records");
                     auto miner_script = ExtractNmsMinerScript(tx);
@@ -8359,6 +8363,8 @@ class Blockchain {
                 auto nms_rec = ExtractNmsFromTx(tx);
                 if (!nms_rec)
                     continue;
+                if (CoMiningRetired(blk.height))
+                    return reject_log("nms_retired_vbfr");
                 if (++nms_records > MAX_NMS_RECORDS_PER_BLOCK)
                     return reject_log("too_many_nms_records_vbfr");
                 auto miner_script = ExtractNmsMinerScript(tx);
