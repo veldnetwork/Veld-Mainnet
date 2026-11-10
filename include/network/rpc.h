@@ -2750,19 +2750,30 @@ class RpcServer {
         });
 
         methods_["getvaultinfo"] = RpcMethod([this](const P&) -> std::string {
-            auto vault_script = AddressToScript(VAULT_ADDRESS);
-            double vault_bal = (double)chain_.GetBalance(vault_script) / VELD_UNITS;
-            uint64_t height = chain_.Height();
-            uint64_t next_dist =
-                VAULT_DISTRIBUTION_INTERVAL - (height % VAULT_DISTRIBUTION_INTERVAL);
+            const auto preview = chain_.GetVaultPayoutPreview();
+            double vault_bal = (double)preview.balance / VELD_UNITS;
+            uint64_t height = preview.height;
+            uint64_t next_dist = preview.next_boundary - height;
             uint64_t next_vault_block = VAULT_BLOCK_INTERVAL - (height % VAULT_BLOCK_INTERVAL);
 
             std::ostringstream j;
             j << std::fixed << std::setprecision(8);
             j << "{"
-              << "\"vault_address\":\"" << VAULT_ADDRESS << "\","
+              << "\"vault_address\":\"" << VaultAddressAtHeight(height) << "\","
               << "\"balance_veld\":" << vault_bal << ","
-              << "\"balance_units\":" << chain_.GetBalance(vault_script) << ","
+              << "\"balance_units\":" << preview.balance << ","
+              << "\"current_height\":" << height << ","
+              << "\"reserve_policy_active\":"
+              << (VaultReservePolicyActive(height) ? "true" : "false") << ","
+              << "\"next_distribution_reserve_policy\":"
+              << (VaultReservePolicyActive(preview.next_boundary) ? "true" : "false") << ","
+              << "\"reserve_activation_height\":" << VAULT_RESERVE_ACTIVATION_HEIGHT << ","
+              << "\"reserve_target_veld\":" << (double)VAULT_RESERVE_TARGET_UNITS / VELD_UNITS
+              << ","
+              << "\"estimated_budget_veld\":" << (double)preview.budget / VELD_UNITS << ","
+              << "\"estimated_budget_units\":" << preview.budget << ","
+              << "\"inflow_reference_height\":" << preview.inflow_reference_height << ","
+              << "\"budget_is_estimate\":true,"
               << "\"fees_collected_veld\":" << chain_.TotalFeesCollectedVeld() << ","
               << "\"fees_collected_units\":" << chain_.TotalFeesCollectedUnits() << ","
               << "\"next_distribution_blocks\":" << next_dist << ","
@@ -6286,14 +6297,13 @@ class RpcServer {
             uint64_t supply = chain_.TotalSupplyUnits();
             bool active = staking_->IsStakingActive(supply);
             uint64_t total_stake = staking_->GetTotalStake();
-            uint64_t height = chain_.Height();
-            uint64_t next_dist_in = (height == 0) ? VAULT_DISTRIBUTION_INTERVAL
-                                                  : VAULT_DISTRIBUTION_INTERVAL -
-                                                        (height % VAULT_DISTRIBUTION_INTERVAL);
-            auto vault_script = AddressToScript(VAULT_ADDRESS);
-            uint64_t vault_units = chain_.GetBalance(vault_script);
+            const auto preview = chain_.GetVaultPayoutPreview();
+            uint64_t height = preview.height;
+            uint64_t next_dist_in = preview.next_boundary - height;
+            uint64_t vault_units = preview.balance;
 
             auto all_stakers = staking_->GetAllStakers();
+            const auto consensus_weights = staking_->GetWeightedStakeSnapshot(height);
             struct WStaker {
                 std::string addr;
                 uint64_t units;
@@ -6302,9 +6312,10 @@ class RpcServer {
                 double mining_mult;
                 double lockup_mult;
                 double share;
+                uint64_t weight;
             };
             std::vector<WStaker> ws;
-            double total_consensus = 0.0;
+            uint64_t total_consensus = 0;
             for (auto& s : all_stakers) {
                 auto script = AddressToScript(s.address);
                 double mining_mult = tiers_ ? tiers_->GetTier(BytesToHex(script)).multiplier : 1.0;
@@ -6312,26 +6323,25 @@ class RpcServer {
                 double mult = mining_mult * lockup_mult;
                 if (mult > LOCKUP_MAX_MULTIPLIER)
                     mult = LOCKUP_MAX_MULTIPLIER;
+                const auto found = consensus_weights.find(s.address);
+                const uint64_t weight = found == consensus_weights.end() ? 0 : found->second;
+                if (UINT64_MAX - total_consensus < weight)
+                    throw std::overflow_error("staking estimate weight overflow");
                 ws.push_back({s.address, s.staked_units, s.earliest_unlock_height, mult,
-                              mining_mult, lockup_mult, 0.0});
-                total_consensus += (double)s.staked_units * lockup_mult;
+                              mining_mult, lockup_mult, 0.0, weight});
+                total_consensus += weight;
             }
-            // CONSENSUS-PARITY (): the vault distribution treats the
-            // bond-yield escrow as a competing staker — ComputeExpectedVault-
-            // Distribution (blockchain.h:1251) adds GetEligibleBondYieldWeight
-            // to the weight pool. A bonded validator's escrow often holds the
-            // MAJORITY of the weight, so omitting it here overstated every real
-            // staker's share + payout (e.g. est 8.31 vs actual 1.94 for a 10-VELD
-            // stake behind a 50-VELD bond). Add the SAME escrow weight to the
-            // denominator so share_pct / payout_veld mirror what the chain pays.
-            if (validators_ && height >= BOND_YIELD_ACTIVATION_HEIGHT) {
-                uint64_t next_boundary =
-                    ((height / VAULT_DISTRIBUTION_INTERVAL) + 1) * VAULT_DISTRIBUTION_INTERVAL;
-                total_consensus += (double)validators_->GetEligibleBondYieldWeight(next_boundary);
+            // Use the same integer weights and competing bond-yield escrow as
+            // consensus. Mining multipliers above are informational only.
+            if (validators_ && preview.next_boundary >= BOND_YIELD_ACTIVATION_HEIGHT) {
+                const auto weight = validators_->GetEligibleBondYieldWeight(preview.next_boundary);
+                if (UINT64_MAX - total_consensus < weight)
+                    throw std::overflow_error("staking estimate escrow weight overflow");
+                total_consensus += weight;
             }
             if (total_consensus > 0)
                 for (auto& w : ws)
-                    w.share = ((double)w.units * w.lockup_mult) / total_consensus;
+                    w.share = (double)w.weight / total_consensus;
 
             {
                 constexpr double WHALE_CAP_FRAC = 0.75;
@@ -6342,20 +6352,7 @@ class RpcServer {
             }
 
             double vault_veld = (double)vault_units / VELD_UNITS;
-            double backstop = vault_veld * ((double)VAULT_DISTRIBUTION_PPM / 1e6);
-            double cycle_budget_veld = backstop;
-            if (height >= VAULT_INFLOW_CAP_ACTIVATION_HEIGHT) {
-                uint64_t last_boundary =
-                    (height / VAULT_DISTRIBUTION_INTERVAL) * VAULT_DISTRIBUTION_INTERVAL;
-                if (last_boundary >= VAULT_DISTRIBUTION_INTERVAL) {
-                    uint64_t inflow_units =
-                        chain_.ComputeVaultInflowSinceLastDistribution(last_boundary);
-                    double inflow_cap = ((double)inflow_units / VELD_UNITS) *
-                                        ((double)VAULT_INFLOW_PAYOUT_PPM / 1e6);
-                    if (cycle_budget_veld > inflow_cap)
-                        cycle_budget_veld = inflow_cap;
-                }
-            }
+            double cycle_budget_veld = (double)preview.budget / VELD_UNITS;
             double effective_rate_pct =
                 (vault_veld > 0) ? (cycle_budget_veld / vault_veld) * 100.0 : 0.0;
 
@@ -6383,6 +6380,15 @@ class RpcServer {
             j << "\"distribution_interval\":" << VAULT_DISTRIBUTION_INTERVAL << ",";
             j << "\"next_distribution_in\":" << next_dist_in << ",";
             j << "\"distributable_veld\":" << cycle_budget_veld << ",";
+            j << "\"distributable_units\":" << preview.budget << ",";
+            j << "\"budget_is_estimate\":true,";
+            j << "\"inflow_reference_height\":" << preview.inflow_reference_height << ",";
+            j << "\"reserve_policy_active\":"
+              << (VaultReservePolicyActive(height) ? "true" : "false") << ",";
+            j << "\"next_distribution_reserve_policy\":"
+              << (VaultReservePolicyActive(preview.next_boundary) ? "true" : "false") << ",";
+            j << "\"reserve_target_veld\":" << (double)VAULT_RESERVE_TARGET_UNITS / VELD_UNITS
+              << ",";
             j << "\"effective_rate_pct\":" << effective_rate_pct << ",";
             j << "\"current_height\":" << height << ",";
             j << "\"stakers\":[";
@@ -6394,7 +6400,16 @@ class RpcServer {
                 uint64_t next_unlock = staking_->GetNextUnlockHeight(w.addr, height);
                 uint64_t next_in = (next_unlock == UINT64_MAX) ? 0 : (next_unlock - height);
                 uint64_t ucd_blk = 0;
-                double gross_payout = cycle_budget_veld * w.share;
+                uint64_t payout_units =
+                    total_consensus == 0
+                        ? 0
+                        : static_cast<uint64_t>(static_cast<__uint128_t>(preview.budget) *
+                                                w.weight / total_consensus);
+                const uint64_t recipient_cap =
+                    static_cast<uint64_t>(static_cast<__uint128_t>(preview.budget) *
+                                          VAULT_CONCENTRATION_CAP_PPM / 1'000'000ULL);
+                payout_units = std::min(payout_units, recipient_cap);
+                double gross_payout = (double)payout_units / VELD_UNITS;
                 double net_payout = gross_payout;
                 j << "{\"address\":\"" << w.addr << "\","
                   << "\"staked_veld\":" << (double)w.units / VELD_UNITS << ","
@@ -6405,6 +6420,7 @@ class RpcServer {
                   << "\"lockup_multiplier\":" << std::setprecision(2) << w.lockup_mult << ","
                   << "\"share_pct\":" << std::setprecision(4) << (w.share * 100) << ","
                   << "\"payout_veld\":" << std::setprecision(8) << net_payout << ","
+                  << "\"payout_units\":\"" << payout_units << "\","
                   << "\"payout_gross_veld\":" << std::setprecision(8) << gross_payout << ","
                   << "\"payout_net_veld\":" << std::setprecision(8) << net_payout << ","
                   << "\"unlock_height\":" << w.unlock << ","

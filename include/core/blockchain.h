@@ -1,5 +1,6 @@
 #pragma once
 #include "../consensus/validator_policy.h"
+#include "../consensus/vault_payout_policy.h"
 #include "../consensus/endorsement_wire.h"
 
 #include "block.h"
@@ -2213,18 +2214,18 @@ class Blockchain {
     //  steady-state semantics modulo ramp/dust thresholds):
     //    1. distributable = (vault_balance − fee_reserve) × DIST_PPM/1e6
     //         where DIST_PPM = 80000 (8%) — see VAULT_DISTRIBUTION_PPM
-    //         in constants.h. (Backstop cap; rarely binds post-.)
-    //    1b. Inflow cap (VAULT-NEVER-DRAINS rule). If
+    //         in constants.h. This backstop remains in force after the upgrade.
+    //    1b. Historical inflow cap. If
     //         boundary_height ≥ VAULT_INFLOW_CAP_ACTIVATION_HEIGHT,
     //         distributable is further bounded:
     //             distributable = min(distributable,
     //                                 prev_cycle_inflow × VAULT_INFLOW_PAYOUT_PPM / 1e6)
-    //         with VAULT_INFLOW_PAYOUT_PPM = 900_000 (90%). Vault retains
-    //         (1 − K) × inflow per cycle. Eliminates the equilibrium-seeking
-    //         8%-of-balance behavior the prior rule produced and prevents
-    //         the mainnet activation drain (the ~50% supply-share reserve
-    //         accumulated pre-activation decaying to the ~12.5×-cycle-inflow
-    //         equilibrium that the prior rule would otherwise cause).
+    //         with VAULT_INFLOW_PAYOUT_PPM = 900_000 (90%).
+    //    1c. After VaultReservePolicyActive(boundary_height), raise that
+    //         historical budget to the available surplus above 20,000 VELD,
+    //         if larger, subject to the same 8% backstop. The target does not
+    //         restrict legacy payouts. Use VaultDistributionBudget for both
+    //         consensus and presentation; recipient limits below still apply.
     //    2. If distributable < VAULT_MIN_DISTRIBUTABLE_UNITS or
     //       weighted_stake is empty → emit one vault consolidation output.
     //       The boundary always consumes the complete parent vault set, which
@@ -2317,6 +2318,43 @@ class Blockchain {
         return ComputeVaultInflowSinceLastDistribution_Locked(boundary_height);
     }
 
+    struct VaultPayoutPreview {
+        uint64_t height = 0;
+        uint64_t next_boundary = 0;
+        uint64_t balance = 0;
+        uint64_t inflow_reference_height = 0;
+        uint64_t reference_inflow = 0;
+        uint64_t budget = 0;
+    };
+
+    // A bounded estimate, not a promised payout. At a boundary's parent this
+    // uses the exact settlement inputs; otherwise use the last completed
+    // cycle's coinbase inflow and the current balance. Future transfers and
+    // recipient weights can change the eventual payout.
+    VaultPayoutPreview GetVaultPayoutPreview() const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        VaultPayoutPreview result;
+        result.height = chain_.empty() ? 0 : chain_.size() - 1;
+        result.next_boundary = result.height + VAULT_DISTRIBUTION_INTERVAL -
+                               result.height % VAULT_DISTRIBUTION_INTERVAL;
+        const auto script = AddressToScript(VaultAddressAtHeight(result.height));
+        for (const auto& utxo : GetUTXOsForScriptLocked_(script))
+            result.balance += utxo.value;
+        result.inflow_reference_height =
+            result.next_boundary == result.height + 1
+                ? result.next_boundary
+                : result.height - result.height % VAULT_DISTRIBUTION_INTERVAL;
+        result.reference_inflow =
+            ComputeVaultInflowSinceLastDistribution_Locked(result.inflow_reference_height);
+        if (IsStakingActive()) {
+            result.budget = VaultDistributionBudget(result.next_boundary, result.balance,
+                                                    result.reference_inflow);
+            if (result.budget < VAULT_MIN_DISTRIBUTABLE_UNITS)
+                result.budget = 0;
+        }
+        return result;
+    }
+
     std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
     ComputeExpectedVaultDistribution(uint64_t boundary_height, uint64_t vault_balance_units,
                                      uint64_t fee_reserve, uint64_t prev_cycle_inflow_units,
@@ -2349,25 +2387,8 @@ class Blockchain {
         if (!IsStakingActive())
             return consolidation_only();
 
-        uint64_t distributable =
-            (uint64_t)((__uint128_t)spendable * (__uint128_t)VAULT_DISTRIBUTION_PPM /
-                       (__uint128_t)1'000'000ULL);
-
-        //  Inflow cap (VAULT-NEVER-DRAINS rule). Activation-gated so
-        // pre-activation chain history remains valid byte-for-byte. Once
-        // active, distributable is bounded by VAULT_INFLOW_PAYOUT_PPM
-        // fraction of the inflow during the cycle ending at boundary_height.
-        // K = 0.90 → vault retains ≥10% of every cycle's inflow as principal,
-        // guaranteeing monotone growth and eliminating the equilibrium
-        // attractor (≈12.5× cycle inflow) that the pure 8%-of-balance rule
-        // produces.
-        if (boundary_height >= VAULT_INFLOW_CAP_ACTIVATION_HEIGHT) {
-            uint64_t inflow_cap =
-                (uint64_t)((__uint128_t)prev_cycle_inflow_units *
-                           (__uint128_t)VAULT_INFLOW_PAYOUT_PPM / (__uint128_t)1'000'000ULL);
-            if (distributable > inflow_cap)
-                distributable = inflow_cap;
-        }
+        const uint64_t distributable =
+            VaultDistributionBudget(boundary_height, spendable, prev_cycle_inflow_units);
 
         if (distributable < VAULT_MIN_DISTRIBUTABLE_UNITS)
             return consolidation_only();

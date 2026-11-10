@@ -15141,10 +15141,11 @@ function loadStakingPage() {
     }
     // APY estimate: (net payout per daily 480-block cycle * 365 cycles/year) / total staked
     if (active && staked > 0 && vault > 0) {
-      var distPerCycle = parseFloat(d.distributable_veld || 0) || (vault * 0.02);
+      var distPerCycle = Number(d.distributable_veld);
       var cyclesPerYear = 365; // one 480-block distribution cycle per day
       var apy = (distPerCycle * cyclesPerYear / staked) * 100;
-      document.getElementById('sk-apy').textContent = fmt(Math.min(apy, 9999), 1) + '%';
+      document.getElementById('sk-apy').textContent = Number.isFinite(distPerCycle) && distPerCycle >= 0
+        ? fmt(Math.min(apy, 9999), 1) + '%' : 'Unavailable';
     } else {
       document.getElementById('sk-apy').textContent = active ? 'Stake to earn' : 'N/A';
     }

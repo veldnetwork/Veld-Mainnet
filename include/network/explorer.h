@@ -6322,77 +6322,69 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
     }
 
     HttpResponse ServeVaultPage() {
-        uint64_t height = chain_.Height();
-        uint64_t best_h = BestKnownHeight();
-        const std::string& current_vault_addr =
-            VaultAddressAtHeight(best_h > 0 ? best_h : height);
-        double vault_bal = 0.0;
-        {
-            auto script = AddressToScript(current_vault_addr);
-            if (!script.empty()) {
-                auto utxos = chain_.GetUTXOsForScript(script);
-                for (auto& u : utxos) vault_bal += (double)u.value / VELD_UNITS;
-            }
-        }
-        double supply = (double)chain_.TotalSupplyUnits() / VELD_UNITS;
-        double vault_pct = supply > 0 ? vault_bal / supply * 100.0 : 0.0;
-        uint64_t next_dist = VAULT_DISTRIBUTION_INTERVAL - (best_h % VAULT_DISTRIBUTION_INTERVAL);
-        uint64_t next_vault_blk = VAULT_BLOCK_INTERVAL - (best_h % VAULT_BLOCK_INTERVAL);
-        const double daily_inflow = (double)SubsidyProjection::Next480(best_h, chain_.TotalSupplyUnits()).vault / VELD_UNITS;
-        double payout_rate = (best_h >= VAULT_INFLOW_CAP_ACTIVATION_HEIGHT)
-                           ? (double)VAULT_INFLOW_PAYOUT_PPM / 1'000'000.0
-                           : 0.90;
-        double daily_payout    = daily_inflow * payout_rate;
-        double daily_retention = daily_inflow - daily_payout;
-
+        const auto preview = chain_.GetVaultPayoutPreview();
+        const auto height = preview.height;
+        const auto& address = VaultAddressAtHeight(height);
+        const double balance = (double)preview.balance / VELD_UNITS;
+        const double supply = chain_.TotalSupplyVeld();
+        const auto next = preview.next_boundary - height;
+        const bool reserve = VaultReservePolicyActive(preview.next_boundary);
+        const bool miner_fees = MinerFeesActive(NextInclusionHeight(height));
+        const double projected =
+            (double)SubsidyProjection::Next480(height, chain_.TotalSupplyUnits()).vault /
+            VELD_UNITS;
         std::ostringstream page;
+        page << std::fixed << std::setprecision(2);
         page << "<div class=\"stat-grid\" style=\"margin-bottom:20px\">";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Vault Balance</div><div class=\"stat-value gold\">" << std::fixed << std::setprecision(2) << vault_bal << " VELD</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">% of Supply</div><div class=\"stat-value\">" << std::setprecision(3) << vault_pct << "%</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Next Distribution</div><div class=\"stat-value em\">" << next_dist << "</div><div class=\"stat-sub\">blocks (~" << (next_dist*3) << " min)</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Next Vault Block</div><div class=\"stat-value\">" << next_vault_blk << "</div><div class=\"stat-sub\">blocks</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Inflow</div><div class=\"stat-value\">~" << std::setprecision(1) << daily_inflow << "</div><div class=\"stat-sub\">projected subsidy over next 480 blocks; fees excluded</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Payout</div><div class=\"stat-value em\">~" << std::setprecision(1) << daily_payout << "</div><div class=\"stat-sub\">VELD/day to stakers (90% inflow cap)</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Retention</div><div class=\"stat-value gold\">~" << std::setprecision(1) << daily_retention << "</div><div class=\"stat-sub\">VELD/day vault growth (10%)</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Dist. Interval</div><div class=\"stat-value\">480</div><div class=\"stat-sub\">blocks (~24h)</div></div>";
+        auto stat = [&](const char* label, double value, const char* detail) {
+            page << "<div class=\"stat\"><div class=\"stat-label\">" << label
+                 << "</div><div class=\"stat-value\">" << value << "</div><div class=\"stat-sub\">"
+                 << detail << "</div></div>";
+        };
+        stat("Vault balance", balance, "VELD in the rewards vault");
+        stat("Share of supply", supply > 0 ? balance / supply * 100.0 : 0, "% of issued VELD");
+        stat("Next distribution", (double)next, "blocks remaining");
+        stat("Estimated payout budget", (double)preview.budget / VELD_UNITS,
+             "VELD before recipient limits; not a guaranteed payout");
+        stat("Projected subsidy", projected,
+             "VELD over the next 480 blocks; other incoming funds excluded");
         page << "</div>";
-
-        page << "<div class=\"card\" style=\"border-color:var(--gold)\">";
-        page << "<div class=\"card-title\">Vault Address</div>";
-        page << "<div style=\"font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--gold);word-break:break-all;padding:10px 14px;background:var(--surface2);border-radius:4px;border:1px solid #c9a84c33\">" << current_vault_addr << "</div>";
-        page << "<div style=\"margin-top:12px\"><a href=\"/address/" << current_vault_addr << "\" style=\"display:inline-flex;align-items:center;gap:7px;text-decoration:none;padding:9px 16px;border:1px solid var(--b2);border-radius:10px;background:var(--s2);color:var(--text);font-size:12px;font-weight:600;font-family:var(--sans)\">View full history <span style=\"color:var(--em);font-weight:700\">&rarr;</span></a></div>";
-        page << "</div>";
-
-        page << R"HTML(
-<div class="card">
-  <div class="card-title">Vault Funding Sources</div>
-  <div class="tbl-scroll"><table class="tbl">
-    <thead><tr><th>Source</th><th>Amount</th><th>Frequency</th></tr></thead>
-    <tbody>
-      <tr><td>Block reward cut (20%)</td><td style="color:var(--em)">~0.62785 VELD</td><td style="color:var(--muted)">Every block</td></tr>
-      <tr><td>Vault block (100% reward)</td><td style="color:var(--em)">3.1393 VELD</td><td style="color:var(--muted)">Every 100th block</td></tr>
-      <tr><td>Transaction fees</td><td style="color:var(--em)">Variable (0.001 VELD/tx)</td><td style="color:var(--muted)">Per transaction</td></tr>
-    </tbody>
-  </table>
-</div>
-
-<div class="card">
-  <div class="card-title">Vault Protection System</div>
-  <div class="tbl-scroll"><table class="tbl">
-    <thead><tr><th>#</th><th>Rule</th><th>Effect</th></tr></thead>
-    <tbody>
-      <tr><td style="color:var(--em)">1</td><td>Inflow cap 90%</td><td style="color:var(--muted)">At most 90% of cycle inflow paid out; vault retains &ge;10% as principal growth</td></tr>
-      <tr><td style="color:var(--em)">2</td><td>Backstop ceiling 8%</td><td style="color:var(--muted)">Never more than 8% of vault balance per cycle (defence-in-depth)</td></tr>
-      <tr><td style="color:var(--em)">3</td><td>One dist per cycle</td><td style="color:var(--muted)">No catch-up on missed distributions</td></tr>
-      <tr><td style="color:var(--em)">4</td><td>Liveness check</td><td style="color:var(--muted)">Skip if chain stalled for 2+ hours</td></tr>
-      <tr><td style="color:var(--em)">5</td><td>Min threshold</td><td style="color:var(--muted)">Skip if distribution &lt; 0.0001 VELD</td></tr>
-      <tr><td style="color:var(--em)">6</td><td>Concentration cap 75%</td><td style="color:var(--muted)">No staker receives &gt; 75% of any cycle; excess stays in vault</td></tr>
-      <tr><td style="color:var(--em)">7</td><td>Post-emission inheritance</td><td style="color:var(--muted)">Vault principal accumulated during emission era funds stakers from fees alone after year ~38</td></tr>
-    </tbody>
-  </table>
-</div>
-
+        page << "<div class=\"card\"><div class=\"card-title\">Payout policy</div><p>";
+        if (reserve) {
+            page << "The next distribution uses the 20,000 VELD reserve target. Ordinary payouts "
+                    "continue while the vault builds toward it. Available surplus can increase "
+                    "the payout, subject to the 8% limit per cycle. The target is not a locked "
+                    "balance: ordinary payouts can cross it, and unused payouts stay in the vault.";
+        } else {
+            page << "The next distribution uses the current policy: up to 90% of the cycle's "
+                    "coinbase inflow, limited to 8% of the available rewards-vault balance.";
+        }
+        page << "</p><p class=\"muted\">The estimate uses the current balance and coinbase inflow "
+                "referenced at block "
+             << preview.inflow_reference_height
+             << ". Incoming funds and eligible stake can change before settlement. Validator "
+                "bond principal is held separately and is not part of this budget.</p></div>";
+        page << "<div class=\"card\"><div class=\"card-title\">Vault address</div>"
+             << "<a style=\"word-break:break-all\" href=\"/address/" << address << "\">" << address
+             << "</a></div>";
+        page << R"HTML(<div class="card"><div class="card-title">Where the funds come from</div>
+<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Source</th><th>How it works</th></tr></thead><tbody>
+<tr><td>Block subsidy</td><td>The allocation follows the block's active issuance schedule. Every 100th block allocates its full subsidy to the vault.</td></tr>
+<tr><td>Unclaimed validator rewards</td><td>Endorsement rewards without eligible recipients return to the vault at settlement.</td></tr>
 )HTML";
+        page
+            << "<tr><td>Transaction fees</td><td>"
+            << (miner_fees
+                    ? "Paid entirely to miners; excluded from vault income."
+                    : "Allocated under the current fee policy; future fees are not included in the subsidy projection.")
+            << "</td></tr></tbody></table></div></div>";
+        page << R"HTML(<div class="card"><div class="card-title">Distribution rules</div>
+<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Rule</th><th>Effect</th></tr></thead><tbody>
+<tr><td>8% cycle limit</td><td>The payout budget cannot exceed 8% of available rewards-vault funds.</td></tr>
+<tr><td>480-block interval</td><td>Settlement uses the parent block's state. Funds arriving in the settlement block enter a later cycle.</td></tr>
+<tr><td>75% recipient limit</td><td>No recipient receives more than 75% of the budget. Eligible validator bond yield shares the budget through its separate escrow.</td></tr>
+<tr><td>Unused funds remain</td><td>Rounding, recipient limits and absent eligible stake leave funds in the vault. Budgets below the minimum settle without a payout.</td></tr>
+</tbody></table></div></div>)HTML";
         return HttpResponse::HTML(HtmlWrapArcade("Vault", page.str(), "vault"));
     }
 
