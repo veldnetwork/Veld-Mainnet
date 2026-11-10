@@ -16787,9 +16787,13 @@ loadDashboard = loadDashboardAdaptive;
     var pgExplorer  = document.getElementById('page-explorer');
     var pgStaking   = document.getElementById('page-staking');
     var pgComining  = document.getElementById('page-comining');
+    var pgSend     = document.getElementById('page-send');
     if (pgExplorer && pgExplorer.classList.contains('active')) loadExplorerBlocks();
     if (pgStaking && pgStaking.classList.contains('active')) loadStakingPage();
     if (pgComining && pgComining.classList.contains('active')) loadCominingPage();
+    // A confirmed payment releases its change. Keep the active send balance
+    // and spendable outputs current without requiring a page change.
+    if (pgSend && pgSend.classList.contains('active')) onFromChange();
   }
   function tick() {
     var now = Date.now();

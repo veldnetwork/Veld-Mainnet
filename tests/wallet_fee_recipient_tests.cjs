@@ -52,5 +52,14 @@ vm.runInContext(extractFunction(source, 'refreshSendFeeRecipient'), context);
     for(const amount of ['','0','-1','1e2','0.123456789','21000001','2x']) {
         nodes['s-amount'].value=amount;preview.updateConfirm();assert(!shown);
     }
-    console.log('PASS_WALLET_FEE_RECIPIENT cases=7 exact_preview_cases=11');
+    let sendRefreshes=0;
+    const polling={document:{getElementById:id=>({classList:{contains:()=>id==='page-send'}})},
+        onFromChange:()=>{sendRefreshes++;}};
+    vm.createContext(polling);
+    vm.runInContext(extractFunction(source,'refreshActiveTab'),polling);
+    polling.refreshActiveTab();
+    assert.equal(sendRefreshes,1,'confirmed change refreshes the active Send screen');
+    polling.document.getElementById=()=>({classList:{contains:()=>false}});
+    polling.refreshActiveTab();assert.equal(sendRefreshes,1,'inactive Send screen does not poll');
+    console.log('PASS_WALLET_FEE_RECIPIENT cases=7 exact_preview_cases=11 send_refresh_cases=2');
 })().catch(error => {console.error(error); process.exitCode=1;});
