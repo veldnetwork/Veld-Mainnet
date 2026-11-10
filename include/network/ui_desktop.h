@@ -12126,13 +12126,15 @@ function onFromChange() {
 function updateConfirm() {
   var from = document.getElementById('s-from').value.trim();
   var to = document.getElementById('s-to').value.trim();
-  var amount = parseFloat(document.getElementById('s-amount').value||0);
-  if (!from || !to || !amount) { document.getElementById('confirm-box').classList.remove('show'); return; }
+  var amountUnits;
+  try { amountUnits = _veldParseVeldUnitsExact(document.getElementById('s-amount').value); }
+  catch (_) { document.getElementById('confirm-box').classList.remove('show'); return; }
+  if (!from || !to) { document.getElementById('confirm-box').classList.remove('show'); return; }
   document.getElementById('confirm-box').classList.add('show');
   document.getElementById('c-from').textContent = shortAddr(from);
   document.getElementById('c-to').textContent = shortAddr(to);
-  document.getElementById('c-amount').textContent = fmt(amount,2) + ' VELD';
-  document.getElementById('c-total').textContent = fmt(amount+0.001,2) + ' VELD';
+  document.getElementById('c-amount').textContent = _veldUnitsToAmountString(amountUnits) + ' VELD';
+  document.getElementById('c-total').textContent = _veldUnitsToAmountString(amountUnits + 100000n) + ' VELD';
   rpc('getblockchaininfo').then(function(d){var h=d.blocks||d.height||0;var el=document.getElementById('c-est-block');if(el)el.textContent='Block ~'+(h+1)+' (next block, ~3 min)';}).catch(function(){});
 }
 
