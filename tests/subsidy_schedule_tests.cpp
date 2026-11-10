@@ -73,11 +73,25 @@ int main() {
                         Check(issuance->vault == out->subsidy && !issuance->miner &&
                                   !issuance->pool && !issuance->endorsement,
                               "100th block allocation changed");
-                    else if (out->subsidy && supply >= STAKING_UNLOCK_SUPPLY)
-                        Check(issuance->pool == out->subsidy / 5 &&
-                                  issuance->vault == out->subsidy / 5 &&
-                                  issuance->endorsement == out->subsidy / 10,
-                              "ordinary 50/20/20/10 split changed");
+                    else if (out->subsidy) {
+                        // Independent retirement boundary from the agreed monetary specification.
+                        // Retirement pays validators regardless of the former supply unlock gate.
+#ifdef VELD_SUBSIDY_TEST_HEIGHT
+                        const bool retired = h >= 700801;
+#else
+                        const bool retired = false;
+#endif
+                        if (retired)
+                            Check(issuance->pool == 0 && issuance->vault == out->subsidy / 5 &&
+                                      issuance->endorsement == out->subsidy / 5 &&
+                                      issuance->miner == out->subsidy - 2 * (out->subsidy / 5),
+                                  "retired ordinary 60/0/20/20 split changed");
+                        else if (supply >= STAKING_UNLOCK_SUPPLY)
+                            Check(issuance->pool == out->subsidy / 5 &&
+                                      issuance->vault == out->subsidy / 5 &&
+                                      issuance->endorsement == out->subsidy / 10,
+                                  "historical ordinary 50/20/20/10 split changed");
+                    }
                 }
             }
         }
