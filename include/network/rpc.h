@@ -1479,6 +1479,39 @@ class RpcServer {
         return height + 1;
     }
 
+    std::string PrepareValidatorFeeOperation_(const std::string& address, const std::string& operation) {
+        using JB = JsonBuilder;
+        if (operation.size() <= 255 || operation.size() > 65535)
+            throw std::runtime_error("Invalid validator instruction size");
+        std::vector<uint8_t> marker{0x6a, 0x4d, (uint8_t)operation.size(), (uint8_t)(operation.size() >> 8)};
+        marker.insert(marker.end(), operation.begin(), operation.end());
+        const auto script = AddressToScript(address);
+        const auto coins = SelectWalletCoins_(address, 0, MIN_TX_FEE);
+        if (!coins.sufficient)
+            throw std::runtime_error("Insufficient available funds for the validator request fee");
+        Transaction tx;
+        uint64_t total = 0;
+        for (const auto& utxo : coins.selected_utxos) {
+            if (total > UINT64_MAX - utxo.value)
+                throw std::runtime_error("Validator request input total is out of range");
+            total += utxo.value;
+            TxInput input; input.prev_tx_hash = utxo.tx_hash; input.prev_out_index = utxo.output_index;
+            tx.inputs.push_back(input);
+        }
+        if (coins.change_amount > 0)
+            tx.outputs.emplace_back(coins.change_amount, script);
+        tx.outputs.emplace_back(0, marker);
+        std::vector<std::string> inputs;
+        for (uint32_t i = 0; i < tx.inputs.size(); ++i)
+            inputs.push_back(JB::Object({{"index", JB::Number((uint64_t)i)},
+                {"sighash_hex", JB::String(BytesToHex(ComputeSighash(tx, i, script)))},
+                {"prev_script_hex", JB::String(BytesToHex(script))}}));
+        return JB::Object({{"unsigned_tx_hex", JB::String(BytesToHex(tx.Serialize()))},
+            {"inputs", JB::Array(inputs)}, {"total_input", JB::Number(total)},
+            {"total_output", JB::Number(coins.change_amount)}, {"fee", JB::Number((uint64_t)MIN_TX_FEE)},
+            {"change", JB::Number(coins.change_amount)}});
+    }
+
     static CoinSelection SelectWalletStateCoins_(const WalletState& state, uint64_t target_units,
                                                  uint64_t fee_units) {
         CoinSelection result;
@@ -2794,6 +2827,8 @@ class RpcServer {
                         custodial_count++;
                     const auto lifecycle =
                         validators_->GetBondLifecycleStatus(v.pubkey_hex, height);
+                    const auto reduction = validators_->GetBondReductionStatus(v.pubkey_hex,
+                        height == UINT64_MAX ? height : height + 1);
                     const uint64_t return_boundary = lifecycle.return_boundary;
                     const uint64_t settlement_boundary = lifecycle.settlement_boundary;
                     const bool principal_held = lifecycle.principal_held;
@@ -2813,7 +2848,17 @@ class RpcServer {
                       << "\"bond_custodial\":" << (v.bond_custodial ? "true" : "false") << ","
                       << "\"bond_veld\":"
                       << (principal_held ? (double)v.bond_units / VELD_UNITS : 0.0) << ","
-                      << "\"original_bond_veld\":" << (double)v.bond_units / VELD_UNITS << ","
+                      << "\"original_bond_veld\":" << (double)(v.bond_units +
+                         (v.bond_reduction_settled_at ? v.bond_reduction_units : 0)) / VELD_UNITS << ","
+                      << "\"bond_units\":\"" << v.bond_units << "\","
+                      << "\"bond_retained_units\":\"" << reduction.retained_units << "\","
+                      << "\"bond_reduction_units\":\"" << reduction.reduction_units << "\","
+                      << "\"bond_reduction_eligible\":" << (reduction.eligible ? "true" : "false") << ","
+                      << "\"bond_reduction_pending\":" << (reduction.pending ? "true" : "false") << ","
+                      << "\"bond_reduction_cancelled\":" << (reduction.cancelled ? "true" : "false") << ","
+                      << "\"bond_reduction_requested_at\":" << reduction.requested_at << ","
+                      << "\"bond_reduction_settled_at\":" << reduction.settled_at << ","
+                      << "\"bond_reduction_boundary\":" << reduction.return_boundary << ","
                       << "\"principal_held\":" << (principal_held ? "true" : "false") << ","
                       << "\"yield_accrued_veld\":" << (double)acc / VELD_UNITS << ","
                       << "\"slashed\":" << (v.slashed ? "true" : "false") << ","
@@ -7992,6 +8037,25 @@ class RpcServer {
                 {"fee", JB::Number(fee)},
                 {"change", JB::Number(coins.change_amount)},
             });
+        });
+
+        methods_["preparereducevalidatorbond"] = RpcMethod([this](const P& params) -> std::string {
+            if (params.size() != 2)
+                throw std::invalid_argument("Usage: preparereducevalidatorbond <address> <pubkey_hex>");
+            const auto& address = params[0];
+            const auto pubkey = ValidatorPreparationKey_(address, params[1]);
+            auto transition = AcquireRpcReadTransitionGuard(chain_);
+            const auto height = ValidatorPreparationHeight_("excess bond return");
+            const auto reduction = validators_->GetBondReductionStatus(pubkey, height);
+            if (!reduction.eligible)
+                throw std::runtime_error(reduction.error);
+            if (reduction.address != address)
+                throw std::runtime_error("Validator bond owner differs");
+            const auto operation = ValidatorRegistry::BuildReduceBondOp(pubkey,
+                reduction.registered_height, reduction.retained_units);
+            if (mempool_.HasPendingOpReturn(operation))
+                throw std::runtime_error("Your excess bond return request is already pending");
+            return PrepareValidatorFeeOperation_(address, operation);
         });
 
         methods_["prepareslashvalidator"] = RpcMethod([this](const P& params) -> std::string {
