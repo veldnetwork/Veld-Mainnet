@@ -55,10 +55,11 @@ void Spend(VeldNode& node, const RealKeyPair& key, std::vector<TxOutput> outputs
 }
 void Stake(VeldNode& node, const RealKeyPair& key) {
     const uint64_t amount = 1000 * VELD_UNITS;
+    // The staking covenant binds principal to output zero; the marker follows it.
     Spend(node, key,
-          {{0, BuildOpReturnScript("VELD_STAKE|LOCK|" + key.address + "|" + std::to_string(amount) +
-                                   "|T1")},
-           {amount, key.GetP2PKHScript()}});
+          {{amount, key.GetP2PKHScript()},
+           {0, BuildOpReturnScript(StakingLedger::BuildLockOp(key.address, amount,
+                                                              node.GetChain().Height() + 1, 1))}});
 }
 void View(VeldNode& node, const fs::path& path) {
     node.GetRPC().SetStaking(&node.GetStaking());
@@ -221,8 +222,11 @@ int main(int argc, char** argv) {
               "signed stake markers not applied");
         View(*direct, root / "before-activation");
         auto branch = Fresh(root / "branch");
-        for (const auto& block : history)
+        for (const auto& block : history) {
             Admit(*branch, block);
+            if (block.height % 4800 == 0)
+                std::cout << "PROGRESS branch-replay height=" << block.height << std::endl;
+        }
         Equal(*direct, *branch);
         const auto original = Build(*direct, miner, 100000 + reserve_height);
         Boundary(*direct, original, owner, second);
@@ -237,6 +241,7 @@ int main(int argc, char** argv) {
             if (h % 480 == 0) {
                 Boundary(*branch, block, owner, second);
                 View(*branch, root / ("boundary-" + std::to_string(h)));
+                std::cout << "PROGRESS checked-payout height=" << h << std::endl;
             }
             Admit(*branch, block);
             history.push_back(block);
@@ -247,8 +252,11 @@ int main(int argc, char** argv) {
         Equal(*direct, *branch);
         View(*branch, root / "final");
         auto replay = Fresh(root / "replay");
-        for (const auto& block : history)
+        for (const auto& block : history) {
             Admit(*replay, block);
+            if (block.height % 4800 == 0)
+                std::cout << "PROGRESS independent-replay height=" << block.height << std::endl;
+        }
         Equal(*replay, *branch);
         branch.reset();
         branch = Reopen(root / "branch", history.back().height);
