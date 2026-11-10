@@ -3063,7 +3063,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
  when the wallet refreshes; estimatefee scales with mempool
  congestion (1× MIN_FEE_RATE at low load, up to 10× at peak). -->
       <div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;font-family:var(--font)">
-        Fee <span id="s-fee-est" style="color:var(--text)">0.001 VELD</span> → vault · <span id="s-fee-eta" style="color:var(--muted)">~3 min to confirm</span>
+        Network fee <span id="s-fee-est" style="color:var(--text)">0.001 VELD</span><span id="s-fee-recipient"></span> · <span id="s-fee-eta" style="color:var(--muted)">~3 min to confirm</span>
       </div>
       <!-- Plain-language send disclaimer. Same muted-bordered-note
  style as #val-reg-disclaimer on the validator panel. Calm reminder
@@ -12352,7 +12352,20 @@ function fillSendAmountPct(pct) {
 // send TX (~6 KB with one PQ-signed input + change) the absolute fee
 // stays at MIN_TX_FEE (0.001 VELD) at low load; under congestion the
 // fee scales up and the wallet should warn the user.
+function refreshSendFeeRecipient() {
+  var recipient = document.getElementById('s-fee-recipient');
+  if (!recipient) return;
+  // Refresh from the next inclusion block's policy, including after a reorg.
+  // An unavailable or older node must not leave a stale recipient claim.
+  recipient.textContent = '';
+  rpc('getmininginfo', []).then(function(info) {
+    if (!info || !Number.isSafeInteger(info.reward_height) || info.reward_height < 1 ||
+        typeof info.miner_fees_active !== 'boolean') return;
+    recipient.textContent = info.miner_fees_active ? ' to miners' : ' to vault';
+  }).catch(function() { recipient.textContent = ''; });
+}
 function refreshSendFeeEstimate() {
+  refreshSendFeeRecipient();
   var feeEl = document.getElementById('s-fee-est');
   var etaEl = document.getElementById('s-fee-eta');
   if (!feeEl) return;
