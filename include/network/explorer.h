@@ -2680,7 +2680,7 @@ __VELD_SUBSIDY_RULES__
   <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool collects <strong>10% of ordinary block subsidy</strong> and pays it out every <strong>480 blocks</strong> in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle.</p>
   <ul>
     <li><strong>Register on-chain.</strong> You submit a <span class="formula">VELD_VALIDATOR|REGISTER</span> transaction binding your ML-DSA-65 public key. A matching <span class="formula">DEREGISTER</span> exits cleanly.</li>
-    <li><strong>Bond the minimum.</strong> Registration requires posting the minimum validator bond of <strong>10,000 VELD</strong> (see &sect;10) into the sigless custody vault. The live value is shown on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a>.</li>
+    <li><strong>Bond the minimum.</strong> Registration sends the required validator bond into the protocol custody vault. Check the current minimum on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a> before funding your wallet.</li>
     <li><strong>Stay online.</strong> Endorsement share is your count &divide; the network&#39;s count over the last 480 blocks &mdash; consistent uptime is what pays.</li>
   </ul>
   <p style="color:var(--muted);font-size:12px">Endorsement is one of three independent reward streams: the <em>co-mining lottery</em> is a flat draw (&sect;11), the <em>vault</em> distributes by eligible stake weight (&sect;3), and only the <em>validator pool</em> is endorsement-gated. They do not overlap and you can earn from more than one.</p>
@@ -2719,7 +2719,7 @@ __VELD_SUBSIDY_RULES__
 
 <div class="card rule-card">
   <h2 id="governance">12. Governance</h2><details class="veld-details"><summary>Details</summary>
-  <p>Governance activates when at least five validators have bonded an aggregate <strong>50,000 VELD</strong>. Each validator contributes at most its 10,000 VELD minimum bond toward that activation threshold.</p>
+  <p>Governance requires at least five qualifying validator bonds. Each validator contributes at most the minimum bond applicable at that block toward the activation threshold. Existing larger bonds retain their principal.</p>
   <div class="peg-grid">
     <div class="peg-item"><span class="k">Who participates</span><span class="v">Registered, recently active validators submit proposals and vote.</span></div>
     <div class="peg-item"><span class="k">Voting window</span><span class="v"><strong>6,720 blocks</strong>, approximately 14 days.</span></div>
@@ -6800,7 +6800,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         bool registration_known = false;
         bool existing_operations_active = false;
         double total_staked = 0.0;
-        double min_stake = (double)MIN_VALIDATOR_STAKE / VELD_UNITS;
+        double min_stake = (double)MinimumValidatorBond(NextInclusionHeight(chain_.Height())) / VELD_UNITS;
         size_t val_count = 0;
         struct VInfo { std::string address; std::string pubkey; uint64_t reg_height = 0; double staked = 0.0; };
         std::vector<VInfo> vlist;
@@ -6904,7 +6904,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << "<div class=\"stat\"><div class=\"stat-label\">Validators</div><div class=\"stat-value em\">" << val_count << "</div></div>";
         {
             double live_min_validator =
-                (double)MIN_VALIDATOR_STAKE / (double)VELD_UNITS;
+                (double)MinimumValidatorBond(NextInclusionHeight(chain_.Height())) / (double)VELD_UNITS;
             page << "<div class=\"stat\"><div class=\"stat-label\">Min Stake to Register</div>"
                  << "<div class=\"stat-value\">" << std::fixed << std::setprecision(0)
                  << live_min_validator << " VELD</div>"

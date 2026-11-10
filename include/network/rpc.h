@@ -6370,7 +6370,7 @@ class RpcServer {
               << ",";
             j << "\"total_staked_veld\":" << (double)total_staked / VELD_UNITS << ",";
             j << "\"min_stake_veld\":"
-              << (double)(validators_ ? validators_->GetEffectiveMinStake() : MIN_VALIDATOR_STAKE) /
+              << (double)(validators_ ? validators_->GetEffectiveMinStake(NextInclusionHeight(chain_.Height())) : MinimumValidatorBond(NextInclusionHeight(chain_.Height()))) /
                      VELD_UNITS
               << ",";
             j << "\"validator_count\":"
@@ -6940,11 +6940,11 @@ class RpcServer {
                 gov_ ? gov_->GetMinVotesRequired(ProposalType::GENERAL) : GOV_QUORUM_GENERAL;
             uint32_t proto_votes = gov_ ? gov_->GetMinVotesRequired(ProposalType::PROTOCOL_UPGRADE)
                                         : GOV_QUORUM_PROTOCOL;
-            uint64_t bonded = validators_ ? validators_->GetGovernanceBondedTotal() : 0;
+            uint64_t bonded = validators_ ? validators_->GetGovernanceBondedTotal(h) : 0;
             std::ostringstream j;
             j << "{\"registered_validators\":" << registered << ",\"active_validators\":" << active
               << ",\"governance_active\":"
-              << ((gov_ && gov_->GovernanceBondGateOpen()) ? "true" : "false")
+              << ((gov_ && gov_->GovernanceBondGateOpen(h)) ? "true" : "false")
               << ",\"bonded_veld\":" << std::fixed << std::setprecision(8)
               << ((double)bonded / VELD_UNITS) << ",\"general_votes_needed\":" << gen_votes
               << ",\"general_threshold_pct\":" << GOV_PASS_PCT_GENERAL
@@ -7036,7 +7036,7 @@ class RpcServer {
         methods_["preparegovproposal"] = RpcMethod([this, build_gov_tx_template,
                                                     build_op_return_script](
                                                        const P& params) -> std::string {
-            if (!gov_ || !gov_->GovernanceBondGateOpen())
+            if (!gov_ || !gov_->GovernanceBondGateOpen(NextInclusionHeight(chain_.Height())))
                 throw std::runtime_error(
                     "Governance is locked until the bonded-validator activation threshold is reached");
             if (params.size() != 6 && params.size() != 7)
@@ -7102,7 +7102,7 @@ class RpcServer {
         methods_["preparegovvote"] = RpcMethod([this, build_gov_tx_template,
                                                 build_op_return_script](
                                                    const P& params) -> std::string {
-            if (!gov_ || !gov_->GovernanceBondGateOpen())
+            if (!gov_ || !gov_->GovernanceBondGateOpen(NextInclusionHeight(chain_.Height())))
                 throw std::runtime_error(
                     "Governance is locked until the bonded-validator activation threshold is reached");
             if (params.size() < 6)
@@ -7793,7 +7793,7 @@ class RpcServer {
             if (!preparation_error.empty())
                 throw std::runtime_error(preparation_error);
 
-            uint64_t effective_min = validators_->GetEffectiveMinStake();
+            uint64_t effective_min = validators_->GetEffectiveMinStake(prospective_height);
             bool custodial_bond = prospective_height >= STAKE_VAULT_ACTIVATION_HEIGHT;
             if (!custodial_bond) {
                 if (validators_ && staking_) {
@@ -7881,6 +7881,8 @@ class RpcServer {
                 {"inputs", JB::Array(input_items)},
                 {"total_input", JB::Number(total_input)},
                 {"total_output", JB::Number(total_output)},
+                {"inclusion_height", JB::Number(prospective_height)},
+                {"bond_minimum_units", JB::Number(effective_min)},
                 {"fee", JB::Number(fee)},
                 {"change", JB::Number(coins.change_amount)},
             });

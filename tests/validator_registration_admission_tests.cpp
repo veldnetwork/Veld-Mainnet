@@ -80,6 +80,7 @@ void Consolidate(VeldNode& node, const RealKeyPair& key) {
 }
 
 Transaction Register(VeldNode& node, const RealKeyPair& key) {
+    const uint64_t minimum = MinimumValidatorBond(node.GetChain().Height() + 1);
     auto coins = Mature(node, key);
     std::sort(coins.begin(), coins.end(), [](const auto& a, const auto& b) {
         return a.value > b.value || (a.value == b.value && UTXOKey(a.tx_hash, a.output_index) <
@@ -93,31 +94,32 @@ Transaction Register(VeldNode& node, const RealKeyPair& key) {
         input.prev_out_index = coin.output_index;
         tx.inputs.push_back(input);
         sum += coin.value;
-        if (sum >= MIN_VALIDATOR_STAKE + MIN_TX_FEE)
+        if (sum >= minimum + MIN_TX_FEE)
             break;
     }
-    Check(sum >= MIN_VALIDATOR_STAKE + MIN_TX_FEE, "naturally earned bond funding insufficient");
+    Check(sum >= minimum + MIN_TX_FEE, "naturally earned bond funding insufficient");
     Check(tx.inputs.size() <= 128, "bond funding was not consolidated");
     tx.outputs.emplace_back(0, BuildOpReturnScript(std::string(ValidatorRegistry::VAL_PREFIX) +
                                                    "REGISTER|" + KeyHex(key)));
-    tx.outputs.emplace_back(MIN_VALIDATOR_STAKE, AddressToScript(STAKE_VAULT_ADDRESS));
-    if (sum > MIN_VALIDATOR_STAKE + MIN_TX_FEE)
-        tx.outputs.emplace_back(sum - MIN_VALIDATOR_STAKE - MIN_TX_FEE, key.GetP2PKHScript());
+    tx.outputs.emplace_back(minimum, AddressToScript(STAKE_VAULT_ADDRESS));
+    if (sum > minimum + MIN_TX_FEE)
+        tx.outputs.emplace_back(sum - minimum - MIN_TX_FEE, key.GetP2PKHScript());
     SignAndQueue(node, tx, key);
     return tx;
 }
 
 void BondAccounting(VeldNode& node, const RealKeyPair& key, const Transaction& tx,
                     uint64_t owner_before, uint64_t inclusion, uint64_t supply_before) {
+    const uint64_t minimum = MinimumValidatorBond(inclusion);
     const auto snapshot = node.GetValidators().SnapshotState();
     const auto it = snapshot.validators.find(KeyHex(key));
     Check(it != snapshot.validators.end(), "accepted deposit has no attributable validator record");
     const auto& record = it->second;
     Check(record.active && record.bond_custodial && record.address == key.address &&
-              record.registered_height == inclusion && record.bond_units == MIN_VALIDATOR_STAKE,
+              record.registered_height == inclusion && record.bond_units == minimum,
           "validator identity, height or principal differs from funded deposit");
     Check(snapshot.total_staked_units == 0, "validator bond changed ordinary staking");
-    Check(Balance(node, key) == owner_before - MIN_VALIDATOR_STAKE - MIN_TX_FEE,
+    Check(Balance(node, key) == owner_before - minimum - MIN_TX_FEE,
           "owner balance does not account for bond and fee");
     const auto output = node.GetChain().GetUTXO(tx.GetTxID(), 1);
     Check(output && output->value == record.bond_units &&
@@ -167,6 +169,33 @@ int main(int argc, char** argv) {
         Check(std::any_of(candidate.transactions.begin(), candidate.transactions.end(),
                           [&](const auto& included) { return included.GetTxID() == tx.GetTxID(); }),
               "builder omitted funded registration");
+
+        // A real signed spend with the same fee but one atom below the inclusion
+        // height's bond floor must not change live or durable accounting.
+        auto underfunded = candidate;
+        for (auto& included : underfunded.transactions) {
+            if (included.GetTxID() != tx.GetTxID())
+                continue;
+            Check(included.outputs.size() == 3, "negative control needs change");
+            --included.outputs[1].value;
+            ++included.outputs[2].value;
+            for (auto& input : included.inputs)
+                input.script_sig.clear();
+            included.InvalidateTxIDCache();
+            for (size_t i = 0; i < included.inputs.size(); ++i)
+                included.inputs[i].script_sig = owner.SignInput(
+                    included, static_cast<uint32_t>(i), owner.GetP2PKHScript()).script_sig;
+            included.InvalidateTxIDCache();
+        }
+        underfunded.UpdateMerkleRoot();
+        const auto before_underfunded = branch->TestObserveDStateQualificationState();
+        Check(!branch->TestIngestDStateQualificationFrame(underfunded.Serialize(), underfunded.height),
+              "below-minimum funded bond accepted");
+        const auto after_underfunded = branch->TestObserveDStateQualificationState();
+        Check(before_underfunded.utxo_digest == after_underfunded.utxo_digest &&
+                  before_underfunded.consensus_state_digest == after_underfunded.consensus_state_digest &&
+                  before_underfunded.durable_tip_hash == after_underfunded.durable_tip_hash,
+              "below-minimum refusal changed funds or durable state");
 
         size_t writes = 0;
         const auto before_failure = branch->TestObserveDStateQualificationState();
@@ -247,6 +276,8 @@ int main(int argc, char** argv) {
         receipt
             << "{\"status\":\"passed\",\"activation\":" << activation
             << ",\"funded_parent\":" << parent_height << ",\"checks\":" << checks
+            << ",\"validator_policy_activation\":" << VALIDATOR_POLICY_ACTIVATION_HEIGHT
+            << ",\"bond_units\":" << MinimumValidatorBond(parent_height + 1)
             << ",\"network_started\":false,\"hash_work_bypassed\":true,\"injected_funds\":false}\n";
         std::cout << "PASS validator bond full accounting checks=" << checks
                   << " activation=" << activation << std::endl;

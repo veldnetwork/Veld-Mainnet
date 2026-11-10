@@ -14,6 +14,7 @@
 #include "../core/hash.h"
 #include "../core/constants.h"
 #include "state_digest.h"
+#include "validator_policy.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -72,6 +73,15 @@ constexpr uint64_t BOND_PER_KEY_UNITS = MIN_VALIDATOR_STAKE;
 constexpr uint64_t BOND_PER_KEY_UNITS = 10000ULL * VELD_UNITS; // min AND cap
 #endif
 constexpr uint64_t TOTAL_BOND_FLOOR = MIN_VALIDATOR_COUNT * BOND_PER_KEY_UNITS;
+inline constexpr uint64_t MinimumValidatorCountAt(uint64_t snapshot_height) noexcept {
+    return ValidatorBondPolicyActive(snapshot_height) ? 5 : MIN_VALIDATOR_COUNT;
+}
+inline constexpr uint64_t BondPerKeyAt(uint64_t snapshot_height) noexcept {
+    return ValidatorBondPolicyActive(snapshot_height) ? 5000ULL * VELD_UNITS : BOND_PER_KEY_UNITS;
+}
+inline constexpr uint64_t TotalBondFloorAt(uint64_t snapshot_height) noexcept {
+    return MinimumValidatorCountAt(snapshot_height) * BondPerKeyAt(snapshot_height);
+}
 
 // New btcVELD exposure pauses after three missed checkpoints. AMM swaps continue
 // during a later finality stall; irreversible redemption payout waits for
@@ -163,8 +173,8 @@ struct EpochSnapshot {
     Hash256 root{};
 
     bool Qualified() const {
-        return entries.size() >= MIN_VALIDATOR_COUNT &&
-               entries.size() <= MAX_FINALITY_VALIDATOR_COUNT && total_weight >= TOTAL_BOND_FLOOR;
+        return entries.size() >= MinimumValidatorCountAt(snapshot_height) &&
+               entries.size() <= MAX_FINALITY_VALIDATOR_COUNT && total_weight >= TotalBondFloorAt(snapshot_height);
     }
 };
 
@@ -317,7 +327,7 @@ inline bool SnapshotWellFormed(const EpochSnapshot& s) {
     uint64_t sum = 0;
     for (size_t i = 0; i < s.entries.size(); ++i) {
         const auto& e = s.entries[i];
-        if (e.weight != BOND_PER_KEY_UNITS)
+        if (e.weight != BondPerKeyAt(s.snapshot_height))
             return false; // min AND cap
         if (e.address.empty())
             return false;

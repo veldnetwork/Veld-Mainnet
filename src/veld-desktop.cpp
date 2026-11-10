@@ -1835,6 +1835,8 @@ private:
                 subst_all("__VELD_MIN_TX_FEE_UNITS__", std::to_string(MIN_TX_FEE));
                 subst_all("__VELD_DUST_THRESHOLD_UNITS__", std::to_string(DUST_THRESHOLD_UNITS));
                 subst_all("__VELD_MIN_VALIDATOR_STAKE_UNITS__", std::to_string(MIN_VALIDATOR_STAKE));
+                subst_all("__VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT__",
+                          std::to_string(VALIDATOR_POLICY_ACTIVATION_HEIGHT));
                 subst_all("__VELD_STAKE_VAULT_ADDRESS__", std::string(STAKE_VAULT_ADDRESS));
                 subst_all("__VELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT__",
                           std::to_string(BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT));

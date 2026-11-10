@@ -1,4 +1,5 @@
 #pragma once
+#include "../consensus/validator_policy.h"
 #include "../consensus/endorsement_wire.h"
 
 #include "block.h"
@@ -4286,7 +4287,7 @@ class Blockchain {
             }
             if (out.script_pubkey == stake_vault_script) {
                 ++stake_vault_outputs;
-                if (stake_vault_outputs > 1 || out.value < MIN_VALIDATOR_STAKE)
+                if (stake_vault_outputs > 1 || out.value < MinimumValidatorBond(height))
                     return false;
             }
         }

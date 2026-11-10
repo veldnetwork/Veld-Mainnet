@@ -180,10 +180,10 @@ class ValidatorRegistry {
         std::lock_guard<std::mutex> lk(mutex_);
         min_validator_stake_override_ = units;
     }
-    uint64_t GetEffectiveMinStake() const {
+    uint64_t GetEffectiveMinStake(uint64_t height = 0) const {
         std::lock_guard<std::mutex> lk(mutex_);
         return min_validator_stake_override_ > 0 ? min_validator_stake_override_
-                                                 : MIN_VALIDATOR_STAKE;
+                                                 : MinimumValidatorBond(height);
     }
 
     //  The SLASH branch verifies that both endorsement signatures
@@ -232,7 +232,7 @@ class ValidatorRegistry {
     // Eligibility mirrors GetBondYieldWeight (active && bond_custodial &&
     // bond_units>0 && !slashed). Deterministic: pure read of the replayed
     // validators_ set, so every node computes the same total at a given height.
-    uint64_t GetGovernanceBondedTotal() const {
+    uint64_t GetGovernanceBondedTotal(uint64_t height = 0) const {
         std::lock_guard<std::mutex> lk(mutex_);
         uint64_t total = 0;
         for (const auto& [pk, rec] : validators_) {
@@ -240,7 +240,7 @@ class ValidatorRegistry {
             if (!rec.active || !rec.bond_custodial || rec.bond_units == 0 || rec.slashed)
                 continue;
             uint64_t capped =
-                rec.bond_units < MIN_VALIDATOR_STAKE ? rec.bond_units : MIN_VALIDATOR_STAKE;
+                std::min(rec.bond_units, MinimumValidatorBond(height));
             if (UINT64_MAX - total < capped)
                 return UINT64_MAX; // saturate, never wrap
             total += capped;
@@ -865,7 +865,7 @@ class ValidatorRegistry {
                 endorsed_addresses.find(rec.address) == endorsed_addresses.end())
                 continue;
             uint64_t capped =
-                rec.bond_units < MIN_VALIDATOR_STAKE ? rec.bond_units : MIN_VALIDATOR_STAKE;
+                std::min(rec.bond_units, MinimumValidatorBond(boundary));
             uint64_t w = (uint64_t)((__uint128_t)capped * (__uint128_t)D_TOP_TIER_PPM /
                                     (__uint128_t)1'000'000ULL);
             if (w == 0)
@@ -2412,7 +2412,7 @@ class ValidatorRegistry {
 
             uint64_t effective_min = min_validator_stake_override_ > 0
                                          ? min_validator_stake_override_
-                                         : MIN_VALIDATOR_STAKE;
+                                         : MinimumValidatorBond(block.height);
             // Custodial bond regime.
             //   Pre-gate  (grandfathered): bond is a LOGICAL lock — require
             //     staking_get_stake(address) >= effective_min, as before.
@@ -3023,7 +3023,7 @@ class ValidatorRegistry {
             {
                 uint64_t effective_min = min_validator_stake_override_ > 0
                                              ? min_validator_stake_override_
-                                             : MIN_VALIDATOR_STAKE;
+                                             : MinimumValidatorBond(block.height);
                 // Custodial-bond model: a validator qualifies via EITHER a logical
                 // stake >= min OR a custodial bond >= min. The bond REPLACES the
                 // logical stake (see the REGISTER path: "the bond replaces it").

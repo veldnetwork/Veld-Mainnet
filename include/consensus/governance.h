@@ -100,12 +100,13 @@ class GovernanceEngine {
     // always-active for testing. Pure fn of the replayed validator set + the
     // compile-time constants; consulted by every apply-path entry below so the
     // whole system is dormant on mainnet until the bonded quorum exists.
-    bool GovernanceBondGateOpen() const {
+    bool GovernanceBondGateOpen(uint64_t height) const {
         if (!GOVERNANCE_BOND_GATE_ACTIVE)
             return true;
         return validators_ &&
-               validators_->GetGovernanceBondedTotal() >= GOVERNANCE_ACTIVATION_BONDED_UNITS;
+               validators_->GetGovernanceBondedTotal(height) >= ValidatorGovernanceBondFloor(height);
     }
+    bool GovernanceBondGateOpen() const { return GovernanceBondGateOpen(chain_.Height()); }
 
     using KVPut = std::function<void(const std::string& key, const std::string& val)>;
     using KVDel = std::function<void(const std::string& key)>;
@@ -628,8 +629,8 @@ class GovernanceEngine {
         // MAINNET UX early-reject (the on-chain apply path is the authoritative
         // gate). On the test chain GovernanceBondGateOpen() is always true.
         if (!GovernanceBondGateOpen()) {
-            e.reason = "Governance is not active yet — it unlocks once validators "
-                       "have bonded 50,000 VELD (5 validators \xC3\x97 10k) to the custody vault";
+            e.reason = "Governance requires at least five eligible validator bonds totaling " +
+                       std::to_string(ValidatorGovernanceBondFloor(chain_.Height()) / VELD_UNITS) + " VELD";
             return e; // can_vote / can_propose stay false
         }
 
@@ -1476,7 +1477,7 @@ class GovernanceEngine {
         // runs BEFORE governance_.ProcessBlock in on_commit_.
         if (!validators_ || !validators_->IsValidatorByAddress(proposer))
             return false;
-        if (!GovernanceBondGateOpen())
+        if (!GovernanceBondGateOpen(block_height))
             return false; // mainnet: dormant until 50k bonded
         if (ConsensusSecurityUpgradeActive(block_height) &&
             (!CanonicalIdentity(creation_identity) ||
@@ -1508,7 +1509,7 @@ class GovernanceEngine {
                             VoteChoice choice, uint64_t signed_height,
                             const std::string& pubkey_hex, const std::string& sig_hex,
                             const std::string& identity = {}) {
-        if (!GovernanceBondGateOpen())
+        if (!GovernanceBondGateOpen(block_height))
             return false; // mainnet: dormant until 50k bonded
         if (block_height > signed_height + GOV_SIG_REPLAY_WINDOW_BLOCKS) {
             if (gov_debug_) {

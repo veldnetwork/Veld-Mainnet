@@ -4635,6 +4635,13 @@ var VELD_ADDRESS_VERSION = __VELD_ADDRESS_VERSION__;
 var VELD_MIN_TX_FEE_UNITS = __VELD_MIN_TX_FEE_UNITS__;
 var VELD_DUST_THRESHOLD_UNITS = __VELD_DUST_THRESHOLD_UNITS__;
 var VELD_MIN_VALIDATOR_STAKE_UNITS = __VELD_MIN_VALIDATOR_STAKE_UNITS__;
+var VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT = __VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT__;
+function _veldValidatorBondAtHeight(height) {
+  if (!Number.isSafeInteger(height) || height < 1)
+    throw new Error('Current registration height is unavailable.');
+  return VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT > 0 && height >= VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT
+    ? 500000000000 : VELD_MIN_VALIDATOR_STAKE_UNITS;
+}
 var VELD_STAKE_VAULT_ADDRESS = '__VELD_STAKE_VAULT_ADDRESS__';
 var savedAddrs = [];
 try { savedAddrs = JSON.parse(localStorage.getItem('veld_addrs') || '[]'); } catch(e){}
@@ -14503,6 +14510,7 @@ function __waitForTxConfirm(txid, maxSeconds, onConfirmed, onTimeout, onTick) {
 }
 
 function doRegisterValidator() {
+  var registrationBondUnits = null;
   var addrRow = document.getElementById('val-addr-row');
   var addr = (addrRow && addrRow.style.display === 'none') ? currentAddr : document.getElementById('val-addr').value.trim();
   var keyHex = __veldKey.get() || '';
@@ -14530,7 +14538,11 @@ function doRegisterValidator() {
   // in the same TX as the REGISTER op_return — no separate "stake first"
   // step). The old "you must stake first" pre-check is obsolete because
   // the bond is now custodial, not logical.
-  rpc('getmininginfo', []).then(function(st) {
+  Promise.all([rpc('getmininginfo', []), rpc('getblockchaininfo', [])]).then(function(states) {
+    var st = states[0], chain = states[1];
+    if (!chain || !Number.isSafeInteger(chain.blocks) || chain.blocks < 0 || chain.blocks >= Number.MAX_SAFE_INTEGER)
+      throw new Error('Current registration height is unavailable.');
+    registrationBondUnits = _veldValidatorBondAtHeight(chain.blocks + 1);
     var stakingActive = !!(st && st.staking_active);
     var supplyVeld    = (st && typeof st.supply_veld === 'number') ? st.supply_veld : 0;
     var activationVeld = (st && typeof st.staking_activation_supply === 'number') ? st.staking_activation_supply : 10000;
@@ -14543,7 +14555,7 @@ function doRegisterValidator() {
       );
     }
     return rpc('getvalidators', []).then(function(vi) {
-      var minStake = VELD_MIN_VALIDATOR_STAKE_UNITS / 100000000;
+      var minStake = registrationBondUnits / 100000000;
       if (!vi || Number(vi.min_stake_veld) !== minStake)
         throw new Error('Node validator-bond policy differs from this signed client build. Update/restart both before registering.');
       return rpc('getbalance', [addr]).then(function(bal) {
@@ -14579,9 +14591,9 @@ function doRegisterValidator() {
   var vaultHash160 = _veldAddrToKeyCommitmentHex(VELD_STAKE_VAULT_ADDRESS);
   var regOpHex = _veldBuildProtocolOpReturnHex('VELD_VALIDATOR|REGISTER|' + pubHex);
   var regExpected = [{
-    value_units_str: String(VELD_MIN_VALIDATOR_STAKE_UNITS),
+    value_units_str: String(registrationBondUnits),
     expected_hash160_hex: vaultHash160,
-    exact_hash160_total_units: String(VELD_MIN_VALIDATOR_STAKE_UNITS),
+    exact_hash160_total_units: String(registrationBondUnits),
     exact_hash160_count: 1
   }];
   signAndBroadcast('prepareregistervalidator', [addr, pubHex], keyHex,
