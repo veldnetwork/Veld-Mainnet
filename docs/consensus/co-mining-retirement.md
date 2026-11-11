@@ -1,7 +1,8 @@
 # Co-mining retirement candidate
 
-This candidate remains inactive in public builds. The reviewed subsidy schedule
-must first receive a future activation height and coordinated release.
+This candidate pins the public-mainnet subsidy schedule to block 34,750.
+Publication and coordinated deployment remain subject to release qualification;
+see the [activation schedule](../release-3.3.4-activation.md).
 
 The first reduced block is 700,801, after four complete protocol years. Ordinary
 subsidies then become 60% block miner, 20% vault and 20% validator pool. Integer

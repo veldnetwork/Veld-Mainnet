@@ -1,9 +1,9 @@
 #pragma once
-#include "../core/constants.h"
+#include "native_334_activation.h"
 
 // Inclusion height governs registration and reward accounting. Finality uses
 // the immutable epoch snapshot height, so old certificates keep their meaning.
-// Public activation remains disabled until a coordinated release is qualified.
+// Public activation uses the shared schedule in the coordinated release candidate.
 #if defined(VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT)
 #error "Validator policy activation must be pinned in reviewed source"
 #endif
@@ -18,7 +18,7 @@ namespace veld {
 #if defined(VELD_VALIDATOR_POLICY_TEST_HEIGHT)
 inline constexpr uint64_t VALIDATOR_POLICY_ACTIVATION_HEIGHT = VELD_VALIDATOR_POLICY_TEST_HEIGHT;
 #else
-inline constexpr uint64_t VALIDATOR_POLICY_ACTIVATION_HEIGHT = 0;
+inline constexpr uint64_t VALIDATOR_POLICY_ACTIVATION_HEIGHT = NATIVE_334_ACTIVATION_HEIGHT;
 #endif
 static_assert(VALIDATOR_POLICY_ACTIVATION_HEIGHT == 0 ||
               (PROTOCOL_UPGRADE_HEIGHT != 0 &&

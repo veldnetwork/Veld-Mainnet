@@ -2,8 +2,10 @@
 
 This candidate lets the owner of an active custodial validator bond request the
 amount above the new 5,000 VELD minimum back without deregistering. It is gated by
-the validator-policy activation height, which remains zero (disabled) in public
-builds. The update has no authority to return production funds before activation.
+the validator-policy activation height, pinned to block 34,750 for public mainnet.
+See the [candidate activation schedule](release-3.3.4-activation.md). Publication
+and deployment remain pending. Production funds cannot return before activation
+and the full evidence window described below.
 
 The signed operation is
 `VELD_VALIDATOR|REDUCE_BOND|<public-key>|<registration-height>|<retained-units>`.

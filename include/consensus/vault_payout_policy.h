@@ -1,5 +1,5 @@
 #pragma once
-#include "../core/constants.h"
+#include "native_334_activation.h"
 
 // Public activation is pinned in reviewed source, never an operator option.
 #if defined(VELD_VAULT_RESERVE_ACTIVATION_HEIGHT)
@@ -17,7 +17,7 @@ namespace veld {
 #if defined(VELD_VAULT_RESERVE_TEST_HEIGHT)
 inline constexpr uint64_t VAULT_RESERVE_ACTIVATION_HEIGHT = VELD_VAULT_RESERVE_TEST_HEIGHT;
 #else
-inline constexpr uint64_t VAULT_RESERVE_ACTIVATION_HEIGHT = 0;
+inline constexpr uint64_t VAULT_RESERVE_ACTIVATION_HEIGHT = NATIVE_334_ACTIVATION_HEIGHT;
 #endif
 inline constexpr uint64_t VAULT_RESERVE_TARGET_UNITS = 20'000ULL * VELD_UNITS;
 static_assert(VAULT_RESERVE_ACTIVATION_HEIGHT == 0 ||

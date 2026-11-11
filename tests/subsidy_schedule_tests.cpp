@@ -14,7 +14,7 @@ void Check(bool value, const char* message) {
 uint64_t Oracle(uint64_t h) {
     // Independent fixed monetary specification, not the implementation constants.
     const uint64_t annual =
-#ifdef VELD_SUBSIDY_TEST_HEIGHT
+#if defined(VELD_SUBSIDY_TEST_HEIGHT) || defined(VELD_PUBLIC_MAINNET)
         h <= 700800    ? 55000000000000ULL
         : h <= 1401600 ? 27500000000000ULL
                        : 13750000000000ULL;
@@ -76,7 +76,7 @@ int main() {
                     else if (out->subsidy) {
                         // Independent retirement boundary from the agreed monetary specification.
                         // Retirement pays validators regardless of the former supply unlock gate.
-#ifdef VELD_SUBSIDY_TEST_HEIGHT
+#if defined(VELD_SUBSIDY_TEST_HEIGHT) || defined(VELD_PUBLIC_MAINNET)
                         const bool retired = h >= 700801;
 #else
                         const bool retired = false;

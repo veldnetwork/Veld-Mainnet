@@ -1,7 +1,10 @@
 ## 3.3.4 candidate - Consensus upgrade and vault accounting
 
-This candidate is not yet published. Protocol changes remain disabled until
-their coordinated activation heights are pinned and qualified.
+This candidate is not yet published. Its mainnet policy activation is pinned to
+block **34,750**, targeting **Friday, November 13, 2026, around noon MST
+(19:00 UTC)**. Block height governs activation; its arrival time is approximate.
+The activation-pinned build still requires shipping qualification and coordinated
+operator readiness. See [the activation schedule](release-3.3.4-activation.md).
 
 - Add the 5,000 VELD validator bond and equal capped finality weights, with a
   five-key minimum and a strict greater-than-two-thirds quorum. Finality stays

@@ -1,9 +1,9 @@
 # Rewards-vault payout candidate
 
 This candidate adds a 20,000 VELD reserve target to rewards-vault distribution.
-Its public activation height is **zero (disabled)**. Historical blocks retain
-their existing payout rule. Activation requires a separately reviewed protocol
-release and a coordinated future height.
+Its public-mainnet activation height is **34,750**. Historical blocks retain
+their existing payout rule. Publication and deployment remain pending; see the
+[candidate activation schedule](release-3.3.4-activation.md).
 
 ## Budget
 

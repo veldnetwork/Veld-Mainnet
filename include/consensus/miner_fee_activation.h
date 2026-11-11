@@ -1,9 +1,9 @@
 #pragma once
-#include "../core/constants.h"
+#include "native_334_activation.h"
 
 // Public activation belongs to the coordinated native protocol release.
-// Zero keeps the candidate inactive until that source-pinned schedule
-// has passed shipping qualification. Compiler flags cannot activate public fees.
+// The shared source-pinned schedule is qualified before shipping.
+// Compiler flags cannot activate public fees.
 #if defined(VELD_MINER_FEE_ACTIVATION_HEIGHT)
 #error "Miner fee activation must be pinned in reviewed source"
 #endif
@@ -20,7 +20,7 @@ namespace veld {
 inline constexpr uint64_t MINER_FEE_ACTIVATION_HEIGHT = VELD_MINER_FEE_TEST_HEIGHT;
 static_assert(MINER_FEE_ACTIVATION_HEIGHT > PROTOCOL_UPGRADE_HEIGHT);
 #else
-inline constexpr uint64_t MINER_FEE_ACTIVATION_HEIGHT = 0;
+inline constexpr uint64_t MINER_FEE_ACTIVATION_HEIGHT = NATIVE_334_ACTIVATION_HEIGHT;
 #endif
 inline constexpr bool MinerFeesActive(uint64_t height) noexcept {
     return MINER_FEE_ACTIVATION_HEIGHT != 0 &&

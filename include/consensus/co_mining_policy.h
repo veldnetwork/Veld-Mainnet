@@ -2,8 +2,8 @@
 #include "subsidy_schedule.h"
 
 namespace veld {
-// Retirement shares the reviewed subsidy activation. Public activation zero
-// preserves all historical rules. The final normal draw precedes retirement.
+// Retirement shares the reviewed subsidy activation. Historical heights keep
+// their existing rules. The final normal draw precedes retirement.
 static_assert(FIRST_HALVING_HEIGHT % COMINE_WINDOW_BLOCKS == 1,
               "Co-mining retirement must follow a complete lottery window");
 inline constexpr bool CoMiningRetired(uint64_t height) noexcept {

@@ -1,11 +1,11 @@
 #pragma once
-#include "../core/constants.h"
+#include "native_334_activation.h"
 
 // Two reductions after four and eight complete protocol years. Height zero
 // keeps its historical genesis subsidy. Co-mining retirement and its allocation
 // are defined separately in co_mining_policy.h and coinbase_allocation.h.
-// A reviewed future activation must precede the first reduction; zero keeps
-// public builds on the existing schedule while this candidate is qualified.
+// The shared mainnet activation precedes the first reduction. Other profiles
+// retain the existing schedule unless using a guarded isolated test height.
 #if defined(VELD_SUBSIDY_ACTIVATION_HEIGHT)
 #error "Subsidy activation must be pinned in reviewed source"
 #endif
@@ -39,7 +39,7 @@ inline constexpr uint64_t SECOND_HALVING_HEIGHT = 8ULL * BLOCKS_PER_YEAR + 1;
 #if defined(VELD_SUBSIDY_TEST_HEIGHT)
 inline constexpr uint64_t SUBSIDY_ACTIVATION_HEIGHT = VELD_SUBSIDY_TEST_HEIGHT;
 #else
-inline constexpr uint64_t SUBSIDY_ACTIVATION_HEIGHT = 0;
+inline constexpr uint64_t SUBSIDY_ACTIVATION_HEIGHT = NATIVE_334_ACTIVATION_HEIGHT;
 #endif
 static_assert(SUBSIDY_ACTIVATION_HEIGHT == 0 ||
                   (PROTOCOL_UPGRADE_HEIGHT != 0 &&
