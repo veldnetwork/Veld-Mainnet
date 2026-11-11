@@ -2659,8 +2659,10 @@ int main(int argc, char* argv[]) {
 
 #if defined(VELD_DEVELOPER_TESTNET) && defined(__linux__)
     if ((opt_service_secret_fd != -1 && !opt_address_only) ||
-        (opt_address_only && !developer_testnet::ReadServiceSecret(opt_service_secret_fd, g_passphrase))) {
-        std::cerr << "veld-node: protected service credential required for developer-testnet address-only startup\n";
+        (opt_address_only &&
+         !developer_testnet::ReadServiceSecret(opt_service_secret_fd, g_passphrase))) {
+        std::cerr
+            << "veld-node: protected service credential required for developer-testnet address-only startup\n";
         return 78;
     }
 #endif

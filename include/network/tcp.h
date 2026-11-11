@@ -9067,9 +9067,9 @@ class NodeServer {
              now - ps.last_tipsig >= std::chrono::seconds(1))) {
             const auto tip = chain_.TipCopy();
             const auto hash = tip.GetHash();
-            if (TipAnnouncementDue(ps,tip.height,hash,now) &&
-                conn.TrySend(pm.BuildTipsigMessage(tip.height,hash))) {
-                TipAnnouncementSent(ps,tip.height,hash,now);
+            if (TipAnnouncementDue(ps, tip.height, hash, now) &&
+                conn.TrySend(pm.BuildTipsigMessage(tip.height, hash))) {
+                TipAnnouncementSent(ps, tip.height, hash, now);
             }
         }
         if (ps.handshake_done && !ps.getaddr_sent) {

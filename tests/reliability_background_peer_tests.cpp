@@ -121,7 +121,12 @@ int main(int argc, char** argv) {
                     const auto gap =
                         std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - last_tip)
                             .count();
-                    valid = valid && gap >= 25 && gap <= 40;
+                    // The first canonical tip schedules exactly one retry after
+                    // six seconds, covering the receiver's five-second filter.
+                    // An unchanged tip then returns to the thirty-second cadence.
+                    const bool expected_gap =
+                        tips == 1 ? (gap >= 5 && gap <= 10) : (gap >= 25 && gap <= 40);
+                    valid = valid && expected_gap;
                 }
                 ++tips;
                 valid = valid && length == 44 &&
@@ -148,7 +153,10 @@ int main(int argc, char** argv) {
     const auto stop_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - stop).count();
     const bool pass = (bad_identity ? (!connected && tips == 0)
-                                    : (connected && valid && tips >= (duration >= 90 ? 4 : 1))) &&
+                                    : (connected && valid &&
+                                       tips >= (duration >= 100  ? 5
+                                                : duration >= 90 ? 4
+                                                                 : 1))) &&
                       stop_ms < 2000;
     std::cout << "background=" << true << " tips=" << tips << " valid=" << valid
               << " connected=" << connected << " stop_ms=" << stop_ms << " pass=" << pass

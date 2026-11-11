@@ -788,8 +788,8 @@ inline bool LoadRuntimeLimitsFromStartIndex(const std::string& start_index_path,
         !exact_string(root, "data_directory", PUBLIC_TESTNET_DATA_DIR) ||
         !exact_string(root, "result", "PASS") || !exact_bool(root, "disposable", true) ||
         !exact_bool(root, "external_value", false) ||
-        !exact_number(root, "network_magic", std::to_string(PUBLIC_TESTNET_MAGIC).c_str()) || !schema ||
-        schema->kind != runtime_json::Value::Kind::Number || schema->text != "2" ||
+        !exact_number(root, "network_magic", std::to_string(PUBLIC_TESTNET_MAGIC).c_str()) ||
+        !schema || schema->kind != runtime_json::Value::Kind::Number || schema->text != "2" ||
         !exact_string_array(root.Get("platform_scope"), PLATFORM_SCOPE) ||
         !exact_string_array(root.Get("allowed_services"), ALLOWED_SERVICES) ||
         !exact_string_array(root.Get("forbidden_services"), FORBIDDEN_SERVICES)) {

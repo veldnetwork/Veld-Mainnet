@@ -680,7 +680,8 @@ constexpr const char* GENESIS_HASH = developer_testnet::HASH;
 #ifdef VELD_APPCHAIN_BRIDGE_DEVNET
 // Pinned after full-parameter genesis mining; never shares the ASERT genesis.
 constexpr uint64_t GENESIS_NONCE = 5ULL;
-constexpr const char* GENESIS_HASH = "a9588f07b0c1331f8405e791952c1ea234c41f5cf96fdaca3f3baadf8d224728";
+constexpr const char* GENESIS_HASH =
+    "a9588f07b0c1331f8405e791952c1ea234c41f5cf96fdaca3f3baadf8d224728";
 #else
 constexpr uint64_t GENESIS_NONCE = VELD_ASERT_GENESIS_NONCE;
 constexpr const char* GENESIS_HASH = VELD_ASERT_GENESIS_HASH;

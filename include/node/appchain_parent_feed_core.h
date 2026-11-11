@@ -35,10 +35,10 @@ class AppchainParentFeedCore {
     }
 
   public:
-    explicit AppchainParentFeedCore(VeldNode& node,std::function<app::Bytes()> network_status={},
-                                     std::function<void(const Block&)> relay={},
-                                     std::function<void(const Transaction&)> relay_transaction={})
-        : node_(node),network_status_(std::move(network_status)),relay_(std::move(relay)),
+    explicit AppchainParentFeedCore(VeldNode& node, std::function<app::Bytes()> network_status = {},
+                                    std::function<void(const Block&)> relay = {},
+                                    std::function<void(const Transaction&)> relay_transaction = {})
+        : node_(node), network_status_(std::move(network_status)), relay_(std::move(relay)),
           relay_transaction_(std::move(relay_transaction)) {
         RequireValidated_();
         app::need(node_.GetChain().GetBlock(0).GetHash() == CreateGenesisBlock().GetHash(),
@@ -65,7 +65,7 @@ class AppchainParentFeedCore {
         if (op == 0)
             return Status_();
         if (op == 4) {
-            app::need(bool(network_status_),"parent acquisition is not running");
+            app::need(bool(network_status_), "parent acquisition is not running");
             return network_status_();
         }
         if (op == 3) {
@@ -78,27 +78,46 @@ class AppchainParentFeedCore {
             return out.b;
         }
         if (op == 6) {
-            app::need(bool(network_status_) && bool(relay_transaction_),"networked settlement relay required");
-            const auto request=AppchainParentTransaction::Decode(body);
-            const auto health=network_status_();app::Reader network{health};
-            app::need(network.raw(5)==app::Bytes({'V','P','N','H',1}) &&
-                      network.raw(32)==app::Bytes(request.genesis.begin(),request.genesis.end()) &&
-                      app::bridge::Anchor::read(network)==request.parent &&
-                      network.n(1)==1 && network.n(1)==1 && network.n(2)>=2,
+            app::need(bool(network_status_) && bool(relay_transaction_),
+                      "networked settlement relay required");
+            const auto request = AppchainParentTransaction::Decode(body);
+            const auto health = network_status_();
+            app::Reader network{health};
+            app::need(network.raw(5) == app::Bytes({'V', 'P', 'N', 'H', 1}) &&
+                          network.raw(32) ==
+                              app::Bytes(request.genesis.begin(), request.genesis.end()) &&
+                          app::bridge::Anchor::read(network) == request.parent &&
+                          network.n(1) == 1 && network.n(1) == 1 && network.n(2) >= 2,
                       "current ready outbound parent network required");
-            const auto verified=network.n(8),sync=network.n(8),valid=network.n(8);network.end();
-            app::need(verified>=request.parent.height && sync<=request.parent.height && valid>5000 && valid<UINT64_MAX,
+            const auto verified = network.n(8), sync = network.n(8), valid = network.n(8);
+            network.end();
+            app::need(verified >= request.parent.height && sync <= request.parent.height &&
+                          valid > 5000 && valid < UINT64_MAX,
                       "fresh outbound parent observations required");
-            const auto admitted=AdmitAppchainParentTransaction(*transition,chain,node_.GetMempoolMut(),request);
-            bool relayed=false;
+            const auto admitted =
+                AdmitAppchainParentTransaction(*transition, chain, node_.GetMempoolMut(), request);
+            bool relayed = false;
             // Admission may already have occurred when connectivity fails.
             // Report that outcome rather than implying a side-effect-free refusal.
-            try {relay_transaction_(admitted.transaction);relayed=true;} catch (const app::Invalid&) {}
-            if(node_.FailStopRequired())throw std::runtime_error("parent durability failed after settlement admission");
-            app::Writer out;out.raw(app::Bytes{'V','P','R','T',1});out.raw(request.genesis);
-            request.parent.write(out);out.raw(request.descriptor);out.raw(request.bridge);
-            out.raw(admitted.transaction.GetTxID());out.n(request.fee,8);
-            out.n(1,1);out.n(relayed,1);out.n(admitted.duplicate,1);return out.b;
+            try {
+                relay_transaction_(admitted.transaction);
+                relayed = true;
+            } catch (const app::Invalid&) {
+            }
+            if (node_.FailStopRequired())
+                throw std::runtime_error("parent durability failed after settlement admission");
+            app::Writer out;
+            out.raw(app::Bytes{'V', 'P', 'R', 'T', 1});
+            out.raw(request.genesis);
+            request.parent.write(out);
+            out.raw(request.descriptor);
+            out.raw(request.bridge);
+            out.raw(admitted.transaction.GetTxID());
+            out.n(request.fee, 8);
+            out.n(1, 1);
+            out.n(relayed, 1);
+            out.n(admitted.duplicate, 1);
+            return out.b;
         }
         const uint64_t height = in.n(8);
         Hash256 expected{};
@@ -131,32 +150,37 @@ class AppchainParentFeedCore {
 #ifdef VELD_FLEET_NO_MINE
             throw app::Invalid("fleet appchain mining relay is disabled");
 #else
-            app::need(bool(relay_) && AppchainBridgeActive(height),"active local mining relay required");
-            auto permit=chain.AcquireConsensusTransitionGuard();
-            block.height=height;
-            if (chain.HasBlockAtHeight(height,HashToHex(expected))) {
-                app::need(chain.GetBlock(height).Serialize()==bytes,"retained mined block differs");
-                relay_(block);return Status_();
+            app::need(bool(relay_) && AppchainBridgeActive(height),
+                      "active local mining relay required");
+            auto permit = chain.AcquireConsensusTransitionGuard();
+            block.height = height;
+            if (chain.HasBlockAtHeight(height, HashToHex(expected))) {
+                app::need(chain.GetBlock(height).Serialize() == bytes,
+                          "retained mined block differs");
+                relay_(block);
+                return Status_();
             }
             const auto carrier = chain.AppAuxiliaryCarrierIndex(block);
-            app::need(carrier.has_value() && chain.AppAuxiliaryTemplateUnderTransition(block,*carrier),
+            app::need(carrier.has_value() &&
+                          chain.AppAuxiliaryTemplateUnderTransition(block, *carrier),
                       "mined parent is not the validated current auxiliary template");
 #endif
         }
         // Never supply a skip-validation or historical-PoW bypass argument.
-        const auto admission = chain.AddBlockDirect(
-            block, false, true, false, mining::PowAdmissionContext::Internal());
+        const auto admission = chain.AddBlockDirect(block, false, true, false,
+                                                    mining::PowAdmissionContext::Internal());
         app::need(admission.IsAccepted(), "public parent block admission refused");
         transition.emplace(chain.AcquireConsensusTransitionGuard());
         RequireValidated_();
-        if (op == 5) relay_(block);
+        if (op == 5)
+            relay_(block);
         return Status_();
     }
 };
 
 // The public process and isolated tests share exact bounded pipe framing.
 inline void ServeAppchainParentFeed(FILE* input, FILE* output, VeldNode& node,
-                                   AppchainParentFeedCore& feed) {
+                                    AppchainParentFeedCore& feed) {
     for (;;) {
         uint8_t size_bytes[4];
         const size_t got = fread(size_bytes, 1, 4, input);
@@ -165,8 +189,7 @@ inline void ServeAppchainParentFeed(FILE* input, FILE* output, VeldNode& node,
         app::need(got == 4, "truncated public parent frame");
         app::Reader size{std::span(size_bytes, 4)};
         const uint64_t count = size.n(4);
-        app::need(count > 0 && count <= 41ULL + veld::MAX_BLOCK_SIZE,
-                  "public parent frame bound");
+        app::need(count > 0 && count <= 41ULL + veld::MAX_BLOCK_SIZE, "public parent frame bound");
         uint8_t op = 0;
         app::need(fread(&op, 1, 1, input) == 1 &&
                       veld::AppchainParentFeedCore::FrameSizeAllowed(op, count - 1),

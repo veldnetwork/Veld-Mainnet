@@ -48,9 +48,9 @@ static_assert(!APPCHAIN_BRIDGE_ENABLED);
 
 int main() {
     try {
-        for (uint64_t h : std::array<uint64_t, 17>{0, 2879, 2880, 3839, 3840, 9499, 9500,
-                                                  34749, 34750, 34751, 34800, 700800, 700801,
-                                                  1401600, 1401601, 2102401, UINT64_MAX}) {
+        for (uint64_t h : std::array<uint64_t, 17>{0, 2879, 2880, 3839, 3840, 9499, 9500, 34749,
+                                                   34750, 34751, 34800, 700800, 700801, 1401600,
+                                                   1401601, 2102401, UINT64_MAX}) {
             const bool active = expected_activation != 0 && h >= 34750;
             Check(MinerFeesActive(h) == active, "miner fee boundary");
             Check(ValidatorBondPolicyActive(h) == active, "validator policy boundary");
@@ -63,11 +63,14 @@ int main() {
                   "finality equal weight");
             Check(ValidatorGovernanceBondFloor(h) == (active ? 25000ULL : 50000ULL) * VELD_UNITS,
                   "governance bond floor");
-            Check(SubsidyHalvings(h) == (active ? (h >= 1401601 ? 2 : h >= 700801 ? 1 : 0) : 0),
+            Check(SubsidyHalvings(h) == (active ? (h >= 1401601  ? 2
+                                                   : h >= 700801 ? 1
+                                                                 : 0)
+                                                : 0),
                   "halving boundary");
             Check(CoMiningRetired(h) == (active && h >= 700801), "retirement boundary");
-            for (uint64_t supply : std::array<uint64_t, 4>{0, STAKING_UNLOCK_SUPPLY,
-                                                          MAX_SUPPLY_UNITS - 17, MAX_SUPPLY_UNITS}) {
+            for (uint64_t supply : std::array<uint64_t, 4>{
+                     0, STAKING_UNLOCK_SUPPLY, MAX_SUPPLY_UNITS - 17, MAX_SUPPLY_UNITS}) {
                 const auto reward = ScheduledBlockSubsidy(h);
                 const auto issuance = ComputeCoinbaseAllocation(h, reward, supply, 0);
                 const auto paid = ComputeCoinbaseAllocation(h, reward, supply, 10001);
@@ -87,8 +90,8 @@ int main() {
                               paid->endorsement == issuance->endorsement,
                           "historical fees to vault");
                 } else {
-                    Check(paid->miner == 5001 && paid->vault == 4000 &&
-                              paid->endorsement == 1000 && paid->pool == 0,
+                    Check(paid->miner == 5001 && paid->vault == 4000 && paid->endorsement == 1000 &&
+                              paid->pool == 0,
                           "historical post-cap allocation");
                 }
             }

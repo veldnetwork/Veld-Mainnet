@@ -18,7 +18,7 @@ def section(begin, end):
     found = re.search(pattern(begin), source)
     if found is None:
         raise ValueError('Missing function: ' + begin)
-    finish = re.search(pattern(end), source[found.start():])
+    finish = re.search(pattern(end), source[found.start() :])
     if finish is None:
         raise ValueError('Missing next function: ' + end)
     return source[found.start() : found.start() + finish.start()]

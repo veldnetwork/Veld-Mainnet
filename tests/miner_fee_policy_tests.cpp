@@ -44,7 +44,8 @@ Amounts HistoricalOracle(uint64_t height, uint64_t supply, uint64_t fees) {
 }
 Amounts Oracle(uint64_t height, uint64_t supply, uint64_t fees) {
     // Independently preserve the old issuance allocation, then award the fee.
-    if (height < 4000) return HistoricalOracle(height, supply, fees);
+    if (height < 4000)
+        return HistoricalOracle(height, supply, fees);
     auto out = HistoricalOracle(height, supply, 0);
 #ifdef VELD_SUBSIDY_TEST_HEIGHT
     if (height >= FIRST_HALVING_HEIGHT && height % 100 != 0) {
@@ -197,7 +198,8 @@ int main() {
                             {{owner.GetP2PKHScript(), allocation.miner},
                              {AddressToScript(PoolAddressAtHeight(height)), allocation.pool},
                              {AddressToScript(VaultAddressAtHeight(height)), allocation.vault},
-                             {AddressToScript(EndorsementPoolAddressAtHeight(height)), allocation.endorse}},
+                             {AddressToScript(EndorsementPoolAddressAtHeight(height)),
+                              allocation.endorse}},
                             "Veld block " + std::to_string(height));
                         // Integer-rounded fee-only allocations can coincide for
                         // tiny fees. Refuse only byte-distinct former policies.

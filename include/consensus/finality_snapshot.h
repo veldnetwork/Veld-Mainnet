@@ -82,7 +82,7 @@ inline EpochSnapshot BuildEpochSnapshot(const ValidatorRegistry& reg, uint64_t e
         e.address = r.address;
         e.registered_height = r.registered_height;
         e.weight = BondPerKeyAt(snapshot_height); // min == cap; custody principal is unchanged
-        e.pubkey_hex = r.pubkey_hex;   // resolvable, not re-transmitted
+        e.pubkey_hex = r.pubkey_hex;              // resolvable, not re-transmitted
         s.entries.push_back(e);
     }
 

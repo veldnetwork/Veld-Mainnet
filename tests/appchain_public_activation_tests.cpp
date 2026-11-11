@@ -9,7 +9,8 @@
 #if !defined(VELD_PUBLIC_RELEASE) || !defined(VELD_PUBLIC_MAINNET) || !defined(VELD_MAINNET_POW)
 #error "This test requires the actual public mainnet build profile"
 #endif
-#if defined(VELD_APPCHAIN_BRIDGE_DEVNET) || defined(VELD_TEST_HOOKS) || defined(VELD_TEST_CHAIN_BUILD)
+#if defined(VELD_APPCHAIN_BRIDGE_DEVNET) || defined(VELD_TEST_HOOKS) ||                            \
+    defined(VELD_TEST_CHAIN_BUILD)
 #error "The public activation test cannot use development activation or test hooks"
 #endif
 
@@ -34,22 +35,29 @@ int main(int argc, char** argv) {
         const br::State empty;
         if constexpr (!veld::APPCHAIN_BRIDGE_ENABLED) {
             check(!veld::AppchainBridgeActive(0), "Disabled source activated at zero");
-            check(!veld::AppchainBridgeActive(UINT64_MAX), "Disabled source activated at max height");
-            check(!veld::AppchainBridgeDescriptorAllowed(identity), "Disabled source accepted a descriptor");
-            check(veld::state_digest::WithAppchainBridge(UINT64_MAX, previous, empty.digest()) == previous,
+            check(!veld::AppchainBridgeActive(UINT64_MAX),
+                  "Disabled source activated at max height");
+            check(!veld::AppchainBridgeDescriptorAllowed(identity),
+                  "Disabled source accepted a descriptor");
+            check(veld::state_digest::WithAppchainBridge(UINT64_MAX, previous, empty.digest()) ==
+                      previous,
                   "Disabled source changed the historical digest");
         } else {
             const auto height = veld::APPCHAIN_BRIDGE_ACTIVATION_HEIGHT;
             app::need(height > 1 && height < UINT64_MAX, "Bounded test activation required");
-            check(!veld::AppchainBridgeActive(height - 1), "Activation occurred before the source height");
+            check(!veld::AppchainBridgeActive(height - 1),
+                  "Activation occurred before the source height");
             check(veld::AppchainBridgeActive(height), "Activation missing at the source height");
-            check(veld::AppchainBridgeActive(height + 1), "Activation missing after the source height");
-            check(veld::AppchainBridgeDescriptorAllowed(identity), "Selected public descriptor refused");
+            check(veld::AppchainBridgeActive(height + 1),
+                  "Activation missing after the source height");
+            check(veld::AppchainBridgeDescriptorAllowed(identity),
+                  "Selected public descriptor refused");
             check(!veld::AppchainBridgeDescriptorAllowed({}), "Empty descriptor accepted");
             for (size_t byte = 0; byte < identity.size(); ++byte) {
                 auto other = identity;
                 other[byte] ^= 1;
-                check(!veld::AppchainBridgeDescriptorAllowed(other), "Different descriptor accepted");
+                check(!veld::AppchainBridgeDescriptorAllowed(other),
+                      "Different descriptor accepted");
             }
             const app::Bytes ordinary = [] {
                 app::Bytes bytes{0xc0, 1, 48};
@@ -62,7 +70,9 @@ int main(int argc, char** argv) {
             context.coin = [&](const br::Outpoint&) -> std::optional<br::Coin> {
                 return br::Coin{1000000, height - 2, ordinary, false};
             };
-            context.ordinaryFunding = [](const app::Bytes& script) { return veld::IsSha384KeyScript(script); };
+            context.ordinaryFunding = [](const app::Bytes& script) {
+                return veld::IsSha384KeyScript(script);
+            };
             auto registration = [&](const app::Committee& selected) {
                 app::Writer payload;
                 payload.str(selected.encode(), 20000);
@@ -79,18 +89,25 @@ int main(int argc, char** argv) {
             auto state = empty;
             state.apply(valid, context);
             check(state.digest() == empty.digest(), "Pre-activation kernel state changed");
-            check(veld::state_digest::WithAppchainBridge(height - 1, previous, empty.digest()) == previous,
+            check(veld::state_digest::WithAppchainBridge(height - 1, previous, empty.digest()) ==
+                      previous,
                   "Pre-activation historical digest changed");
             context.height = height;
             state.apply(valid, context);
-            check(state.records.size() == 1 && state.records.at(committee.bridge).committee.id() == identity,
+            check(state.records.size() == 1 &&
+                      state.records.at(committee.bridge).committee.id() == identity,
                   "Selected descriptor registration missing");
             check(state.totalReserve == 0, "Registration fabricated backing");
             const auto before = state.digest();
-            auto refuses = [&](const veld::Transaction& tx, const br::Context& selected, const char* reason) {
+            auto refuses = [&](const veld::Transaction& tx, const br::Context& selected,
+                               const char* reason) {
                 auto trial = empty;
                 bool refused = false;
-                try { trial.apply(tx, selected); } catch (const std::exception&) { refused = true; }
+                try {
+                    trial.apply(tx, selected);
+                } catch (const std::exception&) {
+                    refused = true;
+                }
                 check(refused && trial.digest() == empty.digest(), reason);
             };
             auto other = committee;
@@ -103,22 +120,32 @@ int main(int argc, char** argv) {
             wrongParent.genesis[0] ^= 1;
             refuses(valid, wrongParent, "Different parent registered or mutated state");
             bool duplicateRefused = false;
-            try { state.apply(valid, context); } catch (const std::exception&) { duplicateRefused = true; }
-            check(duplicateRefused && state.digest() == before, "Duplicate registration changed state");
-            const auto activeDigest = veld::state_digest::WithAppchainBridge(height, previous, before);
+            try {
+                state.apply(valid, context);
+            } catch (const std::exception&) {
+                duplicateRefused = true;
+            }
+            check(duplicateRefused && state.digest() == before,
+                  "Duplicate registration changed state");
+            const auto activeDigest =
+                veld::state_digest::WithAppchainBridge(height, previous, before);
             check(activeDigest != previous, "Active state omitted bridge commitment");
-            check(activeDigest != veld::state_digest::WithAppchainBridge(height, previous, empty.digest()),
+            check(activeDigest !=
+                      veld::state_digest::WithAppchainBridge(height, previous, empty.digest()),
                   "Active digest did not bind the bridge state");
             app::Bytes preimage(previous.begin(), previous.end());
             preimage.insert(preimage.end(), before.begin(), before.end());
-            for (unsigned i = 0; i < 8; ++i) preimage.push_back(uint8_t(height >> (i * 8)));
+            for (unsigned i = 0; i < 8; ++i)
+                preimage.push_back(uint8_t(height >> (i * 8)));
             preimage.insert(preimage.end(), identity.begin(), identity.end());
-            check(activeDigest == veld::state_digest::sha256_domain("VELD_STATE_DIGEST_v9|", preimage),
+            check(activeDigest ==
+                      veld::state_digest::sha256_domain("VELD_STATE_DIGEST_v9|", preimage),
                   "Active state digest differs from explicit encoding");
         }
-        std::cout << "{\"status\":\"PASS_PUBLIC_ACTIVATION_KERNEL\",\"checks\":" << checks
-                  << ",\"enabled\":" << (veld::APPCHAIN_BRIDGE_ENABLED ? "true" : "false")
-                  << ",\"full_chain_qualification\":false,\"signatures_tested\":false,\"network_started\":false}\n";
+        std::cout
+            << "{\"status\":\"PASS_PUBLIC_ACTIVATION_KERNEL\",\"checks\":" << checks
+            << ",\"enabled\":" << (veld::APPCHAIN_BRIDGE_ENABLED ? "true" : "false")
+            << ",\"full_chain_qualification\":false,\"signatures_tested\":false,\"network_started\":false}\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

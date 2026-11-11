@@ -12,10 +12,13 @@ int main() {
 #if defined(VELD_SUBSIDY_TEST_HEIGHT) || defined(VELD_PUBLIC_MAINNET)
     check(ordinary.allocation.subsidy == 156963470);
     check(ordinary.Fields().find("\"subsidy_halvings\":1") != std::string::npos);
-    check(SubsidyRulesHtml(SUBSIDY_ACTIVATION_HEIGHT).find("schedule is active") != std::string::npos);
-    check(SubsidyRulesHtml(SUBSIDY_ACTIVATION_HEIGHT - 1).find(
-              "activates at block " + std::to_string(SUBSIDY_ACTIVATION_HEIGHT)) != std::string::npos);
-    check(FeeRulesHtml(MINER_FEE_ACTIVATION_HEIGHT).find("go to the block winner") != std::string::npos);
+    check(SubsidyRulesHtml(SUBSIDY_ACTIVATION_HEIGHT).find("schedule is active") !=
+          std::string::npos);
+    check(SubsidyRulesHtml(SUBSIDY_ACTIVATION_HEIGHT - 1)
+              .find("activates at block " + std::to_string(SUBSIDY_ACTIVATION_HEIGHT)) !=
+          std::string::npos);
+    check(FeeRulesHtml(MINER_FEE_ACTIVATION_HEIGHT).find("go to the block winner") !=
+          std::string::npos);
     check(SubsidyView::Next(1401600, STAKING_UNLOCK_SUPPLY).allocation.subsidy == 78481735);
 #else
     check(ordinary.allocation.subsidy == 313926940);

@@ -13,27 +13,49 @@ from .protocol import Busy, Refused
 class BackendHttpTests(unittest.TestCase):
     def test_auxiliary_request_retains_existing_template_and_renewal_contract(self):
         node = Node('http://127.0.0.1:32772', Path('not-read'), 'b' * 64)
-        template = dict(block_hex=bytes(92).hex(),work_binding='bound',work_token='token',
-                        work_ttl_ms=5000,height=24960,target='01'*32,prev_block_hash='02'*32,
-                        reserved_miner_destination=False,miner_receipts=[])
-        with patch.object(node,'check_chain'),patch.object(node,'call',return_value=template) as call:
-            result=node.template('address',carrier=b'signed',timestamp=123,fee_cap=100000)
-            self.assertEqual(result,template)
-            call.assert_called_once_with('getblocktemplate','address',b'signed'.hex(),'123','100000')
-            call.reset_mock();node.renew(result,'address')
-            self.assertEqual(call.call_args.args[:2],('getblocktemplate','address'))
-            self.assertEqual(len(call.call_args.args),3)
-            self.assertEqual(len(call.call_args.args[2]),64)
+        template = dict(
+            block_hex=bytes(92).hex(),
+            work_binding='bound',
+            work_token='token',
+            work_ttl_ms=5000,
+            height=24960,
+            target='01' * 32,
+            prev_block_hash='02' * 32,
+            reserved_miner_destination=False,
+            miner_receipts=[],
+        )
+        with (
+            patch.object(node, 'check_chain'),
+            patch.object(node, 'call', return_value=template) as call,
+        ):
+            result = node.template('address', carrier=b'signed', timestamp=123, fee_cap=100000)
+            self.assertEqual(result, template)
+            call.assert_called_once_with(
+                'getblocktemplate', 'address', b'signed'.hex(), '123', '100000'
+            )
+            call.reset_mock()
+            node.renew(result, 'address')
+            self.assertEqual(call.call_args.args[:2], ('getblocktemplate', 'address'))
+            self.assertEqual(len(call.call_args.args), 3)
+            self.assertEqual(len(call.call_args.args[2]), 64)
 
     def test_auxiliary_invalid_request_cannot_reach_rpc(self):
-        node=Node('http://127.0.0.1:32772',Path('not-read'),'b'*64)
-        options=dict(carrier=b'signed',timestamp=123,fee_cap=100000)
-        with patch.object(node,'check_chain') as chain,patch.object(node,'call') as call:
-            for update in (dict(carrier=b''),dict(carrier=b'x'*24577),dict(timestamp=True),
-                           dict(timestamp=0),dict(fee_cap=-1),dict(fee_cap=True),dict(identity='a'*64)):
-                with self.subTest(update=update),self.assertRaises(Refused):
-                    node.template('address',**{**options,**update})
-            chain.assert_not_called();call.assert_not_called()
+        node = Node('http://127.0.0.1:32772', Path('not-read'), 'b' * 64)
+        options = dict(carrier=b'signed', timestamp=123, fee_cap=100000)
+        with patch.object(node, 'check_chain') as chain, patch.object(node, 'call') as call:
+            for update in (
+                dict(carrier=b''),
+                dict(carrier=b'x' * 24577),
+                dict(timestamp=True),
+                dict(timestamp=0),
+                dict(fee_cap=-1),
+                dict(fee_cap=True),
+                dict(identity='a' * 64),
+            ):
+                with self.subTest(update=update), self.assertRaises(Refused):
+                    node.template('address', **{**options, **update})
+            chain.assert_not_called()
+            call.assert_not_called()
 
     def test_funds_index_requires_explicit_operational_native_capability(self):
         """Capability schema fixture; the native indexed fork run is separate."""

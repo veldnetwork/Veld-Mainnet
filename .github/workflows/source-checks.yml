@@ -233,7 +233,7 @@ jobs:
           set -euo pipefail
           for profile in VELD_PUBLIC_MAINNET VELD_PUBLIC_TESTNET; do
             c++ -std=c++20 -O1 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -D"$profile" \
-              -Iinclude tests/compiled_checkpoint_tests.cpp -o "$RUNNER_TEMP/checkpoints-$profile"
+              -Iinclude -Ivendor/pqc tests/compiled_checkpoint_tests.cpp -o "$RUNNER_TEMP/checkpoints-$profile"
             "$RUNNER_TEMP/checkpoints-$profile"
           done
       - name: Compile and run mining nonce tests

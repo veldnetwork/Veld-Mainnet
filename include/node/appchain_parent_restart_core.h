@@ -6,9 +6,9 @@ namespace veld {
 // This private parent process keeps its reviewed bootstrap anchor fixed while
 // its own fully validated durable tip advances. The returned tip is an input
 // to mandatory replay, never a cached validation verdict.
-inline db::VeldDB::ChainTip ReadAppchainParentReplayTip(
-    const std::filesystem::path& directory, uint64_t anchor_height,
-    const std::string& anchor_hash) {
+inline db::VeldDB::ChainTip ReadAppchainParentReplayTip(const std::filesystem::path& directory,
+                                                        uint64_t anchor_height,
+                                                        const std::string& anchor_hash) {
     app::need(anchor_height > 0 && anchor_height < UINT64_MAX &&
                   db::IsCanonicalHash256Text(anchor_hash),
               "invalid reviewed public parent anchor");
@@ -16,8 +16,7 @@ inline db::VeldDB::ChainTip ReadAppchainParentReplayTip(
               "public parent replay is disabled during snapshot recovery");
     const auto base = directory / "db";
     for (const auto& path : {directory, base, base / "blocks", base / "utxo", base / "index"}) {
-        app::need(std::filesystem::is_directory(path) &&
-                      !std::filesystem::is_symlink(path) &&
+        app::need(std::filesystem::is_directory(path) && !std::filesystem::is_symlink(path) &&
                       std::filesystem::canonical(path) == path,
                   "existing physical public parent database required");
     }
@@ -31,12 +30,12 @@ inline db::VeldDB::ChainTip ReadAppchainParentReplayTip(
     return *tip;
 }
 
-inline void ValidateAppchainParentFromAnchor(
-    VeldNode& node, const db::VeldDB::ChainTip& captured_tip,
-    uint64_t anchor_height, const std::string& anchor_hash) {
+inline void ValidateAppchainParentFromAnchor(VeldNode& node,
+                                             const db::VeldDB::ChainTip& captured_tip,
+                                             uint64_t anchor_height,
+                                             const std::string& anchor_hash) {
     app::need(anchor_height > 0 && anchor_height <= captured_tip.height &&
-                  captured_tip.height < UINT64_MAX &&
-                  db::IsCanonicalHash256Text(anchor_hash) &&
+                  captured_tip.height < UINT64_MAX && db::IsCanonicalHash256Text(anchor_hash) &&
                   db::IsCanonicalHash256Text(captured_tip.tip_hash),
               "exact public parent replay inputs required");
     // The unchanged snapshot validator checks the exact captured disk tip,

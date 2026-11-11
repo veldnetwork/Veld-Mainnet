@@ -56,14 +56,16 @@ Block Candidate(VeldNode& node, const RealKeyPair& owner, uint64_t nonce) {
 void Accept(VeldNode& node, const Block& block, const char* label = "node") {
     const bool accepted = node.TestIngestDStateQualificationFrame(block.Serialize(), block.height);
     Require(accepted, std::string(label) + " canonical admission failed at " +
-                std::to_string(block.height) + " current=" + std::to_string(node.GetChain().Height()) +
-                ": " + Blockchain::GetLastRejectTag());
+                          std::to_string(block.height) +
+                          " current=" + std::to_string(node.GetChain().Height()) + ": " +
+                          Blockchain::GetLastRejectTag());
     if (block.height == activation - 1) {
         const auto vault = node.TestVaultAccountingSnapshot();
-        const auto found = std::find_if(vault.log.begin(), vault.log.end(), [&](const VaultEntry& entry) {
-            return entry.label == "fees block " + std::to_string(block.height) &&
-                   entry.amount_units == MIN_TX_FEE + 17;
-        });
+        const auto found =
+            std::find_if(vault.log.begin(), vault.log.end(), [&](const VaultEntry& entry) {
+                return entry.label == "fees block " + std::to_string(block.height) &&
+                       entry.amount_units == MIN_TX_FEE + 17;
+            });
         Require(found != vault.log.end(), "historical vault fee income was lost");
     }
     if (block.height >= activation) {
@@ -107,15 +109,16 @@ void Fee(VeldNode& node, const RealKeyPair& owner, uint64_t amount) {
             std::string("signed fee transaction refused by mempool: ") +
                 Mempool::ResultToString(result));
 }
-void CheckFeeAllocation(VeldNode& node, const Block& block,
-                        const RealKeyPair& owner, uint64_t fee) {
+void CheckFeeAllocation(VeldNode& node, const Block& block, const RealKeyPair& owner,
+                        uint64_t fee) {
     const uint64_t subsidy = std::min(Blockchain::ExpectedBlockSubsidy(block.height),
-                                     MAX_SUPPLY_UNITS - node.GetChain().TotalSupplyUnits());
+                                      MAX_SUPPLY_UNITS - node.GetChain().TotalSupplyUnits());
     const bool periodic = block.height % VAULT_BLOCK_INTERVAL == 0;
     const bool locked = node.GetChain().TotalSupplyUnits() < STAKING_UNLOCK_SUPPLY;
     uint64_t miner = 0, vault = 0, pool = 0, endorsement = 0;
     Require(subsidy > 0, "this durable fixture must still issue subsidy");
-    if (periodic) vault = subsidy;
+    if (periodic)
+        vault = subsidy;
 #ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
     else if (block.height >= 4001) {
         vault = subsidy / 5;
@@ -127,15 +130,20 @@ void CheckFeeAllocation(VeldNode& node, const Block& block,
         miner = subsidy / 2;
         vault = subsidy - miner;
     } else {
-        pool = subsidy / 5; vault = subsidy / 5; endorsement = subsidy / 10;
+        pool = subsidy / 5;
+        vault = subsidy / 5;
+        endorsement = subsidy / 10;
         miner = subsidy - pool - vault - endorsement;
     }
-    if (block.height >= activation) miner += fee;
-    else vault += fee;
+    if (block.height >= activation)
+        miner += fee;
+    else
+        vault += fee;
     const auto paid = [&](const std::vector<uint8_t>& script) {
         uint64_t result = 0;
         for (const auto& output : block.transactions.front().outputs)
-            if (output.script_pubkey == script) result += output.value;
+            if (output.script_pubkey == script)
+                result += output.value;
         return result;
     };
     Require(paid(owner.GetP2PKHScript()) == miner, "miner fee allocation differs");
@@ -169,8 +177,8 @@ void CheckSubsidyBoundary(VeldNode& node, const Block& block) {
     Require(node.ConsensusStateDigest() == state, "refused old subsidy changed state");
 }
 #endif
-void RejectFormerFeeRouting(VeldNode& node, const Block& candidate,
-                           const RealKeyPair& owner, uint64_t fee) {
+void RejectFormerFeeRouting(VeldNode& node, const Block& candidate, const RealKeyPair& owner,
+                            uint64_t fee) {
     Require(candidate.height >= activation && fee > 0, "active fee fixture required");
     Block former = candidate;
     bool movedMiner = false, movedVault = false;
@@ -178,9 +186,11 @@ void RejectFormerFeeRouting(VeldNode& node, const Block& candidate,
     for (auto& output : former.transactions.front().outputs) {
         if (output.script_pubkey == owner.GetP2PKHScript()) {
             Require(output.value >= fee, "miner is missing the fee");
-            output.value -= fee; movedMiner = true;
+            output.value -= fee;
+            movedMiner = true;
         } else if (output.script_pubkey == vault) {
-            output.value += fee; movedVault = true;
+            output.value += fee;
+            movedVault = true;
         }
     }
     Require(movedMiner && movedVault, "expected coinbase recipients absent");
@@ -188,14 +198,18 @@ void RejectFormerFeeRouting(VeldNode& node, const Block& candidate,
     // Remove that zero output so this is a well-formed former policy, rather
     // than a malformed transaction rejected before allocation validation.
     auto& outputs = former.transactions.front().outputs;
-    outputs.erase(std::remove_if(outputs.begin(), outputs.end(), [&](const auto& output) {
-                      return output.value == 0 && output.script_pubkey == owner.GetP2PKHScript();
-                  }), outputs.end());
+    outputs.erase(std::remove_if(outputs.begin(), outputs.end(),
+                                 [&](const auto& output) {
+                                     return output.value == 0 &&
+                                            output.script_pubkey == owner.GetP2PKHScript();
+                                 }),
+                  outputs.end());
     former.transactions.front().InvalidateTxIDCache();
     former.UpdateMerkleRoot();
     Require(former.transactions.front().IsValid(), "former policy must be structurally valid");
     const auto state = node.ConsensusStateDigest();
-    Require(!node.GetChain().ValidateMiningCoinbase(former), "former fee routing accepted by mining");
+    Require(!node.GetChain().ValidateMiningCoinbase(former),
+            "former fee routing accepted by mining");
     Require(!node.TestIngestDStateQualificationFrame(former.Serialize(), former.height),
             "former fee routing accepted by block admission");
     Require(node.ConsensusStateDigest() == state, "refused former routing changed state");
@@ -226,7 +240,8 @@ int main(int argc, char** argv) {
         std::vector<Block> history;
         history.push_back(CreateGenesisBlock());
         for (uint64_t h = 1; h < activation; ++h) {
-            if (h == activation - 1) Fee(*direct, owner, MIN_TX_FEE + 17);
+            if (h == activation - 1)
+                Fee(*direct, owner, MIN_TX_FEE + 17);
             const auto block = Candidate(*direct, owner, h);
             if (h == activation - 1)
                 CheckFeeAllocation(*direct, block, owner, MIN_TX_FEE + 17);
@@ -243,7 +258,8 @@ int main(int argc, char** argv) {
             Accept(*direct, Candidate(*direct, owner, 100000 + h));
         Fee(*branch, owner, 6 * BLOCK_REWARD_UNITS + 1);
         for (uint64_t h = activation; h <= activation + 2; ++h) {
-            if (h == activation + 1) Fee(*branch, owner, 2 * MIN_TX_FEE + 1);
+            if (h == activation + 1)
+                Fee(*branch, owner, 2 * MIN_TX_FEE + 1);
             auto block = Candidate(*branch, owner, 200000 + h);
 #ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
             CheckSubsidyBoundary(*branch, block);
@@ -318,8 +334,8 @@ int main(int argc, char** argv) {
                 << ",\"tip\":\"" << HashToHex(branch->GetChain().TipCopy().GetHash())
                 << "\",\"digest\":\"" << HashToHex(digest)
                 << "\",\"network_started\":false,\"hash_work_bypassed\":true}\n";
-        std::cout << "PASS miner-fee disk-backed direct/reorg/independent replay/restart checks=" << checks
-                  << " height=" << height << '\n';
+        std::cout << "PASS miner-fee disk-backed direct/reorg/independent replay/restart checks="
+                  << checks << " height=" << height << '\n';
     } catch (const std::exception& e) {
         std::cerr << "FAIL " << e.what() << '\n';
         return 1;

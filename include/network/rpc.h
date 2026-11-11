@@ -41,6 +41,7 @@
 #include <filesystem>
 #include <string>
 #include <chrono>
+#include <thread>
 #include <mutex>
 #include <unordered_map>
 #include <functional>
@@ -837,8 +838,8 @@ class RpcServer {
     using MiningTemplatePreflightFn = std::function<bool(const Block&)>;
     // Called only while holding the canonical consensus transition guard.
     using MiningTemplateBuilderFn = std::function<Block(const std::vector<uint8_t>&)>;
-    using AuxiliaryTemplateBuilderFn = std::function<Block(
-        const Transaction&, const std::vector<uint8_t>&, uint64_t, uint64_t)>;
+    using AuxiliaryTemplateBuilderFn =
+        std::function<Block(const Transaction&, const std::vector<uint8_t>&, uint64_t, uint64_t)>;
     using RuntimeAdmissionFn = std::function<bool()>;
     using WorkAdmissionFn = std::function<work_admission::Decision(
         work_admission::Path, const work_admission::Subject&,
@@ -981,8 +982,8 @@ class RpcServer {
     };
 
     WalletState ComputeWalletState(const std::string& addr,
-            const std::function<void(const UTXO&)>& selected = {},
-            bool collect = true) const {
+                                   const std::function<void(const UTXO&)>& selected = {},
+                                   bool collect = true) const {
         WalletState w;
         auto script = AddressToScript(addr);
         if (script.empty())
@@ -1053,12 +1054,15 @@ class RpcServer {
                 w.immature_coinbase_units += u.value;
             if (locked) {
                 w.pending_out_units += u.value;
-                if (collect) w.pending_out_utxos.push_back(u);
+                if (collect)
+                    w.pending_out_utxos.push_back(u);
             }
             if (!immature && !locked && !active_backing) {
                 selectable_sum += u.value;
-                if (collect) w.selectable.push_back(u);
-                if (selected) selected(u);
+                if (collect)
+                    w.selectable.push_back(u);
+                if (selected)
+                    selected(u);
             }
         });
         std::sort(w.selectable.begin(), w.selectable.end(),
@@ -2913,7 +2917,8 @@ class RpcServer {
             if (params.size() > 1)
                 throw std::invalid_argument("Usage: getappchainbridgeinfo [bridge_id]");
             auto transition = chain_.AcquireConsensusTransitionGuard();
-            if (chain_.IsEmpty()) throw std::runtime_error("parent chain unavailable");
+            if (chain_.IsEmpty())
+                throw std::runtime_error("parent chain unavailable");
             const auto view = chain_.AppBridgeReadView();
             const auto next = app::add(view.anchor().height, 1);
             const bool active = AppchainBridgeActive(next);
@@ -2923,43 +2928,50 @@ class RpcServer {
                 const auto raw = app::unhex(params[0], 48);
                 if (raw.size() != 48 || app::hex(raw) != params[0])
                     throw std::invalid_argument("canonical 48-byte bridge id required");
-                app::Id id{}; std::copy(raw.begin(), raw.end(), id.begin()); selected = id;
+                app::Id id{};
+                std::copy(raw.begin(), raw.end(), id.begin());
+                selected = id;
             }
             for (const auto& [id, record] : view.state().records) {
-                if (selected && id != *selected) continue;
-                const auto last = record.latest == app::Id{} ? record.registered :
-                                  record.finalized.at(record.latest).finalized;
+                if (selected && id != *selected)
+                    continue;
+                const auto last = record.latest == app::Id{}
+                                      ? record.registered
+                                      : record.finalized.at(record.latest).finalized;
                 const bool stale = next < last || next - last >= app::bridge::STALE;
                 const bool approved = AppchainBridgeDescriptorAllowed(record.committee.id());
                 const auto remaining = app::bridge::CAP - view.state().totalReserve;
-                records.push_back(JB::Object({
-                    {"bridge_id", JB::String(app::hex(id))},
-                    {"descriptor_id", JB::String(app::hex(record.committee.id()))},
-                    {"child_genesis", JB::String(app::hex(record.committee.childGenesis))},
-                    {"can_deposit", JB::Bool(active && approved && !record.exitOnly && !stale && remaining > 0)},
-                    {"exit_only", JB::Bool(record.exitOnly)}, {"stale", JB::Bool(stale)},
-                    {"reserve_atoms", JB::Number(record.deposited - record.withdrawn)},
-                    {"remaining_capacity_atoms", JB::Number(remaining)},
-                    {"last_finalized_checkpoint", JB::String(app::hex(record.latest))},
-                    {"last_update_height", JB::Number(last)}
-                }));
+                records.push_back(JB::Object(
+                    {{"bridge_id", JB::String(app::hex(id))},
+                     {"descriptor_id", JB::String(app::hex(record.committee.id()))},
+                     {"child_genesis", JB::String(app::hex(record.committee.childGenesis))},
+                     {"can_deposit",
+                      JB::Bool(active && approved && !record.exitOnly && !stale && remaining > 0)},
+                     {"exit_only", JB::Bool(record.exitOnly)},
+                     {"stale", JB::Bool(stale)},
+                     {"reserve_atoms", JB::Number(record.deposited - record.withdrawn)},
+                     {"remaining_capacity_atoms", JB::Number(remaining)},
+                     {"last_finalized_checkpoint", JB::String(app::hex(record.latest))},
+                     {"last_update_height", JB::Number(last)}}));
             }
-            return JB::Object({
-                {"schema", JB::Number(uint64_t{1})}, {"active", JB::Bool(active)},
-                {"activation_height", APPCHAIN_BRIDGE_ENABLED ? JB::Number(APPCHAIN_BRIDGE_ACTIVATION_HEIGHT) : "null"},
-                {"parent_genesis", JB::String(HashToHex(view.genesis()))},
-                {"parent_height", JB::Number(view.anchor().height)},
-                {"parent_hash", JB::String(HashToHex(view.anchor().hash))},
-                {"deposit_confirmations", JB::Number(app::bridge::CONFIRMATIONS)},
-                {"checkpoint_delay_blocks", JB::Number(app::bridge::DELAY)},
-                {"total_reserve_atoms", JB::Number(view.state().totalReserve)},
-                {"bridges", JB::Array(records)}
-            });
+            return JB::Object(
+                {{"schema", JB::Number(uint64_t{1})},
+                 {"active", JB::Bool(active)},
+                 {"activation_height",
+                  APPCHAIN_BRIDGE_ENABLED ? JB::Number(APPCHAIN_BRIDGE_ACTIVATION_HEIGHT) : "null"},
+                 {"parent_genesis", JB::String(HashToHex(view.genesis()))},
+                 {"parent_height", JB::Number(view.anchor().height)},
+                 {"parent_hash", JB::String(HashToHex(view.anchor().hash))},
+                 {"deposit_confirmations", JB::Number(app::bridge::CONFIRMATIONS)},
+                 {"checkpoint_delay_blocks", JB::Number(app::bridge::DELAY)},
+                 {"total_reserve_atoms", JB::Number(view.state().totalReserve)},
+                 {"bridges", JB::Array(records)}});
         });
 
         methods_["prepareappchaindeposit"] = RpcMethod([this](const P& params) -> std::string {
             if (params.size() != 7)
-                throw std::invalid_argument("Usage: prepareappchaindeposit <fund_address> <bridge_id> <descriptor_id> <child_genesis> <beneficiary_id> <trading_veld> <fuel_backing_veld>");
+                throw std::invalid_argument(
+                    "Usage: prepareappchaindeposit <fund_address> <bridge_id> <descriptor_id> <child_genesis> <beneficiary_id> <trading_veld> <fuel_backing_veld>");
             auto transition = chain_.AcquireConsensusTransitionGuard();
             if (chain_.IsEmpty() || !AppchainBridgeActive(NextInclusionHeight(chain_.Height())))
                 throw std::runtime_error("native appchain bridge is not activated");
@@ -2967,15 +2979,19 @@ class RpcServer {
                 auto raw = app::unhex(encoded, 48);
                 if (raw.size() != 48 || app::hex(raw) != encoded)
                     throw std::invalid_argument("canonical 48-byte bridge identity required");
-                app::Id id{}; std::copy(raw.begin(), raw.end(), id.begin()); return id;
+                app::Id id{};
+                std::copy(raw.begin(), raw.end(), id.begin());
+                return id;
             };
             const auto bridge = parseId(params[1]), descriptor = parseId(params[2]),
                        child = parseId(params[3]), owner = parseId(params[4]);
             const auto view = chain_.AppBridgeReadView();
             const auto record = view.state().records.find(bridge);
-            if (record == view.state().records.end() || record->second.committee.id() != descriptor ||
+            if (record == view.state().records.end() ||
+                record->second.committee.id() != descriptor ||
                 record->second.committee.childGenesis != child)
-                throw std::runtime_error("selected bridge does not match the canonical descriptor and child chain");
+                throw std::runtime_error(
+                    "selected bridge does not match the canonical descriptor and child chain");
             const auto script = AddressToScript(params[0]);
             if (!app::bridge::ordinary(script) || ScriptToAddress(script) != params[0])
                 throw std::invalid_argument("canonical funding address required");
@@ -2987,45 +3003,53 @@ class RpcServer {
             std::vector<app::bridge::Outpoint> points;
             uint64_t gathered = 0;
             for (const auto& coin : wallet.selectable) {
-                if (gathered >= required || selected.size() == MAX_APPCHAIN_DEPOSIT_INPUTS) break;
-                selected.push_back(coin); points.push_back({coin.tx_hash, coin.output_index});
+                if (gathered >= required || selected.size() == MAX_APPCHAIN_DEPOSIT_INPUTS)
+                    break;
+                selected.push_back(coin);
+                points.push_back({coin.tx_hash, coin.output_index});
                 app::credit(gathered, coin.value);
             }
             if (gathered < required)
-                throw std::runtime_error("insufficient spendable funding within the deposit input limit");
+                throw std::runtime_error(
+                    "insufficient spendable funding within the deposit input limit");
             const auto prepared = appchain_deposit_detail::PrepareLocked(
                 transition, chain_, bridge, owner, trading, fuel, script, points);
             const auto& tx = prepared.transaction;
             std::vector<std::vector<uint8_t>> parents;
             std::vector<std::string> inputs;
             for (uint32_t i = 0; i < selected.size(); ++i) {
-                auto raw = AuthenticatedParentRaw(selected[i]); parents.push_back(raw);
-                inputs.push_back(JB::Object({
-                    {"index", JB::Number(uint64_t{i})},
-                    {"sighash_hex", JB::String(BytesToHex(ComputeSighash(tx, i, script)))},
-                    {"prev_script_hex", JB::String(BytesToHex(script))},
-                    {"value", JB::Number(selected[i].value)},
-                    {"parent_tx_hex", JB::String(BytesToHex(raw))}
-                }));
+                auto raw = AuthenticatedParentRaw(selected[i]);
+                parents.push_back(raw);
+                inputs.push_back(JB::Object(
+                    {{"index", JB::Number(uint64_t{i})},
+                     {"sighash_hex", JB::String(BytesToHex(ComputeSighash(tx, i, script)))},
+                     {"prev_script_hex", JB::String(BytesToHex(script))},
+                     {"value", JB::Number(selected[i].value)},
+                     {"parent_tx_hex", JB::String(BytesToHex(raw))}}));
             }
             const std::string identity = "VELD_APPCHAIN_DEPOSIT_V1|" + HashToHex(view.genesis()) +
-                "|" + params[1] + "|" + params[2] + "|" + params[3] + "|" + params[4] +
-                "|" + std::to_string(trading) + "|" + std::to_string(fuel);
-            const auto intent = offline_signing::MakeIntent(tx, parents, "APPCHAIN_DEPOSIT", params[4],
-                app::add(trading, fuel), params[0], prepared.change, identity);
-            return JB::Object({
-                {"unsigned_tx_hex", JB::String(BytesToHex(tx.Serialize()))},
-                {"inputs", JB::Array(inputs)}, {"signing_intent", SigningIntentJson(intent)},
-                {"operation_identity", JB::String(identity)},
-                {"total_input", JB::Number(prepared.totalInput)},
-                {"total_output", JB::Number(tx.TotalOutput())},
-                {"fee", JB::Number(uint64_t{MIN_TX_FEE})}, {"change", JB::Number(prepared.change)},
-                {"bridge_id", JB::String(params[1])}, {"descriptor_id", JB::String(params[2])},
-                {"child_genesis", JB::String(params[3])}, {"beneficiary_id", JB::String(params[4])},
-                {"trading_atoms", JB::Number(trading)}, {"fuel_backing_atoms", JB::Number(fuel)},
-                {"parent_height", JB::Number(view.anchor().height)},
-                {"parent_hash", JB::String(HashToHex(view.anchor().hash))}
-            });
+                                         "|" + params[1] + "|" + params[2] + "|" + params[3] + "|" +
+                                         params[4] + "|" + std::to_string(trading) + "|" +
+                                         std::to_string(fuel);
+            const auto intent = offline_signing::MakeIntent(tx, parents, "APPCHAIN_DEPOSIT",
+                                                            params[4], app::add(trading, fuel),
+                                                            params[0], prepared.change, identity);
+            return JB::Object({{"unsigned_tx_hex", JB::String(BytesToHex(tx.Serialize()))},
+                               {"inputs", JB::Array(inputs)},
+                               {"signing_intent", SigningIntentJson(intent)},
+                               {"operation_identity", JB::String(identity)},
+                               {"total_input", JB::Number(prepared.totalInput)},
+                               {"total_output", JB::Number(tx.TotalOutput())},
+                               {"fee", JB::Number(uint64_t{MIN_TX_FEE})},
+                               {"change", JB::Number(prepared.change)},
+                               {"bridge_id", JB::String(params[1])},
+                               {"descriptor_id", JB::String(params[2])},
+                               {"child_genesis", JB::String(params[3])},
+                               {"beneficiary_id", JB::String(params[4])},
+                               {"trading_atoms", JB::Number(trading)},
+                               {"fuel_backing_atoms", JB::Number(fuel)},
+                               {"parent_height", JB::Number(view.anchor().height)},
+                               {"parent_hash", JB::String(HashToHex(view.anchor().hash))}});
         });
 
         methods_["getstatedigest"] = RpcMethod([this](const P&) -> std::string {
@@ -3108,9 +3132,9 @@ class RpcServer {
             std::ostringstream j;
             j << "{"
               << "\"spec_version\":\""
-              << (AppchainBridgeActive(H) ? "VELD_STATE_DIGEST_v9" :
-                  btcveld::reserve::TRANSITION_V1_REQUIRED ? "VELD_STATE_DIGEST_v8"
-                                                           : "VELD_STATE_DIGEST_v7")
+              << (AppchainBridgeActive(H)                    ? "VELD_STATE_DIGEST_v9"
+                  : btcveld::reserve::TRANSITION_V1_REQUIRED ? "VELD_STATE_DIGEST_v8"
+                                                             : "VELD_STATE_DIGEST_v7")
               << "\","
               << "\"height\":" << H << ","
               << "\"tip_hash\":\"" << HashToHex(tip_hash) << "\","
@@ -3242,90 +3266,118 @@ class RpcServer {
         // page. Filters affect only the page, never the reserve total. This is
         // a read-only local-node contract; it grants no spending authority.
         methods_["getcustodyinventory"] = RpcMethod([this](const P& params) -> std::string {
-            if (params.size() != 5) throw std::invalid_argument("Expected address, confirmations, cursor, sources, page height");
+            if (params.size() != 5)
+                throw std::invalid_argument(
+                    "Expected address, confirmations, cursor, sources, page height");
             const auto decimal = [](const std::string& s, uint64_t maximum) {
                 if (s.empty() || s.size() > 10 || (s.size() > 1 && s[0] == '0') ||
                     s.find_first_not_of("0123456789") != std::string::npos)
                     throw std::invalid_argument("Canonical unsigned integer required");
                 const uint64_t n = std::stoull(s);
-                if (n > maximum) throw std::invalid_argument("Integer bound exceeded");
+                if (n > maximum)
+                    throw std::invalid_argument("Integer bound exceeded");
                 return n;
             };
             const auto source_key = [&](const std::string& s, bool wildcard) {
                 if (s.size() < 66 || s.size() > 75 || s[64] != ':' ||
-                    s.substr(0,64).find_first_not_of("0123456789abcdef") != std::string::npos)
+                    s.substr(0, 64).find_first_not_of("0123456789abcdef") != std::string::npos)
                     throw std::invalid_argument("Canonical source outpoint required");
-                if (!(wildcard && s.substr(65) == "*")) decimal(s.substr(65), UINT32_MAX);
+                if (!(wildcard && s.substr(65) == "*"))
+                    decimal(s.substr(65), UINT32_MAX);
             };
             auto script = AddressToScript(params[0]);
-            if (script.empty()) throw std::invalid_argument("Invalid custody address");
+            if (script.empty())
+                throw std::invalid_argument("Invalid custody address");
             const uint64_t minimum = decimal(params[1], 1000000);
-            if (!minimum) throw std::invalid_argument("Positive confirmations required");
+            if (!minimum)
+                throw std::invalid_argument("Positive confirmations required");
             const std::string& after = params[2];
-            if (!after.empty()) source_key(after, false);
+            if (!after.empty())
+                source_key(after, false);
             const std::string& filter = params[3];
-            if (filter.size() > 4863) throw std::invalid_argument("Bounded custody sources required");
+            if (filter.size() > 4863)
+                throw std::invalid_argument("Bounded custody sources required");
             std::unordered_set<std::string> sources;
             if (!filter.empty()) {
                 size_t start = 0;
                 do {
                     const size_t end = filter.find(',', start);
-                    const std::string key = filter.substr(start, end == std::string::npos ? end : end-start);
+                    const std::string key =
+                        filter.substr(start, end == std::string::npos ? end : end - start);
                     source_key(key, true);
                     if (!sources.insert(key).second || sources.size() > 64)
                         throw std::invalid_argument("Distinct bounded custody sources required");
-                    if (end == std::string::npos) break;
+                    if (end == std::string::npos)
+                        break;
                     start = end + 1;
                 } while (true);
             }
             auto transition_guard = AcquireRpcReadTransitionGuard(chain_);
             const uint64_t tip = chain_.Height();
-            const uint64_t page_height = params[4].empty() ? tip : decimal(params[4],UINT32_MAX);
-            if (page_height > tip) throw std::invalid_argument("Page height is ahead of tip");
+            const uint64_t page_height = params[4].empty() ? tip : decimal(params[4], UINT32_MAX);
+            if (page_height > tip)
+                throw std::invalid_argument("Page height is ahead of tip");
             const std::string block = chain_.GetBlockHashAtHeight(tip);
-            if (block.size() != 64) throw std::runtime_error("Canonical custody anchor unavailable");
+            if (block.size() != 64)
+                throw std::runtime_error("Canonical custody anchor unavailable");
             uint64_t amount = 0, count = 0;
-            std::map<std::string,UTXO> page;
-            const auto ws = ComputeWalletState(params[0], [&](const UTXO& u) {
-                const uint64_t confs = u.block_height <= tip ? tip-u.block_height+1 : 0;
-                if (confs < minimum) return;
-                if (amount > UINT64_MAX-u.value) throw std::runtime_error("Custody amount overflow");
-                amount += u.value; ++count;
-                const std::string key = UTXOKey(u.tx_hash,u.output_index);
-                if (u.block_height > page_height || key <= after || (!sources.empty() && !sources.count(key) &&
-                    !sources.count(HashToHex(u.tx_hash)+":*"))) return;
-                page.emplace(key,u);
-                // One sentinel proves whether another page exists. Do not
-                // allocate or serialize the rest of the address inventory.
-                if (page.size() > 65) page.erase(std::prev(page.end()));
-            }, false);
+            std::map<std::string, UTXO> page;
+            const auto ws = ComputeWalletState(
+                params[0],
+                [&](const UTXO& u) {
+                    const uint64_t confs = u.block_height <= tip ? tip - u.block_height + 1 : 0;
+                    if (confs < minimum)
+                        return;
+                    if (amount > UINT64_MAX - u.value)
+                        throw std::runtime_error("Custody amount overflow");
+                    amount += u.value;
+                    ++count;
+                    const std::string key = UTXOKey(u.tx_hash, u.output_index);
+                    if (u.block_height > page_height || key <= after ||
+                        (!sources.empty() && !sources.count(key) &&
+                         !sources.count(HashToHex(u.tx_hash) + ":*")))
+                        return;
+                    page.emplace(key, u);
+                    // One sentinel proves whether another page exists. Do not
+                    // allocate or serialize the rest of the address inventory.
+                    if (page.size() > 65)
+                        page.erase(std::prev(page.end()));
+                },
+                false);
             if (!StakeOutpointBackingActive(tip) && ws.staked_units)
                 throw std::runtime_error("Custody inventory requires exact stake backing");
             const bool complete = page.size() <= 64;
-            if (!complete) page.erase(std::prev(page.end()));
+            if (!complete)
+                page.erase(std::prev(page.end()));
             std::vector<std::string> items;
             for (const auto& item : page) {
                 const auto& u = item.second;
                 items.push_back(JB::Object({
-                    {"txid",JB::String(HashToHex(u.tx_hash))},
-                    {"vout",JB::Number((uint64_t)u.output_index)},
-                    {"value_units",JB::Number(u.value)},
-                    {"block_height",JB::Number(u.block_height)},
-                    {"confirmations",JB::Number(tip-u.block_height+1)},
+                    {"txid", JB::String(HashToHex(u.tx_hash))},
+                    {"vout", JB::Number((uint64_t)u.output_index)},
+                    {"value_units", JB::Number(u.value)},
+                    {"block_height", JB::Number(u.block_height)},
+                    {"confirmations", JB::Number(tip - u.block_height + 1)},
                 }));
             }
             return JB::Object({
-                {"version",JB::Number(uint64_t(1))}, {"complete",JB::Bool(true)},
-                {"address",JB::String(params[0])}, {"script_pubkey_hex",JB::String(BytesToHex(script))},
-                {"height",JB::Number(tip)}, {"block_hash",JB::String(block)},
-                {"minimum_confirmations",JB::Number(minimum)}, {"amount_units",JB::Number(amount)},
-                {"eligible_count",JB::Number(count)}, {"outpoint_count",JB::Number(ws.outpoint_count)},
-                {"pending_in_count",JB::Number(ws.pending_in_count)},
-                {"after",JB::String(after)}, {"sources",JB::String(filter)},
-                {"page_height",JB::Number(page_height)},
-                {"page_complete",JB::Bool(complete)},
-                {"next",JB::String(complete ? "" : page.rbegin()->first)},
-                {"coins",JB::Array(items)},
+                {"version", JB::Number(uint64_t(1))},
+                {"complete", JB::Bool(true)},
+                {"address", JB::String(params[0])},
+                {"script_pubkey_hex", JB::String(BytesToHex(script))},
+                {"height", JB::Number(tip)},
+                {"block_hash", JB::String(block)},
+                {"minimum_confirmations", JB::Number(minimum)},
+                {"amount_units", JB::Number(amount)},
+                {"eligible_count", JB::Number(count)},
+                {"outpoint_count", JB::Number(ws.outpoint_count)},
+                {"pending_in_count", JB::Number(ws.pending_in_count)},
+                {"after", JB::String(after)},
+                {"sources", JB::String(filter)},
+                {"page_height", JB::Number(page_height)},
+                {"page_complete", JB::Bool(complete)},
+                {"next", JB::String(complete ? "" : page.rbegin()->first)},
+                {"coins", JB::Array(items)},
             });
         });
 
@@ -7131,125 +7183,355 @@ class RpcServer {
             });
         };
 
-        methods_["preparegovproposal"] = RpcMethod([this, build_gov_tx_template,
-                                                    build_op_return_script](
-                                                       const P& params) -> std::string {
-            if (!gov_ || !gov_->GovernanceBondGateOpen(NextInclusionHeight(chain_.Height())))
-                throw std::runtime_error(
-                    "Governance is locked until the bonded-validator activation threshold is reached");
-            if (params.size() != 6 && params.size() != 7)
-                throw std::invalid_argument(
-                    "Usage: preparegovproposal ADDRESS [TYPE] TITLE DESCRIPTION PUBKEY_HEX SIGNATURE_HEX SIGNED_HEIGHT");
-            const bool typed_marker = params.size() == 7;
-            const std::string& address = params[0];
-            ProposalType proposal_type = ProposalType::GENERAL;
-            size_t offset = 1;
-            if (typed_marker) {
-                if (!GovernanceEngine::ParseProposalType(params[1], proposal_type))
-                    throw std::invalid_argument("TYPE must be general|protocol_upgrade");
-                offset = 2;
-            }
-            const std::string& title = params[offset];
-            const std::string& description = params[offset + 1];
-            const std::string& pubkey_hex = params[offset + 2];
-            const std::string& sig_hex = params[offset + 3];
-            const uint64_t signed_height =
-                ParseCanonicalRpcU64OrThrow(params[offset + 4], "signed_height");
-            if (title.size() > 200)
-                throw std::invalid_argument("Title too long (max 200 chars)");
-            if (description.size() > 4096)
-                throw std::invalid_argument("Description too long (max 4096 chars)");
-            uint64_t tip = (uint64_t)chain_.Height();
-            if (signed_height > tip + 1)
-                throw std::runtime_error("signed_height is ahead of chain tip");
-            if (tip > signed_height + GOV_SIG_REPLAY_WINDOW_BLOCKS)
-                throw std::runtime_error("signed_height too stale; re-sign against current tip");
-            const bool framed = SecurityStateMigrationActive(NextInclusionHeight(tip));
-            const std::string challenge = GovernanceEngine::BuildProposalChallenge(
-                proposal_type, address, title, description, signed_height, typed_marker, framed);
-            if (!GovernanceEngine::VerifyGovSig(pubkey_hex, sig_hex, challenge))
-                throw std::runtime_error("Invalid signature");
-            if (GovernanceEngine::PubKeyHexToAddress(pubkey_hex) != address)
-                throw std::runtime_error("Public key does not derive to claimed address");
-            const bool proposal_pending =
-                mempool_.HasPendingOpReturn("VELD_GOV|P|" + address + "|") ||
-                mempool_.HasPendingOpReturn("VELD_GOV|P|general|" + address + "|") ||
-                mempool_.HasPendingOpReturn("VELD_GOV|P|protocol_upgrade|" + address + "|") ||
-                mempool_.HasPendingOpReturn("VELD_GOV|P2|general|" + address + "|") ||
-                mempool_.HasPendingOpReturn("VELD_GOV|P2|protocol_upgrade|" + address + "|");
-            if (proposal_pending)
-                throw std::runtime_error("A governance proposal from this address is already "
-                                         "pending in the mempool. Wait for it to be mined "
-                                         "(target block interval " +
-                                         std::to_string(TARGET_BLOCK_TIME) +
-                                         " seconds) before submitting another.");
-            uint64_t ts = (uint64_t)std::time(nullptr);
-            std::string payload =
-                framed ? GovernanceEngine::BuildFramedProposalOp(proposal_type, address, title,
-                                                                 description, signed_height,
-                                                                 pubkey_hex, sig_hex)
-                : typed_marker
-                    ? GovernanceEngine::BuildProposalOp(proposal_type, address, title, description,
-                                                        ts, signed_height, pubkey_hex, sig_hex)
-                    : GovernanceEngine::BuildProposalOp(address, title, description, ts,
-                                                        signed_height, pubkey_hex, sig_hex);
-            auto op_script = build_op_return_script(payload);
-            return build_gov_tx_template(address, op_script);
-        });
+        methods_
+            ["preparegovproposal"] =
+                RpcMethod([this, build_gov_tx_template, build_op_return_script](const P& params) -> std::
+                                                                                                     string {
+                                                                                                         if (!gov_ ||
+                                                                                                             !gov_->GovernanceBondGateOpen(
+                                                                                                                 NextInclusionHeight(
+                                                                                                                     chain_
+                                                                                                                         .Height())))
+                                                                                                             throw std::
+                                                                                                                 runtime_error(
+                                                                                                                     "Governance is locked until the bonded-validator activation threshold is reached");
+                                                                                                         if (params.size() !=
+                                                                                                                 6 &&
+                                                                                                             params.size() !=
+                                                                                                                 7)
+                                                                                                             throw std::
+                                                                                                                 invalid_argument(
+                                                                                                                     "Usage: preparegovproposal ADDRESS [TYPE] TITLE DESCRIPTION PUBKEY_HEX SIGNATURE_HEX SIGNED_HEIGHT");
+                                                                                                         const bool typed_marker =
+                                                                                                             params
+                                                                                                                 .size() ==
+                                                                                                             7;
+                                                                                                         const std::string&
+                                                                                                             address = params
+                                                                                                                 [0];
+                                                                                                         ProposalType
+                                                                                                             proposal_type =
+                                                                                                                 ProposalType::
+                                                                                                                     GENERAL;
+                                                                                                         size_t offset =
+                                                                                                             1;
+                                                                                                         if (typed_marker) {
+                                                                                                             if (!GovernanceEngine::ParseProposalType(
+                                                                                                                     params
+                                                                                                                         [1],
+                                                                                                                     proposal_type))
+                                                                                                                 throw std::
+                                                                                                                     invalid_argument(
+                                                                                                                         "TYPE must be general|protocol_upgrade");
+                                                                                                             offset =
+                                                                                                                 2;
+                                                                                                         }
+                                                                                                         const std::string&
+                                                                                                             title = params
+                                                                                                                 [offset];
+                                                                                                         const std::string&
+                                                                                                             description = params
+                                                                                                                 [offset +
+                                                                                                                  1];
+                                                                                                         const std::string&
+                                                                                                             pubkey_hex = params
+                                                                                                                 [offset +
+                                                                                                                  2];
+                                                                                                         const std::string&
+                                                                                                             sig_hex = params
+                                                                                                                 [offset +
+                                                                                                                  3];
+                                                                                                         const uint64_t signed_height =
+                                                                                                             ParseCanonicalRpcU64OrThrow(
+                                                                                                                 params
+                                                                                                                     [offset +
+                                                                                                                      4],
+                                                                                                                 "signed_height");
+                                                                                                         if (title
+                                                                                                                 .size() >
+                                                                                                             200)
+                                                                                                             throw std::
+                                                                                                                 invalid_argument(
+                                                                                                                     "Title too long (max 200 chars)");
+                                                                                                         if (description
+                                                                                                                 .size() >
+                                                                                                             4096)
+                                                                                                             throw std::
+                                                                                                                 invalid_argument(
+                                                                                                                     "Description too long (max 4096 chars)");
+                                                                                                         uint64_t tip =
+                                                                                                             (uint64_t)chain_
+                                                                                                                 .Height();
+                                                                                                         if (signed_height >
+                                                                                                             tip +
+                                                                                                                 1)
+                                                                                                             throw std::
+                                                                                                                 runtime_error(
+                                                                                                                     "signed_height is ahead of chain tip");
+                                                                                                         if (tip >
+                                                                                                             signed_height +
+                                                                                                                 GOV_SIG_REPLAY_WINDOW_BLOCKS)
+                                                                                                             throw std::
+                                                                                                                 runtime_error(
+                                                                                                                     "signed_height too stale; re-sign against current tip");
+                                                                                                         const bool framed =
+                                                                                                             SecurityStateMigrationActive(
+                                                                                                                 NextInclusionHeight(
+                                                                                                                     tip));
+                                                                                                         const std::string challenge =
+                                                                                                             GovernanceEngine::BuildProposalChallenge(
+                                                                                                                 proposal_type,
+                                                                                                                 address,
+                                                                                                                 title,
+                                                                                                                 description,
+                                                                                                                 signed_height,
+                                                                                                                 typed_marker,
+                                                                                                                 framed);
+                                                                                                         if (!GovernanceEngine::
+                                                                                                                 VerifyGovSig(
+                                                                                                                     pubkey_hex,
+                                                                                                                     sig_hex,
+                                                                                                                     challenge))
+                                                                                                             throw std::
+                                                                                                                 runtime_error(
+                                                                                                                     "Invalid signature");
+                                                                                                         if (GovernanceEngine::
+                                                                                                                 PubKeyHexToAddress(
+                                                                                                                     pubkey_hex) !=
+                                                                                                             address)
+                                                                                                             throw std::
+                                                                                                                 runtime_error(
+                                                                                                                     "Public key does not derive to claimed address");
+                                                                                                         const bool proposal_pending =
+                                                                                                             mempool_
+                                                                                                                 .HasPendingOpReturn(
+                                                                                                                     "VELD_GOV|P|" +
+                                                                                                                     address +
+                                                                                                                     "|") ||
+                                                                                                             mempool_
+                                                                                                                 .HasPendingOpReturn(
+                                                                                                                     "VELD_GOV|P|general|" +
+                                                                                                                     address +
+                                                                                                                     "|") ||
+                                                                                                             mempool_
+                                                                                                                 .HasPendingOpReturn(
+                                                                                                                     "VELD_GOV|P|protocol_upgrade|" +
+                                                                                                                     address +
+                                                                                                                     "|") ||
+                                                                                                             mempool_
+                                                                                                                 .HasPendingOpReturn(
+                                                                                                                     "VELD_GOV|P2|general|" +
+                                                                                                                     address +
+                                                                                                                     "|") ||
+                                                                                                             mempool_
+                                                                                                                 .HasPendingOpReturn(
+                                                                                                                     "VELD_GOV|P2|protocol_upgrade|" +
+                                                                                                                     address +
+                                                                                                                     "|");
+                                                                                                         if (proposal_pending)
+                                                                                                             throw std::runtime_error(
+                                                                                                                 "A governance proposal from this address is already "
+                                                                                                                 "pending in the mempool. Wait for it to be mined "
+                                                                                                                 "(target block interval " +
+                                                                                                                 std::to_string(
+                                                                                                                     TARGET_BLOCK_TIME) +
+                                                                                                                 " seconds) before submitting another.");
+                                                                                                         uint64_t ts =
+                                                                                                             (uint64_t)
+                                                                                                                 std::time(
+                                                                                                                     nullptr);
+                                                                                                         std::string payload =
+                                                                                                             framed
+                                                                                                                 ? GovernanceEngine::BuildFramedProposalOp(
+                                                                                                                       proposal_type,
+                                                                                                                       address,
+                                                                                                                       title,
+                                                                                                                       description,
+                                                                                                                       signed_height,
+                                                                                                                       pubkey_hex,
+                                                                                                                       sig_hex)
+                                                                                                             : typed_marker
+                                                                                                                 ? GovernanceEngine::BuildProposalOp(
+                                                                                                                       proposal_type,
+                                                                                                                       address,
+                                                                                                                       title,
+                                                                                                                       description,
+                                                                                                                       ts,
+                                                                                                                       signed_height,
+                                                                                                                       pubkey_hex,
+                                                                                                                       sig_hex)
+                                                                                                                 : GovernanceEngine::BuildProposalOp(
+                                                                                                                       address,
+                                                                                                                       title,
+                                                                                                                       description,
+                                                                                                                       ts,
+                                                                                                                       signed_height,
+                                                                                                                       pubkey_hex,
+                                                                                                                       sig_hex);
+                                                                                                         auto op_script =
+                                                                                                             build_op_return_script(
+                                                                                                                 payload);
+                                                                                                         return build_gov_tx_template(
+                                                                                                             address,
+                                                                                                             op_script);
+                                                                                                     });
 
-        methods_["preparegovvote"] = RpcMethod([this, build_gov_tx_template,
-                                                build_op_return_script](
-                                                   const P& params) -> std::string {
-            if (!gov_ || !gov_->GovernanceBondGateOpen(NextInclusionHeight(chain_.Height())))
-                throw std::runtime_error(
-                    "Governance is locked until the bonded-validator activation threshold is reached");
-            if (params.size() < 6)
-                throw std::invalid_argument(
-                    "Usage: preparegovvote ADDRESS PROPOSAL_ID CHOICE PUBKEY_HEX SIGNATURE_HEX SIGNED_HEIGHT [VOTE_IDENTITY]");
-            const std::string& address = params[0];
-            const uint64_t proposal_id = ParseCanonicalRpcU64OrThrow(params[1], "proposal_id");
-            const std::string& choice_str = params[2];
-            const std::string& pubkey_hex = params[3];
-            const std::string& sig_hex = params[4];
-            const uint64_t signed_height = ParseCanonicalRpcU64OrThrow(params[5], "signed_height");
-            VoteChoice choice = VoteChoice::ABSTAIN;
-            if (choice_str == "yes")
-                choice = VoteChoice::YES;
-            else if (choice_str == "no")
-                choice = VoteChoice::NO;
-            else if (choice_str != "abstain")
-                throw std::invalid_argument("choice must be yes|no|abstain");
-            const uint64_t tip = chain_.Height();
-            const uint64_t inclusion_height = tip == UINT64_MAX ? tip : tip + 1;
-            const std::string identity = gov_->VoteIdentityFor(proposal_id, inclusion_height);
-            if ((!identity.empty() && (params.size() != 7 || params[6] != identity)) ||
-                (identity.empty() && params.size() != 6))
-                throw std::invalid_argument(
-                    "Vote identity changed or missing; refresh and sign the current round");
-            const std::string challenge =
-                GovernanceEngine::BuildVoteChallenge(proposal_id, choice, signed_height, identity);
-            if (!GovernanceEngine::VerifyGovSig(pubkey_hex, sig_hex, challenge))
-                throw std::runtime_error("Invalid signature");
-            if (GovernanceEngine::PubKeyHexToAddress(pubkey_hex) != address)
-                throw std::runtime_error("Public key does not derive to claimed address");
-            if (tip > signed_height && tip - signed_height > GOV_SIG_REPLAY_WINDOW_BLOCKS)
-                throw std::runtime_error("Signed height too stale; re-sign against current tip");
-            if (signed_height > inclusion_height)
-                throw std::runtime_error("signed_height is ahead of chain tip");
-            const std::string vote_prefix =
-                std::string("VELD_GOV|") + (identity.empty() ? "V|" : "V2|");
-            if (mempool_.HasPendingOpReturn(vote_prefix + std::to_string(proposal_id) + "|" +
-                                            address + "|"))
-                throw std::runtime_error("A vote from this address on this proposal is already "
-                                         "pending in the mempool. Wait for it to be mined "
-                                         "(target block interval " +
-                                         std::to_string(TARGET_BLOCK_TIME) +
-                                         " seconds) before re-submitting.");
-            std::string payload = GovernanceEngine::BuildVoteOp(
-                proposal_id, address, choice, signed_height, pubkey_hex, sig_hex, identity);
-            auto op_script = build_op_return_script(payload);
-            return build_gov_tx_template(address, op_script);
-        });
+        methods_
+            ["preparegovvote"] =
+                RpcMethod([this, build_gov_tx_template, build_op_return_script](const P&
+                                                                                    params) -> std::
+                                                                                                string {
+                                                                                                    if (!gov_ ||
+                                                                                                        !gov_->GovernanceBondGateOpen(
+                                                                                                            NextInclusionHeight(
+                                                                                                                chain_
+                                                                                                                    .Height())))
+                                                                                                        throw std::
+                                                                                                            runtime_error(
+                                                                                                                "Governance is locked until the bonded-validator activation threshold is reached");
+                                                                                                    if (params
+                                                                                                            .size() <
+                                                                                                        6)
+                                                                                                        throw std::
+                                                                                                            invalid_argument(
+                                                                                                                "Usage: preparegovvote ADDRESS PROPOSAL_ID CHOICE PUBKEY_HEX SIGNATURE_HEX SIGNED_HEIGHT [VOTE_IDENTITY]");
+                                                                                                    const std::string&
+                                                                                                        address = params
+                                                                                                            [0];
+                                                                                                    const uint64_t proposal_id =
+                                                                                                        ParseCanonicalRpcU64OrThrow(
+                                                                                                            params
+                                                                                                                [1],
+                                                                                                            "proposal_id");
+                                                                                                    const std::string&
+                                                                                                        choice_str = params
+                                                                                                            [2];
+                                                                                                    const std::string&
+                                                                                                        pubkey_hex = params
+                                                                                                            [3];
+                                                                                                    const std::string&
+                                                                                                        sig_hex = params
+                                                                                                            [4];
+                                                                                                    const uint64_t signed_height =
+                                                                                                        ParseCanonicalRpcU64OrThrow(
+                                                                                                            params
+                                                                                                                [5],
+                                                                                                            "signed_height");
+                                                                                                    VoteChoice choice =
+                                                                                                        VoteChoice::
+                                                                                                            ABSTAIN;
+                                                                                                    if (choice_str ==
+                                                                                                        "yes")
+                                                                                                        choice =
+                                                                                                            VoteChoice::
+                                                                                                                YES;
+                                                                                                    else if (
+                                                                                                        choice_str ==
+                                                                                                        "no")
+                                                                                                        choice =
+                                                                                                            VoteChoice::
+                                                                                                                NO;
+                                                                                                    else if (
+                                                                                                        choice_str !=
+                                                                                                        "abstain")
+                                                                                                        throw std::
+                                                                                                            invalid_argument(
+                                                                                                                "choice must be yes|no|abstain");
+                                                                                                    const uint64_t tip =
+                                                                                                        chain_
+                                                                                                            .Height();
+                                                                                                    const uint64_t inclusion_height =
+                                                                                                        tip == UINT64_MAX
+                                                                                                            ? tip
+                                                                                                            : tip +
+                                                                                                                  1;
+                                                                                                    const std::string identity =
+                                                                                                        gov_->VoteIdentityFor(
+                                                                                                            proposal_id,
+                                                                                                            inclusion_height);
+                                                                                                    if ((!identity
+                                                                                                              .empty() &&
+                                                                                                         (params.size() !=
+                                                                                                              7 ||
+                                                                                                          params[6] !=
+                                                                                                              identity)) ||
+                                                                                                        (identity
+                                                                                                             .empty() &&
+                                                                                                         params.size() !=
+                                                                                                             6))
+                                                                                                        throw std::
+                                                                                                            invalid_argument(
+                                                                                                                "Vote identity changed or missing; refresh and sign the current round");
+                                                                                                    const std::string challenge =
+                                                                                                        GovernanceEngine::BuildVoteChallenge(
+                                                                                                            proposal_id,
+                                                                                                            choice,
+                                                                                                            signed_height,
+                                                                                                            identity);
+                                                                                                    if (!GovernanceEngine::
+                                                                                                            VerifyGovSig(
+                                                                                                                pubkey_hex,
+                                                                                                                sig_hex,
+                                                                                                                challenge))
+                                                                                                        throw std::
+                                                                                                            runtime_error(
+                                                                                                                "Invalid signature");
+                                                                                                    if (GovernanceEngine::
+                                                                                                            PubKeyHexToAddress(
+                                                                                                                pubkey_hex) !=
+                                                                                                        address)
+                                                                                                        throw std::
+                                                                                                            runtime_error(
+                                                                                                                "Public key does not derive to claimed address");
+                                                                                                    if (tip >
+                                                                                                            signed_height &&
+                                                                                                        tip - signed_height >
+                                                                                                            GOV_SIG_REPLAY_WINDOW_BLOCKS)
+                                                                                                        throw std::
+                                                                                                            runtime_error(
+                                                                                                                "Signed height too stale; re-sign against current tip");
+                                                                                                    if (signed_height >
+                                                                                                        inclusion_height)
+                                                                                                        throw std::
+                                                                                                            runtime_error(
+                                                                                                                "signed_height is ahead of chain tip");
+                                                                                                    const std::string vote_prefix =
+                                                                                                        std::string(
+                                                                                                            "VELD_GOV|") +
+                                                                                                        (identity.empty()
+                                                                                                             ? "V|"
+                                                                                                             : "V2|");
+                                                                                                    if (mempool_
+                                                                                                            .HasPendingOpReturn(
+                                                                                                                vote_prefix +
+                                                                                                                std::to_string(
+                                                                                                                    proposal_id) +
+                                                                                                                "|" +
+                                                                                                                address +
+                                                                                                                "|"))
+                                                                                                        throw std::runtime_error(
+                                                                                                            "A vote from this address on this proposal is already "
+                                                                                                            "pending in the mempool. Wait for it to be mined "
+                                                                                                            "(target block interval " +
+                                                                                                            std::to_string(
+                                                                                                                TARGET_BLOCK_TIME) +
+                                                                                                            " seconds) before re-submitting.");
+                                                                                                    std::string payload =
+                                                                                                        GovernanceEngine::BuildVoteOp(
+                                                                                                            proposal_id,
+                                                                                                            address,
+                                                                                                            choice,
+                                                                                                            signed_height,
+                                                                                                            pubkey_hex,
+                                                                                                            sig_hex,
+                                                                                                            identity);
+                                                                                                    auto op_script =
+                                                                                                        build_op_return_script(
+                                                                                                            payload);
+                                                                                                    return build_gov_tx_template(
+                                                                                                        address,
+                                                                                                        op_script);
+                                                                                                });
 
         methods_["registervalidator"] =
             RpcMethod([](const P&) -> std::string { throw rpc_error(-32601, "method removed"); });
@@ -8520,8 +8802,7 @@ class RpcServer {
             if (params.size() == 4) {
                 // Public carrier bytes convey no spending authority. The node
                 // verifies the existing signature and funding in its own state.
-                if (params[1].empty() || params[1].size() > 2 * 24576 ||
-                    params[1].size() % 2 ||
+                if (params[1].empty() || params[1].size() > 2 * 24576 || params[1].size() % 2 ||
                     params[1].find_first_not_of("0123456789abcdef") != std::string::npos ||
                     !ParseCanonicalUint64Text(params[2], auxiliary_time) ||
                     !ParseCanonicalUint64Text(params[3], auxiliary_fee_cap) ||
@@ -8600,8 +8881,8 @@ class RpcServer {
             } else if (params.size() == 4) {
                 if (!AppchainBridgeActive(work_subject.height) || !auxiliary_template_builder_fn_)
                     throw rpc_error(-32010, "auxiliary mining is not active or wired");
-                candidate = auxiliary_template_builder_fn_(
-                    auxiliary_carrier, miner_script, auxiliary_time, auxiliary_fee_cap);
+                candidate = auxiliary_template_builder_fn_(auxiliary_carrier, miner_script,
+                                                           auxiliary_time, auxiliary_fee_cap);
             } else
                 candidate = mining_template_builder_fn_(miner_script);
             if (candidate.height != work_subject.height ||

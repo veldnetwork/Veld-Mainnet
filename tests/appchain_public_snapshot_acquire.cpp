@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <iostream>
 
-#if !defined(VELD_PUBLIC_RELEASE) || !defined(VELD_PUBLIC_MAINNET) || \
+#if !defined(VELD_PUBLIC_RELEASE) || !defined(VELD_PUBLIC_MAINNET) ||                              \
     !defined(VELD_MAINNET_POW) || !defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
 #error "This qualification requires the public snapshot profile"
 #endif
@@ -32,7 +32,8 @@ int main(int argc, char** argv) {
             throw std::runtime_error("staging identity or publication boundary differs");
         sb::SnapshotCandidateValidation incomplete;
         if (sb::CommitPreparedPublicSnapshot(data, prepared, incomplete, &error) ||
-            error != "snapshot candidate consensus validation did not pass" || fs::exists(data / "db"))
+            error != "snapshot candidate consensus validation did not pass" ||
+            fs::exists(data / "db"))
             throw std::runtime_error("unvalidated snapshot was admitted");
         std::cout << "PASS PUBLIC_SNAPSHOT_ACQUISITION height=" << prepared.manifest.height
                   << " tip=" << prepared.manifest.tip_hash

@@ -5434,20 +5434,24 @@ class VeldNode {
         Hash256 tip_hash{};
         if (!chain_.IsEmpty())
             tip_hash = chain_.TipCopy().GetHash();
-        const Hash256 previous = btcveld::reserve::TRANSITION_V1_REQUIRED
-            ? state_digest::ComposeV8(
-                chain_.Height(), tip_hash, chain_.UtxoDigest(), validators_.ValidatorsDigest(),
-                staking_.StakingDigest(), validators_.BondYieldEscrowDigest(),
-                chain_.NmsTallyDigest(), onchain_tokens_.Digest(), chain_.SupplyDigest(),
-                governance_.GovernanceDigest(), chain_.NmsExtendedDigest(),
-                btc_headers_.StateDigest(), anchors_.Digest(), amm_.Digest(), fin_state_.Digest(),
-                bond_covenant_.Digest())
-            : state_digest::ComposeV7(
-            chain_.Height(), tip_hash, chain_.UtxoDigest(), validators_.ValidatorsDigest(),
-            staking_.StakingDigest(), validators_.BondYieldEscrowDigest(), chain_.NmsTallyDigest(),
-            onchain_tokens_.Digest(), chain_.SupplyDigest(), governance_.GovernanceDigest(),
-            chain_.NmsExtendedDigest(), btc_headers_.StateDigest(), anchors_.Digest(),
-            amm_.Digest(), fin_state_.Digest(), bond_covenant_.Digest());
+        const Hash256 previous =
+            btcveld::reserve::TRANSITION_V1_REQUIRED
+                ? state_digest::ComposeV8(chain_.Height(), tip_hash, chain_.UtxoDigest(),
+                                          validators_.ValidatorsDigest(), staking_.StakingDigest(),
+                                          validators_.BondYieldEscrowDigest(),
+                                          chain_.NmsTallyDigest(), onchain_tokens_.Digest(),
+                                          chain_.SupplyDigest(), governance_.GovernanceDigest(),
+                                          chain_.NmsExtendedDigest(), btc_headers_.StateDigest(),
+                                          anchors_.Digest(), amm_.Digest(), fin_state_.Digest(),
+                                          bond_covenant_.Digest())
+                : state_digest::ComposeV7(chain_.Height(), tip_hash, chain_.UtxoDigest(),
+                                          validators_.ValidatorsDigest(), staking_.StakingDigest(),
+                                          validators_.BondYieldEscrowDigest(),
+                                          chain_.NmsTallyDigest(), onchain_tokens_.Digest(),
+                                          chain_.SupplyDigest(), governance_.GovernanceDigest(),
+                                          chain_.NmsExtendedDigest(), btc_headers_.StateDigest(),
+                                          anchors_.Digest(), amm_.Digest(), fin_state_.Digest(),
+                                          bond_covenant_.Digest());
         return state_digest::WithAppchainBridge(chain_.Height(), previous,
                                                 chain_.AppBridgeDigest());
     }
@@ -6877,74 +6881,88 @@ class VeldNode {
     // Build with the normal settlement, mempool and coinbase machinery in a
     // temporary selection. This does not broadcast or admit to either chain.
     Block BuildAppchainCarrierTemplate(const Transaction& carrier,
-                                      const std::vector<uint8_t>& miner_script,
-                                      uint64_t timestamp, uint64_t fee_cap) {
+                                       const std::vector<uint8_t>& miner_script, uint64_t timestamp,
+                                       uint64_t fee_cap) {
         auto transition = chain_.AcquireConsensusTransitionGuard();
-        return BuildAppchainCarrierTemplateUnderTransition_(carrier, miner_script, timestamp, fee_cap);
+        return BuildAppchainCarrierTemplateUnderTransition_(carrier, miner_script, timestamp,
+                                                            fee_cap);
     }
 
     // RPC holds the canonical transition guard across construction, retention
     // and authorization. Callers must not reacquire it inside this callback.
     Block BuildAppchainCarrierTemplateUnderTransition_(const Transaction& carrier,
-                                      const std::vector<uint8_t>& miner_script,
-                                      uint64_t timestamp, uint64_t fee_cap) {
+                                                       const std::vector<uint8_t>& miner_script,
+                                                       uint64_t timestamp, uint64_t fee_cap) {
 #if defined(VELD_FLEET_NO_MINE)
         throw std::runtime_error("VELD_FLEET_NO_MINE: appchain work disabled");
 #else
         if (!ChainFullyValidated() || FailStopRequired() || chain_.IsEmpty())
             throw std::runtime_error("full native carrier context unavailable");
-        app::need(AppchainBridgeActive(chain_.Height()+1) && app::bridge::ordinary(miner_script) &&
-            carrier.inputs.size()==1 && carrier.outputs.size()==2 && carrier.Serialize().size()<=24576,
-            "bounded active ordinary carrier required");
-        const auto& input=carrier.inputs.front();
-        const auto coin=chain_.GetUTXO(input.prev_tx_hash,input.prev_out_index);
-        const auto outputs=carrier.TotalOutput();
-        app::need(coin && app::bridge::ordinary(coin->script_pubkey) && outputs<=coin->value &&
-            coin->value-outputs<=fee_cap && coin->value-outputs>=MIN_TX_FEE,
-            "native carrier funding or fee limit");
+        app::need(AppchainBridgeActive(chain_.Height() + 1) &&
+                      app::bridge::ordinary(miner_script) && carrier.inputs.size() == 1 &&
+                      carrier.outputs.size() == 2 && carrier.Serialize().size() <= 24576,
+                  "bounded active ordinary carrier required");
+        const auto& input = carrier.inputs.front();
+        const auto coin = chain_.GetUTXO(input.prev_tx_hash, input.prev_out_index);
+        const auto outputs = carrier.TotalOutput();
+        app::need(coin && app::bridge::ordinary(coin->script_pubkey) && outputs <= coin->value &&
+                      coin->value - outputs <= fee_cap && coin->value - outputs >= MIN_TX_FEE,
+                  "native carrier funding or fee limit");
         Mempool isolated;
-        app::need(isolated.Add(carrier,coin->value-outputs,chain_.Height(),chain_)==Mempool::AddResult::ACCEPTED,
-            "native carrier signature or admission refused");
-        RealKeyPair recipient;recipient.script_override=miner_script;
-        const auto settlements=PrepareMiningSettlements_();
-        const auto metadata=PendingFinalityCoinbaseMetadataUnderTransition_(settlements.height);
-        size_t bytes=0, count=0;
-        const auto coinbase_bytes=MaxCanonicalMiningCoinbaseSize(
-            settlements.height,miner_script,AddressToScript(POOL_ADDRESS),
+        app::need(isolated.Add(carrier, coin->value - outputs, chain_.Height(), chain_) ==
+                      Mempool::AddResult::ACCEPTED,
+                  "native carrier signature or admission refused");
+        RealKeyPair recipient;
+        recipient.script_override = miner_script;
+        const auto settlements = PrepareMiningSettlements_();
+        const auto metadata = PendingFinalityCoinbaseMetadataUnderTransition_(settlements.height);
+        size_t bytes = 0, count = 0;
+        const auto coinbase_bytes = MaxCanonicalMiningCoinbaseSize(
+            settlements.height, miner_script, AddressToScript(POOL_ADDRESS),
             AddressToScript(VaultAddressAtHeight(settlements.height)),
-            AddressToScript(ENDORSEMENT_POOL_ADDRESS),metadata);
-        app::need(ComputeMiningMempoolBudget(coinbase_bytes,settlements.transactions,&bytes,&count) &&
-            bytes>=carrier.Serialize().size() && count>0,"native carrier template capacity");
+            AddressToScript(ENDORSEMENT_POOL_ADDRESS), metadata);
+        app::need(
+            ComputeMiningMempoolBudget(coinbase_bytes, settlements.transactions, &bytes, &count) &&
+                bytes >= carrier.Serialize().size() && count > 0,
+            "native carrier template capacity");
         // Reserve the already funded carrier before selecting ordinary work.
         // A full mempool must not silently turn every merged block into an
         // empty block. The common selector still applies full-module preflight.
-        for(const auto &[tx,fee]:mempool_.GetBlockTransactionsWithFees(
-                std::min<size_t>(count,999)-1,bytes-carrier.Serialize().size(),&chain_)) {
-            if(tx.GetTxID()!=carrier.GetTxID())
-                isolated.Add(tx,fee,chain_.Height(),chain_);
+        for (const auto& [tx, fee] : mempool_.GetBlockTransactionsWithFees(
+                 std::min<size_t>(count, 999) - 1, bytes - carrier.Serialize().size(), &chain_)) {
+            if (tx.GetTxID() != carrier.GetTxID())
+                isolated.Add(tx, fee, chain_.Height(), chain_);
         }
-        auto result=MineOnly(chain_,isolated,recipient,0,nullptr,AddressToScript(POOL_ADDRESS),1,nullptr,
-            {},nullptr,nullptr,settlements.transactions,
-            [this](const Block& block){return PreflightMiningCandidateUnderTransition_(block);},metadata,true);
-        app::need(result.success,"native carrier template could not be built");
-        result.block.header.timestamp=timestamp;
-        const auto selected=std::find_if(result.block.transactions.begin()+1,result.block.transactions.end(),
-            [&](const Transaction& tx){return tx.GetTxID()==carrier.GetTxID();});
-        app::need(std::count_if(result.block.transactions.begin()+1,result.block.transactions.end(),
-                [&](const Transaction& tx){return tx.GetTxID()==carrier.GetTxID();})==1,
-            "native carrier was omitted by canonical template selection");
+        auto result = MineOnly(
+            chain_, isolated, recipient, 0, nullptr, AddressToScript(POOL_ADDRESS), 1, nullptr, {},
+            nullptr, nullptr, settlements.transactions,
+            [this](const Block& block) { return PreflightMiningCandidateUnderTransition_(block); },
+            metadata, true);
+        app::need(result.success, "native carrier template could not be built");
+        result.block.header.timestamp = timestamp;
+        const auto selected =
+            std::find_if(result.block.transactions.begin() + 1, result.block.transactions.end(),
+                         [&](const Transaction& tx) { return tx.GetTxID() == carrier.GetTxID(); });
+        app::need(std::count_if(result.block.transactions.begin() + 1,
+                                result.block.transactions.end(),
+                                [&](const Transaction& tx) {
+                                    return tx.GetTxID() == carrier.GetTxID();
+                                }) == 1,
+                  "native carrier was omitted by canonical template selection");
         app::need(PreflightMiningCandidateUnderTransition_(result.block),
-            "native carrier template module preflight refused");
-        if (!chain_.AppAuxiliaryTemplateUnderTransition(result.block,size_t(selected-result.block.transactions.begin())))
-            throw app::Invalid("native carrier template consensus preflight: " + Blockchain::GetLastRejectTag());
+                  "native carrier template module preflight refused");
+        if (!chain_.AppAuxiliaryTemplateUnderTransition(
+                result.block, size_t(selected - result.block.transactions.begin())))
+            throw app::Invalid("native carrier template consensus preflight: " +
+                               Blockchain::GetLastRejectTag());
         return result.block;
 #endif
     }
 #if defined(VELD_APPCHAIN_FULL_QUALIFICATION) || defined(VELD_DEVELOPER_TESTNET)
 #if defined(VELD_APPCHAIN_FULL_QUALIFICATION)
-#if !defined(VELD_APPCHAIN_BRIDGE_DEVNET) || !defined(VELD_DSTATE_QUALIFICATION) || \
-    !defined(VELD_USE_LEVELDB) || defined(VELD_PUBLIC_RELEASE) || \
-    defined(VELD_LIGHT_VERIFY) || defined(VELD_TEST_HOOKS) || defined(VELD_TEST_DATASET_BYTES)
+#if !defined(VELD_APPCHAIN_BRIDGE_DEVNET) || !defined(VELD_DSTATE_QUALIFICATION) ||                \
+    !defined(VELD_USE_LEVELDB) || defined(VELD_PUBLIC_RELEASE) || defined(VELD_LIGHT_VERIFY) ||    \
+    defined(VELD_TEST_HOOKS) || defined(VELD_TEST_DATASET_BYTES)
 #error "Full bridge qualification requires isolated full native validation"
 #endif
 #endif
@@ -6956,7 +6974,7 @@ class VeldNode {
 #else
     Block BuildAppchainQualificationCandidate(const std::vector<uint8_t>& script,
 #endif
-                                              uint64_t timestamp) {
+                                         uint64_t timestamp) {
         if (!ChainFullyValidated() || FailStopRequired() || chain_.IsEmpty())
             throw std::runtime_error("full native qualification context is unavailable");
         auto transition = chain_.AcquireConsensusTransitionGuard();
@@ -6964,12 +6982,13 @@ class VeldNode {
         recipient.script_override = script;
         const auto settlements = PrepareMiningSettlements_();
         const auto metadata = PendingFinalityCoinbaseMetadataUnderTransition_(settlements.height);
-        auto result = MineOnly(chain_, mempool_, recipient, 0, nullptr,
-            AddressToScript(POOL_ADDRESS), 1, nullptr, {}, nullptr, nullptr,
-            settlements.transactions,
+        auto result = MineOnly(
+            chain_, mempool_, recipient, 0, nullptr, AddressToScript(POOL_ADDRESS), 1, nullptr, {},
+            nullptr, nullptr, settlements.transactions,
             [this](const Block& candidate) {
                 return PreflightMiningCandidateUnderTransition_(candidate);
-            }, metadata, true);
+            },
+            metadata, true);
         if (!result.success)
             throw std::runtime_error("full native qualification candidate: " + result.error);
         result.block.header.timestamp = timestamp;
@@ -12494,8 +12513,10 @@ class VeldNode {
 #endif
         });
         rpc_.SetAuxiliaryTemplateBuilderFn([this](const Transaction& carrier,
-                const std::vector<uint8_t>& miner_script, uint64_t timestamp, uint64_t fee_cap) {
-            return BuildAppchainCarrierTemplateUnderTransition_(carrier, miner_script, timestamp, fee_cap);
+                                                  const std::vector<uint8_t>& miner_script,
+                                                  uint64_t timestamp, uint64_t fee_cap) {
+            return BuildAppchainCarrierTemplateUnderTransition_(carrier, miner_script, timestamp,
+                                                                fee_cap);
         });
         rpc_.SetMiningTemplatePreflightFn([this](const Block& candidate) {
             // RpcServer owns the consensus transition guard across the exact
@@ -15660,8 +15681,8 @@ class VeldNode {
                 if (needs_rebuild) {
                     if (MinerFeesActive(result.new_height)) {
                         result.block.transactions[0] = Blockchain::BuildCanonicalCoinbase(
-                            result.new_height, total_supply_now, block_tx_fees,
-                            winner_script, finality_metadata);
+                            result.new_height, total_supply_now, block_tx_fees, winner_script,
+                            finality_metadata);
                     } else {
                         result.block.transactions[0] = Transaction::CreateProportionalCoinbase(
                             coinbase_outputs, "Veld block " + std::to_string(result.new_height));
