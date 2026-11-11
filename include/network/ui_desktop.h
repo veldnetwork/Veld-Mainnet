@@ -17392,7 +17392,7 @@ function renderWalletUtxos() {
       + '<td><a href="https://explorer.veld.network/tx/'+escHtml(u.txid)+'" target="_blank" rel="noopener noreferrer" class="hash-orange">'+escHtml(shortHash(u.txid))+'</a></td>'
       + '<td style="color:var(--muted)">#'+vout+'</td>'
       + '<td style="color:var(--muted)">'+(confs?confs.toLocaleString():'—')+'</td>'
-      + '<td class="gold" style="text-align:right">'+fmt(u.value,2)+' VELD</td>'
+      + '<td class="gold" style="text-align:right">'+fmt(u.value,8)+' VELD</td>'
       + '</tr>';
   });
   document.getElementById('w-utxos').innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:12px">No UTXOs</td></tr>';
@@ -17425,7 +17425,7 @@ function renderSendUtxos() {
   var slice = data.slice(start, start + UTXO_PER_PAGE);
   var html = '';
   slice.forEach(function(u) {
-    html += '<tr><td><a href="https://explorer.veld.network/tx/'+escHtml(u.txid)+'" target="_blank" rel="noopener noreferrer" class="hash-orange">'+escHtml(shortHash(u.txid))+'</a></td><td class="gold">'+fmt(u.value,2)+'</td><td><a href="https://explorer.veld.network/block/height/'+escHtml(u.block_height||u.height||'')+'" target="_blank" rel="noopener noreferrer" style="color:var(--muted)">'+escHtml(u.block_height||u.height||'?')+'</a></td></tr>';
+    html += '<tr><td><a href="https://explorer.veld.network/tx/'+escHtml(u.txid)+'" target="_blank" rel="noopener noreferrer" class="hash-orange">'+escHtml(shortHash(u.txid))+'</a></td><td class="gold">'+fmt(u.value,8)+'</td><td><a href="https://explorer.veld.network/block/height/'+escHtml(u.block_height||u.height||'')+'" target="_blank" rel="noopener noreferrer" style="color:var(--muted)">'+escHtml(u.block_height||u.height||'?')+'</a></td></tr>';
   });
   document.getElementById('s-utxos').innerHTML = html || '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:10px">No UTXOs</td></tr>';
   var pagEl = document.getElementById('s-utxo-pag');
