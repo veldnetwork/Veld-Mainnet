@@ -8290,7 +8290,12 @@ class NodeServer {
                 }
 
                 const bool already_have_their_tip = known_tip_height.has_value();
-                if (!already_have_their_tip) {
+                // During initial download the canonical locator drives forward
+                // batches. Walking backward from an unverified distant tip can
+                // fill the orphan window before those batches arrive, reducing
+                // catch-up to a few blocks per retry. Keep tip-pull recovery for
+                // synchronized nodes; IBD already has bounded idle retries.
+                if (!already_have_their_tip && ibd_complete_flag_.load()) {
                     Hash256 fetch_target = their_hash;
                     {
                         std::lock_guard<std::mutex> ol(orphan_mutex_);
@@ -8701,8 +8706,12 @@ class NodeServer {
                                 // unauthenticated orphan across all peers.
                                 {
                                     std::string parent_key = src_ip + ":" + prev_hex;
-                                    const bool send_parent_getdata = TakeKeyCooldown(
-                                        orphan_parent_getdata_at_, parent_key, 10, 600, 4096);
+                                    // An unsolicited distant body must not start
+                                    // the same backward walk while IBD is using
+                                    // this window for ordered forward batches.
+                                    const bool send_parent_getdata =
+                                        ibd_complete_flag_.load() && TakeKeyCooldown(
+                                            orphan_parent_getdata_at_, parent_key, 10, 600, 4096);
                                     if (send_parent_getdata) {
                                         const bool queued = SendBoundedRecoveryGetData_(
                                             conn, new_block.header.prev_block_hash);
