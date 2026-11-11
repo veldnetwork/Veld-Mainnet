@@ -2386,20 +2386,16 @@ private:
         page << "<div class=\"stat-grid\">";
         page << "<div class=\"stat\"><div class=\"stat-label\">Block Height</div><div class=\"stat-value em\">" << height << "</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Next Block Subsidy</div><div class=\"stat-value gold\" title=\"Subsidy at block " << reward.height << ": " << std::fixed << std::setprecision(8) << (double)reward.allocation.subsidy / VELD_UNITS << " VELD, excluding transaction fees\">" << std::setprecision(2) << (static_cast<double>(reward.allocation.subsidy / (VELD_UNITS / 100)) / 100.0) << " VELD</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Miner Share</div><div class=\"stat-value\">50%</div><div class=\"stat-sub\">of block reward</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Next Miner Subsidy</div><div class=\"stat-value\">" << std::setprecision(8) << (double)reward.allocation.miner / VELD_UNITS << "</div><div class=\"stat-sub\">VELD, transaction fees excluded</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Algorithm</div><div class=\"stat-value sm\">VeldHash</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Total Supply</div><div class=\"stat-value\">" << std::setprecision(2) << supply << "</div><div class=\"stat-sub\">/ 21,000,000 VELD</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Hard Cap</div><div class=\"stat-value\">21M</div><div class=\"stat-sub\">" << (SUBSIDY_ACTIVATION_HEIGHT == 0 ? "current emission schedule" : "two scheduled halvings") << "</div></div>";
         page << "</div>";
 
         page << "<div class=\"card\" style=\"margin-top:18px\">";
-        page << "<div class=\"card-title\">Coinbase Split</div>";
-        page << "<div class=\"tbl-scroll\"><table class=\"tbl\"><thead><tr><th>Recipient</th><th>Share</th><th>Description</th></tr></thead><tbody>";
-        page << "<tr><td style=\"color:var(--em)!important;-webkit-text-fill-color:var(--em)!important;font-weight:600\">Miner</td><td><strong>50%</strong></td><td>Direct reward to block finder</td></tr>";
-        page << "<tr><td style=\"color:#4CB8FF;font-weight:600\">Co-Mining Pool</td><td><strong>20%</strong></td><td>Shared among uniformly drawn eligible near-miss miners every 100 blocks</td></tr>";
-        page << "<tr><td style=\"color:var(--gold)!important;-webkit-text-fill-color:var(--gold)!important;font-weight:600\">Vault</td><td><strong>20%</strong></td><td>Distributed to stakers every 480 blocks (daily)</td></tr>";
-        page << "<tr><td style=\"color:#B07CFF;font-weight:600\">Validators</td><td><strong>10%</strong></td><td>Paid to active validators every 480 blocks (daily)</td></tr>";
-        page << "</tbody></table></div></div>";
+        page << "<div class=\"card-title\">Subsidy allocation</div>";
+        page << SubsidySplitHtml(reward.height, chain_.TotalSupplyUnits());
+        page << "<p>" << FeeRulesHtml(reward.height) << "</p></div>";
 
         page << "<div class=\"card\">";
         page << "<div class=\"card-title\">Recent Blocks</div>";
@@ -2600,14 +2596,7 @@ __VELD_SUBSIDY_RULES__
 
 <div class="card rule-card">
   <h2 id="splits">2. Where each block reward goes</h2><details class="veld-details"><summary>Details</summary>
-  <p>Ordinary block subsidies use the split below. <strong>Every 100th block routes its full subsidy to the vault</strong>.</p>
-  <table class="tbl-rules">
-    <tr><th>Stream</th><th>Share</th><th>Goes to</th></tr>
-    <tr><td style="color:var(--em);font-weight:600">Block winner</td><td style="color:var(--em)"><strong>50%</strong></td><td>Whoever solved this block&#39;s proof-of-work</td></tr>
-    <tr><td style="color:#4CB8FF;font-weight:600">Co-mining pool</td><td style="color:#4CB8FF"><strong>20%</strong></td><td>Pays out to near-miss miners every 100 blocks (see &sect;11)</td></tr>
-    <tr><td style="color:var(--gold);font-weight:600">Vault</td><td style="color:var(--gold)"><strong>20%</strong></td><td>Eligible staking distributions every 480 blocks</td></tr>
-    <tr><td style="color:#B07CFF;font-weight:600">Validator pool</td><td style="color:#B07CFF"><strong>10%</strong></td><td>Eligible endorsement distributions every 480 blocks</td></tr>
-  </table>
+__VELD_SPLIT_RULES__
   <p style="color:var(--muted);font-size:12px">__VELD_FEE_RULES__</p>
 </details></div>
 
@@ -2620,7 +2609,7 @@ __VELD_SUBSIDY_RULES__
 
 <div class="card rule-card">
   <h2 id="caps">4. Vault distribution limits</h2><details class="veld-details"><summary>Details</summary>
-<p>The distribution budget is bounded by both <strong>90% of the previous cycle’s vault inflow</strong> and <strong>8% of the spendable vault balance</strong>. The smaller limit applies, with transaction costs and payout rules also accounted for.</p>
+<p>__VELD_VAULT_BUDGET_RULES__</p>
   <p>Undistributed funds remain in the vault. A cycle needs sufficient spendable funds and eligible payout weight; very small payments can round to zero. Multipliers cannot increase the budget. These limits restrict distributions but do not guarantee perpetual growth or future returns.</p>
 </details></div>
 
@@ -2789,9 +2778,15 @@ __VELD_SUBSIDY_RULES__
         std::ostringstream identity;
         std::string rules = PAGE;
         const auto subsidy_pos = rules.find("__VELD_SUBSIDY_RULES__");
-        rules.replace(subsidy_pos, sizeof("__VELD_SUBSIDY_RULES__") - 1, SubsidyRulesHtml(chain_.Height()));
+        rules.replace(subsidy_pos, sizeof("__VELD_SUBSIDY_RULES__") - 1, SubsidyRulesHtml(NextInclusionHeight(chain_.Height())));
         const auto fee_pos = rules.find("__VELD_FEE_RULES__");
-        rules.replace(fee_pos, sizeof("__VELD_FEE_RULES__") - 1, FeeRulesHtml(chain_.Height()));
+        rules.replace(fee_pos, sizeof("__VELD_FEE_RULES__") - 1, FeeRulesHtml(NextInclusionHeight(chain_.Height())));
+        const auto split_pos = rules.find("__VELD_SPLIT_RULES__");
+        rules.replace(split_pos, sizeof("__VELD_SPLIT_RULES__") - 1,
+                      SubsidySplitHtml(NextInclusionHeight(chain_.Height()), chain_.TotalSupplyUnits()));
+        const auto budget_pos = rules.find("__VELD_VAULT_BUDGET_RULES__");
+        rules.replace(budget_pos, sizeof("__VELD_VAULT_BUDGET_RULES__") - 1,
+                      VaultBudgetRulesHtml(chain_.GetVaultPayoutPreview().next_boundary));
         identity << rules
                  << "<div class=\"card rule-card\">"
                     "<h2 id=\"chain-identity\">17. Chain identity</h2>"
@@ -6195,7 +6190,9 @@ setInterval(loadStats,2000);
                  << " VELD</td><td style=\"color:var(--muted)\">10,000 VELD per address &mdash; protocol-wide cap</td></tr>";
         }
         page << R"HTML(      <tr><td>Lockup Periods</td><td style="color:var(--em)">7 / 14 / 30 / 90 days</td><td style="color:var(--muted)">3,360 / 6,720 / 14,400 / 43,200 blocks</td></tr>
-      <tr><td>Distribution Budget</td><td style="color:var(--em)">Up to 90% of cycle inflow</td><td style="color:var(--muted)">Also limited to 8% of vault balance and 75% per staker</td></tr>
+      <tr><td>Distribution Budget</td><td style="color:var(--em)">Up to 8% of spendable vault funds</td><td style="color:var(--muted)">)HTML"
+             << VaultBudgetRulesHtml(chain_.GetVaultPayoutPreview().next_boundary)
+             << R"HTML(</td></tr>
       <tr><td>Distribution Interval</td><td style="color:var(--em)">480 blocks</td><td style="color:var(--muted)">~24 hours</td></tr>
       <tr><td>Multiplier Range</td><td style="color:var(--em)">1.0× &ndash; 3.0×</td><td style="color:var(--muted)">All tiers use rolling windows &mdash; mine consistently to earn and keep each tier</td></tr>
     </tbody>

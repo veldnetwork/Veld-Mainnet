@@ -1,5 +1,6 @@
 #pragma once
 #include "../consensus/subsidy_schedule.h"
+#include "../consensus/vault_payout_policy.h"
 #include "../core/coinbase_allocation.h"
 #include <limits>
 #include <stdexcept>
@@ -24,6 +25,7 @@ struct SubsidyView {
         return "\"reward_height\":" + std::to_string(height) +
                ",\"block_subsidy_units\":" + std::to_string(allocation.subsidy) +
                ",\"miner_subsidy_units\":" + std::to_string(allocation.miner) +
+               ",\"vault_subsidy_units\":" + std::to_string(allocation.vault) +
                ",\"subsidy_activation_height\":" + std::to_string(SUBSIDY_ACTIVATION_HEIGHT) +
                ",\"subsidy_schedule_active\":" +
                (SubsidyScheduleActive(height) ? "true" : "false") +
@@ -57,6 +59,40 @@ struct SubsidyProjection {
                ",\"vault_subsidy_next_480_units\":" + std::to_string(vault);
     }
 };
+
+inline std::string SubsidySplitHtml(uint64_t height, uint64_t supply) {
+    const bool retired = CoMiningRetired(height);
+    const bool locked = !retired && supply < STAKING_UNLOCK_SUPPLY;
+    std::string text = "<p>Ordinary block subsidies ";
+    text += retired  ? "after co-mining retirement: "
+            : locked ? "before the supply unlock: "
+                     : "before co-mining retirement: ";
+    text += "<strong>" + std::string(retired ? "60" : "50") + "% miner, " + (locked ? "50" : "20") +
+            "% vault, " + (retired || locked ? "0" : "20") + "% co-mining and " +
+            (retired  ? "20"
+             : locked ? "0"
+                      : "10") +
+            "% validator pool</strong>. ";
+    text += "Every 100th block sends its entire subsidy to the vault. "
+            "Percentages describe the subsidy; integer rounding and remaining issuance apply.</p>";
+    if (!retired && SUBSIDY_ACTIVATION_HEIGHT != 0)
+        text +=
+            "<p>At block " + std::to_string(FIRST_HALVING_HEIGHT) +
+            ", co-mining retires and ordinary subsidies become 60% miner, 20% vault and 20% validator pool.</p>";
+    return text;
+}
+
+inline std::string VaultBudgetRulesHtml(uint64_t next_boundary) {
+    if (VaultReservePolicyActive(next_boundary))
+        return "The next distribution uses the 20,000 VELD reserve target. The ordinary budget "
+               "is limited to 90% of the previous cycle's vault inflow and 8% of spendable vault funds. "
+               "Surplus above the target can increase that budget, still within the 8% limit. "
+               "The target is not a locked balance or a cap. Recipient limits, transaction costs "
+               "and integer rounding also apply.";
+    return "The next distribution budget is limited to 90% of the previous cycle's vault inflow "
+           "and 8% of spendable vault funds, whichever is lower. Recipient limits, transaction "
+           "costs and integer rounding also apply.";
+}
 
 inline std::string SubsidyRulesHtml(uint64_t height) {
     std::string text = "<p>Veld targets a block every <strong>180 seconds</strong>. ";

@@ -27,6 +27,20 @@ int main() {
           std::string::npos);
     check(FeeRulesHtml(1401601).find("flow to the vault") != std::string::npos);
 #endif
+    check(SubsidySplitHtml(2, 0).find("50% miner, 50% vault, 0% co-mining and 0% validator") !=
+          std::string::npos);
+    check(SubsidySplitHtml(2, STAKING_UNLOCK_SUPPLY)
+              .find("50% miner, 20% vault, 20% co-mining and 10% validator") != std::string::npos);
+#if defined(VELD_SUBSIDY_TEST_HEIGHT) || defined(VELD_PUBLIC_MAINNET)
+    for (const auto height : {700801ULL, 1401601ULL})
+        check(SubsidySplitHtml(height, STAKING_UNLOCK_SUPPLY)
+                  .find("60% miner, 20% vault, 0% co-mining and 20% validator") !=
+              std::string::npos);
+    check(VaultBudgetRulesHtml(VAULT_RESERVE_ACTIVATION_HEIGHT).find("Surplus above the target") !=
+          std::string::npos);
+    check(VaultBudgetRulesHtml(VAULT_RESERVE_ACTIVATION_HEIGHT - 1).find("whichever is lower") !=
+          std::string::npos);
+#endif
     const auto special = SubsidyView::Next(700899, STAKING_UNLOCK_SUPPLY);
     check(special.allocation.miner == 0 && special.allocation.vault == special.allocation.subsidy);
     const auto last = SubsidyView::Next(1401600, MAX_SUPPLY_UNITS - 17);

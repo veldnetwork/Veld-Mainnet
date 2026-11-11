@@ -291,12 +291,25 @@ int main(int argc, char** argv) {
             Accept(*independent, history[h]);
         Equal(*branch, *independent, "independent full admission replay differs");
         for (uint64_t h = activation + 3; h <= settlement + 2; ++h) {
-            if (h == settlement)
-                Fee(*branch, owner, 30 * BLOCK_REWARD_UNITS + 1);
+            uint64_t fee = h == settlement ? 30 * BLOCK_REWARD_UNITS + 1 : 0;
+#ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
+            if (h >= 4100 && h <= 4102)
+                fee = MIN_TX_FEE + 31;
+            // Build a losing branch that crosses the second halving. The
+            // eventual longer branch must undo and reapply its rewards/fees.
+            if (h == 4101)
+                for (uint64_t fork = h; fork <= h + 1; ++fork)
+                    Accept(*direct, Candidate(*direct, owner, 300000 + fork));
+#endif
+            if (fee)
+                Fee(*branch, owner, fee);
             auto block = Candidate(*branch, owner, h);
 #ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
             CheckSubsidyBoundary(*branch, block);
 #endif
+            CheckFeeAllocation(*branch, block, owner, fee);
+            if (fee)
+                RejectFormerFeeRouting(*branch, block, owner, fee);
             if (h == settlement) {
                 Require(!branch->GetChain().ValidateLegacyMinerCaps(block),
                         "vault fee fixture missed old total boundary");
@@ -307,6 +320,10 @@ int main(int argc, char** argv) {
             Accept(*independent, block);
             Accept(*direct, block);
             history.push_back(block);
+#ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
+            if (h == 4103)
+                Equal(*direct, *branch, "second-halving rollback and fee reapplication differ");
+#endif
         }
         Equal(*direct, *branch, "ordinary and vault fee histories differ");
         Equal(*independent, *branch, "independent accepted state differs");
