@@ -128,8 +128,16 @@ int main() {
               "late duplicate cannot rewind canonical locator");
         Hash256 second{};
         std::copy_n(continued.payload.begin() + 37, 32, second.begin());
-        Check(second == chain.GetBlock(chain.Height() - 1).GetHash(),
-              "canonical ancestor remains the first fallback");
+        Check(second == common,
+              "validated download is a secondary locator, never the primary");
+        Check(response_frames(continued, "127.0.0.5") == 0,
+              "recognized canonical tip wins over the earlier download cursor");
+        // A remote branch may not recognize our canonical tip. It can still
+        // recognize a byte-exact validated body from its previous batch.
+        auto remote_locator = continued;
+        std::fill_n(remote_locator.payload.begin() + 5, 32, uint8_t(0x7a));
+        Check(response_frames(remote_locator, "127.0.0.6") == 33,
+              "unknown primary falls back to the validated batch cursor");
         // This focused fixture covers cursor ordering on locally indexed
         // bodies. Genuine fork validation is covered by native co-mining and
         // payment reorganization exercises, not synthetic PoW-free branches.
@@ -144,8 +152,16 @@ int main() {
         Check(First(changed_branch) == chain.TipCopy().GetHash(),
               "lower duplicate preserves canonical primary");
         std::copy_n(changed_branch.payload.begin() + 37, 32, second.begin());
-        Check(second == chain.GetBlock(chain.Height() - 1).GetHash(),
-              "canonical parent remains fallback");
+        Check(second == higher, "furthest validated body remains the first secondary locator");
+        const auto canonical_parent = chain.GetBlock(chain.Height() - 1).GetHash();
+        bool parent_present = false;
+        for (uint8_t i = 1; i < changed_branch.payload[4]; ++i) {
+            Hash256 fallback_hash;
+            std::copy_n(changed_branch.payload.begin() + 5 + size_t(i) * 32, 32,
+                        fallback_hash.begin());
+            parent_present |= fallback_hash == canonical_parent;
+        }
+        Check(parent_present, "canonical parent remains a bounded fallback");
         server.TestRememberValidatedDownload(connection, chain.GetBlock(0).GetHash());
         Check(First(server.TestDownloadLocator(connection)) == chain.TipCopy().GetHash(),
               "ancient duplicate cannot rewind canonical locator");

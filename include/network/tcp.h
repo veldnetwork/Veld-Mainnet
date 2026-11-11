@@ -6548,21 +6548,29 @@ class NodeServer {
 
     P2PMessage BuildChainLocatorGetBlocks(const Connection* connection = nullptr) const {
         // The locally committed tip is the only safe primary locator. A
-        // validated body may be ahead of it (or on another branch); using
-        // that peer-specific download cursor can skip the missing parent and
-        // strand an otherwise healthy near-tip node.
-        (void)connection;
+        // validated body may be ahead of it (or on another branch); replacing
+        // this primary locator with that cursor can skip a missing parent.
+        // Secondary validated cursors let a different serving branch continue
+        // beyond one batch without displacing the canonical primary locator.
         PeerManager pm(magic_, chain_.Height());
         if (chain_.IsEmpty()) {
             Hash256 zero{};
             zero.fill(0);
             return pm.BuildGetBlocksMessage(zero);
         }
-        uint64_t h = chain_.Height();
-
+        const uint64_t h = chain_.Height();
+        const Hash256 tip = chain_.TipCopy().GetHash();
         std::vector<Hash256> extra;
+        if (connection) {
+            for (const auto& cursor : connection->ValidatedDownloadCursors()) {
+                if (cursor && *cursor != tip &&
+                    chain_.GetKnownBlockHeightByHash(*cursor).has_value())
+                    extra.push_back(*cursor);
+            }
+        }
         uint64_t step = 1;
-        while (h > step && extra.size() < 16) {
+        size_t ancestors = 0;
+        while (h > step && ancestors++ < 16) {
             try {
                 extra.push_back(chain_.GetBlock(h - step).GetHash());
             } catch (...) {
@@ -6575,7 +6583,6 @@ class NodeServer {
         } catch (...) {
         }
 
-        const Hash256 tip = chain_.TipCopy().GetHash();
         return pm.BuildGetBlocksMessage(tip, extra);
     }
 
@@ -8279,7 +8286,7 @@ class NodeServer {
                         const auto downloaded = conn.ValidatedDownloadCount();
                         if (IbdGetBlocksRequestDue(ps, chain_.Height(), PendingIbdValidationWork_(),
                                                    now) &&
-                            conn.TrySend(BuildChainLocatorGetBlocks())) {
+                            conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                             ps.last_getblocks = now;
                             ps.ibd_requested_download_count = downloaded;
                             conn.NoteIbdGetBlocksRequest();
@@ -9110,7 +9117,7 @@ class NodeServer {
                 if (!conn.IsInbound()) {
                     continued_batch = ibd_batch_gate_.TryContinue(chain_.Height(), now, [&] {
                         return IbdContinuationPeerEligible_(conn, chain_.Height()) &&
-                               conn.TrySend(BuildChainLocatorGetBlocks());
+                               conn.TrySend(BuildChainLocatorGetBlocks(&conn));
                     });
                 }
             } else {
@@ -9122,8 +9129,7 @@ class NodeServer {
                 ps.ibd_requested_download_count = downloaded;
                 conn.NoteIbdGetBlocksRequest();
             } else if (should_request) {
-                if (conn.TrySend(in_ibd ? BuildChainLocatorGetBlocks()
-                                        : BuildChainLocatorGetBlocks(&conn))) {
+                if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                     ps.last_getblocks = now;
                     ps.ibd_requested_download_count = downloaded;
                     if (in_ibd)
