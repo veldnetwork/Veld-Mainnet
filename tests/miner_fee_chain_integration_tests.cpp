@@ -290,10 +290,16 @@ int main(int argc, char** argv) {
         for (size_t h = 1; h < history.size(); ++h)
             Accept(*independent, history[h]);
         Equal(*branch, *independent, "independent full admission replay differs");
-        for (uint64_t h = activation + 3; h <= settlement + 2; ++h) {
+        const uint64_t final_height =
+#ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
+            std::max(settlement + 2, SECOND_HALVING_HEIGHT + 3);
+#else
+            settlement + 2;
+#endif
+        for (uint64_t h = activation + 3; h <= final_height; ++h) {
             uint64_t fee = h == settlement ? 30 * BLOCK_REWARD_UNITS + 1 : 0;
 #ifdef VELD_SUBSIDY_TEST_FIRST_HALVING
-            if (h >= 4100 && h <= 4102)
+            if (h >= 4100 && h <= 4102 && h != settlement)
                 fee = MIN_TX_FEE + 31;
             // Build a losing branch that crosses the second halving. The
             // eventual longer branch must undo and reapply its rewards/fees.
