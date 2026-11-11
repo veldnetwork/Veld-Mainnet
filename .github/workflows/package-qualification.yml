@@ -49,6 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ inputs.source_commit }}
           persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -70,6 +71,28 @@ jobs:
             -nostdlib++ /clang64/lib/libc++.a /clang64/lib/libc++abi.a /clang64/lib/libunwind.a \
             -lbcrypt -lcrypt32 -ladvapi32 -luser32 -lshell32 \
             -o "$(cygpath -u "$RUNNER_TEMP")/resume-ticket.exe"
+      - name: Prepare real short paths on the disposable Windows runner
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows') {
+            throw 'Short-path setup is restricted to the disposable Windows runner'
+          }
+          fsutil 8dot3name query
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          fsutil 8dot3name set 0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @'
+          import json, os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'tests')
+          from windows_package_test_paths import configure_temp_path
+          root = Path(os.environ['RUNNER_TEMP']) / 'shortpath-readiness'
+          root.mkdir()
+          receipt = configure_temp_path(dict(os.environ), root, 'short')
+          (root / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          print(json.dumps(receipt))
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Authenticate the unpublished package with a pinned independent verifier
         env:
           GH_TOKEN: ${{ github.token }}
@@ -94,6 +117,7 @@ jobs:
         with:
           name: signed-package-restart-evidence
           path: |
+            ${{ runner.temp }}/shortpath-readiness/receipt.json
             ${{ runner.temp }}/package-inputs/inputs.json
             ${{ runner.temp }}/package-results/result.json
             ${{ runner.temp }}/package-results/**/result.json
