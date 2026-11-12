@@ -1,4 +1,4 @@
-# 3.3.4 candidate activation schedule
+# 3.3.4 activation schedule
 
 The selected public-mainnet activation height is **34,750**. The requested time
 is **Friday, November 13, 2026, at noon MST (America/Denver), or 19:00 UTC**.
@@ -20,13 +20,39 @@ Co-mining retirement remains at the first halving. Historical protocol activatio
 at block 3,840 and all other historical gates are unchanged. Production appchain
 hosting remains paused and the production pool remains stopped.
 
-The user's Friday selection replaces the earlier 3,360-block release-notice
-plan with approximately 1,323 blocks of lead from the observed tip. This does
-not alter governance voting or its separate 3,360-block protocol-proposal
-timelock, and it is not evidence of a passed governance proposal.
+The signed [3.3.4 release](https://github.com/veldnetwork/Veld-Mainnet/releases/tag/v3.3.4)
+was published on November 12, 2026. Upgrade before block 34,750. Release tags and
+packages are immutable; later changes on `main` do not replace those binaries.
+The source commit is `83fad356169eaf42e7bc83b652d687837b02d9f9`.
 
-This is an **unsigned, unpublished candidate**. The previous inactive candidate
-and its qualification evidence remain preserved. Shipping verification, operator
-readiness and the remaining applicable release gates must pass before publication.
-If readiness misses this height, revise the schedule before publishing; do not
-silently distribute an already-activated consensus change.
+## Wallet, Explorer and bonds
+
+Registration uses the next inclusion height. At tip 34,748, the next block still
+requires 10,000 VELD. At tip 34,749, a transaction for block 34,750 requires
+5,000 VELD, plus its fee. Wallet preparation, transaction validation and the
+Explorer's registration minimum follow that same boundary. An old prepared
+transaction is checked again when submitted and included; a page display does
+not override consensus. Refresh an older open client page after upgrading.
+
+An existing 10,000 VELD bond stays recorded at its actual amount. Eligible
+excess principal requires an owner-signed return request and the full evidence
+window; activation alone does not return it. See
+[excess-bond returns](validator-excess-bond-return.md).
+
+Finality uses the policy at each frozen snapshot height. Epoch 72 retains its
+pre-activation snapshot at 34,559. Epoch 73 uses the snapshot at 35,039 and the
+five-key minimum with equal capped bond weights. Registration maturity,
+consecutive qualifying snapshots, warm-up and strict quorum still apply.
+Three validators therefore do not immediately enable finality.
+
+The seven-validator btcVELD activation threshold is separate and unchanged.
+Governance retains its ten-vote participation minimum, 67% approval threshold
+and 3,360-block protocol timelock. The scheduled release is not evidence of a
+passed governance proposal.
+
+## Validator operation
+
+Keep one active signing machine per validator key. Other miners may share its
+payout address in address-only mode. Preserve the identity's signing history
+when updating or moving machines; see [validator signing safety](operations/validator-signing-safety.md).
+Ordinary double-sign and locked-finality slashing rules remain in force.

@@ -1,5 +1,107 @@
 (function () {
   'use strict';
+  if (window.__veldBackgroundBudget || typeof window.fetch !== 'function') return;
+  window.__veldBackgroundBudget = true;
+  var original = window.fetch.bind(window), queue = [], active = 0, timer = null, closed = false;
+  var key = 'veld-explorer-background-v1', fallback = {sent: [], until: 0};
+  var WINDOW = 61000, LIMIT = 24, SPACING = 500, MAX_QUEUE = 32;
+
+  function abortError() { return new DOMException('Background request cancelled', 'AbortError'); }
+  function read(now) {
+    var data = fallback;
+    try { data = JSON.parse(localStorage.getItem(key)) || fallback; } catch (_) {}
+    if (!data || !Array.isArray(data.sent)) data = fallback;
+    return {
+      sent: data.sent.filter(function (n) { return Number.isFinite(n) && n > now - WINDOW && n <= now + WINDOW; }).slice(-LIMIT).sort(function (a, b) { return a - b; }),
+      until: Number.isFinite(data.until) && data.until <= now + 300000 ? data.until : 0
+    };
+  }
+  function save(data) {
+    fallback = data;
+    try { localStorage.setItem(key, JSON.stringify(data)); } catch (_) {}
+  }
+  function locked(fn) {
+    if (navigator.locks && typeof navigator.locks.request === 'function')
+      return navigator.locks.request(key, {mode: 'exclusive'}, fn);
+    return Promise.resolve().then(fn);
+  }
+  function reserve(item) {
+    return locked(function () {
+      if (closed || document.hidden || item.cancelled) return {stop: true};
+      var now = Date.now(), state = read(now), next = state.until;
+      if (state.sent.length) next = Math.max(next, state.sent[state.sent.length - 1] + SPACING);
+      if (state.sent.length >= LIMIT) next = Math.max(next, state.sent[0] + WINDOW + 1);
+      if (next > now) return {wait: next - now};
+      state.sent.push(now); save(state);
+      return {send: true};
+    });
+  }
+  function cooldown(response) {
+    if (response.status !== 429) return Promise.resolve();
+    var hint = response.headers.get('Retry-After'), delay = /^\d+$/.test(hint || '') ? Number(hint) * 1000 : Date.parse(hint) - Date.now();
+    return locked(function () {
+      var now = Date.now(), state = read(now);
+      state.until = Math.max(state.until, now + Math.max(WINDOW, Number.isFinite(delay) ? Math.min(300000, delay) : 0));
+      save(state);
+    });
+  }
+  function detach(item) { if (item.signal) item.signal.removeEventListener('abort', item.onAbort); }
+  function reject(item) { detach(item); item.reject(abortError()); }
+  function wake(delay) {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(function () { timer = null; drain(); }, delay);
+  }
+  function drain() {
+    if (closed || document.hidden || active || !queue.length) return;
+    var item = queue.shift();
+    if (item.cancelled) { reject(item); drain(); return; }
+    active++;
+    reserve(item).then(function (permit) {
+      if (item.cancelled || closed) { reject(item); return; }
+      if (!permit.send) {
+        queue.unshift(item);
+        if (permit.wait) wake(permit.wait);
+        return;
+      }
+      return original(item.input, item.options).then(function (response) {
+        return cooldown(response).then(function () { detach(item); item.resolve(response); });
+      }, function (error) { detach(item); item.reject(error); });
+    }).catch(function (error) { detach(item); item.reject(error); }).finally(function () {
+      active--; if (timer === null) drain();
+    });
+  }
+  window.fetch = function (input, options) {
+    var url, method;
+    try {
+      url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url, location.href);
+      method = String(options && options.method || input && input.method || 'GET').toUpperCase();
+    } catch (_) { return original(input, options); }
+    if (method !== 'GET' || url.origin !== location.origin || !/^\/api\/v1\/events\/\d+$/.test(url.pathname))
+      return original(input, options);
+    var signal = options && options.signal || input && input.signal;
+    if (closed || signal && signal.aborted || queue.length >= MAX_QUEUE) return Promise.reject(abortError());
+    return new Promise(function (resolve, rejectPromise) {
+      var item = {input: input, options: options, signal: signal, resolve: resolve, reject: rejectPromise, cancelled: false};
+      item.onAbort = function () {
+        item.cancelled = true;
+        var index = queue.indexOf(item);
+        if (index >= 0) { queue.splice(index, 1); reject(item); }
+      };
+      if (signal) signal.addEventListener('abort', item.onAbort, {once: true});
+      queue.push(item); drain();
+    });
+  };
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) drain(); });
+  window.addEventListener('pagehide', function () {
+    closed = true;
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    queue.splice(0).forEach(reject);
+  });
+})();
+
+(function () {
+  'use strict';
 
   // Do not replay a captured page, including when arriving from an older tab.
   function stopPageSnapshot(event) {
@@ -35,15 +137,6 @@
   window.addEventListener('resize', updateDeviceLayout, { passive: true });
   window.addEventListener('pageshow', updateDeviceLayout);
 
-  if (window.location.pathname === '/mining') {
-    document.documentElement.dataset.veldMiningConsensus = 'pending';
-    var miningConsensusStyle = document.createElement('style');
-    miningConsensusStyle.id = 'veld-mining-consensus-first-paint';
-    miningConsensusStyle.textContent =
-      'html[data-veld-mining-consensus="pending"] .container>.stat-grid+.card{visibility:hidden!important}';
-    document.head.appendChild(miningConsensusStyle);
-  }
-
   if (window.location.pathname === '/liquidity') {
     var containmentStyle = document.createElement('style');
     containmentStyle.id = 'veld-liquidity-viewport-containment';
@@ -77,75 +170,6 @@
     });
   }
 
-  function cardByTitle(titleText) {
-    var titles = document.querySelectorAll('.card > .card-title');
-    for (var i = 0; i < titles.length; i++) {
-      if (titles[i].textContent.trim() === titleText) return titles[i].closest('.card');
-    }
-    return null;
-  }
-
-  function setStat(labelText, valueText, detailText) {
-    var labels = document.querySelectorAll('.stat-label');
-    for (var i = 0; i < labels.length; i++) {
-      if (labels[i].textContent.trim() !== labelText) continue;
-      var stat = labels[i].closest('.stat');
-      var value = stat && stat.querySelector('.stat-value');
-      var detail = stat && stat.querySelector('.stat-sub');
-      if (value) value.textContent = valueText;
-      if (detail && detailText != null) detail.textContent = detailText;
-      return;
-    }
-  }
-
-  function renderConsensusPhase(stats) {
-    var active = Boolean(stats && stats.staking_active);
-    var path = window.location.pathname;
-
-    if (path === '/mining') {
-      var miningCard = cardByTitle('Coinbase Split');
-      var body = miningCard && miningCard.querySelector('tbody');
-      if (body) {
-        body.innerHTML = active
-          ? '<tr><td style="color:var(--em);font-weight:600">Miner</td><td><strong>50%</strong></td><td>Direct reward to block finder</td></tr>' +
-            '<tr><td style="color:#4CB8FF;font-weight:600">Co-Mining Pool</td><td><strong>20%</strong></td><td>Eligible near-miss miners</td></tr>' +
-            '<tr><td style="color:var(--gold);font-weight:600">Vault</td><td><strong>20%</strong></td><td>Staker reward pool</td></tr>' +
-            '<tr><td style="color:#B07CFF;font-weight:600">Validators</td><td><strong>10%</strong></td><td>Active validator reward pool</td></tr>'
-          : '<tr><td style="color:var(--em);font-weight:600">Miner</td><td><strong>50%</strong></td><td>Direct reward to block finder</td></tr>' +
-            '<tr><td style="color:var(--gold);font-weight:600">Vault</td><td><strong>50%</strong></td><td>Accumulates until staking activates at 10,000 VELD issued supply</td></tr>';
-      }
-      document.documentElement.dataset.veldMiningConsensus = 'ready';
-    }
-
-    if (path === '/vault') {
-      var reward = Number(stats.block_reward_veld || 3.13926940);
-      var ordinaryShare = active ? 0.20 : 0.50;
-      var inflow = 480 * reward * ordinaryShare +
-        480 * 0.01 * reward * (1 - ordinaryShare);
-      setStat('Daily Inflow', '~' + inflow.toFixed(1), 'VELD/day into vault');
-      setStat('Daily Payout', active ? '~' + (inflow * 0.90).toFixed(1) : '0.0',
-        active ? 'VELD/day to stakers (90% inflow cap)' : 'staking inactive; no distribution');
-      setStat('Daily Retention', active ? '~' + (inflow * 0.10).toFixed(1) : '~' + inflow.toFixed(1),
-        active ? 'VELD/day vault growth (10%)' : 'all inflow retained before activation');
-      var funding = cardByTitle('Vault Funding Sources');
-      var firstRow = funding && funding.querySelector('tbody tr');
-      if (firstRow) firstRow.innerHTML = '<td>Ordinary block reward share</td><td style="color:var(--em)">' +
-        (active ? '20%' : '50%') + '</td><td style="color:var(--muted)">Every non-vault block</td>';
-    }
-
-    if (path === '/rules') {
-      var split = document.getElementById('splits');
-      var splitIntro = split && split.parentElement.querySelector('p');
-      if (splitIntro) splitIntro.innerHTML = 'Ordinary blocks use the four-way split below. Every 100th block routes its full subsidy to the vault.';
-      var privacy = document.getElementById('privacy');
-      var items = privacy && privacy.parentElement.querySelectorAll('li');
-      if (items) Array.from(items).forEach(function (item) {
-        if (item.textContent.indexOf('Post-quantum signatures.') !== 0) return;
-        item.innerHTML = '<strong>Cryptographic boundary.</strong> Native VELD transaction and finality signatures use ML-DSA-65. Native ordinary outputs currently use 160-bit HASH160 key commitments, so this is not an end-to-end post-quantum claim. btcVELD custody inherits Bitcoin Taproot\u2019s current secp256k1/Schnorr assumptions.';
-      });
-    }
-  }
-
   function clarifyStakingMinimum() {
     if (window.location.pathname === '/staking') {
       document.querySelectorAll('table.tbl tbody tr').forEach(function (row) {
@@ -164,34 +188,51 @@
     }
   }
 
-  function renderInitialConsensusPhase() {
-    if (window.location.pathname !== '/mining') return;
-    var labels = document.querySelectorAll('.stat-label');
-    var supply = NaN;
-    for (var i = 0; i < labels.length; i++) {
-      if (labels[i].textContent.trim() !== 'Total Supply') continue;
-      var stat = labels[i].closest('.stat');
-      var value = stat && stat.querySelector('.stat-value');
-      if (value) supply = Number.parseFloat(value.textContent.replace(/,/g, ''));
-      break;
-    }
-    if (Number.isFinite(supply)) {
-      renderConsensusPhase({ staking_active: supply >= 10000 });
-    }
+  // Read current server-rendered values instead of duplicating bond policy in JS.
+  // The page has no signing controls. A changed minimum or validator count needs
+  // a fresh document so its bond records and pagination stay consistent too.
+  var validatorRefreshBusy = false;
+  var validatorRefreshAt = 0;
+  function validatorSummary(page) {
+    var values = {};
+    page.querySelectorAll('.stat-grid .stat').forEach(function (stat) {
+      var label = stat.querySelector('.stat-label');
+      var value = stat.querySelector('.stat-value');
+      if (!label || !value) return;
+      var name = label.textContent.trim();
+      if (name === 'Min Stake to Register') name = 'Minimum Validator Bond';
+      if (name === 'Minimum Validator Bond' || name === 'Validators')
+        values[name] = value.textContent.trim();
+    });
+    if (!values['Minimum Validator Bond'] || !values.Validators) return null;
+    return values['Minimum Validator Bond'] + '|' + values.Validators;
   }
-
-  function refreshConsensusPhase() {
-    fetch('/api/stats', {cache: 'no-store', credentials: 'same-origin'})
+  window.loadValidatorsPage = function () {
+    if (location.pathname !== '/validators' || document.hidden || validatorRefreshBusy ||
+        Date.now() - validatorRefreshAt < 5000) return;
+    validatorRefreshBusy = true;
+    validatorRefreshAt = Date.now();
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 8000);
+    return fetch('/validators', {cache: 'no-store', credentials: 'same-origin', signal: controller.signal})
       .then(function (response) {
-        if (!response.ok) throw new Error('stats unavailable');
-        return response.json();
-      })
-      .then(renderConsensusPhase)
-      .catch(function () {});
-  }
+        if (!response.ok || !/^text\/html\b/i.test(response.headers.get('content-type') || ''))
+          throw new Error('Validator page unavailable');
+        return response.text();
+      }).then(function (html) {
+        if (html.length > 2 * 1024 * 1024) throw new Error('Validator page too large');
+        var next = validatorSummary(new DOMParser().parseFromString(html, 'text/html'));
+        var current = validatorSummary(document);
+        if (!document.hidden && location.pathname === '/validators' && next && current && next !== current)
+          window.location.reload();
+      }).catch(function () {
+        // Retain the last document and retry through the existing page timer.
+      }).finally(function () {
+        clearTimeout(timer);
+        validatorRefreshBusy = false;
+      });
+  };
 
-
-  // Transaction and event badges share the coinbase recipient palette.
   function colorRewardBadge(badge) {
     var label = badge.textContent.trim().replace(/\s+/g, ' ').toLowerCase();
     var staking = /^(stake|unstake|stake lock|stake unlock|staking dist|staking rewards)$/.test(label) ||
@@ -232,16 +273,14 @@
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', removeLegacyMiningGuide, { once: true });
     document.addEventListener('DOMContentLoaded', formatRichListBalances, { once: true });
-    document.addEventListener('DOMContentLoaded', renderInitialConsensusPhase, { once: true });
-    document.addEventListener('DOMContentLoaded', refreshConsensusPhase, { once: true });
     document.addEventListener('DOMContentLoaded', clarifyStakingMinimum, { once: true });
+    document.addEventListener('DOMContentLoaded', window.loadValidatorsPage, { once: true });
     document.addEventListener('DOMContentLoaded', initializeRewardColors, { once: true });
   } else {
     removeLegacyMiningGuide();
     formatRichListBalances();
-    renderInitialConsensusPhase();
-    refreshConsensusPhase();
     clarifyStakingMinimum();
+    window.loadValidatorsPage();
     initializeRewardColors();
   }
 
@@ -349,6 +388,11 @@
       link.appendChild(textElement('div', 'ic', Math.floor(block.height / 1000) + 'k'));
       var info = textElement('div', 'info');
       var heading = textElement('div', 'h', '#' + block.height.toLocaleString());
+      if (block.miner === 'VQmKGWN5B5YWhudSL1ZdNcxGvZ8JdEtH5Q') {
+        var poolBadge = textElement('span', 'bk-badge veld-pool-win', 'Pool');
+        poolBadge.title = 'Mined to the Veld Pool reward address';
+        heading.appendChild(poolBadge);
+      }
       var slot = textElement('span', 'bk-badges');
       slot.dataset.bh = block.height; slot.dataset.blockHash = block.hash;
       heading.appendChild(slot); info.appendChild(heading);
@@ -519,6 +563,18 @@
 // Keep the installed app's navigation controls mounted when opening Mempool.
 (function () {
   'use strict';
+  function removePendingFeeSummary(root) {
+    root.querySelectorAll('.hero .meta > .it').forEach(function (item) {
+      if (!/\bVELD\s+pending fees\s*$/.test(item.textContent)) return;
+      var size = item.querySelector('b');
+      if (!size || !/^\d+\s+(?:B|KB)$/.test(size.textContent.trim())) return;
+      while (size.nextSibling) size.nextSibling.remove();
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { removePendingFeeSummary(document); }, {once: true});
+  } else removePendingFeeSummary(document);
+
   var standalone = navigator.standalone === true ||
     (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
   if (!standalone || window.location.pathname === '/mempool') return;
@@ -607,6 +663,7 @@
             if (el.hasAttribute('href') && /^\s*javascript:/i.test(el.getAttribute('href'))) el.removeAttribute('href');
           });
           var next = document.importNode(content, true);
+          removePendingFeeSummary(next);
           next.setAttribute('data-veld-mempool-view', '1');
           if (push) {
             if (!historyReady) {

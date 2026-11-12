@@ -126,6 +126,13 @@ async function test({
     await test({ height: 6599, expected: null });
     await test({ spendable: 5000, expected: null });
     await test({ error: true, expected: null });
+    // Shipping activation: prepare for the next inclusion height, including
+    // a reorganization back across the boundary and an out-of-date node reply.
+    await test({ activation: 34750, height: 34748, nodeMinimum: 10000, spendable: 11000, expected: 1000000000000 });
+    await test({ activation: 34750, height: 34749 });
+    await test({ activation: 34750, height: 34750 });
+    await test({ activation: 34750, height: 34748, nodeMinimum: 10000, expected: null });
+    await test({ activation: 34750, height: 34749, nodeMinimum: 10000, expected: null });
     let scripts = 0;
     for (const m of source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) {
         if (m[1].trim()) {

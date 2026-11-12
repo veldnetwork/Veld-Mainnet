@@ -198,6 +198,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/veld-browser-tests" --ignore-scripts --no-audit --no-fund playwright@1.62.1
           node "$RUNNER_TEMP/veld-browser-tests/node_modules/playwright/cli.js" install --with-deps chromium
           VELD_PLAYWRIGHT_MODULE="$RUNNER_TEMP/veld-browser-tests/node_modules/playwright" node tests/wallet_nms_tests.js
+          VELD_PLAYWRIGHT_MODULE="$RUNNER_TEMP/veld-browser-tests/node_modules/playwright" node tests/explorer_validator_refresh_browser.cjs
       - name: Verify wallet help dialogs and mobile presentation
         if: runner.os == 'Linux'
         shell: bash

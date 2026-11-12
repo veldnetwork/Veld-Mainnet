@@ -39,6 +39,11 @@ an uncertain finality write remains stopped until a restart reloads valid state.
 
 Use one active signer for a key. If a standalone validator is responsible for
 an identity, do not also configure node endorsement with that same identity.
+For additional mining machines, select address-only solo mining or pool mining
+and supply the payout address. These modes do not need the validator private key
+and do not create validator endorsements. A key loaded for ordinary wallet-mode
+solo mining can endorse once that identity is registered, so it must follow the
+same single-signer rule.
 A node that cannot obtain the identity lease skips endorsements and logs the
 reason; it can continue mining with its other admission requirements satisfied.
 To transfer ownership, stop the previous signer before starting the replacement.
@@ -62,6 +67,12 @@ alone cannot recover signatures released on orphaned blocks. Removing protection
 to recover availability can put the bond and yield at risk.
 
 ## Verification
+
+At the 3.3.4 activation, the registration minimum changes to 5,000 VELD;
+signing-history preservation and slashing rules do not reset. An identical
+endorsement retried for the same height and hash is not a conflicting signature.
+Signing two different block hashes at one height is. Finality evidence has its
+separate locked-vote rules and full 43,200-block admissibility horizon.
 
 Run `tests/run_validator_signing_safety.py` separately on native Windows and
 Linux. It builds the production signing implementation and real ML-DSA primitives

@@ -4,6 +4,16 @@
   var pendingBtcNavigation = null;
   var btcRefreshInFlight = false;
 
+  // Released clients keep validator registration checks in the native wallet.
+  // Refresh its existing read-only view when a tab stays open across activation.
+  function refreshValidators() {
+    var page = document.getElementById('page-validators');
+    if (document.hidden || !page || !page.classList.contains('active') ||
+        (window.__opLocks && window.__opLocks['validator-op']) ||
+        typeof window.loadValidatorsPage !== 'function') return;
+    window.loadValidatorsPage();
+  }
+
   function removeProjectedYield() {
     var projection = document.getElementById('sk-yield-projection');
     if (projection) projection.remove();
@@ -200,6 +210,10 @@
     }
     ensureBtcLoadingCard();
     installBtcRefreshGate();
+    setInterval(refreshValidators, 15000);
+    document.addEventListener('visibilitychange', refreshValidators);
+    window.addEventListener('pageshow', refreshValidators);
+    window.addEventListener('focus', refreshValidators);
   }
 
   if (document.readyState === 'loading') {
