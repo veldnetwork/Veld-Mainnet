@@ -91,9 +91,7 @@ def main():
             spaceAfter=7,
             keepWithNext=True,
         ),
-        "cell": ParagraphStyle(
-            "cell", parent=body, fontSize=7.8, leading=10.8, spaceAfter=0
-        ),
+        "cell": ParagraphStyle("cell", parent=body, fontSize=7.8, leading=10.8, spaceAfter=0),
         "code": ParagraphStyle(
             "code",
             parent=body,
@@ -103,9 +101,7 @@ def main():
             leftIndent=8,
             textColor=colors.HexColor("#62746b"),
         ),
-        "bullet": ParagraphStyle(
-            "bullet", parent=body, leftIndent=10, firstLineIndent=-8
-        ),
+        "bullet": ParagraphStyle("bullet", parent=body, leftIndent=10, firstLineIndent=-8),
     }
 
     def inline(text):
