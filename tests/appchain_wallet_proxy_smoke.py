@@ -110,8 +110,11 @@ def main(a):
             ps_env.pop('PSMODULEPATH', None)
             subprocess.run(
                 [str(ps), '-NoProfile', '-File', str(ownership_script), str(data)],
-                check=True, capture_output=True, timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW, env=ps_env,
+                check=True,
+                capture_output=True,
+                timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                env=ps_env,
             )
             report['disposable_directory_owner_verified'] = True
         token = secrets.token_urlsafe(32)
@@ -159,7 +162,8 @@ def main(a):
         while True:
             assert proc.poll() is None, (
                 'Desktop process exited before startup: '
-                + str(proc.returncode) + '\n'
+                + str(proc.returncode)
+                + '\n'
                 + (a.evidence / 'wallet.log').read_text(errors='replace')[-2000:]
             )
             try:
