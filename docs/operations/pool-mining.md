@@ -59,7 +59,7 @@ so the device retains its account and viewing access.
 | In payment | Entitlement reserved in a durable payment intent |
 | Paid | Payments confirmed on the canonical chain |
 
-The published policy is a 0% service fee, a 1 VELD automatic payout
+The published policy is a 1% service fee, a 1 VELD automatic payout
 threshold by payout address, daily batches, and at least 120 canonical
 confirmations plus actual spendability. Smaller balances remain recorded.
 Daily processing does not guarantee daily earnings or a payment from each block.

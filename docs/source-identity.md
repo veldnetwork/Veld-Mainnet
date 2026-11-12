@@ -25,6 +25,25 @@ Verify downloaded binaries using the official package manifest and signature.
 Building from source does not grant the official release signature. Different
 toolchains or paths can produce different binary hashes.
 
+## Veld 3.3.4
+
+The [signed 3.3.4 release](https://github.com/veldnetwork/Veld-Mainnet/releases/tag/v3.3.4)
+was published on November 12, 2026, with mainnet activation at block **34,750**.
+
+| Field | Value |
+| --- | --- |
+| Source tag | `v3.3.4` |
+| Source commit | `83fad356169eaf42e7bc83b652d687837b02d9f9` |
+| Source tree | `c0528a6a12b8475247612021a40fbcf21a821221` |
+| Signed identity record | `RELEASE-IDENTITY-3.3.4.json` |
+| Signed release asset manifest | `RELEASE-ASSETS-SHA256.txt` |
+
+Verify each record's detached `.sig` and the selected package manifest using
+the [release verification procedure](release-verification.md). The release
+includes Windows GUI and terminal packages, a Linux x86-64 package, and the
+versioned source archive. Later documentation and hosted-content maintenance
+on `main` does not alter these binaries, their signatures, or the release tag.
+
 ## Veld 3.2.7
 
 The [published 3.2.7 release](https://github.com/veldnetwork/Veld-Mainnet/releases/tag/v3.2.7)

@@ -1,7 +1,7 @@
-# Co-mining retirement candidate
+# Co-mining retirement
 
-This candidate pins the public-mainnet subsidy schedule to block 34,750.
-Publication and coordinated deployment remain subject to release qualification;
+Veld 3.3.4 pins the public-mainnet subsidy schedule to block 34,750.
+The signed release was published on November 12, 2026;
 see the [activation schedule](../release-3.3.4-activation.md).
 
 The first reduced block is 700,801, after four complete protocol years. Ordinary
@@ -32,5 +32,5 @@ set and its strict greater-than-two-thirds certificate threshold.
 A future governance-approved upgrade may restore co-mining with an explicit
 allocation, eligibility policy and activation height. The current governance
 engine records voting outcomes; it does not automatically execute reward changes.
-Software adoption remains necessary. This candidate has no automatic return
+Software adoption remains necessary. This release has no automatic return
 switch and does not promise retrospective rewards during the retired period.

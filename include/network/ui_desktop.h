@@ -3692,7 +3692,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <div id="val-req-status" style="font-size:12px;padding:8px 4px 0;line-height:1.6"></div>
     </div>
     <div style="font-size:11px;color:var(--muted);line-height:1.6;border-top:1px solid var(--b1);padding-top:10px">
-      Registration commits your individual bond to protocol custody. The bond remains locked through exit and the evidence waiting period. Network-wide validator data is on the
+      Registration commits your individual bond to protocol custody: 10,000 VELD before block 34,750, then 5,000 VELD. Existing excess requires your signed return request and the full evidence waiting period. The bond remains locked through exit and the evidence waiting period. Network-wide validator data is on the
       <a href="https://explorer.veld.network/validators" target="_blank" rel="noopener noreferrer" style="color:var(--em);text-decoration:none">Veld Explorer &rarr;</a>
     </div>
   </div>
@@ -3916,7 +3916,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       </div>
       <div style="background:var(--s2);border-radius:6px;padding:14px">
         <div style="color:var(--em);font-size:11px;font-weight:600;margin-bottom:6px">4. Repeat</div>
-        <div style="color:var(--muted);font-size:12px;line-height:1.55">Entries reset each window. Keep mining and include a new qualifying near-miss. Undistributed lottery funds carry forward.</div>
+        <div style="color:var(--muted);font-size:12px;line-height:1.55">Entries reset each window. The final draw is block 700,800; new entries and draws stop at 700,801. Existing rewards, stake principal and unassigned reserves remain intact.</div>
       </div>
     </div>
     <div style="margin-top:12px;font-size:11px;color:var(--muted)">
@@ -3987,7 +3987,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
   <!-- GOVERNANCE STATUS -->
   <div class="stat-grid" id="gov-status-grid" style="margin-bottom:16px">
     <div class="stat"><div class="stat-label">Governance Status</div><div class="stat-value em" id="gov-sys-status">Loading...</div><div class="stat-sub" id="gov-sys-sub"></div></div>
-    <div class="stat"><div class="stat-label">Registered Validators</div><div class="stat-value em" id="gov-val-count">—</div><div class="stat-sub" id="gov-val-sub">50,000 VELD bonded activates governance</div></div>
+    <div class="stat"><div class="stat-label">Registered Validators</div><div class="stat-value em" id="gov-val-count">—</div><div class="stat-sub" id="gov-val-sub">Five qualifying bonds activate governance: 5,000 VELD each from block 34,750 (10,000 before)</div></div>
     <div class="stat"><div class="stat-label">Voting Window</div><div class="stat-value" id="gov-window">6,720 blocks</div><div class="stat-sub" id="gov-window-sub">~14 days at 180s/block</div></div>
     <div class="stat"><div class="stat-label">Active Voting Set</div><div class="stat-value" id="gov-active-count">—</div><div class="stat-sub">validators endorsing during the active window</div></div>
   </div>
@@ -15937,7 +15937,7 @@ function govLoadStatus() {
     } else {
       statusEl.textContent = 'Locked';
       statusEl.className = 'stat-value';
-      subEl.textContent = 'Governance opens at 50,000 VELD bonded';
+      subEl.textContent = 'Governance needs five qualifying bonds: 5,000 VELD each from block 34,750 (10,000 before)';
     }
   }).catch(function() {
     govSetSubmissionState(false);

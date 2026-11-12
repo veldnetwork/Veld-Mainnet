@@ -1,10 +1,10 @@
-# Validator excess bond return candidate
+# Validator excess bond return
 
-This candidate lets the owner of an active custodial validator bond request the
+Veld 3.3.4 lets the owner of an active custodial validator bond request the
 amount above the new 5,000 VELD minimum back without deregistering. It is gated by
 the validator-policy activation height, pinned to block 34,750 for public mainnet.
-See the [candidate activation schedule](release-3.3.4-activation.md). Publication
-and deployment remain pending. Production funds cannot return before activation
+See the [activation schedule](release-3.3.4-activation.md). The signed release
+was published on November 12, 2026. Production funds cannot return before activation
 and the full evidence window described below.
 
 The signed operation is
