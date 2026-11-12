@@ -61,6 +61,7 @@
 #include "../include/network/explorer.h"
 #include "../include/network/seeder.h"
 #include "../include/network/operational_key_identity.h"
+#include "../include/network/developer_service_secret.h"
 #ifdef VELD_PUBLIC_TESTNET
 #endif
 #include "../include/crypto/veld_signing.h"
@@ -2184,6 +2185,9 @@ int main(int argc, char* argv[]) {
     bool opt_nomine = false;
     bool opt_endorse = false;
     bool opt_address_only = false;
+#if defined(VELD_DEVELOPER_TESTNET) && defined(__linux__)
+    int opt_service_secret_fd = -1;
+#endif
     bool opt_reachable = false;
     bool opt_tor = false;
     bool opt_tor_only = false;
@@ -2285,6 +2289,19 @@ int main(int argc, char* argv[]) {
 #endif
         } else if (arg == "--address-only") {
             opt_address_only = true;
+#if defined(VELD_DEVELOPER_TESTNET) && defined(__linux__)
+        } else if (arg == "--service-secret-fd") {
+            if (i + 1 >= argc || opt_service_secret_fd != -1) {
+                std::cerr << "veld-node: one service credential descriptor is required\n";
+                return 78;
+            }
+            const auto value = parse_uint_arg("--service-secret-fd", argv[++i]);
+            if (value < 3 || value > 1048575) {
+                std::cerr << "veld-node: invalid service credential descriptor\n";
+                return 78;
+            }
+            opt_service_secret_fd = static_cast<int>(value);
+#endif
         } else if (arg == "--endorse") {
             opt_endorse = true;
         } else if (arg == "--reachable") {
@@ -2640,6 +2657,15 @@ int main(int argc, char* argv[]) {
 #endif
     }
 
+#if defined(VELD_DEVELOPER_TESTNET) && defined(__linux__)
+    if ((opt_service_secret_fd != -1 && !opt_address_only) ||
+        (opt_address_only &&
+         !developer_testnet::ReadServiceSecret(opt_service_secret_fd, g_passphrase))) {
+        std::cerr
+            << "veld-node: protected service credential required for developer-testnet address-only startup\n";
+        return 78;
+    }
+#endif
     if (opt_address_only) {
         if (!mining::ValidAddressOnlyDestination(opt_miner_addr, config.IsTestNetwork()) ||
             opt_endorse || opt_setup || opt_create_miner_key || !opt_import_miner_key.empty()) {

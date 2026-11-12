@@ -1,4 +1,5 @@
 #pragma once
+#include "help_dialogs.h"
 
 static const char* DESKTOP_HTML = R"HTMLEOF(<!DOCTYPE html>
 <html lang="en">
@@ -455,7 +456,7 @@ body.gyro-active .prism-sub{animation:none}
 .spx-coin:focus-visible{outline:2px solid rgba(50,240,110,.45);outline-offset:1px}
 .spx-coin:active{transform:scale(.97)}
 /* Collapsible help: supplementary explainer prose tucks behind a "?" button. OPT-IN
-   only — author marks a block with data-help (or writes <details class="spx-help">);
+   only — author marks a block with data-help (or writes <section data-veld-help class="spx-help">);
    primary content is never auto-hidden (see initHelpTips). */
 .help-tip{display:inline-block;position:relative;vertical-align:middle;margin:0 0 0 5px}
 .help-tip>summary{list-style:none;cursor:pointer;display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:50%;border:1px solid var(--b1,#2a2a2a);color:var(--muted);font-size:10px;font-weight:700;line-height:1;vertical-align:middle;-webkit-tap-highlight-color:transparent;transition:border-color .15s,color .15s,box-shadow .15s}
@@ -464,7 +465,7 @@ body.gyro-active .prism-sub{animation:none}
 .help-tip>summary:hover{border-color:var(--em);color:var(--em)}
 .help-tip>summary:focus-visible{outline:2px solid rgba(50,240,110,.5);outline-offset:2px}
 .help-tip[open]>summary{color:var(--em);border-color:var(--em);box-shadow:0 0 10px rgba(50,240,110,.12)}
-/* explicit toggle — JS-created <details> doesn't always get the UA closed-hiding.
+/* explicit toggle — JS-created <section data-veld-help> doesn't always get the UA closed-hiding.
    Open body is an absolutely-positioned popover just BELOW the inline "?" so it never
    shoves surrounding layout and the "?" stays at the end of the text it annotates. */
 .history-footer{display:flex;justify-content:center;margin-top:16px}
@@ -2743,13 +2744,13 @@ __VELD_DEPLOYMENT_BANNER_HTML__
     <div class="card tokens-card">
       <!-- Reassurance line tucked behind a "?" on the Tokens title (operator
  request). The balance rows below speak for themselves; the explanation is one
- tap away via a marker-less <details> toggle (reuses .spx-help / .spx-qmark). -->
-      <details class="spx-help">
-        <summary class="card-title" style="cursor:pointer;display:flex;align-items:center;gap:8px">Tokens <span class="spx-qmark" title="What do these rows mean?">?</span></summary>
+ tap away via a marker-less <section data-veld-help> toggle (reuses .spx-help / .spx-qmark). -->
+      <section data-veld-help class="spx-help">
+        <button type=button class="card-title" style="cursor:pointer;display:flex;align-items:center;gap:8px">Tokens <span class="spx-qmark" title="What do these rows mean?">?</span></button>
         <div style="font-size:12px;color:var(--muted);line-height:1.45;margin:8px 2px 10px;padding:8px 10px;border:1px solid var(--b1);border-radius:8px;background:rgba(50,240,110,.05)">
           Every VELD below is <b style="color:var(--em)">yours</b>. <b>Spendable</b> is what you can send this second; the rest is locked <i>by you</i>, maturing, or briefly settling — it all comes back. Nothing is ever taken or held by anyone else.
         </div>
-      </details>
+      </section>
       <div class="tok-row" title="Coin you can send right now — confirmed, mature, and not tied up in staking or a pending transaction.">
         <div class="tok-ic ic-veld">V</div>
         <div class="tok-info">
@@ -2932,15 +2933,18 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     <!-- Wallet cleanup is manual unless explicitly enabled in this browser. -->
     <div class="card" id="w-cleanup-card" style="margin-top:14px;min-width:0">
       <div class="card-title">Wallet cleanup <span id="w-utxo-dust-chip" style="display:none;font-weight:400"></span></div>
-      <p class="cleanup-copy">Combine small outputs already in your wallet.</p>
+      <section data-veld-help style="margin-bottom:12px">
+        <button type="button" aria-label="About wallet cleanup">About wallet cleanup</button>
+        <div><p>Combine small outputs already in your wallet. Fewer outputs make future transactions smaller and easier to process.</p><p>Each cleanup pays a network fee. Review the fee before approving. Funds being combined become spendable after confirmation.</p></div>
+      </section>
       <div id="w-utxo-consolidate" style="display:none;margin-bottom:12px" role="status"><span id="w-utxo-dust-msg" style="color:var(--muted);line-height:1.5;overflow-wrap:anywhere"></span></div>
-      <p class="cleanup-help">Fewer outputs make future transactions smaller and easier to process.</p>
+
       <button class="btn" id="w-utxo-consolidate-btn" data-act-click="hconsolidate">Combine my outputs</button>
       <div id="w-utxo-consolidate-msg" aria-live="polite" style="margin-top:10px;overflow-wrap:anywhere"></div>
       <div class="cleanup-auto">
         <div class="cleanup-auto-heading">
           <label id="w-auto-consolidate-label" for="w-auto-consolidate">Automatic cleanup</label>
-        <details class="help-tip"><summary aria-label="About automatic cleanup" title="About automatic cleanup">?</summary><div class="help-body" id="w-auto-consolidate-help">Off by default. Enabling this authorizes automatic cleanup and network fees for wallets you unlock in this browser while the app is open. Each transaction pays a fee; larger cleanups may need several transactions. Funds being combined become spendable after confirmation. Turning this off stops new batches; a transaction already in progress may still complete.</div></details>
+        <section data-veld-help class="help-tip"><button type=button aria-label="About automatic cleanup" title="About automatic cleanup">?</button><div class="help-body" id="w-auto-consolidate-help">Off by default. Enabling this authorizes automatic cleanup and network fees for wallets you unlock in this browser while the app is open. Each transaction pays a fee; larger cleanups may need several transactions. Funds being combined become spendable after confirmation. Turning this off stops new batches; a transaction already in progress may still complete.</div></section>
         </div>
         <label class="cleanup-toggle" for="w-auto-consolidate">
           <input type="checkbox" role="switch" id="w-auto-consolidate" data-act-change="hauto_consolidate" aria-labelledby="w-auto-consolidate-label" aria-describedby="w-auto-consolidate-help w-auto-consolidate-pref-status">
@@ -3063,7 +3067,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
  when the wallet refreshes; estimatefee scales with mempool
  congestion (1× MIN_FEE_RATE at low load, up to 10× at peak). -->
       <div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;font-family:var(--font)">
-        Fee <span id="s-fee-est" style="color:var(--text)">0.001 VELD</span> → vault · <span id="s-fee-eta" style="color:var(--muted)">~3 min to confirm</span>
+        Network fee <span id="s-fee-est" style="color:var(--text)">0.001 VELD</span><span id="s-fee-recipient"></span> · <span id="s-fee-eta" style="color:var(--muted)">~3 min to confirm</span>
       </div>
       <!-- Plain-language send disclaimer. Same muted-bordered-note
  style as #val-reg-disclaimer on the validator panel. Calm reminder
@@ -3318,12 +3322,12 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <div id="bv-wrap-msg"></div>
       <button class="btn btn-em" id="bv-wrap-btn" type="button" data-act-click="hbv_get_deposit" style="width:100%;margin-top:14px">Get my BTC deposit address</button>
       </div>
-      <details class="veld-details bv-aside"><summary>How settlement works</summary><div>
+      <section data-veld-help class="veld-details bv-aside"><button type=button>How settlement works</button><div>
         <div class="ba-t">Settlement path</div>
         <div class="ba-step"><span class="ba-n">1</span><div class="ba-s"><h5>Choose one exact amount</h5><p>The service reserves your amount against the chain's available custody capacity before it reveals a fresh address. Never overpay or reuse it.</p></div></div>
         <div class="ba-step"><span class="ba-n">2</span><div class="ba-s"><h5>It confirms on Bitcoin</h5><p>After the compiled Bitcoin confirmation depth, the exact deposit is credited to your Veld wallet as btcVELD, 1:1.</p></div></div>
         <div class="ba-step"><span class="ba-n">3</span><div class="ba-s"><h5>Use it on Veld</h5><p>Send it, swap it in an available VELD/btcVELD pool, or request redemption when the peg service is available.</p></div></div>
-      </div></details>
+      </div></section>
     </div>
 
     <!-- REDEEM (btcVELD -> BTC, burn) -->
@@ -3346,12 +3350,12 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <button class="btn btn-em" id="bv-redeem-btn" type="button" data-act-click="hbv_redeem" style="width:100%;margin-top:6px" disabled>Enter an amount</button>
       <div id="bv-redeem-pending" style="margin-top:16px"></div>
       </div>
-      <details class="veld-details bv-aside"><summary>How settlement works</summary><div>
+      <section data-veld-help class="veld-details bv-aside"><button type=button>How settlement works</button><div>
         <div class="ba-t">Redemption path</div>
         <div class="ba-step"><span class="ba-n">1</span><div class="ba-s"><h5>Burn btcVELD</h5><p>The redeem destroys your btcVELD on-chain and records the Bitcoin address you chose. It cannot be reversed.</p></div></div>
         <div class="ba-step"><span class="ba-n">2</span><div class="ba-s"><h5>The burn finalizes</h5><p>The service verifies the canonical burn and required finality before preparing the Bitcoin payout.</p></div></div>
         <div class="ba-step"><span class="ba-n">3</span><div class="ba-s"><h5>BTC is paid out</h5><p>Real BTC is sent from peg custody to your address. Standard addresses only (bc1…, 1…, 3…).</p></div></div>
-      </div></details>
+      </div></section>
     </div>
 
     <!-- SWAP (VELD <-> btcVELD AMM) — pool-gated -->
@@ -3432,11 +3436,11 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
             <div class="bv-lp-cell"><span>Your btcVELD</span><b id="bv-lp-btc-val">—</b></div>
           </div>
           <div class="bv-stat" style="border-top:1px solid var(--b1);margin-top:12px;padding-top:10px"><span>Total value</span><span id="bv-lp-total-val">—</span></div>
-          <details class="veld-details"><summary>How fees are shared</summary><div class="bv-lp-earn">Every fee stays in the pool in the asset the trader receives. You own <b id="bv-lp-fee">0.30% in the output asset</b> pro rata through your LP shares; there is no protocol cut.</div></details>
+          <section data-veld-help class="veld-details"><button type=button>How fees are shared</button><div class="bv-lp-earn">Every fee stays in the pool in the asset the trader receives. You own <b id="bv-lp-fee">0.30% in the output asset</b> pro rata through your LP shares; there is no protocol cut.</div></section>
         </div>
         <div class="card">
-          <details id="bv-lp-details">
-            <summary class="card-title" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">Provide liquidity <span style="font-weight:400;font-size:11px;color:var(--muted)">— earn a share of fees ▾</span></summary>
+          <section id="bv-lp-details">
+            <h3 class="card-title">Provide liquidity</h3>
             <div style="margin-top:12px">
               <div style="font-size:11.5px;color:var(--muted);line-height:1.65;margin-bottom:14px">If the pool price moves while your liquidity sits in it, you'll take out a different mix of VELD and btcVELD than you put in. Your position can be worth less than holding those assets separately. Swap fees may offset that difference, but do not guarantee a profit.</div>
               <div class="form-row">
@@ -3448,7 +3452,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
               <button class="btn btn-em" id="bv-lp-add-btn" data-act-click="hbv_lp_add" type="button" style="width:100%" disabled>Enter an amount</button>
               <button class="btn btn-ghost" id="bv-lp-rm-btn" data-act-click="hbv_lp_remove" type="button" style="width:100%;margin-top:10px;display:none">Withdraw all my liquidity</button>
             </div>
-          </details>
+          </section>
         </div>
       </div>
     </div>
@@ -3504,7 +3508,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     <div class="stat"><div class="lbl">Total staked</div><div class="val em" id="sk-total">&mdash;</div><div class="sub">VELD network-wide</div></div>
     <div class="stat"><div class="lbl">Total bonded</div><div class="val" style="color:#B07CFF" id="sk-bonded">&mdash;</div><div class="sub">VELD &middot; validator bonds (draw yield)</div></div>
     <div class="stat"><div class="lbl">Vault balance</div><div class="val gold" id="sk-vault">&mdash;</div><div class="sub">pays stakers every 480 blocks</div></div>
-    <div class="stat"><div class="lbl">Est. APY</div><div class="val em" id="sk-apy">&mdash;</div><div class="sub">annualized</div></div>
+    <div class="stat"><div class="lbl">Est. APR</div><div class="val em" id="sk-apy">&mdash;</div><div class="sub">ordinary staking · not compounded</div></div>
   </div>
 
   <!-- YOUR POSITION — only rendered when user has an active stake -->
@@ -3620,12 +3624,12 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
         <div class="prev-row"><span class="k">Staking multiplier <span style="color:var(--muted);font-size:11px">(Diamond-only 3.00&times; cap)</span></span><span class="v em" id="sk-proj-combined">1.00&times;</span></div>
         <div class="prev-row"><span class="k">Predicted avg. staking multiplier</span><span class="v em" id="sk-proj-weighted">&mdash;</span></div>
         <div class="prev-row"><span class="k">Distribution interval</span><span class="v">480 blk &middot; ~24h</span></div>
-        <details class="veld-details"><summary>Projection details</summary><div class="prev-note">Projection assumes steady vault inflow (20% of ordinary block subsidy + the full subsidy every 100th block + transaction fees during issuance). Actual payouts depend on blocks mined and number of stakers.</div></details>
+        <section data-veld-help class="veld-details"><button type=button>Projection details</button><div class="prev-note">The projection uses the current vault inflow estimate. Actual payouts depend on mined blocks, the active fee policy and eligible stake.</div></section>
       </div>
 
       <div class="prev" style="margin-top:12px">
         <div class="card-title" style="margin-bottom:6px">Staking multiplier ladder</div>
-        <details class="veld-details"><summary>How the multiplier works</summary><div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Your <strong>staking multiplier</strong> is your mining tier &times; your lockup tier &mdash; both ladders contribute to it, and it boosts your share of vault distributions. Mining tier does not change the ordinary-block miner share. Every 100th block sends its subsidy to the vault.</div></details>
+        <section data-veld-help class="veld-details"><button type=button>How the multiplier works</button><div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Your <strong>staking multiplier</strong> is your mining tier &times; your lockup tier &mdash; both ladders contribute to it, and it boosts your share of vault distributions. Mining tier does not change the ordinary-block miner share. Every 100th block sends its subsidy to the vault.</div></section>
         <div class="prev-row"><span class="k">Lockup tier &middot; 7d</span><span class="v">1.00&times;</span></div>
         <div class="prev-row"><span class="k">Lockup tier &middot; 14d</span><span class="v">1.10&times;</span></div>
         <div class="prev-row"><span class="k">Lockup tier &middot; 30d</span><span class="v">1.25&times;</span></div>
@@ -3728,7 +3732,9 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     <div class="btn-row">
       <button class="btn btn-em" id="val-reg-btn" data-act-click="h4480a6fb">Register &rarr;</button>
       <button class="btn btn-ghost" id="val-dereg-btn" data-act-click="h95e9f6c0" style="display:none">Deregister</button>
+      <button class="btn btn-ghost" id="val-reduce-btn" data-act-click="hBondReturn" hidden>Return excess bond</button>
     </div>
+    <div id="val-reduce-note" hidden style="margin-top:10px;font-size:12px;line-height:1.55;color:var(--muted)"></div>
     <!-- Deregister cooldown / settlement note. Filled by
  loadValidatorsPage(): when the loaded address is a registered validator
  it explains the 100-block (VALIDATOR_OP_COOLDOWN_BLOCKS) lock before
@@ -3813,13 +3819,13 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <span>Slashing Evidence Ledger</span>
       <span id="val-slash-phase" style="font-weight:400;font-size:11px;color:var(--muted2)">enforced · bond slashed</span>
     </div>
-    <details class="veld-details"><summary>Slashing details</summary><div style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.5">
+    <section data-veld-help class="veld-details"><button type=button>Slashing details</button><div style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.5">
       Verified conflicting signatures permanently ban the validator key.
       Ordinary endorsement double-signing pays 25% of the bond to the reporter,
       25% to the vault and returns 50% to the offender. Locked-finality
       equivocation pays 25% to the reporter and burns 75%, with no return to
       the offender. The ledger below records verified evidence.
-    </div></details>
+    </div></section>
     <div id="val-slash-list"><div style="color:var(--muted);font-size:11px;text-align:center;padding:14px">Loading&hellip;</div></div>
   </div>
 </div>
@@ -3893,7 +3899,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       </div>
     </div>
   </div>
-  <div class="card">
+  <div class="card" id="cm-how-it-works">
     <div class="card-title">How Co-Mining Works</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
       <div style="background:var(--s2);border-radius:6px;padding:14px">
@@ -4588,6 +4594,7 @@ var RPC_URL = '/rpc';
 // a redeploy carries the new genesis, and if substitution is ever missed the
 // client/node sighash check simply fails closed (no signature, never a wrong one).
 var VELD_GENESIS_HASH = '__VELD_GENESIS_HASH__';
+var VELD_APPCHAIN_PARENT_GENESIS = '__VELD_APPCHAIN_PARENT_GENESIS__';
 var VELD_DEPLOYMENT_ROLE = '__VELD_DEPLOYMENT_ROLE__';
 var VELD_DEPLOYMENT_PROFILE_ID = '__VELD_DEPLOYMENT_PROFILE_ID__';
 var VELD_DEPLOYMENT_DISPLAY_NAME = '__VELD_DEPLOYMENT_DISPLAY_NAME__';
@@ -4634,6 +4641,13 @@ var VELD_ADDRESS_VERSION = __VELD_ADDRESS_VERSION__;
 var VELD_MIN_TX_FEE_UNITS = __VELD_MIN_TX_FEE_UNITS__;
 var VELD_DUST_THRESHOLD_UNITS = __VELD_DUST_THRESHOLD_UNITS__;
 var VELD_MIN_VALIDATOR_STAKE_UNITS = __VELD_MIN_VALIDATOR_STAKE_UNITS__;
+var VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT = __VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT__;
+function _veldValidatorBondAtHeight(height) {
+  if (!Number.isSafeInteger(height) || height < 1)
+    throw new Error('Current registration height is unavailable.');
+  return VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT > 0 && height >= VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT
+    ? 500000000000 : VELD_MIN_VALIDATOR_STAKE_UNITS;
+}
 var VELD_STAKE_VAULT_ADDRESS = '__VELD_STAKE_VAULT_ADDRESS__';
 var savedAddrs = [];
 try { savedAddrs = JSON.parse(localStorage.getItem('veld_addrs') || '[]'); } catch(e){}
@@ -5107,7 +5121,7 @@ function _veldJournal() {
   }
   function check(record) {
     if (!record || record.version !== 1 || !/^(?:legacy-)?[0-9a-f]{64}$/.test(record.id) ||
-        typeof record.owner !== 'string' || !record.owner || record.owner.length > 64 ||
+        typeof record.owner !== 'string' || !record.owner || record.owner.length > 75 ||
         !Array.isArray(record.inputs) || record.inputs.length < 1 || record.inputs.length > 10000 ||
         new Set(record.inputs).size !== record.inputs.length ||
         !record.inputs.every(function(key) { return /^[0-9a-f]{64}:[0-9]{1,10}$/.test(key); }) ||
@@ -5173,6 +5187,7 @@ function _veldJournal() {
     return {record:record, payload:payload};
   }
   async function insert(tx, record, payload) {
+    check(record);
     var meta = await budget(tx);
     if (meta.records + 1 > limit.records || meta.claims + record.inputs.length > limit.claims ||
         meta.bytes + record.budget > limit.bytes)
@@ -5369,6 +5384,11 @@ function _veldJournal() {
 }
 
 function _veldJournalOperation(bytes, owner) {
+  var depositTx = _veldParseUnsignedTx(bytes);
+  if (depositTx.outputs.length >= 2 && depositTx.outputs[0].value_units_str === '0' &&
+      /^6a4c7b56454c445f415050317c01[0-9a-f]{224}$/.test(depositTx.outputs[0].script_pubkey_hex) &&
+      depositTx.outputs[1].script_pubkey_hex === 'c10130' + depositTx.outputs[0].script_pubkey_hex.slice(28,124))
+    return {label:'Exchange Deposit', feature:''};
   if (_veldNmsTransaction(bytes, owner)) return {label:'Near-miss entry', feature:''};
   var payload = '';
   try { payload = _veldGetSingleCanonicalOpReturnPayload({unsigned_tx_hex:bytes}); } catch (_) {}
@@ -5441,6 +5461,24 @@ async function _veldJournalBroadcast(signed, seed, generation) {
   return reply;
 }
 
+async function _veldSavedTransactionReceipt(signed, seed, generation) {
+  var txid = veldCrypto.sha256d(signed);
+  _veldAssertActiveSignerSeed(seed, generation);
+  for (var method of ['getmempoolentry', 'getrawtransaction']) {
+    var receipt = null;
+    try { receipt = await _veldRpcTransport(method, [txid]); } catch (_) {}
+    _veldAssertActiveSignerSeed(seed, generation);
+    if (receipt == null || (typeof receipt === 'object' && receipt.error)) continue;
+    if (typeof receipt !== 'object' || receipt.txid !== txid || receipt.raw_hex !== signed ||
+        (method === 'getrawtransaction' && (!Number.isSafeInteger(receipt.block_height) ||
+          receipt.block_height < 0 || !/^[0-9a-f]{64}$/.test(receipt.block_hash))))
+      throw new Error('The saved transaction receipt differs from its signed bytes. Its recovery record has been kept.');
+    return {txid:txid, raw_hex:signed,
+      block_height:method === 'getrawtransaction' ? receipt.block_height : null};
+  }
+  return null;
+}
+
 async function _veldRetryJournalTransaction(txid) {
   var saved = await _veldJournal().get(txid);
   if (!saved) return rpc('rebroadcasttx', [txid]);
@@ -5448,6 +5486,14 @@ async function _veldRetryJournalTransaction(txid) {
   var seed = __veldKey.get(), generation = _veldAssertActiveSignerSeed(seed);
   if (_veldRequireBoundIdentity(seed, null, currentAddr).address !== saved.record.owner)
     throw new Error('Unlock the original wallet to retry this transaction.');
+  if (saved.payload.signed) {
+    var receipt = await _veldSavedTransactionReceipt(saved.payload.signed, seed, generation);
+    if (receipt) {
+      if (Number.isSafeInteger(receipt.block_height)) await _veldJournal().confirmed([txid]);
+      else await _veldJournal().submitted(txid);
+      return {rebroadcast:false, txid:txid, already_known:true};
+    }
+  }
   var nms = saved.payload.signed && _veldNmsTransaction(saved.payload.signed, saved.record.owner);
   if (nms) {
     var tip = await rpc('getblockchaininfo', []);
@@ -6432,6 +6478,323 @@ function _veldConsolidationBudget(maxBatches) {
       fees += fee;
     }
   });
+}
+
+function _veldAppchainUnits(value) {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) throw new Error('Deposit amount is not an exact integer.');
+    value = String(value);
+  }
+  if (typeof value !== 'string' || !/^(0|[1-9][0-9]{0,15})$/.test(value))
+    throw new Error('Deposit amount must use exact native atoms.');
+  var amount = BigInt(value);
+  if (amount > 2100000000000000n) throw new Error('Deposit amount exceeds the network supply.');
+  return amount;
+}
+function _veldAppchainLE(value, width) {
+  var n = BigInt(value), result = '';
+  if (n < 0n || n >= (1n << BigInt(width * 8))) throw new Error('Deposit integer overflow.');
+  for (var i = 0; i < width; i++) { result += Number(n & 255n).toString(16).padStart(2, '0'); n >>= 8n; }
+  return result;
+}
+function _veldAppchainField(value) {
+  var bytes = new TextEncoder().encode(value);
+  return _veldAppchainLE(bytes.length, 8) + _veldBytesToHex(bytes);
+}
+function _veldAppchainTaggedDigest(domain, fields) {
+  return veldCrypto.sha256d(_veldAppchainField(domain) + _veldAppchainLE(fields.length, 8) + fields.map(_veldAppchainField).join(''));
+}
+function _veldAppchainSelection(value) {
+  if (!value || typeof value !== 'object') throw new Error('Select the exchange network and account first.');
+  var selected = {};
+  for (var name of ['parent_genesis', 'bridge_id', 'descriptor_id', 'child_genesis', 'beneficiary_id']) {
+    var size = name === 'parent_genesis' ? 64 : 96;
+    if (typeof value[name] !== 'string' || value[name].length !== size ||
+        !/^[0-9a-f]+$/.test(value[name]) || /^0+$/.test(value[name]))
+      throw new Error('The selected exchange identity is incomplete.');
+    selected[name] = value[name];
+  }
+  if (typeof VELD_APPCHAIN_PARENT_GENESIS !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(VELD_APPCHAIN_PARENT_GENESIS) || selected.parent_genesis !== VELD_APPCHAIN_PARENT_GENESIS)
+    throw new Error('The selected exchange uses another native network.');
+  selected.trading_atoms = _veldAppchainUnits(value.trading_atoms).toString();
+  selected.fuel_backing_atoms = _veldAppchainUnits(value.fuel_backing_atoms).toString();
+  var total = _veldAppchainUnits(selected.trading_atoms) + _veldAppchainUnits(selected.fuel_backing_atoms);
+  if (!total || total + 100000n > 2100000000000000n) throw new Error('A positive backed deposit and its fee are required.');
+  return Object.freeze(selected);
+}
+function _veldCheckAppchainDepositNetwork(info, selected) {
+  if (!info || info.schema !== 1 || info.active !== true || info.parent_genesis !== selected.parent_genesis ||
+      info.deposit_confirmations !== 120 || !Array.isArray(info.bridges) || info.bridges.length !== 1)
+    throw new Error('This node cannot accept deposits to the selected exchange network.');
+  var bridge = info.bridges[0];
+  if (!bridge || bridge.bridge_id !== selected.bridge_id || bridge.descriptor_id !== selected.descriptor_id ||
+      bridge.child_genesis !== selected.child_genesis || bridge.can_deposit !== true ||
+      bridge.exit_only !== false || bridge.stale !== false ||
+      _veldAppchainUnits(bridge.remaining_capacity_atoms) < BigInt(selected.trading_atoms) + BigInt(selected.fuel_backing_atoms))
+    throw new Error('The selected bridge is unavailable or lacks deposit capacity.');
+}
+function _veldVerifyAppchainDeposit(prep, selected, fundingAddress) {
+  selected = _veldAppchainSelection(selected);
+  if (!prep || typeof prep !== 'object' || JSON.stringify(prep).length > 64 * 1024 * 1024)
+    throw new Error('Deposit preparation exceeds the wallet limit.');
+  var raw = prep.unsigned_tx_hex;
+  if (typeof raw !== 'string' || !/^(?:[0-9a-f]{2})+$/.test(raw)) throw new Error('Invalid deposit transaction bytes.');
+  var size = _veldAssertPreparedRelaySize(raw, prep.inputs), tx = _veldParseUnsignedTx(raw);
+  if (tx.version !== 1 || tx.locktime !== 0 || tx.inputs.length > 180)
+    throw new Error('Unsupported deposit transaction envelope.');
+  var commitment = _veldAddrToKeyCommitmentHex(fundingAddress);
+  var script = _veldKeyCommitmentToScriptHex(commitment);
+  var total = 0n, seen = new Set();
+  var sources = [_veldAppchainField('VELD_OFFLINE_SOURCE_INPUTS_V2'), _veldAppchainLE(tx.inputs.length, 8)];
+  for (var i = 0; i < tx.inputs.length; i++) {
+    var input = tx.inputs[i], meta = prep.inputs[i], txid = _veldBytesToHex(input.prevTxHash);
+    var point = txid + ':' + input.prevOutIndex;
+    if (input.sequence !== 0xffffffff || input.scriptSigHex !== '' || seen.has(point) ||
+        !meta || meta.index !== i || meta.prev_script_hex !== script ||
+        (meta.sigless !== undefined && meta.sigless !== false)) throw new Error('Invalid or unowned deposit input.');
+    seen.add(point);
+    var parentRaw = meta.parent_tx_hex;
+    if (typeof parentRaw !== 'string' || parentRaw.length > 16 * 1024 * 1024 ||
+        !/^(?:[0-9a-f]{2})+$/.test(parentRaw) || veldCrypto.sha256d(parentRaw) !== txid)
+      throw new Error('Deposit funding transaction does not match its hash.');
+    var parent = _veldParseUnsignedTx(parentRaw), output = parent.outputs[input.prevOutIndex];
+    if (!output || output.script_pubkey_hex !== script ||
+        BigInt(output.value_units_str) !== _veldAppchainUnits(meta.value))
+      throw new Error('Deposit funding value or owner differs from the authenticated parent.');
+    total += _veldAppchainUnits(output.value_units_str);
+    if (total > 2100000000000000n) throw new Error('Deposit input total exceeds supply.');
+    sources.push(txid, _veldAppchainLE(input.prevOutIndex, 8), _veldAppchainLE(parentRaw.length / 2, 8), parentRaw);
+  }
+  var trading = BigInt(selected.trading_atoms), fuel = BigInt(selected.fuel_backing_atoms), amount = trading + fuel;
+  var change = total - amount - 100000n;
+  var payload = _veldBytesToHex(new TextEncoder().encode('VELD_APP1|')) + '01' + selected.bridge_id + selected.beneficiary_id +
+    _veldAppchainLE(trading, 8) + _veldAppchainLE(fuel, 8);
+  var marker = '6a4c' + _veldAppchainLE(payload.length / 2, 1) + payload;
+  if (change < 0n || tx.outputs.length !== (change ? 3 : 2) || tx.outputs[0].value_units_str !== '0' ||
+      tx.outputs[0].script_pubkey_hex !== marker || tx.outputs[1].value_units_str !== amount.toString() ||
+      tx.outputs[1].script_pubkey_hex !== 'c10130' + selected.bridge_id ||
+      (change && (tx.outputs[2].value_units_str !== change.toString() || tx.outputs[2].script_pubkey_hex !== script)))
+    throw new Error('Deposit destination, allocation, fee or change differs from your selection.');
+  for (var pair of [['total_input', total], ['total_output', total - 100000n], ['fee', 100000n], ['change', change]]) {
+    if (_veldAppchainUnits(prep[pair[0]]) !== pair[1]) throw new Error('Deposit totals differ from authenticated transaction bytes.');
+  }
+  for (var field of ['bridge_id', 'descriptor_id', 'child_genesis', 'beneficiary_id']) {
+    if (prep[field] !== selected[field]) throw new Error('Prepared deposit uses another exchange identity.');
+  }
+  if (_veldAppchainUnits(prep.trading_atoms) !== trading || _veldAppchainUnits(prep.fuel_backing_atoms) !== fuel)
+    throw new Error('Prepared deposit allocation differs.');
+  var outputs = [_veldAppchainField('VELD_OFFLINE_OUTPUT_SET_V1'), _veldAppchainLE(tx.outputs.length, 8)];
+  for (var out of tx.outputs) {
+    var length = out.script_pubkey_hex.length / 2;
+    if (length >= 253) throw new Error('Unexpected deposit script length.');
+    var encoded = _veldAppchainLE(BigInt(out.value_units_str), 8) + _veldAppchainLE(length, 1) + out.script_pubkey_hex;
+    outputs.push(_veldAppchainLE(encoded.length / 2, 8), encoded);
+  }
+  var identity = ['VELD_APPCHAIN_DEPOSIT_V1', selected.parent_genesis, selected.bridge_id, selected.descriptor_id,
+    selected.child_genesis, selected.beneficiary_id, selected.trading_atoms, selected.fuel_backing_atoms].join('|');
+  if (prep.operation_identity !== identity) throw new Error('Prepared deposit domain differs.');
+  var intent = prep.signing_intent;
+  if (!intent || intent.version !== 'VELD_SIGNING_INTENT_V1' || intent.operation_type !== 'APPCHAIN_DEPOSIT' ||
+      intent.intended_recipient !== selected.beneficiary_id || _veldAppchainUnits(intent.intended_amount) !== amount ||
+      intent.expected_change_destination !== fundingAddress || _veldAppchainUnits(intent.expected_change) !== change ||
+      intent.source_transactions_digest !== veldCrypto.sha256d(sources.join('')) ||
+      intent.complete_output_digest !== veldCrypto.sha256d(outputs.join('')) ||
+      intent.operation_identity_digest !== _veldAppchainTaggedDigest('VELD_OFFLINE_OPERATION_IDENTITY_V1', [identity]))
+    throw new Error('Deposit signing intent differs from your review.');
+  var maxFee = _veldAppchainUnits(intent.maximum_absolute_fee), maxRate = _veldAppchainUnits(intent.maximum_fee_rate);
+  if (maxFee !== 100000n || maxRate === 0n || maxRate > 19n || 100000n > BigInt(size) * maxRate)
+    throw new Error('Deposit fee exceeds the wallet policy.');
+  var intentFields = [intent.version, intent.operation_type, selected.beneficiary_id, amount.toString(), fundingAddress,
+    change.toString(), maxFee.toString(), maxRate.toString(), intent.source_transactions_digest,
+    intent.complete_output_digest, intent.operation_identity_digest];
+  if (intent.intent_digest !== _veldAppchainTaggedDigest('VELD_OFFLINE_SIGNING_INTENT_V1', intentFields))
+    throw new Error('Deposit intent digest differs.');
+  _veldVerifyInputSighashes(prep, [], script);
+  return Object.freeze({funding_address: fundingAddress, selection: selected, trading_atoms: trading.toString(),
+    fuel_backing_atoms: fuel.toString(), fee_atoms: '100000', change_atoms: change.toString(),
+    deposit_confirmations: 120, intent_digest: intent.intent_digest});
+}
+// The caller supplies a locally selected network/account and displays review
+// before invoking confirm. This interface accepts no remote signing messages.
+async function prepareAppchainDeposit(selected, fundingAddress) {
+  selected = _veldAppchainSelection(selected);
+  _veldKeyCommitmentToScriptHex(_veldAddrToKeyCommitmentHex(fundingAddress));
+  _veldCheckAppchainDepositNetwork(await rpc('getappchainbridgeinfo', [selected.bridge_id]), selected);
+  function amount(atoms) { var n = BigInt(atoms); return String(n / 100000000n) + '.' + String(n % 100000000n).padStart(8, '0'); }
+  var response = await rpc('prepareappchaindeposit', [fundingAddress, selected.bridge_id, selected.descriptor_id,
+    selected.child_genesis, selected.beneficiary_id, amount(selected.trading_atoms), amount(selected.fuel_backing_atoms)]);
+  return _veldAppchainPreparedReview(selected, fundingAddress, response);
+}
+function _veldAppchainPreparedReview(selected, fundingAddress, response) {
+  selected = _veldAppchainSelection(selected);
+  var serialized = JSON.stringify(response);
+  if (serialized.length > 64 * 1024 * 1024) throw new Error('Deposit preparation exceeds the wallet limit.');
+  var prepared = JSON.parse(serialized), review = _veldVerifyAppchainDeposit(prepared, selected, fundingAddress), used = false;
+  return Object.freeze({review: review, confirm: async function(seed, onSignProgress) {
+    if (used) throw new Error('This deposit review has already been used. Check saved transaction progress.');
+    used = true;
+    _veldRequireSelfCustodySigner('exchange deposit');
+    var generation = _veldAssertActiveSignerSeed(seed);
+    _veldRequireBoundIdentity(seed, null, fundingAddress);
+    _veldCheckAppchainDepositNetwork(await rpc('getappchainbridgeinfo', [selected.bridge_id]), selected);
+    _veldVerifyAppchainDeposit(prepared, selected, fundingAddress);
+    await _veldAuthenticatePreparedPrevouts(prepared, 100000);
+    _veldAssertActiveSignerSeed(seed, generation);
+    var signed = await veldCrypto.injectSignatures(prepared.unsigned_tx_hex, prepared.inputs, seed, onSignProgress, generation);
+    var txid = await _veldBroadcastExactSigned(signed, seed, generation);
+    return Object.freeze({txid: txid, review: review});
+  }});
+}
+
+function _veldDepositHandoff(value) {
+  if (!value || Object.keys(value).sort().join(',') !== 'id,return_origin,selection,version' || value.version !== 1 ||
+      typeof value.id !== 'string' || !/^[0-9a-f]{32}$/.test(value.id)) throw new Error('Invalid exchange deposit request.');
+  var origin = new URL(value.return_origin);
+  if (typeof value.return_origin !== 'string' || value.return_origin !== origin.origin || origin.username || origin.password ||
+      !(origin.protocol === 'https:' || (origin.protocol === 'http:' && origin.hostname === '127.0.0.1')))
+    throw new Error('The exchange return origin is invalid.');
+  if (!value.selection || Object.keys(value.selection).sort().join(',') !==
+      'beneficiary_id,bridge_id,child_genesis,descriptor_id,fuel_backing_atoms,parent_genesis,trading_atoms' ||
+      typeof value.selection.trading_atoms !== 'string' || typeof value.selection.fuel_backing_atoms !== 'string')
+    throw new Error('The exchange deposit allocation is invalid.');
+  return Object.freeze({version:1, id:value.id, return_origin:origin.origin, selection:_veldAppchainSelection(value.selection)});
+}
+function _veldDepositHandoffDecode(encoded) {
+  if (typeof encoded !== 'string' || encoded.length > 4096 || !/^[A-Za-z0-9_-]+$/.test(encoded))
+    throw new Error('Invalid exchange deposit link.');
+  var raw = atob(encoded.replace(/-/g,'+').replace(/_/g,'/'));
+  var value = _veldDepositHandoff(JSON.parse(raw));
+  if (btoa(JSON.stringify(value)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'') !== encoded)
+    throw new Error('The deposit link is not canonical.');
+  return value;
+}
+function _veldDepositHandoffStore() {
+  if (_veldDepositHandoffStore.instance) return _veldDepositHandoffStore.instance;
+  if (!globalThis.indexedDB || !navigator.locks) throw new Error('Durable wallet storage is unavailable.');
+  var name='veld-native-deposit-handoffs-v1', opening=new Promise(function(resolve,reject) {
+    var request=indexedDB.open(name,1);
+    request.onupgradeneeded=function(){request.result.createObjectStore('records',{keyPath:'id'});};
+    request.onerror=function(){reject(request.error);};
+    request.onblocked=function(){reject(new Error('Close the older wallet window to open deposit recovery.'));};
+    request.onsuccess=function(){var db=request.result;db.onversionchange=function(){db.close();};resolve(db);};
+  });
+  async function transact(mode, key, value) {
+    var db=await opening;
+    return new Promise(function(resolve,reject){
+      var tx=db.transaction('records',mode,mode==='readwrite'?{durability:'strict'}:undefined), store=tx.objectStore('records'), result, error;
+      tx.oncomplete=function(){resolve(result);};tx.onabort=function(){reject(error||tx.error||new Error('Deposit progress could not be saved.'));};
+      tx.onerror=function(){error=tx.error;};
+      var q=store.get(key);
+      q.onsuccess=function(){
+        result=q.result||null;
+        if (!value) return;
+        if (result) { error=new Error('Deposit progress already exists. Review its saved request.');tx.abort();return; }
+        var scan=store.openCursor(), count=0, bytes=JSON.stringify(value).length;
+        scan.onsuccess=function(){
+          var cursor=scan.result;
+          if (cursor) {count++;bytes+=JSON.stringify(cursor.value).length;}
+          if (count>=128 || bytes>16*1024*1024) {error=new Error('Deposit recovery storage is full. Existing progress is retained.');tx.abort();return;}
+          if (cursor) cursor.continue();else {store.add(value);result=value;}
+        };
+      };
+    });
+  }
+  var api={get:function(key){return transact('readonly',key);},add:function(row){return transact('readwrite',row.id,row);},
+    locked:function(key,fn){return navigator.locks.request(name+'-'+key,{mode:'exclusive'},fn);}};
+  _veldDepositHandoffStore.instance=api;return api;
+}
+function _veldDepositHandoffKey(request) {
+  return _veldAppchainTaggedDigest('VELD_EXCHANGE_HANDOFF_V1',[request.return_origin,request.id]);
+}
+function _veldDepositHandoffRecord(row, request, address) {
+  if (!row || Object.keys(row).sort().join(',')!=='address,id,prepared,request,version' || row.version!==1 ||
+      row.id!==_veldDepositHandoffKey(request) || row.address!==address || JSON.stringify(row.request)!==JSON.stringify(request))
+    throw new Error('Saved deposit belongs to a different request or wallet.');
+  _veldVerifyAppchainDeposit(row.prepared,request.selection,address);
+  return row;
+}
+async function prepareDepositHandoff(value, address) {
+  var request=_veldDepositHandoff(value), key=_veldDepositHandoffKey(request), store=_veldDepositHandoffStore();
+  return store.locked(key,async function(){
+    var row=await store.get(key);
+    if (!row) {
+      _veldRequireSelfCustodySigner('exchange deposit');
+      _veldKeyCommitmentToScriptHex(_veldAddrToKeyCommitmentHex(address));
+      var selected=request.selection;
+      _veldCheckAppchainDepositNetwork(await rpc('getappchainbridgeinfo',[selected.bridge_id]),selected);
+      function units(v){var n=BigInt(v);return String(n/100000000n)+'.'+String(n%100000000n).padStart(8,'0');}
+      var prepared=await rpc('prepareappchaindeposit',[address,selected.bridge_id,selected.descriptor_id,
+        selected.child_genesis,selected.beneficiary_id,units(selected.trading_atoms),units(selected.fuel_backing_atoms)]);
+      if (JSON.stringify(prepared).length>4*1024*1024) throw new Error('Deposit review exceeds recovery storage limits.');
+      _veldVerifyAppchainDeposit(prepared,selected,address);
+      row={version:1,id:key,address:address,request:request,prepared:JSON.parse(JSON.stringify(prepared))};
+      await store.add(row);
+    }
+    _veldDepositHandoffRecord(row,request,address);
+    var saved=await _veldJournal().get(veldCrypto.sha256d(row.prepared.unsigned_tx_hex));
+    return Object.freeze({review:_veldVerifyAppchainDeposit(row.prepared,request.selection,address),signed:!!(saved&&saved.payload.signed)});
+  });
+}
+async function confirmDepositHandoff(value, address, seed) {
+  var request=_veldDepositHandoff(value),key=_veldDepositHandoffKey(request),store=_veldDepositHandoffStore();
+  _veldRequireSelfCustodySigner('exchange deposit');
+  var generation=_veldAssertActiveSignerSeed(seed);
+  _veldRequireBoundIdentity(seed,null,address);
+  return store.locked(key,async function(){
+    var row=_veldDepositHandoffRecord(await store.get(key),request,address);
+    _veldAssertActiveSignerSeed(seed,generation);
+    var id=veldCrypto.sha256d(row.prepared.unsigned_tx_hex),saved=await _veldJournal().get(id),txid;
+    if (saved&&saved.payload.signed) {
+      if (saved.record.owner!==address || saved.payload.unsigned!==row.prepared.unsigned_tx_hex)
+        throw new Error('Saved wallet transaction differs from this deposit request.');
+      await _veldRetryJournalTransaction(saved.record.txid);txid=saved.record.txid;
+    } else {
+      var pending=_veldAppchainPreparedReview(request.selection,address,row.prepared);
+      txid=(await pending.confirm(seed)).txid;
+    }
+    _veldAssertActiveSignerSeed(seed,generation);
+    var result={version:1,id:request.id,owner:request.selection.beneficiary_id,chain:request.selection.child_genesis,
+      bridge:request.selection.bridge_id,txid:txid,index:1};
+    var encoded=btoa(JSON.stringify(result)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    return Object.freeze({transaction:txid,return_url:request.return_origin+'/portfolio#native-deposit-result='+encoded});
+  });
+}
+function _veldOpenDepositHandoff() {
+  var prefix='#veld-deposit=';
+  if (!location.hash.startsWith(prefix)) return;
+  var overlay=document.createElement('div');overlay.className='modal-overlay';overlay.style.display='flex';
+  var panel=document.createElement('div');panel.className='modal';panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');
+  var title=document.createElement('h2');title.textContent='Deposit to Veld exchange';panel.appendChild(title);
+  var body=document.createElement('div'),status=document.createElement('p'),action=document.createElement('button'),close=document.createElement('button');
+  status.setAttribute('role','status');action.className='btn';close.className='btn';close.textContent='Close';close.onclick=function(){overlay.remove();};
+  panel.append(body,status,action,close);overlay.appendChild(panel);document.body.appendChild(overlay);
+  function line(name,value){var p=document.createElement('p');p.style.overflowWrap='anywhere';p.textContent=name+': '+value;body.appendChild(p);}
+  function amount(value,places){var n=BigInt(value),scale=10n**BigInt(places);return String(n/scale)+'.'+String(n%scale).padStart(places,'0');}
+  var request,address,reviewed=false;
+  try {request=_veldDepositHandoffDecode(location.hash.slice(prefix.length));
+    line('Exchange',request.return_origin);line('Exchange account',request.selection.beneficiary_id);
+    line('Trading credit',amount(request.selection.trading_atoms,8)+' VELD');line('Execution credit',amount(request.selection.fuel_backing_atoms,5)+' FUEL');
+    action.textContent='Review deposit';
+  } catch(e){status.textContent=e.message;action.hidden=true;return;}
+  action.onclick=async function(){
+    action.disabled=true;close.disabled=true;
+    try {
+      if (!currentAddr || !__veldKey.get()) throw new Error('Log in to your native wallet, then reopen this deposit link.');
+      if (!reviewed) {
+        address=currentAddr;var saved=await prepareDepositHandoff(request,address);reviewed=true;
+        line('From',address);line('Network fee',amount(saved.review.fee_atoms,8)+' VELD');line('Change',amount(saved.review.change_atoms,8)+' VELD');
+        status.textContent=saved.signed?'A signed transaction is saved. Recover its progress before returning to the exchange.':'Review the account and amounts above. Deposits require 120 native confirmations.';
+        action.textContent=saved.signed?'Recover deposit progress':'Approve deposit';
+      } else {
+        if (currentAddr!==address) throw new Error('Your native wallet changed. Reopen this deposit request.');
+        var result=await confirmDepositHandoff(request,address,__veldKey.get());
+        status.textContent='Transaction saved: '+result.transaction;action.textContent='Return to exchange';
+        action.onclick=function(){location.assign(result.return_url);};
+      }
+    } catch(e){status.textContent=e.message||'Deposit did not complete. Saved progress is retained.';}
+    finally{action.disabled=false;close.disabled=false;}
+  };
 }
 
 function signAndBroadcast(prepareMethod, params, keyHex, expectedOutputs, selfP2PKHGuardHash160, allowedP2PKHHash160s, onSignProgress, expectedOpReturnHex, consolidationBudget, expectedGeneration) {
@@ -8018,9 +8381,9 @@ function updateYieldProjection() {
     // Live vault state for inflow + total weighted stake.
     fetch('/api/stats').then(function(r){ return r.json(); }).then(function(d){
       var blocksPerDay = 480;   // 180-second blocks
-      var reward = d.block_reward_veld || 3.13926940;
-      var inflow = blocksPerDay * reward * 0.20
-                 + blocksPerDay * (1.0/100.0) * reward * 0.80;  // every-100th-block whole-reward vault blocks
+      var inflowUnits = d.vault_subsidy_next_480_units;
+      if (!Number.isSafeInteger(inflowUnits) || inflowUnits < 0) { box.style.display = 'none'; return; }
+      var inflow = inflowUnits / 100000000;
       var dailyPayout = inflow * 0.90;  // inflow payout cap: vault keeps at least 10%
       var myWeight = amt * mult;
       // Total weighted stake = sum across network. /api/stats may
@@ -9785,6 +10148,7 @@ document.addEventListener('DOMContentLoaded', function(){
   try {
     var dh = (location.hash || '').replace(/^#/, '').toLowerCase().replace(/[^a-z-]/g, '');
     if (dh && document.getElementById('page-' + dh)) setTimeout(function(){ try { nav(dh); } catch(e){} }, 80);
+    _veldOpenDepositHandoff();
   } catch(e){}
 });
 // Collapsible help: fold long explainer prose behind a "?" button. Runs per
@@ -9800,7 +10164,7 @@ function initHelpTips(scope) {
   // (The old heuristic auto-folded any muted/desc/intro/note block ≥90 chars behind a
   // block "?" that sat UNDER the text — it swallowed real content, e.g. the co-mine
   // "how to mine" steps and other primary descriptions. That heuristic is gone;
-  // genuine help is now either this inline data-help or a hand-written <details class="spx-help">.)
+  // genuine help is now either this inline data-help or a hand-written <section data-veld-help class="spx-help">.)
   var nodes = scope.querySelectorAll('[data-help]');
   for (var i = 0; i < nodes.length; i++) {
     var el = nodes[i];
@@ -9808,8 +10172,8 @@ function initHelpTips(scope) {
     el.dataset.hqd = '1';
     var txt = el.getAttribute('data-help') || '';
     if (!txt) continue;
-    var det  = document.createElement('details'); det.className = 'help-tip';
-    var sum  = document.createElement('summary'); sum.textContent = '?'; sum.title = 'What is this?'; sum.setAttribute('aria-label', 'Show help');
+    var det  = document.createElement('section'); det.setAttribute('data-veld-help','');
+    var sum  = document.createElement('button'); sum.type='button'; sum.textContent = '?'; sum.title = 'What is this?'; sum.setAttribute('aria-label', 'Show help');
     var body = document.createElement('div');     body.className = 'help-body'; body.textContent = txt;
     det.appendChild(sum); det.appendChild(body);
     el.appendChild(det);                                // "?" rides at the end of the element's own text
@@ -9920,6 +10284,25 @@ setInterval(refreshWalletNetworkRate, 5000);
 document.addEventListener('visibilitychange', function() { if (!document.hidden) refreshWalletNetworkRate(); });
 window.addEventListener('pageshow', refreshWalletNetworkRate);
 
+// The node projects exactly 480 protocol blocks, including halving, vault-only
+// blocks and the final supply-cap reward. Fees and changes in mining share are
+// excluded. A missing or stale observation is not an income estimate.
+var walletSubsidy = null, walletSubsidyPending = false;
+function refreshWalletSubsidy(height) {
+  if (walletSubsidyPending || (walletSubsidy && walletSubsidy.height === height && Date.now() - walletSubsidy.at < 30000)) return;
+  walletSubsidyPending = true;
+  rpc('getmininginfo').then(function(d) {
+    var units = d && d.miner_subsidy_next_480_units;
+    if (!Number.isSafeInteger(units) || units < 0 || !Number.isSafeInteger(d.reward_height) || d.reward_height < 1) throw new Error('Subsidy unavailable');
+    walletSubsidy = {height:d.reward_height - 1, at:Date.now(), minerNext480:units / 100000000};
+    var el = document.getElementById('m-daily-est');
+    if (el) { el.textContent = '~' + fmt(walletSubsidy.minerNext480, 0); el.title = 'Network miner subsidy over the next 480 blocks; transaction fees excluded.'; }
+  }).catch(function() {
+    walletSubsidy = null;
+    var el = document.getElementById('m-daily-est'); if (el) el.textContent = '—';
+  }).then(function() { walletSubsidyPending = false; });
+}
+
 function loadDashboard() {
   rpc('getblockchaininfo').then(function(d) {
     _dashFailCount = 0;
@@ -9948,20 +10331,7 @@ function loadDashboard() {
     document.getElementById('status-txt').textContent = 'h=' + h;
     loadDashBlocks(h);
     loadDashRecentBlocks(h);
-    // m-daily-est removed: Mining tab moved to explorer.veld.network
-    var mDaily2 = document.getElementById('m-daily-est');
-    if (mDaily2) {
-      // v2.7.0 — adapt the estimate to chain phase:
-      //   INACTIVE: 100% of subsidy per block to miner (no 50% split)
-      //   ACTIVE:   50% of subsidy per block (the canonical post-activation share)
-      //   POST-EMISSION: fees only — show "fees only" instead of a fabricated VELD/day estimate
-      if (emissionDone) {
-        mDaily2.textContent = 'fees only';
-      } else {
-        var share = stakingActive ? 0.50 : 1.00;  // 100% pre-activation, 50% post
-        mDaily2.textContent = '~' + fmt(480 * 3.13926940 * share, 0);
-      }
-    }
+    refreshWalletSubsidy(h);
   }).catch(function() {
     _dashFailCount++;
     if (_dashFailCount >= 8) {
@@ -10450,8 +10820,8 @@ function loadWalletAddr(addr) {
   //      payout_net × 1.
   //
   // New math:
-  //   * Mining/day  = (lifetime_blocks × 480 / chain_height) × 1.5696 VELD
-  //     — lifetime average daily blocks × flat coinbase share, no mult.
+  //   * Mining/day = lifetime block share × next 480 blocks' miner subsidy.
+  //     The node includes subsidy reductions, vault blocks and the supply cap.
   //     Falls back to 0 when chain_height is 0 (pre-genesis guard).
   //   * Staking/day = payout_net_veld × (480 / 480)
   //     — the authoritative per-cycle number from the node × cycles/day.
@@ -10470,15 +10840,11 @@ function loadWalletAddr(addr) {
       // history (== post-LWMA-bootstrap window) and at least 1 lifetime
       // block before projecting mining income.
       var miningPerDay = 0;
-      var miningReady = (chainH >= 60 && mBlocks >= 1);
+      var miningReady = (chainH >= 60 && mBlocks >= 1 && walletSubsidy &&
+                         walletSubsidy.height === chainH && Date.now() - walletSubsidy.at < 60000);
       if (miningReady) {
-        // lifetime-avg blocks per day × flat 1.5696 coinbase
-        // (50% of BLOCK_REWARD_UNITS = 3.13926940 VELD, rounded).
-        // Mining tier multiplier does NOT apply to coinbase — the
-        // miner's per-block share is flat. Multipliers only weight
-        // vault distribution, which is the staking leg below.
-        var dailyAvgBlocks = mBlocks * (480.0 / chainH);
-        miningPerDay = dailyAvgBlocks * 1.5696;  // winner cut: 50% of the 3.13926940 block reward
+        // Lifetime block share applied to the next 480 blocks of actual subsidy.
+        miningPerDay = (mBlocks / chainH) * walletSubsidy.minerNext480;
       }
       // Staking: per-cycle net payout from getstakinginfo × 1 cycle/day.
       // 480 blocks/day ÷ VAULT_DISTRIBUTION_INTERVAL (480) = 1.
@@ -10500,7 +10866,7 @@ function loadWalletAddr(addr) {
       if (subEl) {
         if (miningReady && stakingPerDay > 0)       subEl.textContent = 'mining (lifetime avg) + staking';
         else if (miningReady)                       subEl.textContent = 'mining (lifetime avg)';
-        else if (stakingPerDay > 0)                 subEl.textContent = 'staking only — mining needs ' + (60 - chainH) + ' more blocks of chain history';
+        else if (stakingPerDay > 0)                 subEl.textContent = 'staking only — mining estimate unavailable';
         else                                        subEl.textContent = 'no projection yet';
       }
     } catch (e) {}
@@ -11553,6 +11919,7 @@ function renderPendingSends(state) {
   var typeLabel = {
     preparerawtransaction:'Send', preparestake:'Stake Lock', prepareunstake:'Stake Unlock',
     prepareregistervalidator:'Validator Register', preparederegistervalidator:'Validator Deregister',
+    preparereducevalidatorbond:'Excess bond return request',
     preparegovproposal:'Gov Proposal', preparegovvote:'Gov Vote'
   };
   var nowSec = Math.floor(Date.now() / 1000);
@@ -11748,7 +12115,7 @@ function onFromChange() {
     // v2: compact inline readout, just the spendable number.
     // Previously appended "(X staked)" suffix which was too loud now that
     // the field lives next to the Amount label.
-    if (available) available.textContent = fmt(spendable,2) + ' VELD';
+    if (available) available.textContent = fmt(spendable,8) + ' VELD';
   }).catch(function(){ if (stillCurrent() && available) available.textContent = 'Unavailable'; });
   var outputs = rpc('listunspent',[addr]).then(function(utxos) {
     if (!stillCurrent()) return;
@@ -11763,13 +12130,15 @@ function onFromChange() {
 function updateConfirm() {
   var from = document.getElementById('s-from').value.trim();
   var to = document.getElementById('s-to').value.trim();
-  var amount = parseFloat(document.getElementById('s-amount').value||0);
-  if (!from || !to || !amount) { document.getElementById('confirm-box').classList.remove('show'); return; }
+  var amountUnits;
+  try { amountUnits = _veldParseVeldUnitsExact(document.getElementById('s-amount').value); }
+  catch (_) { document.getElementById('confirm-box').classList.remove('show'); return; }
+  if (!from || !to) { document.getElementById('confirm-box').classList.remove('show'); return; }
   document.getElementById('confirm-box').classList.add('show');
   document.getElementById('c-from').textContent = shortAddr(from);
   document.getElementById('c-to').textContent = shortAddr(to);
-  document.getElementById('c-amount').textContent = fmt(amount,2) + ' VELD';
-  document.getElementById('c-total').textContent = fmt(amount+0.001,2) + ' VELD';
+  document.getElementById('c-amount').textContent = _veldUnitsToAmountString(amountUnits) + ' VELD';
+  document.getElementById('c-total').textContent = _veldUnitsToAmountString(amountUnits + 100000n) + ' VELD';
   rpc('getblockchaininfo').then(function(d){var h=d.blocks||d.height||0;var el=document.getElementById('c-est-block');if(el)el.textContent='Block ~'+(h+1)+' (next block, ~3 min)';}).catch(function(){});
 }
 
@@ -11963,20 +12332,15 @@ function fillSendAmountPct(pct) {
   // s-avail is rendered as a decimal string like "12.34567890"; strip
   // any " VELD" suffix just in case the renderer ever adds it.
   var raw = (av.textContent || '').replace(/[^0-9.]/g, '');
-  var spendable = parseFloat(raw);
-  if (!isFinite(spendable) || spendable <= 0) return;
-  var MIN_FEE = 0.001;
-  var amount;
-  if (pct >= 100) {
-    amount = spendable - MIN_FEE;
-  } else {
-    amount = (spendable - MIN_FEE) * (pct / 100);
-  }
-  if (amount <= 0) return;
-  // Round to 8 decimals (VELD precision). Avoid toFixed trailing-zero
-  // padding — it makes the field look ugly. Strip trailing zeros.
-  var s = amount.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
-  el.value = s;
+  var spendable;
+  try { spendable = _veldParseVeldUnitsExact(raw); } catch (_) { return; }
+  if (!Number.isInteger(pct) || pct <= 0 || pct > 100) return;
+  var availableUnits = spendable - 100000n;
+  if (availableUnits <= 0n) return;
+  // Floor in native units so a percentage can never exceed its fee reserve.
+  var amount = availableUnits * BigInt(pct) / 100n;
+  if (amount <= 0n) return;
+  el.value = _veldUnitsToAmountString(amount);
   // Trigger the existing input handler so any downstream estimators
   // (fee, confirm-preview, etc.) re-run.
   try { el.dispatchEvent(new Event('input', {bubbles:true})); } catch(_){}
@@ -11989,7 +12353,20 @@ function fillSendAmountPct(pct) {
 // send TX (~6 KB with one PQ-signed input + change) the absolute fee
 // stays at MIN_TX_FEE (0.001 VELD) at low load; under congestion the
 // fee scales up and the wallet should warn the user.
+function refreshSendFeeRecipient() {
+  var recipient = document.getElementById('s-fee-recipient');
+  if (!recipient) return;
+  // Refresh from the next inclusion block's policy, including after a reorg.
+  // An unavailable or older node must not leave a stale recipient claim.
+  recipient.textContent = '';
+  rpc('getmininginfo', []).then(function(info) {
+    if (!info || !Number.isSafeInteger(info.reward_height) || info.reward_height < 1 ||
+        typeof info.miner_fees_active !== 'boolean') return;
+    recipient.textContent = info.miner_fees_active ? ' to miners' : ' to vault';
+  }).catch(function() { recipient.textContent = ''; });
+}
 function refreshSendFeeEstimate() {
+  refreshSendFeeRecipient();
   var feeEl = document.getElementById('s-fee-est');
   var etaEl = document.getElementById('s-fee-eta');
   if (!feeEl) return;
@@ -13487,7 +13864,10 @@ function loadValidatorsPage() {
 
   // D′ — Bond Custody & Yield Escrow card. Old nodes lack
   // getbondvaultinfo → .catch leaves the dashes (graceful degrade).
+  var reductionOwner = currentAddr;
+  _veldRenderBondReduction(null, reductionOwner);
   rpc('getbondvaultinfo').then(function(b) {
+    _veldRenderBondReduction(b, reductionOwner);
     var f2 = function(n){ return fmt(parseFloat(n) || 0, 2); };
     var cEl = document.getElementById('bv-custodied');
     if (cEl) cEl.textContent = f2(b.custodied_principal_veld) + ' VELD';
@@ -13503,8 +13883,9 @@ function loadValidatorsPage() {
     var ctEl = document.getElementById('bv-counts');
     if (ctEl) ctEl.textContent = String(b.custodial_validator_count || 0);
     var ctSub = document.getElementById('bv-counts-sub');
+    var pendingReturns = Number(b.pending_return_count || 0) + Number(b.pending_excess_return_count || 0);
     if (ctSub) ctSub.textContent = String(b.custodial_validator_count || 0) +
-      ' active · ' + String(b.pending_return_count || 0) + ' pending return';
+      ' active · ' + String(pendingReturns) + ' pending return';
     var vestDays = Math.round(((b.vest_horizon_blocks || 0) * 180) / 86400);
     var rEl = document.getElementById('bv-rules');
     if (rEl) rEl.innerHTML =
@@ -13574,7 +13955,7 @@ function loadValidatorsPage() {
         if (minStake > 0) {
             minEl.innerHTML = fmt(minStake, 0) + ' VELD';
         } else {
-            minEl.textContent = '10,000 VELD';
+            minEl.textContent = 'Unavailable';
         }
     }
     if (currentAddr) {
@@ -13617,7 +13998,7 @@ function loadValidatorsPage() {
       var statusEl = document.getElementById('val-req-status');
       if (statusEl) statusEl.innerHTML = '<span style="color:var(--muted)">Unlock your keystore above to see your bond balance.</span>';
     }
-    // Endorsement pool is funded by the 10% coinbase slice, paid out
+    // Endorsement pool is funded by its height-dependent subsidy share, paid out
     // every 480 blocks (daily) proportional to each validator's
     // endorsement count. Show the current pool balance via getbalance
     // on the endorsement pool address.
@@ -13665,7 +14046,7 @@ function loadValidatorsPage() {
         document.getElementById('val-dereg-btn').style.display = '';
         if (_vTitle) _vTitle.textContent = 'Your Validator';
         if (_vHelp)  _vHelp.textContent =
-          'Your node is endorsing for a share of the 10% pool. ' +
+          'Your node is endorsing for a share of the validator reward pool. ' +
           'Deregister cleanly to return your bonded principal in full.';
         // Registered: hide the pre-register disclaimer (the deregister
         // note below carries the relevant copy for this state).
@@ -13738,7 +14119,7 @@ function loadValidatorsPage() {
         if (_vTitle) _vTitle.textContent = 'Become a Validator';
         if (_vHelp)  _vHelp.textContent =
           'Commits the required validator bond from your unlocked wallet and starts ' +
-          'endorsing for a share of the 10% pool. Slashable on a proven ' +
+          'endorsing for a share of the validator reward pool. Slashable on a proven ' +
           'double-sign; returned in full on a clean deregister.';
         // Not registered: show the pre-register disclaimer, hide the
         // deregister cooldown note.
@@ -14150,6 +14531,7 @@ function __waitForTxConfirm(txid, maxSeconds, onConfirmed, onTimeout, onTick) {
 }
 
 function doRegisterValidator() {
+  var registrationBondUnits = null;
   var addrRow = document.getElementById('val-addr-row');
   var addr = (addrRow && addrRow.style.display === 'none') ? currentAddr : document.getElementById('val-addr').value.trim();
   var keyHex = __veldKey.get() || '';
@@ -14177,7 +14559,11 @@ function doRegisterValidator() {
   // in the same TX as the REGISTER op_return — no separate "stake first"
   // step). The old "you must stake first" pre-check is obsolete because
   // the bond is now custodial, not logical.
-  rpc('getmininginfo', []).then(function(st) {
+  Promise.all([rpc('getmininginfo', []), rpc('getblockchaininfo', [])]).then(function(states) {
+    var st = states[0], chain = states[1];
+    if (!chain || !Number.isSafeInteger(chain.blocks) || chain.blocks < 0 || chain.blocks >= Number.MAX_SAFE_INTEGER)
+      throw new Error('Current registration height is unavailable.');
+    registrationBondUnits = _veldValidatorBondAtHeight(chain.blocks + 1);
     var stakingActive = !!(st && st.staking_active);
     var supplyVeld    = (st && typeof st.supply_veld === 'number') ? st.supply_veld : 0;
     var activationVeld = (st && typeof st.staking_activation_supply === 'number') ? st.staking_activation_supply : 10000;
@@ -14190,7 +14576,7 @@ function doRegisterValidator() {
       );
     }
     return rpc('getvalidators', []).then(function(vi) {
-      var minStake = VELD_MIN_VALIDATOR_STAKE_UNITS / 100000000;
+      var minStake = registrationBondUnits / 100000000;
       if (!vi || Number(vi.min_stake_veld) !== minStake)
         throw new Error('Node validator-bond policy differs from this signed client build. Update/restart both before registering.');
       return rpc('getbalance', [addr]).then(function(bal) {
@@ -14213,7 +14599,7 @@ function doRegisterValidator() {
     });
   }).then(function() {
   _veldAssertActiveSignerSeed(keyHex, signerGeneration);
-  if (!__opLock('validator-op', ['val-reg-btn','val-dereg-btn'], 'Submitting…')) return;
+  if (!__opLock('validator-op', ['val-reg-btn','val-dereg-btn','val-reduce-btn'], 'Submitting…')) return;
   updateKsIndicator();
   msgEl.innerHTML = '<div class="alert alert-info">Registering validator...</div>';
   var pubHex = veldCrypto.derivePublicKey(keyHex);
@@ -14226,9 +14612,9 @@ function doRegisterValidator() {
   var vaultHash160 = _veldAddrToKeyCommitmentHex(VELD_STAKE_VAULT_ADDRESS);
   var regOpHex = _veldBuildProtocolOpReturnHex('VELD_VALIDATOR|REGISTER|' + pubHex);
   var regExpected = [{
-    value_units_str: String(VELD_MIN_VALIDATOR_STAKE_UNITS),
+    value_units_str: String(registrationBondUnits),
     expected_hash160_hex: vaultHash160,
-    exact_hash160_total_units: String(VELD_MIN_VALIDATOR_STAKE_UNITS),
+    exact_hash160_total_units: String(registrationBondUnits),
     exact_hash160_count: 1
   }];
   signAndBroadcast('prepareregistervalidator', [addr, pubHex], keyHex,
@@ -14251,21 +14637,193 @@ function doRegisterValidator() {
     __waitForTxConfirm(txid, 300, function(conf){
       msgEl.innerHTML = '<div class="alert alert-ok">&#x2713; Registration confirmed in block ' + escHtml(conf.block_height) + '.' + link + '</div>';
       loadValidatorsPage();
-      __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn']);
+      __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn','val-reduce-btn']);
     }, function(){
       msgEl.innerHTML = '<div class="alert alert-err">&#x26A0; Registration not confirmed within 5 minutes. Check the explorer link above and try again if the TX is missing.' + link + '</div>';
       loadValidatorsPage();
-      __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn']);
+      __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn','val-reduce-btn']);
     });
   }).catch(function(e) {
     msgEl.innerHTML = '<div class="alert alert-err">&#x26A0; ' + escHtml(e.message||'Registration failed') + '</div>';
-    __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn']);
+    __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn','val-reduce-btn']);
   });
   }).catch(function(preCheckErr) {
     // pre-check path: stake below min_stake_veld or RPC failure.
     // Do NOT burn a TX fee; surface the requirement up-front.
     msgEl.innerHTML = '<div class="alert alert-err">&#x26A0; ' + escHtml(preCheckErr.message || 'Pre-check failed') + '</div>';
   });
+}
+
+function _veldBondUnitsText(units) {
+    if (typeof units !== 'string' || !/^(0|[1-9][0-9]*)$/.test(units))
+        throw new Error('Exact bond amount is unavailable.');
+    var value = BigInt(units),
+        fraction = (value % 100000000n).toString().padStart(8, '0').replace(/0+$/, '');
+    return (value / 100000000n).toLocaleString('en-US') + (fraction ? '.' + fraction : '');
+}
+
+function _veldBondReductionReview(info, owner, pubkey) {
+    if (
+        !info ||
+        !Number.isSafeInteger(info.current_height) ||
+        info.current_height < 0 ||
+        info.current_height >= Number.MAX_SAFE_INTEGER
+    )
+        throw new Error('Current bond state is unavailable.');
+    var row = (info.validators || []).find(function (v) {
+        return v.address === owner && v.pubkey === pubkey;
+    });
+    if (
+        !row ||
+        row.bond_reduction_eligible !== true ||
+        !row.active ||
+        row.slashed ||
+        !row.principal_held ||
+        row.bond_reduction_requested_at !== 0
+    )
+        throw new Error('This validator has no available excess bond return. Refresh its status.');
+    var retained = _veldValidatorBondAtHeight(info.current_height + 1);
+    if (
+        retained !== 500000000000 ||
+        !Number.isSafeInteger(row.registered_height) ||
+        row.registered_height < 1
+    )
+        throw new Error('Excess bond returns are not active for this wallet build.');
+    for (var value of [row.bond_units, row.bond_retained_units, row.bond_reduction_units])
+        if (typeof value !== 'string' || !/^(0|[1-9][0-9]*)$/.test(value))
+            throw new Error('Exact bond amounts are unavailable.');
+    if (
+        row.bond_retained_units !== String(retained) ||
+        BigInt(row.bond_reduction_units) <= 0n ||
+        BigInt(row.bond_units) !== BigInt(retained) + BigInt(row.bond_reduction_units)
+    )
+        throw new Error('Node bond amounts differ from this wallet policy.');
+    return {
+        row: row,
+        retained: String(retained),
+        amount: row.bond_reduction_units,
+        operation:
+            'VELD_VALIDATOR|REDUCE_BOND|' + pubkey + '|' + row.registered_height + '|' + retained,
+    };
+}
+
+function _veldRenderBondReduction(info, owner) {
+    if (owner !== currentAddr) return;
+    var button = document.getElementById('val-reduce-btn'),
+        note = document.getElementById('val-reduce-note');
+    if (!button || !note) return;
+    button.hidden = true;
+    note.hidden = true;
+    note.textContent = '';
+    if (!owner || !info) return;
+    var row = (info.validators || []).find(function (v) {
+        return v.address === owner;
+    });
+    if (!row) return;
+    var amount;
+    try {
+        amount = _veldBondUnitsText(row.bond_reduction_units);
+        if (BigInt(row.bond_reduction_units) <= 0n) return;
+    } catch (_) {
+        return;
+    }
+    if (
+        row.bond_reduction_pending === true &&
+        Number.isSafeInteger(row.bond_reduction_boundary) &&
+        row.bond_reduction_boundary > 0
+    ) {
+        note.textContent =
+            amount +
+            ' VELD return pending at block ' +
+            row.bond_reduction_boundary +
+            '. Your validator remains active. The full bond stays held and slashable until settlement.';
+    } else if (row.bond_reduction_cancelled === true) {
+        note.textContent =
+            'The excess return was cancelled by a validator exit or slash. The full bond follows that settlement.';
+    } else if (
+        Number.isSafeInteger(row.bond_reduction_settled_at) &&
+        row.bond_reduction_settled_at > 0
+    ) {
+        note.textContent =
+            amount +
+            ' VELD excess returned at block ' +
+            row.bond_reduction_settled_at +
+            '. The remaining bond follows the validator status shown above.';
+    } else {
+        try {
+            var reviewed = _veldBondReductionReview(info, owner, row.pubkey);
+            button.hidden = false;
+            note.textContent =
+                'Request ' +
+                amount +
+                ' VELD back and keep 5,000 VELD bonded. Your validator stays active. ' +
+                'The excess returns after the evidence window for earlier votes has ended.';
+        } catch (_) {
+            return;
+        }
+    }
+    note.hidden = false;
+}
+
+async function doReduceValidatorBond() {
+    var msg = document.getElementById('val-msg'),
+        buttons = ['val-reg-btn', 'val-dereg-btn', 'val-reduce-btn'];
+    if (!__opLock('validator-op', buttons, 'Reviewing…')) return;
+    try {
+        var key = __veldKey.get() || '',
+            identity = _veldRequireBoundIdentity(key, null, currentAddr);
+        var generation = _veldAssertActiveSignerSeed(key),
+            pubkey = veldCrypto.derivePublicKey(key);
+        var info = await rpc('getbondvaultinfo');
+        _veldAssertActiveSignerSeed(key, generation);
+        if (currentAddr !== identity.address)
+            throw new Error('Wallet changed. Review the request again.');
+        var review = _veldBondReductionReview(info, identity.address, pubkey);
+        if (
+            !window.confirm(
+                'Request ' +
+                    _veldBondUnitsText(review.amount) +
+                    ' VELD of excess bond back? ' +
+                    '5,000 VELD stays bonded and your validator remains active. The full bond stays held and slashable ' +
+                    'through the evidence window for earlier votes. The return block appears after confirmation. ' +
+                    'Request fee: ' +
+                    fmt(VELD_MIN_TX_FEE_UNITS / 100000000, 3) +
+                    ' VELD.',
+            )
+        )
+            return;
+        _veldAssertActiveSignerSeed(key, generation);
+        var result = await signAndBroadcast(
+            'preparereducevalidatorbond',
+            [identity.address, pubkey],
+            key,
+            null,
+            _veldAddrToKeyCommitmentHex(identity.address),
+            null,
+            null,
+            _veldBuildProtocolOpReturnHex(review.operation),
+            null,
+            generation,
+        );
+        msg.textContent =
+            'Excess return request submitted. The bond remains held until its settlement block.';
+        __waitForTxConfirm(
+            result.txid,
+            300,
+            function () {
+                loadValidatorsPage();
+            },
+            function () {
+                msg.textContent =
+                    'The saved request is still awaiting confirmation. Check its status in wallet activity.';
+            },
+        );
+    } catch (error) {
+        msg.textContent = error.message || 'The excess return request could not be prepared.';
+    } finally {
+        __opUnlock('validator-op', buttons);
+        loadValidatorsPage();
+    }
 }
 
 function doDeregisterValidator() {
@@ -14275,7 +14833,7 @@ function doDeregisterValidator() {
   var msgEl = document.getElementById('val-msg');
   if (!addr) { msgEl.innerHTML = '<div class="alert alert-err">Unlock your keystore above.</div>'; return; }
   if (!keyHex || keyHex.length !== 64) { msgEl.innerHTML = '<div class="alert alert-err">Unlock your keystore above to sign transactions.</div>'; return; }
-  if (!__opLock('validator-op', ['val-reg-btn','val-dereg-btn'], 'Submitting…')) return;
+  if (!__opLock('validator-op', ['val-reg-btn','val-dereg-btn','val-reduce-btn'], 'Submitting…')) return;
   updateKsIndicator();
   msgEl.innerHTML = '<div class="alert alert-info">Deregistering...</div>';
   var pubHex = veldCrypto.derivePublicKey(keyHex);
@@ -14295,15 +14853,15 @@ function doDeregisterValidator() {
     __waitForTxConfirm(txid, 300, function(conf){
       msgEl.innerHTML = '<div class="alert alert-ok">&#x2713; Deregistration confirmed in block ' + escHtml(conf.block_height) + '.' + link + '</div>';
       loadValidatorsPage();
-      __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn']);
+      __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn','val-reduce-btn']);
     }, function(){
       msgEl.innerHTML = '<div class="alert alert-err">&#x26A0; Deregistration not confirmed within 5 minutes. Check the explorer link above and try again if the TX is missing.' + link + '</div>';
       loadValidatorsPage();
-      __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn']);
+      __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn','val-reduce-btn']);
     });
   }).catch(function(e) {
     msgEl.innerHTML = '<div class="alert alert-err">&#x26A0; ' + escHtml(e.message||'Deregistration failed') + '</div>';
-    __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn']);
+    __opUnlock('validator-op', ['val-reg-btn','val-dereg-btn','val-reduce-btn']);
   });
 }
 
@@ -14595,12 +15153,24 @@ function loadStakingPage() {
       _veldRenderStakingCountdown(document.getElementById('sk-next'),
                                   d.next_distribution_in);
     }
-    // APY estimate: (net payout per daily 480-block cycle * 365 cycles/year) / total staked
-    if (active && staked > 0 && vault > 0) {
-      var distPerCycle = parseFloat(d.distributable_veld || 0) || (vault * 0.02);
+    // APR estimate: ordinary recipients' actual estimated payouts exclude bond
+    // escrow, concentration-cap leftovers and rounding retained by the vault.
+    if (active && staked > 0) {
+      var payoutRows = Array.isArray(d.stakers) ? d.stakers : [];
+      var distPerCycle = 0;
+      var validPayouts = payoutRows.length > 0 && payoutRows.every(function(row) {
+        var value = row && row.payout_veld;
+        if ((typeof value !== 'number' && typeof value !== 'string') ||
+            (typeof value === 'string' && value.trim() === '')) return false;
+        var payout = Number(value);
+        if (!Number.isFinite(payout) || payout < 0) return false;
+        distPerCycle += payout;
+        return true;
+      });
       var cyclesPerYear = 365; // one 480-block distribution cycle per day
-      var apy = (distPerCycle * cyclesPerYear / staked) * 100;
-      document.getElementById('sk-apy').textContent = fmt(Math.min(apy, 9999), 1) + '%';
+      var apr = (distPerCycle * cyclesPerYear / staked) * 100;
+      document.getElementById('sk-apy').textContent = validPayouts && Number.isFinite(apr)
+        ? fmt(apr, 1) + '%' : 'Unavailable';
     } else {
       document.getElementById('sk-apy').textContent = active ? 'Stake to earn' : 'N/A';
     }
@@ -15132,7 +15702,7 @@ function loadMinerInfo() {
       '<div class="stat-grid">' +
       '<div class="stat"><div class="stat-label">Blocks Mined</div><div class="stat-value em">' + blocksMined.toLocaleString() + '</div></div>' +
       '<div class="stat"><div class="stat-label">Balance</div><div class="stat-value gold">' + fmt(m.balance_veld||0,2) + ' VELD</div></div>' +
-      '<div class="stat"><div class="stat-label">VELD Earned</div><div class="stat-value em">' + fmt(blocksMined*3.13926940*0.50,2) + '</div><div class="stat-sub">est. lifetime</div></div>' +
+
       '</div>';
   }).catch(function(e) {
     document.getElementById('m-result').innerHTML = '<div class="alert alert-err">' + escHtml(e.message) + '</div>';
@@ -15683,16 +16253,23 @@ function loadCominingPage() {
     var blocksUntil = (d.blocks_until_payout != null)
                       ? poolCount(d.blocks_until_payout, 0)
                       : Math.max(0, windowSize - blocksIn);
+    var retired = d.co_mining_retired === true;
+    ['cm-nms-card', 'cm-how-it-works'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.hidden = retired;
+    });
     set('cm-balance', fmt(d.pool_balance_veld||0, 2) + ' VELD');
-    set('cm-window', blocksIn + ' / ' + windowSize);
-    set('cm-payout-in', blocksUntil + ' blocks');
+    set('cm-window', retired ? 'Retired' : blocksIn + ' / ' + windowSize);
+    set('cm-payout-in', retired ? 'Ended' : blocksUntil + ' blocks');
     var participants = d.participants||0;
     set('cm-participants', participants);
     // The summary reports eligible participants. Near-miss totals remain
     // informational because each eligible address has one uniform draw entry.
 
     var entries = Array.isArray(d.entries) ? d.entries : [];
-    if (!entries.length) {
+    if (retired) {
+      document.getElementById('cm-standings').innerHTML = '<div class="alert">Co-mining retired at the first halving. Previous payouts and your stake remain intact. Any undistributed pool reserve is retained; no new draws are scheduled.</div>';
+    } else if (!entries.length) {
       document.getElementById('cm-standings').innerHTML =
         '<div style="color:var(--muted);text-align:center;padding:20px;font-size:11px">No co-miners in current window.<br><span style="font-size:10px">Submit a valid near-miss to enter the current draw.</span></div>';
     } else {
@@ -15744,6 +16321,12 @@ function loadCominingEligibility() {
   if (!card || !body) return;
   // Missing policy data is unknown, never an ordinary-staking fallback.
   rpc('getstakinginfo').then(function(si) {
+    if (si && si.co_mining_retired === true) {
+      if (minEl) minEl.textContent = 'Retired';
+      card.style.borderLeftColor = 'var(--muted)';
+      body.innerHTML = '<span style="color:var(--muted)">Co-mining has ended. Ordinary staking remains available under its existing rules. Your staked funds and previous payouts are unchanged.</span>';
+      return;
+    }
     var minv = si && si.co_mining_min_stake_veld;
     if (typeof minv !== 'number' || !Number.isFinite(minv) || minv <= 0) {
       throw new Error('Co-mining policy unavailable');
@@ -16075,14 +16658,7 @@ function loadDashboardAdaptive() {
     document.getElementById('dot').className = 'dot online';
     document.getElementById('status-txt').textContent = 'h=' + h;
     loadDashBlocks(h);
-    // fix: was hardcoded 0.63 (stale 63% miner share assumption).
-    // Actual post-PQC split is 50% winner of every block, so per-miner
-    // daily estimate assumes a miner wins a proportional share — this
-    // value is only meaningful if the miner owns 100% hashrate, which the
-    // explorer's mining dashboard handles better. Left here as best-case
-    // ceiling for the Mining tab if ever restored.
-    var mDaily = document.getElementById('m-daily-est');
-    if (mDaily) mDaily.textContent = '~' + fmt(480 * 3.13926940 * 0.50, 0);
+    refreshWalletSubsidy(h);
   }).catch(function() {
     _dashFailCount++;
     _pollMs = Math.min(_pollMs * 1.5, 30000); // Back off up to 30s
@@ -16210,9 +16786,13 @@ loadDashboard = loadDashboardAdaptive;
     var pgExplorer  = document.getElementById('page-explorer');
     var pgStaking   = document.getElementById('page-staking');
     var pgComining  = document.getElementById('page-comining');
+    var pgSend     = document.getElementById('page-send');
     if (pgExplorer && pgExplorer.classList.contains('active')) loadExplorerBlocks();
     if (pgStaking && pgStaking.classList.contains('active')) loadStakingPage();
     if (pgComining && pgComining.classList.contains('active')) loadCominingPage();
+    // A confirmed payment releases its change. Keep the active send balance
+    // and spendable outputs current without requiring a page change.
+    if (pgSend && pgSend.classList.contains('active')) onFromChange();
   }
   function tick() {
     var now = Date.now();
@@ -16816,7 +17396,7 @@ function renderWalletUtxos() {
       + '<td><a href="https://explorer.veld.network/tx/'+escHtml(u.txid)+'" target="_blank" rel="noopener noreferrer" class="hash-orange">'+escHtml(shortHash(u.txid))+'</a></td>'
       + '<td style="color:var(--muted)">#'+vout+'</td>'
       + '<td style="color:var(--muted)">'+(confs?confs.toLocaleString():'—')+'</td>'
-      + '<td class="gold" style="text-align:right">'+fmt(u.value,2)+' VELD</td>'
+      + '<td class="gold" style="text-align:right">'+fmt(u.value,8)+' VELD</td>'
       + '</tr>';
   });
   document.getElementById('w-utxos').innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:12px">No UTXOs</td></tr>';
@@ -16849,7 +17429,7 @@ function renderSendUtxos() {
   var slice = data.slice(start, start + UTXO_PER_PAGE);
   var html = '';
   slice.forEach(function(u) {
-    html += '<tr><td><a href="https://explorer.veld.network/tx/'+escHtml(u.txid)+'" target="_blank" rel="noopener noreferrer" class="hash-orange">'+escHtml(shortHash(u.txid))+'</a></td><td class="gold">'+fmt(u.value,2)+'</td><td><a href="https://explorer.veld.network/block/height/'+escHtml(u.block_height||u.height||'')+'" target="_blank" rel="noopener noreferrer" style="color:var(--muted)">'+escHtml(u.block_height||u.height||'?')+'</a></td></tr>';
+    html += '<tr><td><a href="https://explorer.veld.network/tx/'+escHtml(u.txid)+'" target="_blank" rel="noopener noreferrer" class="hash-orange">'+escHtml(shortHash(u.txid))+'</a></td><td class="gold">'+fmt(u.value,8)+'</td><td><a href="https://explorer.veld.network/block/height/'+escHtml(u.block_height||u.height||'')+'" target="_blank" rel="noopener noreferrer" style="color:var(--muted)">'+escHtml(u.block_height||u.height||'?')+'</a></td></tr>';
   });
   document.getElementById('s-utxos').innerHTML = html || '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:10px">No UTXOs</td></tr>';
   var pagEl = document.getElementById('s-utxo-pag');
@@ -17341,6 +17921,7 @@ if ('serviceWorker' in navigator) {
       h42bcc6ec: function(event){ loadStakeHistory() },
       h4480a6fb: function(event){ doRegisterValidator() },
       h95e9f6c0: function(event){ doDeregisterValidator() },
+      hBondReturn: function(event){ doReduceValidatorBond() },
       h5c21c16f: function(event){ loadMyComineStats() },
       h7146c4c9: function(event){ loadCominingHistory() },
       hf7771219: function(event){ doExSearch() },
@@ -17842,6 +18423,7 @@ init();
       h42bcc6ec: function(event){ loadStakeHistory() },
       h4480a6fb: function(event){ doRegisterValidator() },
       h95e9f6c0: function(event){ doDeregisterValidator() },
+      hBondReturn: function(event){ doReduceValidatorBond() },
       h5c21c16f: function(event){ loadMyComineStats() },
       h7146c4c9: function(event){ loadCominingHistory() },
       hf7771219: function(event){ doExSearch() },
@@ -18313,6 +18895,7 @@ async function completeSetup(){
       h42bcc6ec: function(event){ loadStakeHistory() },
       h4480a6fb: function(event){ doRegisterValidator() },
       h95e9f6c0: function(event){ doDeregisterValidator() },
+      hBondReturn: function(event){ doReduceValidatorBond() },
       h5c21c16f: function(event){ loadMyComineStats() },
       h7146c4c9: function(event){ loadCominingHistory() },
       hf7771219: function(event){ doExSearch() },

@@ -1794,7 +1794,7 @@ private:
         } else if (method == "OPTIONS") {
             resp = "HTTP/1.1 200 OK\r\n" + cors + "Content-Length: 0\r\n\r\n";
         } else if (path == "/" || path.empty()) {
-            std::string html = DESKTOP_HTML;
+            std::string html = veld::WithHelpDialogs(DESKTOP_HTML);
             {
                 auto pos = html.find("var RPC_URL = ");
                 if (pos != std::string::npos) {
@@ -1813,6 +1813,7 @@ private:
                     while ((p = html.find(tag, p)) != std::string::npos) { html.replace(p, tn, val); p += val.size(); }
                 };
                 subst_all("__VELD_GENESIS_HASH__", std::string(GENESIS_HASH));
+                subst_all("__VELD_APPCHAIN_PARENT_GENESIS__", HashToHex(CreateGenesisBlock().GetHash()));
                 subst_all("__VELD_DEPLOYMENT_ROLE__", std::string(DEPLOYMENT_ROLE));
                 subst_all("__VELD_DEPLOYMENT_PROFILE_ID__", std::string(DEPLOYMENT_PROFILE_ID));
                 subst_all("__VELD_DEPLOYMENT_DISPLAY_NAME__", std::string(DEPLOYMENT_DISPLAY_NAME));
@@ -1834,6 +1835,8 @@ private:
                 subst_all("__VELD_MIN_TX_FEE_UNITS__", std::to_string(MIN_TX_FEE));
                 subst_all("__VELD_DUST_THRESHOLD_UNITS__", std::to_string(DUST_THRESHOLD_UNITS));
                 subst_all("__VELD_MIN_VALIDATOR_STAKE_UNITS__", std::to_string(MIN_VALIDATOR_STAKE));
+                subst_all("__VELD_VALIDATOR_POLICY_ACTIVATION_HEIGHT__",
+                          std::to_string(VALIDATOR_POLICY_ACTIVATION_HEIGHT));
                 subst_all("__VELD_STAKE_VAULT_ADDRESS__", std::string(STAKE_VAULT_ADDRESS));
                 subst_all("__VELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT__",
                           std::to_string(BTCVELD_AMM_FLAT_FEE_ACTIVATION_HEIGHT));
@@ -2058,6 +2061,7 @@ private:
                     // btcVELD peg (wrap/redeem) + on-chain AMM — read side.
                     "getpeginfo", "getbtcveldsupply", "getbtcveldredeems",
                     "getammpool", "getammlp",
+                    "getappchainbridgeinfo",
                     "listunspent", "getaddressfrompubkey",
                     // Recipient-address checking in the Send tab.  This lived
                     // only in the old testnet-only list, so unifying the two
@@ -2072,12 +2076,14 @@ private:
                     "sendrawtransaction",
                     "preparestaketx", "preparenmstx", "preparenmsrecovery", "preparetokentx",
                     "preparetokentransfer", "prepareregistertx",
-                    "preparederegistertx", "prepareproposaltx", "preparevotetx",
+                    "preparederegistertx", "preparereducevalidatorbond",
+                    "prepareproposaltx", "preparevotetx",
                     "preparerawtransaction", "preparestake", "prepareunstake",
                     "preparegovproposal", "preparegovvote",
                     "prepareregistervalidator", "preparederegistervalidator",
                     "rebroadcasttx", "getminerstatus", "getaddressnmsproof", "getdustutxocount",
                     "prepareconsolidatetx",
+                    "prepareappchaindeposit",
                     // btcVELD peg + AMM — client-signed build methods (server holds
                     // no key; the wallet re-verifies + signs the unsigned tx, then
                     // submits via sendrawtransaction — same trust model as prepare*).
@@ -2154,7 +2160,7 @@ private:
             // for identical content (reproducible builds keep matching) and
             // different the moment the page changes.
             static const std::string ui_revision = [] {
-                const std::string body(DESKTOP_HTML);
+                const std::string body = veld::WithHelpDialogs(DESKTOP_HTML);
                 uint8_t digest[32];
                 veld::vendored_crypto::Sha256 h;
                 h.update(reinterpret_cast<const uint8_t*>(body.data()),

@@ -46,6 +46,14 @@ jobs:
           VELD_TRUSTED_NODE_BUILD="$output/node" \
             VELD_TRUSTED_WALLET_BUILD="$output/desktop" \
             bash build/mainnet-v2-windows.sh gui "$output/gui"
+      - name: Verify excess-bond requests through the actual Windows wallet gateway
+        shell: pwsh
+        run: |
+          $binary = Join-Path $env:RUNNER_TEMP 'windows-client/desktop/bin/veld-wallet.exe'
+          $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash.ToLowerInvariant()
+          $evidence = Join-Path $env:RUNNER_TEMP 'windows-client/desktop/logs/wallet-bond-gateway'
+          python tests/appchain_wallet_proxy_smoke.py --suite bond --binary $binary --sha256 $digest --evidence $evidence
+          if ($LASTEXITCODE -ne 0) { throw 'Wallet bond gateway qualification failed' }
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: success()
         with:
@@ -120,6 +128,16 @@ jobs:
         run: |
           set -euo pipefail
           bash build/mainnet-v2-linux.sh '${{ matrix.role }}' "$RUNNER_TEMP/source-build"
+      - name: Verify excess-bond requests through the actual Linux wallet gateway
+        if: matrix.role == 'desktop'
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/source-build/bin/veld-desktop"
+          digest=$(sha256sum "$binary" | cut -d ' ' -f 1)
+          sudo unshare --net -- python3 -B tests/appchain_wallet_proxy_smoke.py \
+            --suite bond --binary "$binary" --sha256 "$digest" \
+            --evidence "$RUNNER_TEMP/source-build/logs/wallet-bond-gateway"
       - name: Exercise the Linux pool command in a disposable TLS fixture
         if: matrix.role == 'pool-worker'
         run: |

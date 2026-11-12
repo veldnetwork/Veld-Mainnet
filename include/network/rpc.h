@@ -1,7 +1,9 @@
 #pragma once
+#include "subsidy_view.h"
 
 #include "../core/blockchain.h"
 #include "../core/pow_target.h"
+#include "../core/canonical_numeric.h"
 #include "../core/version.h"
 #include "../core/pqc_script.h"
 #include "../core/vault.h"
@@ -34,10 +36,12 @@
 #include "../wallet/offline_signing.h"
 #include "../node/work_admission.h"
 #include "../node/block_template_authorization.h"
+#include "../wallet/appchain_deposit.h"
 #include <fstream>
 #include <filesystem>
 #include <string>
 #include <chrono>
+#include <thread>
 #include <mutex>
 #include <unordered_map>
 #include <functional>
@@ -448,6 +452,24 @@ class rpc_error : public std::runtime_error {
     int code_;
 };
 
+inline std::atomic<uint64_t> rpc_transition_busy_replies{0};
+inline Blockchain::ConsensusTransitionGuard AcquireRpcReadTransitionGuard(const Blockchain& chain) {
+    // Absorb an ordinary short commit without making the custody monitor miss
+    // its whole polling interval. The wait is still far shorter than clients'
+    // RPC deadlines, so disconnected retry generations cannot accumulate.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    for (;;) {
+        auto guard = chain.TryAcquireConsensusTransitionGuard();
+        if (guard.OwnsLock())
+            return guard;
+        if (std::chrono::steady_clock::now() >= deadline) {
+            rpc_transition_busy_replies.fetch_add(1, std::memory_order_relaxed);
+            throw rpc_error(-32005, "canonical transition busy; retry shortly");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
 struct RpcRequest {
     std::string id;
     std::string method;
@@ -816,6 +838,8 @@ class RpcServer {
     using MiningTemplatePreflightFn = std::function<bool(const Block&)>;
     // Called only while holding the canonical consensus transition guard.
     using MiningTemplateBuilderFn = std::function<Block(const std::vector<uint8_t>&)>;
+    using AuxiliaryTemplateBuilderFn =
+        std::function<Block(const Transaction&, const std::vector<uint8_t>&, uint64_t, uint64_t)>;
     using RuntimeAdmissionFn = std::function<bool()>;
     using WorkAdmissionFn = std::function<work_admission::Decision(
         work_admission::Path, const work_admission::Subject&,
@@ -896,6 +920,9 @@ class RpcServer {
     void SetMiningTemplateBuilderFn(MiningTemplateBuilderFn fn) {
         mining_template_builder_fn_ = std::move(fn);
     }
+    void SetAuxiliaryTemplateBuilderFn(AuxiliaryTemplateBuilderFn fn) {
+        auxiliary_template_builder_fn_ = std::move(fn);
+    }
     void SetMiningTemplatePreflightFn(MiningTemplatePreflightFn fn) {
         mining_template_preflight_fn_ = std::move(fn);
     }
@@ -947,18 +974,21 @@ class RpcServer {
         uint64_t pending_out_units = 0;
         uint64_t pending_in_units = 0;
         uint64_t spendable_units = 0;
+        uint64_t outpoint_count = 0;
+        uint64_t pending_in_count = 0;
         bool stake_backing_consistent = true;
         std::vector<UTXO> selectable;
         std::vector<UTXO> pending_out_utxos;
     };
 
-    WalletState ComputeWalletState(const std::string& addr) const {
+    WalletState ComputeWalletState(const std::string& addr,
+                                   const std::function<void(const UTXO&)>& selected = {},
+                                   bool collect = true) const {
         WalletState w;
         auto script = AddressToScript(addr);
         if (script.empty())
             return w;
         const uint64_t tip = chain_.Height();
-        auto utxos = chain_.GetUTXOsForScript(script);
         auto mempool_spent = mempool_.GetSpentOutputs();
         w.staked_units = staking_ ? staking_->GetStake(addr) : 0;
 
@@ -994,7 +1024,11 @@ class RpcServer {
 
         std::unordered_set<std::string> observed_expected_backings;
 
-        for (const auto& u : utxos) {
+        uint64_t selectable_sum = 0;
+        chain_.VisitUTXOsForScript(script, [&](const UTXO& u) {
+            ++w.outpoint_count;
+            if (w.total_units > UINT64_MAX - u.value)
+                throw std::runtime_error("Wallet amount overflow");
             w.total_units += u.value;
             const std::string key = UTXOKey(u.tx_hash, u.output_index);
             const bool active_backing =
@@ -1020,17 +1054,20 @@ class RpcServer {
                 w.immature_coinbase_units += u.value;
             if (locked) {
                 w.pending_out_units += u.value;
-                w.pending_out_utxos.push_back(u);
+                if (collect)
+                    w.pending_out_utxos.push_back(u);
             }
-            if (!immature && !locked && !active_backing)
-                w.selectable.push_back(u);
-        }
+            if (!immature && !locked && !active_backing) {
+                selectable_sum += u.value;
+                if (collect)
+                    w.selectable.push_back(u);
+                if (selected)
+                    selected(u);
+            }
+        });
         std::sort(w.selectable.begin(), w.selectable.end(),
                   [](const UTXO& a, const UTXO& b) { return a.value > b.value; });
 
-        uint64_t selectable_sum = 0;
-        for (const auto& u : w.selectable)
-            selectable_sum += u.value;
         if (exact_stake_backing) {
             if (observed_expected_backings.size() != expected_backing_values.size() ||
                 w.active_stake_backing_units != w.staked_units) {
@@ -1047,6 +1084,7 @@ class RpcServer {
         }
 
         auto pin = mempool_.GetPendingOutputsForScript(script);
+        w.pending_in_count = pin.size();
         for (const auto& u : pin)
             w.pending_in_units += u.value;
 
@@ -1150,15 +1188,15 @@ class RpcServer {
     }
 
     std::string AddressOnlyNmsProofJson(const std::string& address) {
-        auto transition = chain_.AcquireConsensusTransitionGuard();
+        auto transition = AcquireRpcReadTransitionGuard(chain_);
         const auto script = AddressToScript(address);
         if ((script.size() != 25 && script.size() != 51) || ScriptToAddress(script) != address)
             throw std::invalid_argument("canonical mining address required");
         const bool supported = script.size() == 25;
         const auto tip = chain_.TipCopy();
         const auto proof = nms_proofs_.Read(script, tip.GetHash());
-        const bool eligible =
-            supported && chain_.NmsBondSatisfied(script, NextInclusionHeight(tip.height));
+        const bool eligible = supported && !CoMiningRetired(NextInclusionHeight(tip.height)) &&
+                              chain_.NmsBondSatisfied(script, NextInclusionHeight(tip.height));
         const bool needed =
             supported && mining::NeedsNmsSubmission(chain_, mempool_, script, tip.GetHash());
         return JsonBuilder::Object({
@@ -1444,6 +1482,46 @@ class RpcServer {
         return height + 1;
     }
 
+    std::string PrepareValidatorFeeOperation_(const std::string& address,
+                                              const std::string& operation) {
+        using JB = JsonBuilder;
+        if (operation.size() <= 255 || operation.size() > 65535)
+            throw std::runtime_error("Invalid validator instruction size");
+        std::vector<uint8_t> marker{0x6a, 0x4d, (uint8_t)operation.size(),
+                                    (uint8_t)(operation.size() >> 8)};
+        marker.insert(marker.end(), operation.begin(), operation.end());
+        const auto script = AddressToScript(address);
+        const auto coins = SelectWalletCoins_(address, 0, MIN_TX_FEE);
+        if (!coins.sufficient)
+            throw std::runtime_error("Insufficient available funds for the validator request fee");
+        Transaction tx;
+        uint64_t total = 0;
+        for (const auto& utxo : coins.selected_utxos) {
+            if (total > UINT64_MAX - utxo.value)
+                throw std::runtime_error("Validator request input total is out of range");
+            total += utxo.value;
+            TxInput input;
+            input.prev_tx_hash = utxo.tx_hash;
+            input.prev_out_index = utxo.output_index;
+            tx.inputs.push_back(input);
+        }
+        if (coins.change_amount > 0)
+            tx.outputs.emplace_back(coins.change_amount, script);
+        tx.outputs.emplace_back(0, marker);
+        std::vector<std::string> inputs;
+        for (uint32_t i = 0; i < tx.inputs.size(); ++i)
+            inputs.push_back(
+                JB::Object({{"index", JB::Number((uint64_t)i)},
+                            {"sighash_hex", JB::String(BytesToHex(ComputeSighash(tx, i, script)))},
+                            {"prev_script_hex", JB::String(BytesToHex(script))}}));
+        return JB::Object({{"unsigned_tx_hex", JB::String(BytesToHex(tx.Serialize()))},
+                           {"inputs", JB::Array(inputs)},
+                           {"total_input", JB::Number(total)},
+                           {"total_output", JB::Number(coins.change_amount)},
+                           {"fee", JB::Number((uint64_t)MIN_TX_FEE)},
+                           {"change", JB::Number(coins.change_amount)}});
+    }
+
     static CoinSelection SelectWalletStateCoins_(const WalletState& state, uint64_t target_units,
                                                  uint64_t fee_units) {
         CoinSelection result;
@@ -1533,6 +1611,7 @@ class RpcServer {
     TokenSaveFn token_save_;
     MiningTemplatePreflightFn mining_template_preflight_fn_;
     MiningTemplateBuilderFn mining_template_builder_fn_;
+    AuxiliaryTemplateBuilderFn auxiliary_template_builder_fn_;
 #ifndef VELD_FLEET_NO_MINE
     struct RetainedMiningTemplate {
         Block block;
@@ -1718,6 +1797,14 @@ class RpcServer {
         using JB = JsonBuilder;
         using P = std::vector<std::string>;
 
+        methods_["getrpcstatus"] = RpcMethod([](const P& params) -> std::string {
+            if (!params.empty())
+                throw std::invalid_argument("getrpcstatus takes no parameters");
+            return "{\"transition_busy_replies\":" +
+                   std::to_string(rpc_transition_busy_replies.load(std::memory_order_relaxed)) +
+                   ",\"transition_read_admission\":\"bounded_100ms\"}";
+        });
+
         static const auto rpc_process_start_steady = std::chrono::steady_clock::now();
         methods_["getclockinfo"] = RpcMethod([](const P&) -> std::string {
             uint64_t now_wall = (uint64_t)std::time(nullptr);
@@ -1845,7 +1932,7 @@ class RpcServer {
                 if (out.script_pubkey != script &&
                     (out.value != 0 || out.script_pubkey != BuildNmsOpReturnScript(proof->raw)))
                     throw std::invalid_argument("saved near-miss has an unexpected output");
-            auto transition = chain_.AcquireConsensusTransitionGuard();
+            auto transition = AcquireRpcReadTransitionGuard(chain_);
             if (chain_.TipCopy().GetHash() == proof->header.prev_block_hash)
                 throw std::invalid_argument(
                     "Near-miss proof is still current; wait for the next block");
@@ -1894,12 +1981,15 @@ class RpcServer {
             const auto proof = ParseNmsPayload(HexToBytes(params[1]));
             if (!proof)
                 throw std::invalid_argument("invalid near-miss payload");
-            auto transition = chain_.AcquireConsensusTransitionGuard();
+            auto transition = AcquireRpcReadTransitionGuard(chain_);
             const auto tip = chain_.TipCopy();
             const auto next = NextInclusionHeight(tip.height);
             if (ibd_complete_fn_ && !ibd_complete_fn_())
                 throw rpc_error(-32005,
                                 "Wait for full synchronization before submitting a near miss");
+            if (CoMiningRetired(next))
+                throw std::invalid_argument(
+                    "Co-mining retired at the first halving; no new entries are accepted");
             if (!mining::NeedsNmsSubmission(chain_, mempool_, script,
                                             proof->header.prev_block_hash))
                 throw std::invalid_argument(
@@ -1952,7 +2042,7 @@ class RpcServer {
         methods_["getpoolidentitystate"] = RpcMethod([this](const P& params) -> std::string {
             if (params.size() != 1)
                 throw std::invalid_argument("pool identity address required");
-            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            auto transition_guard = AcquireRpcReadTransitionGuard(chain_);
             const auto script = AddressToScript(params[0]);
             if (script.size() != 25 || ScriptToAddress(script) != params[0] || !staking_)
                 throw std::invalid_argument("canonical identity or staking state unavailable");
@@ -1970,7 +2060,10 @@ class RpcServer {
                 {"needs_submission", JB::Bool(needs)},
                 {"pending_submission", JB::Bool(pending)},
                 {"included_submission", JB::Bool(chain_.NmsGetCredit(BytesToHex(script)) > 0)},
-                {"eligible", JB::Bool(chain_.NmsBondSatisfied(script, next))},
+                {"eligible",
+                 JB::Bool(!CoMiningRetired(next) && chain_.NmsBondSatisfied(script, next))},
+                {"co_mining_retired", JB::Bool(CoMiningRetired(next))},
+                {"co_mining_retirement_height", JB::Number(CoMiningRetirementHeight())},
                 {"window_blocks", JB::Number(COMINE_WINDOW_BLOCKS)},
                 {"yield_blocks", JB::Number(VAULT_DISTRIBUTION_INTERVAL)},
                 {"window_first", JB::Number(tip.height - tip.height % COMINE_WINDOW_BLOCKS + 1)},
@@ -2276,6 +2369,9 @@ class RpcServer {
         });
 
         methods_["getmininginfo"] = RpcMethod([this](const P&) -> std::string {
+            const auto reward = SubsidyView::Next(chain_.Height(), chain_.TotalSupplyUnits());
+            const auto projection =
+                SubsidyProjection::Next480(reward.height - 1, chain_.TotalSupplyUnits());
             bool is_bootstrap = chain_.TotalSupplyUnits() < chain_.GetStakingActivationUnits();
             bool emission_done = chain_.TotalSupplyUnits() >= MAX_SUPPLY_UNITS;
             return JB::Object({
@@ -2286,11 +2382,26 @@ class RpcServer {
                 // Compiled activation threshold in whole VELD for wallet status.
                 {"staking_activation_supply",
                  JB::Float((double)chain_.GetStakingActivationUnits() / VELD_UNITS)},
-                {"block_reward_veld", JB::Float((double)BLOCK_REWARD_UNITS / VELD_UNITS)},
-                {"winner_pct", JB::Number((uint64_t)50)},
-                {"pool_pct", JB::Number((uint64_t)20)},
+                {"block_reward_veld", JB::Float((double)reward.allocation.subsidy / VELD_UNITS)},
+                {"reward_height", JB::Number(reward.height)},
+                {"block_subsidy_units", JB::Number(reward.allocation.subsidy)},
+                {"miner_subsidy_units", JB::Number(reward.allocation.miner)},
+                {"miner_subsidy_next_480_units", JB::Number(projection.miner)},
+                {"vault_subsidy_next_480_units", JB::Number(projection.vault)},
+                {"subsidy_activation_height", JB::Number(SUBSIDY_ACTIVATION_HEIGHT)},
+                {"subsidy_schedule_active", JB::Bool(SubsidyScheduleActive(reward.height))},
+                {"subsidy_halvings", JB::Number((uint64_t)SubsidyHalvings(reward.height))},
+                {"first_halving_height", JB::Number(FIRST_HALVING_HEIGHT)},
+                {"second_halving_height", JB::Number(SECOND_HALVING_HEIGHT)},
+                {"co_mining_retired", JB::Bool(CoMiningRetired(reward.height))},
+                {"co_mining_retirement_height", JB::Number(CoMiningRetirementHeight())},
+                {"co_mining_subsidy_units", JB::Number(reward.allocation.pool)},
+                {"validator_subsidy_units", JB::Number(reward.allocation.endorsement)},
+                {"miner_fees_active", JB::Bool(MinerFeesActive(reward.height))},
+                {"winner_pct", JB::Number(uint64_t(CoMiningRetired(reward.height) ? 60 : 50))},
+                {"pool_pct", JB::Number(uint64_t(CoMiningRetired(reward.height) ? 0 : 20))},
                 {"vault_pct", JB::Number((uint64_t)20)},
-                {"endorse_pct", JB::Number((uint64_t)10)},
+                {"endorse_pct", JB::Number(uint64_t(CoMiningRetired(reward.height) ? 20 : 10))},
                 {"supply_veld", JB::Float(chain_.TotalSupplyVeld())},
                 {"supply_pct_mined", JB::Float(chain_.TotalSupplyVeld() / MAX_SUPPLY * 100.0, 4)},
             });
@@ -2301,14 +2412,17 @@ class RpcServer {
                 return pool_info_fn_();
             uint64_t h = chain_.Height();
             uint64_t blocks_in_window = h % 100;
-            uint64_t blocks_until_payout = 100 - blocks_in_window;
+            const bool retired = CoMiningRetired(NextInclusionHeight(h));
+            uint64_t blocks_until_payout = retired ? 0 : 100 - blocks_in_window;
             return JB::Object({
                 {"pool_balance_veld", JB::Float(0.0)},
                 {"window_start_height", JB::Number((uint64_t)(h - blocks_in_window))},
                 {"blocks_in_window", JB::Number((uint64_t)blocks_in_window)},
                 {"blocks_until_payout", JB::Number((uint64_t)blocks_until_payout)},
                 {"window_size", JB::Number((uint64_t)100)},
-                {"pool_pct", JB::Number((uint64_t)27)},
+                {"pool_pct", JB::Number(uint64_t(retired ? 0 : 20))},
+                {"co_mining_retired", JB::Bool(retired)},
+                {"co_mining_retirement_height", JB::Number(CoMiningRetirementHeight())},
                 {"participants", JB::Number((uint64_t)0)},
                 {"total_near_misses", JB::Number((uint64_t)0)},
                 {"entries", JsonBuilder::Array({})},
@@ -2640,19 +2754,30 @@ class RpcServer {
         });
 
         methods_["getvaultinfo"] = RpcMethod([this](const P&) -> std::string {
-            auto vault_script = AddressToScript(VAULT_ADDRESS);
-            double vault_bal = (double)chain_.GetBalance(vault_script) / VELD_UNITS;
-            uint64_t height = chain_.Height();
-            uint64_t next_dist =
-                VAULT_DISTRIBUTION_INTERVAL - (height % VAULT_DISTRIBUTION_INTERVAL);
+            const auto preview = chain_.GetVaultPayoutPreview();
+            double vault_bal = (double)preview.balance / VELD_UNITS;
+            uint64_t height = preview.height;
+            uint64_t next_dist = preview.next_boundary - height;
             uint64_t next_vault_block = VAULT_BLOCK_INTERVAL - (height % VAULT_BLOCK_INTERVAL);
 
             std::ostringstream j;
             j << std::fixed << std::setprecision(8);
             j << "{"
-              << "\"vault_address\":\"" << VAULT_ADDRESS << "\","
+              << "\"vault_address\":\"" << VaultAddressAtHeight(height) << "\","
               << "\"balance_veld\":" << vault_bal << ","
-              << "\"balance_units\":" << chain_.GetBalance(vault_script) << ","
+              << "\"balance_units\":" << preview.balance << ","
+              << "\"current_height\":" << height << ","
+              << "\"reserve_policy_active\":"
+              << (VaultReservePolicyActive(height) ? "true" : "false") << ","
+              << "\"next_distribution_reserve_policy\":"
+              << (VaultReservePolicyActive(preview.next_boundary) ? "true" : "false") << ","
+              << "\"reserve_activation_height\":" << VAULT_RESERVE_ACTIVATION_HEIGHT << ","
+              << "\"reserve_target_veld\":" << (double)VAULT_RESERVE_TARGET_UNITS / VELD_UNITS
+              << ","
+              << "\"estimated_budget_veld\":" << (double)preview.budget / VELD_UNITS << ","
+              << "\"estimated_budget_units\":" << preview.budget << ","
+              << "\"inflow_reference_height\":" << preview.inflow_reference_height << ","
+              << "\"budget_is_estimate\":true,"
               << "\"fees_collected_veld\":" << chain_.TotalFeesCollectedVeld() << ","
               << "\"fees_collected_units\":" << chain_.TotalFeesCollectedUnits() << ","
               << "\"next_distribution_blocks\":" << next_dist << ","
@@ -2712,6 +2837,7 @@ class RpcServer {
               << "\"min_evidence_window\":" << complete_evidence_window << ",";
             uint64_t custodial_count = 0;
             uint64_t pending_return_count = 0;
+            uint64_t pending_excess_return_count = 0;
             j << "\"validators\":[";
             if (validators_) {
                 bool first = true;
@@ -2726,6 +2852,8 @@ class RpcServer {
                         custodial_count++;
                     const auto lifecycle =
                         validators_->GetBondLifecycleStatus(v.pubkey_hex, height);
+                    const auto reduction = validators_->GetBondReductionStatus(
+                        v.pubkey_hex, height == UINT64_MAX ? height : height + 1);
                     const uint64_t return_boundary = lifecycle.return_boundary;
                     const uint64_t settlement_boundary = lifecycle.settlement_boundary;
                     const bool principal_held = lifecycle.principal_held;
@@ -2733,6 +2861,8 @@ class RpcServer {
                         !v.slashed && v.deregistered_at_height > 0 && principal_held;
                     if (pending_return)
                         pending_return_count++;
+                    if (reduction.pending)
+                        pending_excess_return_count++;
                     uint64_t acc = 0;
                     auto it = accrued_by_pk.find(v.pubkey_hex);
                     if (it != accrued_by_pk.end())
@@ -2745,7 +2875,23 @@ class RpcServer {
                       << "\"bond_custodial\":" << (v.bond_custodial ? "true" : "false") << ","
                       << "\"bond_veld\":"
                       << (principal_held ? (double)v.bond_units / VELD_UNITS : 0.0) << ","
-                      << "\"original_bond_veld\":" << (double)v.bond_units / VELD_UNITS << ","
+                      << "\"original_bond_veld\":"
+                      << (double)(v.bond_units +
+                                  (v.bond_reduction_settled_at ? v.bond_reduction_units : 0)) /
+                             VELD_UNITS
+                      << ","
+                      << "\"bond_units\":\"" << v.bond_units << "\","
+                      << "\"bond_retained_units\":\"" << reduction.retained_units << "\","
+                      << "\"bond_reduction_units\":\"" << reduction.reduction_units << "\","
+                      << "\"bond_reduction_eligible\":" << (reduction.eligible ? "true" : "false")
+                      << ","
+                      << "\"bond_reduction_pending\":" << (reduction.pending ? "true" : "false")
+                      << ","
+                      << "\"bond_reduction_cancelled\":" << (reduction.cancelled ? "true" : "false")
+                      << ","
+                      << "\"bond_reduction_requested_at\":" << reduction.requested_at << ","
+                      << "\"bond_reduction_settled_at\":" << reduction.settled_at << ","
+                      << "\"bond_reduction_boundary\":" << reduction.return_boundary << ","
                       << "\"principal_held\":" << (principal_held ? "true" : "false") << ","
                       << "\"yield_accrued_veld\":" << (double)acc / VELD_UNITS << ","
                       << "\"slashed\":" << (v.slashed ? "true" : "false") << ","
@@ -2762,8 +2908,148 @@ class RpcServer {
             }
             j << "],"
               << "\"custodial_validator_count\":" << custodial_count << ","
-              << "\"pending_return_count\":" << pending_return_count << "}";
+              << "\"pending_return_count\":" << pending_return_count << ","
+              << "\"pending_excess_return_count\":" << pending_excess_return_count << "}";
             return j.str();
+        });
+
+        methods_["getappchainbridgeinfo"] = RpcMethod([this](const P& params) -> std::string {
+            if (params.size() > 1)
+                throw std::invalid_argument("Usage: getappchainbridgeinfo [bridge_id]");
+            auto transition = chain_.AcquireConsensusTransitionGuard();
+            if (chain_.IsEmpty())
+                throw std::runtime_error("parent chain unavailable");
+            const auto view = chain_.AppBridgeReadView();
+            const auto next = app::add(view.anchor().height, 1);
+            const bool active = AppchainBridgeActive(next);
+            std::vector<std::string> records;
+            std::optional<app::Id> selected;
+            if (!params.empty()) {
+                const auto raw = app::unhex(params[0], 48);
+                if (raw.size() != 48 || app::hex(raw) != params[0])
+                    throw std::invalid_argument("canonical 48-byte bridge id required");
+                app::Id id{};
+                std::copy(raw.begin(), raw.end(), id.begin());
+                selected = id;
+            }
+            for (const auto& [id, record] : view.state().records) {
+                if (selected && id != *selected)
+                    continue;
+                const auto last = record.latest == app::Id{}
+                                      ? record.registered
+                                      : record.finalized.at(record.latest).finalized;
+                const bool stale = next < last || next - last >= app::bridge::STALE;
+                const bool approved = AppchainBridgeDescriptorAllowed(record.committee.id());
+                const auto remaining = app::bridge::CAP - view.state().totalReserve;
+                records.push_back(JB::Object(
+                    {{"bridge_id", JB::String(app::hex(id))},
+                     {"descriptor_id", JB::String(app::hex(record.committee.id()))},
+                     {"child_genesis", JB::String(app::hex(record.committee.childGenesis))},
+                     {"can_deposit",
+                      JB::Bool(active && approved && !record.exitOnly && !stale && remaining > 0)},
+                     {"exit_only", JB::Bool(record.exitOnly)},
+                     {"stale", JB::Bool(stale)},
+                     {"reserve_atoms", JB::Number(record.deposited - record.withdrawn)},
+                     {"remaining_capacity_atoms", JB::Number(remaining)},
+                     {"last_finalized_checkpoint", JB::String(app::hex(record.latest))},
+                     {"last_update_height", JB::Number(last)}}));
+            }
+            return JB::Object(
+                {{"schema", JB::Number(uint64_t{1})},
+                 {"active", JB::Bool(active)},
+                 {"activation_height",
+                  APPCHAIN_BRIDGE_ENABLED ? JB::Number(APPCHAIN_BRIDGE_ACTIVATION_HEIGHT) : "null"},
+                 {"parent_genesis", JB::String(HashToHex(view.genesis()))},
+                 {"parent_height", JB::Number(view.anchor().height)},
+                 {"parent_hash", JB::String(HashToHex(view.anchor().hash))},
+                 {"deposit_confirmations", JB::Number(app::bridge::CONFIRMATIONS)},
+                 {"checkpoint_delay_blocks", JB::Number(app::bridge::DELAY)},
+                 {"total_reserve_atoms", JB::Number(view.state().totalReserve)},
+                 {"bridges", JB::Array(records)}});
+        });
+
+        methods_["prepareappchaindeposit"] = RpcMethod([this](const P& params) -> std::string {
+            if (params.size() != 7)
+                throw std::invalid_argument(
+                    "Usage: prepareappchaindeposit <fund_address> <bridge_id> <descriptor_id> <child_genesis> <beneficiary_id> <trading_veld> <fuel_backing_veld>");
+            auto transition = chain_.AcquireConsensusTransitionGuard();
+            if (chain_.IsEmpty() || !AppchainBridgeActive(NextInclusionHeight(chain_.Height())))
+                throw std::runtime_error("native appchain bridge is not activated");
+            auto parseId = [](const std::string& encoded) {
+                auto raw = app::unhex(encoded, 48);
+                if (raw.size() != 48 || app::hex(raw) != encoded)
+                    throw std::invalid_argument("canonical 48-byte bridge identity required");
+                app::Id id{};
+                std::copy(raw.begin(), raw.end(), id.begin());
+                return id;
+            };
+            const auto bridge = parseId(params[1]), descriptor = parseId(params[2]),
+                       child = parseId(params[3]), owner = parseId(params[4]);
+            const auto view = chain_.AppBridgeReadView();
+            const auto record = view.state().records.find(bridge);
+            if (record == view.state().records.end() ||
+                record->second.committee.id() != descriptor ||
+                record->second.committee.childGenesis != child)
+                throw std::runtime_error(
+                    "selected bridge does not match the canonical descriptor and child chain");
+            const auto script = AddressToScript(params[0]);
+            if (!app::bridge::ordinary(script) || ScriptToAddress(script) != params[0])
+                throw std::invalid_argument("canonical funding address required");
+            const auto trading = ParseVeldDecimalToUnitsOrThrow(params[5], "trading_veld", true);
+            const auto fuel = ParseVeldDecimalToUnitsOrThrow(params[6], "fuel_backing_veld", true);
+            const auto required = app::add(app::add(trading, fuel), MIN_TX_FEE);
+            const auto wallet = ComputeWalletState(params[0]);
+            std::vector<UTXO> selected;
+            std::vector<app::bridge::Outpoint> points;
+            uint64_t gathered = 0;
+            for (const auto& coin : wallet.selectable) {
+                if (gathered >= required || selected.size() == MAX_APPCHAIN_DEPOSIT_INPUTS)
+                    break;
+                selected.push_back(coin);
+                points.push_back({coin.tx_hash, coin.output_index});
+                app::credit(gathered, coin.value);
+            }
+            if (gathered < required)
+                throw std::runtime_error(
+                    "insufficient spendable funding within the deposit input limit");
+            const auto prepared = appchain_deposit_detail::PrepareLocked(
+                transition, chain_, bridge, owner, trading, fuel, script, points);
+            const auto& tx = prepared.transaction;
+            std::vector<std::vector<uint8_t>> parents;
+            std::vector<std::string> inputs;
+            for (uint32_t i = 0; i < selected.size(); ++i) {
+                auto raw = AuthenticatedParentRaw(selected[i]);
+                parents.push_back(raw);
+                inputs.push_back(JB::Object(
+                    {{"index", JB::Number(uint64_t{i})},
+                     {"sighash_hex", JB::String(BytesToHex(ComputeSighash(tx, i, script)))},
+                     {"prev_script_hex", JB::String(BytesToHex(script))},
+                     {"value", JB::Number(selected[i].value)},
+                     {"parent_tx_hex", JB::String(BytesToHex(raw))}}));
+            }
+            const std::string identity = "VELD_APPCHAIN_DEPOSIT_V1|" + HashToHex(view.genesis()) +
+                                         "|" + params[1] + "|" + params[2] + "|" + params[3] + "|" +
+                                         params[4] + "|" + std::to_string(trading) + "|" +
+                                         std::to_string(fuel);
+            const auto intent = offline_signing::MakeIntent(tx, parents, "APPCHAIN_DEPOSIT",
+                                                            params[4], app::add(trading, fuel),
+                                                            params[0], prepared.change, identity);
+            return JB::Object({{"unsigned_tx_hex", JB::String(BytesToHex(tx.Serialize()))},
+                               {"inputs", JB::Array(inputs)},
+                               {"signing_intent", SigningIntentJson(intent)},
+                               {"operation_identity", JB::String(identity)},
+                               {"total_input", JB::Number(prepared.totalInput)},
+                               {"total_output", JB::Number(tx.TotalOutput())},
+                               {"fee", JB::Number(uint64_t{MIN_TX_FEE})},
+                               {"change", JB::Number(prepared.change)},
+                               {"bridge_id", JB::String(params[1])},
+                               {"descriptor_id", JB::String(params[2])},
+                               {"child_genesis", JB::String(params[3])},
+                               {"beneficiary_id", JB::String(params[4])},
+                               {"trading_atoms", JB::Number(trading)},
+                               {"fuel_backing_atoms", JB::Number(fuel)},
+                               {"parent_height", JB::Number(view.anchor().height)},
+                               {"parent_hash", JB::String(HashToHex(view.anchor().hash))}});
         });
 
         methods_["getstatedigest"] = RpcMethod([this](const P&) -> std::string {
@@ -2773,7 +3059,7 @@ class RpcServer {
             // transition sequencer across validation, module callbacks, canonical
             // publication, persistence, and rollback; individual digest methods
             // may safely take their normal shared/module locks underneath it.
-            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            auto transition_guard = AcquireRpcReadTransitionGuard(chain_);
             const uint64_t H = chain_.Height();
             const uint64_t canonical_supply = chain_.TotalSupplyUnits();
             if (!module_cursor_fn_) {
@@ -2833,7 +3119,7 @@ class RpcServer {
             const Hash256 d_redeem_bond = redeem_bond_digest_fn_
                                               ? redeem_bond_digest_fn_()
                                               : sd::empty_container_digest(sd::tags::REDEEM_BOND);
-            const Hash256 top =
+            const Hash256 previous =
                 btcveld::reserve::TRANSITION_V1_REQUIRED
                     ? sd::ComposeV8(H, tip_hash, d_utxo, d_validators, d_staking, d_bondyield,
                                     d_nmstally, d_tokens, d_supply, d_governance, d_nms_extended,
@@ -2841,16 +3127,20 @@ class RpcServer {
                     : sd::ComposeV7(H, tip_hash, d_utxo, d_validators, d_staking, d_bondyield,
                                     d_nmstally, d_tokens, d_supply, d_governance, d_nms_extended,
                                     d_spv, d_anchors, d_amm, d_finality, d_redeem_bond);
+            const auto d_appchain = chain_.AppBridgeDigest();
+            const Hash256 top = sd::WithAppchainBridge(H, previous, d_appchain);
             std::ostringstream j;
             j << "{"
               << "\"spec_version\":\""
-              << (btcveld::reserve::TRANSITION_V1_REQUIRED ? "VELD_STATE_DIGEST_v8"
-                                                           : "VELD_STATE_DIGEST_v7")
+              << (AppchainBridgeActive(H)                    ? "VELD_STATE_DIGEST_v9"
+                  : btcveld::reserve::TRANSITION_V1_REQUIRED ? "VELD_STATE_DIGEST_v8"
+                                                             : "VELD_STATE_DIGEST_v7")
               << "\","
               << "\"height\":" << H << ","
               << "\"tip_hash\":\"" << HashToHex(tip_hash) << "\","
               << "\"digest\":\"" << HashToHex(top) << "\","
               << "\"sub\":{"
+              << "\"appchain_bridge\":\"" << app::hex(d_appchain) << "\","
               << "\"utxo\":\"" << HashToHex(d_utxo) << "\","
               << "\"validators\":\"" << HashToHex(d_validators) << "\","
               << "\"staking\":\"" << HashToHex(d_staking) << "\","
@@ -2970,6 +3260,125 @@ class RpcServer {
             if (result.size() > 32768)
                 throw rpc_error(-32004, "address history response exceeded bound");
             return result;
+        });
+
+        // Complete anchored accounting and an explicitly incomplete candidate
+        // page. Filters affect only the page, never the reserve total. This is
+        // a read-only local-node contract; it grants no spending authority.
+        methods_["getcustodyinventory"] = RpcMethod([this](const P& params) -> std::string {
+            if (params.size() != 5)
+                throw std::invalid_argument(
+                    "Expected address, confirmations, cursor, sources, page height");
+            const auto decimal = [](const std::string& s, uint64_t maximum) {
+                if (s.empty() || s.size() > 10 || (s.size() > 1 && s[0] == '0') ||
+                    s.find_first_not_of("0123456789") != std::string::npos)
+                    throw std::invalid_argument("Canonical unsigned integer required");
+                const uint64_t n = std::stoull(s);
+                if (n > maximum)
+                    throw std::invalid_argument("Integer bound exceeded");
+                return n;
+            };
+            const auto source_key = [&](const std::string& s, bool wildcard) {
+                if (s.size() < 66 || s.size() > 75 || s[64] != ':' ||
+                    s.substr(0, 64).find_first_not_of("0123456789abcdef") != std::string::npos)
+                    throw std::invalid_argument("Canonical source outpoint required");
+                if (!(wildcard && s.substr(65) == "*"))
+                    decimal(s.substr(65), UINT32_MAX);
+            };
+            auto script = AddressToScript(params[0]);
+            if (script.empty())
+                throw std::invalid_argument("Invalid custody address");
+            const uint64_t minimum = decimal(params[1], 1000000);
+            if (!minimum)
+                throw std::invalid_argument("Positive confirmations required");
+            const std::string& after = params[2];
+            if (!after.empty())
+                source_key(after, false);
+            const std::string& filter = params[3];
+            if (filter.size() > 4863)
+                throw std::invalid_argument("Bounded custody sources required");
+            std::unordered_set<std::string> sources;
+            if (!filter.empty()) {
+                size_t start = 0;
+                do {
+                    const size_t end = filter.find(',', start);
+                    const std::string key =
+                        filter.substr(start, end == std::string::npos ? end : end - start);
+                    source_key(key, true);
+                    if (!sources.insert(key).second || sources.size() > 64)
+                        throw std::invalid_argument("Distinct bounded custody sources required");
+                    if (end == std::string::npos)
+                        break;
+                    start = end + 1;
+                } while (true);
+            }
+            auto transition_guard = AcquireRpcReadTransitionGuard(chain_);
+            const uint64_t tip = chain_.Height();
+            const uint64_t page_height = params[4].empty() ? tip : decimal(params[4], UINT32_MAX);
+            if (page_height > tip)
+                throw std::invalid_argument("Page height is ahead of tip");
+            const std::string block = chain_.GetBlockHashAtHeight(tip);
+            if (block.size() != 64)
+                throw std::runtime_error("Canonical custody anchor unavailable");
+            uint64_t amount = 0, count = 0;
+            std::map<std::string, UTXO> page;
+            const auto ws = ComputeWalletState(
+                params[0],
+                [&](const UTXO& u) {
+                    const uint64_t confs = u.block_height <= tip ? tip - u.block_height + 1 : 0;
+                    if (confs < minimum)
+                        return;
+                    if (amount > UINT64_MAX - u.value)
+                        throw std::runtime_error("Custody amount overflow");
+                    amount += u.value;
+                    ++count;
+                    const std::string key = UTXOKey(u.tx_hash, u.output_index);
+                    if (u.block_height > page_height || key <= after ||
+                        (!sources.empty() && !sources.count(key) &&
+                         !sources.count(HashToHex(u.tx_hash) + ":*")))
+                        return;
+                    page.emplace(key, u);
+                    // One sentinel proves whether another page exists. Do not
+                    // allocate or serialize the rest of the address inventory.
+                    if (page.size() > 65)
+                        page.erase(std::prev(page.end()));
+                },
+                false);
+            if (!StakeOutpointBackingActive(tip) && ws.staked_units)
+                throw std::runtime_error("Custody inventory requires exact stake backing");
+            const bool complete = page.size() <= 64;
+            if (!complete)
+                page.erase(std::prev(page.end()));
+            std::vector<std::string> items;
+            for (const auto& item : page) {
+                const auto& u = item.second;
+                items.push_back(JB::Object({
+                    {"txid", JB::String(HashToHex(u.tx_hash))},
+                    {"vout", JB::Number((uint64_t)u.output_index)},
+                    {"value_units", JB::Number(u.value)},
+                    {"block_height", JB::Number(u.block_height)},
+                    {"confirmations", JB::Number(tip - u.block_height + 1)},
+                }));
+            }
+            return JB::Object({
+                {"version", JB::Number(uint64_t(1))},
+                {"complete", JB::Bool(true)},
+                {"address", JB::String(params[0])},
+                {"script_pubkey_hex", JB::String(BytesToHex(script))},
+                {"height", JB::Number(tip)},
+                {"block_hash", JB::String(block)},
+                {"minimum_confirmations", JB::Number(minimum)},
+                {"amount_units", JB::Number(amount)},
+                {"eligible_count", JB::Number(count)},
+                {"outpoint_count", JB::Number(ws.outpoint_count)},
+                {"pending_in_count", JB::Number(ws.pending_in_count)},
+                {"after", JB::String(after)},
+                {"sources", JB::String(filter)},
+                {"page_height", JB::Number(page_height)},
+                {"page_complete", JB::Bool(complete)},
+                {"next", JB::String(complete ? "" : page.rbegin()->first)},
+                {"coins", JB::Array(items)},
+            });
         });
 
         methods_["listunspent"] = RpcMethod([this](const P& params) -> std::string {
@@ -5940,14 +6349,13 @@ class RpcServer {
             uint64_t supply = chain_.TotalSupplyUnits();
             bool active = staking_->IsStakingActive(supply);
             uint64_t total_stake = staking_->GetTotalStake();
-            uint64_t height = chain_.Height();
-            uint64_t next_dist_in = (height == 0) ? VAULT_DISTRIBUTION_INTERVAL
-                                                  : VAULT_DISTRIBUTION_INTERVAL -
-                                                        (height % VAULT_DISTRIBUTION_INTERVAL);
-            auto vault_script = AddressToScript(VAULT_ADDRESS);
-            uint64_t vault_units = chain_.GetBalance(vault_script);
+            const auto preview = chain_.GetVaultPayoutPreview();
+            uint64_t height = preview.height;
+            uint64_t next_dist_in = preview.next_boundary - height;
+            uint64_t vault_units = preview.balance;
 
             auto all_stakers = staking_->GetAllStakers();
+            const auto consensus_weights = staking_->GetWeightedStakeSnapshot(height);
             struct WStaker {
                 std::string addr;
                 uint64_t units;
@@ -5956,9 +6364,10 @@ class RpcServer {
                 double mining_mult;
                 double lockup_mult;
                 double share;
+                uint64_t weight;
             };
             std::vector<WStaker> ws;
-            double total_consensus = 0.0;
+            uint64_t total_consensus = 0;
             for (auto& s : all_stakers) {
                 auto script = AddressToScript(s.address);
                 double mining_mult = tiers_ ? tiers_->GetTier(BytesToHex(script)).multiplier : 1.0;
@@ -5966,26 +6375,25 @@ class RpcServer {
                 double mult = mining_mult * lockup_mult;
                 if (mult > LOCKUP_MAX_MULTIPLIER)
                     mult = LOCKUP_MAX_MULTIPLIER;
+                const auto found = consensus_weights.find(s.address);
+                const uint64_t weight = found == consensus_weights.end() ? 0 : found->second;
+                if (UINT64_MAX - total_consensus < weight)
+                    throw std::overflow_error("staking estimate weight overflow");
                 ws.push_back({s.address, s.staked_units, s.earliest_unlock_height, mult,
-                              mining_mult, lockup_mult, 0.0});
-                total_consensus += (double)s.staked_units * lockup_mult;
+                              mining_mult, lockup_mult, 0.0, weight});
+                total_consensus += weight;
             }
-            // CONSENSUS-PARITY (): the vault distribution treats the
-            // bond-yield escrow as a competing staker — ComputeExpectedVault-
-            // Distribution (blockchain.h:1251) adds GetEligibleBondYieldWeight
-            // to the weight pool. A bonded validator's escrow often holds the
-            // MAJORITY of the weight, so omitting it here overstated every real
-            // staker's share + payout (e.g. est 8.31 vs actual 1.94 for a 10-VELD
-            // stake behind a 50-VELD bond). Add the SAME escrow weight to the
-            // denominator so share_pct / payout_veld mirror what the chain pays.
-            if (validators_ && height >= BOND_YIELD_ACTIVATION_HEIGHT) {
-                uint64_t next_boundary =
-                    ((height / VAULT_DISTRIBUTION_INTERVAL) + 1) * VAULT_DISTRIBUTION_INTERVAL;
-                total_consensus += (double)validators_->GetEligibleBondYieldWeight(next_boundary);
+            // Use the same integer weights and competing bond-yield escrow as
+            // consensus. Mining multipliers above are informational only.
+            if (validators_ && preview.next_boundary >= BOND_YIELD_ACTIVATION_HEIGHT) {
+                const auto weight = validators_->GetEligibleBondYieldWeight(preview.next_boundary);
+                if (UINT64_MAX - total_consensus < weight)
+                    throw std::overflow_error("staking estimate escrow weight overflow");
+                total_consensus += weight;
             }
             if (total_consensus > 0)
                 for (auto& w : ws)
-                    w.share = ((double)w.units * w.lockup_mult) / total_consensus;
+                    w.share = (double)w.weight / total_consensus;
 
             {
                 constexpr double WHALE_CAP_FRAC = 0.75;
@@ -5996,20 +6404,7 @@ class RpcServer {
             }
 
             double vault_veld = (double)vault_units / VELD_UNITS;
-            double backstop = vault_veld * ((double)VAULT_DISTRIBUTION_PPM / 1e6);
-            double cycle_budget_veld = backstop;
-            if (height >= VAULT_INFLOW_CAP_ACTIVATION_HEIGHT) {
-                uint64_t last_boundary =
-                    (height / VAULT_DISTRIBUTION_INTERVAL) * VAULT_DISTRIBUTION_INTERVAL;
-                if (last_boundary >= VAULT_DISTRIBUTION_INTERVAL) {
-                    uint64_t inflow_units =
-                        chain_.ComputeVaultInflowSinceLastDistribution(last_boundary);
-                    double inflow_cap = ((double)inflow_units / VELD_UNITS) *
-                                        ((double)VAULT_INFLOW_PAYOUT_PPM / 1e6);
-                    if (cycle_budget_veld > inflow_cap)
-                        cycle_budget_veld = inflow_cap;
-                }
-            }
+            double cycle_budget_veld = (double)preview.budget / VELD_UNITS;
             double effective_rate_pct =
                 (vault_veld > 0) ? (cycle_budget_veld / vault_veld) * 100.0 : 0.0;
 
@@ -6029,11 +6424,23 @@ class RpcServer {
                      VELD_UNITS
               << ",";
             j << "\"co_mining_min_stake_veld\":" << (double)NMS_MIN_BOND_UNITS / VELD_UNITS << ",";
+            j << "\"co_mining_retired\":"
+              << (CoMiningRetired(NextInclusionHeight(height)) ? "true" : "false") << ",";
+            j << "\"co_mining_retirement_height\":" << CoMiningRetirementHeight() << ",";
             j << "\"max_stake_veld\":" << (double)MAX_STAKE_UNITS / VELD_UNITS << ",";
             j << "\"lockup_blocks\":" << STAKE_LOCKUP_BLOCKS << ",";
             j << "\"distribution_interval\":" << VAULT_DISTRIBUTION_INTERVAL << ",";
             j << "\"next_distribution_in\":" << next_dist_in << ",";
             j << "\"distributable_veld\":" << cycle_budget_veld << ",";
+            j << "\"distributable_units\":" << preview.budget << ",";
+            j << "\"budget_is_estimate\":true,";
+            j << "\"inflow_reference_height\":" << preview.inflow_reference_height << ",";
+            j << "\"reserve_policy_active\":"
+              << (VaultReservePolicyActive(height) ? "true" : "false") << ",";
+            j << "\"next_distribution_reserve_policy\":"
+              << (VaultReservePolicyActive(preview.next_boundary) ? "true" : "false") << ",";
+            j << "\"reserve_target_veld\":" << (double)VAULT_RESERVE_TARGET_UNITS / VELD_UNITS
+              << ",";
             j << "\"effective_rate_pct\":" << effective_rate_pct << ",";
             j << "\"current_height\":" << height << ",";
             j << "\"stakers\":[";
@@ -6045,7 +6452,16 @@ class RpcServer {
                 uint64_t next_unlock = staking_->GetNextUnlockHeight(w.addr, height);
                 uint64_t next_in = (next_unlock == UINT64_MAX) ? 0 : (next_unlock - height);
                 uint64_t ucd_blk = 0;
-                double gross_payout = cycle_budget_veld * w.share;
+                uint64_t payout_units =
+                    total_consensus == 0
+                        ? 0
+                        : static_cast<uint64_t>(static_cast<__uint128_t>(preview.budget) *
+                                                w.weight / total_consensus);
+                const uint64_t recipient_cap =
+                    static_cast<uint64_t>(static_cast<__uint128_t>(preview.budget) *
+                                          VAULT_CONCENTRATION_CAP_PPM / 1'000'000ULL);
+                payout_units = std::min(payout_units, recipient_cap);
+                double gross_payout = (double)payout_units / VELD_UNITS;
                 double net_payout = gross_payout;
                 j << "{\"address\":\"" << w.addr << "\","
                   << "\"staked_veld\":" << (double)w.units / VELD_UNITS << ","
@@ -6056,6 +6472,7 @@ class RpcServer {
                   << "\"lockup_multiplier\":" << std::setprecision(2) << w.lockup_mult << ","
                   << "\"share_pct\":" << std::setprecision(4) << (w.share * 100) << ","
                   << "\"payout_veld\":" << std::setprecision(8) << net_payout << ","
+                  << "\"payout_units\":\"" << payout_units << "\","
                   << "\"payout_gross_veld\":" << std::setprecision(8) << gross_payout << ","
                   << "\"payout_net_veld\":" << std::setprecision(8) << net_payout << ","
                   << "\"unlock_height\":" << w.unlock << ","
@@ -6100,7 +6517,10 @@ class RpcServer {
               << ",";
             j << "\"total_staked_veld\":" << (double)total_staked / VELD_UNITS << ",";
             j << "\"min_stake_veld\":"
-              << (double)(validators_ ? validators_->GetEffectiveMinStake() : MIN_VALIDATOR_STAKE) /
+              << (double)(validators_
+                              ? validators_->GetEffectiveMinStake(
+                                    NextInclusionHeight(chain_.Height()))
+                              : MinimumValidatorBond(NextInclusionHeight(chain_.Height()))) /
                      VELD_UNITS
               << ",";
             j << "\"validator_count\":"
@@ -6229,7 +6649,7 @@ class RpcServer {
             if (!remote_work_grant_fn_)
                 throw rpc_error(-32010, "work admission unavailable: unwired");
 
-            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            auto transition_guard = AcquireRpcReadTransitionGuard(chain_);
             if (chain_.IsEmpty())
                 throw rpc_error(-32010, "work admission unavailable: tip_unknown");
             const Block tip = chain_.TipCopy();
@@ -6290,7 +6710,7 @@ class RpcServer {
             if (!begin_remote_signing_fn_)
                 throw rpc_error(-32010, "remote signing activation unavailable: unwired");
 
-            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            auto transition_guard = AcquireRpcReadTransitionGuard(chain_);
             RemoteSigningActivationResult activation;
             try {
                 activation =
@@ -6319,7 +6739,7 @@ class RpcServer {
                 throw std::invalid_argument("Usage: cancelworksigning <one_use_signing_token>");
             if (!cancel_remote_signing_fn_)
                 throw rpc_error(-32010, "remote signing cancellation unavailable: unwired");
-            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            auto transition_guard = AcquireRpcReadTransitionGuard(chain_);
             bool released = false;
             try {
                 released = cancel_remote_signing_fn_(params[0]);
@@ -6670,11 +7090,11 @@ class RpcServer {
                 gov_ ? gov_->GetMinVotesRequired(ProposalType::GENERAL) : GOV_QUORUM_GENERAL;
             uint32_t proto_votes = gov_ ? gov_->GetMinVotesRequired(ProposalType::PROTOCOL_UPGRADE)
                                         : GOV_QUORUM_PROTOCOL;
-            uint64_t bonded = validators_ ? validators_->GetGovernanceBondedTotal() : 0;
+            uint64_t bonded = validators_ ? validators_->GetGovernanceBondedTotal(h) : 0;
             std::ostringstream j;
             j << "{\"registered_validators\":" << registered << ",\"active_validators\":" << active
               << ",\"governance_active\":"
-              << ((gov_ && gov_->GovernanceBondGateOpen()) ? "true" : "false")
+              << ((gov_ && gov_->GovernanceBondGateOpen(h)) ? "true" : "false")
               << ",\"bonded_veld\":" << std::fixed << std::setprecision(8)
               << ((double)bonded / VELD_UNITS) << ",\"general_votes_needed\":" << gen_votes
               << ",\"general_threshold_pct\":" << GOV_PASS_PCT_GENERAL
@@ -6763,125 +7183,355 @@ class RpcServer {
             });
         };
 
-        methods_["preparegovproposal"] = RpcMethod([this, build_gov_tx_template,
-                                                    build_op_return_script](
-                                                       const P& params) -> std::string {
-            if (!gov_ || !gov_->GovernanceBondGateOpen())
-                throw std::runtime_error(
-                    "Governance is locked until the bonded-validator activation threshold is reached");
-            if (params.size() != 6 && params.size() != 7)
-                throw std::invalid_argument(
-                    "Usage: preparegovproposal ADDRESS [TYPE] TITLE DESCRIPTION PUBKEY_HEX SIGNATURE_HEX SIGNED_HEIGHT");
-            const bool typed_marker = params.size() == 7;
-            const std::string& address = params[0];
-            ProposalType proposal_type = ProposalType::GENERAL;
-            size_t offset = 1;
-            if (typed_marker) {
-                if (!GovernanceEngine::ParseProposalType(params[1], proposal_type))
-                    throw std::invalid_argument("TYPE must be general|protocol_upgrade");
-                offset = 2;
-            }
-            const std::string& title = params[offset];
-            const std::string& description = params[offset + 1];
-            const std::string& pubkey_hex = params[offset + 2];
-            const std::string& sig_hex = params[offset + 3];
-            const uint64_t signed_height =
-                ParseCanonicalRpcU64OrThrow(params[offset + 4], "signed_height");
-            if (title.size() > 200)
-                throw std::invalid_argument("Title too long (max 200 chars)");
-            if (description.size() > 4096)
-                throw std::invalid_argument("Description too long (max 4096 chars)");
-            uint64_t tip = (uint64_t)chain_.Height();
-            if (signed_height > tip + 1)
-                throw std::runtime_error("signed_height is ahead of chain tip");
-            if (tip > signed_height + GOV_SIG_REPLAY_WINDOW_BLOCKS)
-                throw std::runtime_error("signed_height too stale; re-sign against current tip");
-            const bool framed = SecurityStateMigrationActive(NextInclusionHeight(tip));
-            const std::string challenge = GovernanceEngine::BuildProposalChallenge(
-                proposal_type, address, title, description, signed_height, typed_marker, framed);
-            if (!GovernanceEngine::VerifyGovSig(pubkey_hex, sig_hex, challenge))
-                throw std::runtime_error("Invalid signature");
-            if (GovernanceEngine::PubKeyHexToAddress(pubkey_hex) != address)
-                throw std::runtime_error("Public key does not derive to claimed address");
-            const bool proposal_pending =
-                mempool_.HasPendingOpReturn("VELD_GOV|P|" + address + "|") ||
-                mempool_.HasPendingOpReturn("VELD_GOV|P|general|" + address + "|") ||
-                mempool_.HasPendingOpReturn("VELD_GOV|P|protocol_upgrade|" + address + "|") ||
-                mempool_.HasPendingOpReturn("VELD_GOV|P2|general|" + address + "|") ||
-                mempool_.HasPendingOpReturn("VELD_GOV|P2|protocol_upgrade|" + address + "|");
-            if (proposal_pending)
-                throw std::runtime_error("A governance proposal from this address is already "
-                                         "pending in the mempool. Wait for it to be mined "
-                                         "(target block interval " +
-                                         std::to_string(TARGET_BLOCK_TIME) +
-                                         " seconds) before submitting another.");
-            uint64_t ts = (uint64_t)std::time(nullptr);
-            std::string payload =
-                framed ? GovernanceEngine::BuildFramedProposalOp(proposal_type, address, title,
-                                                                 description, signed_height,
-                                                                 pubkey_hex, sig_hex)
-                : typed_marker
-                    ? GovernanceEngine::BuildProposalOp(proposal_type, address, title, description,
-                                                        ts, signed_height, pubkey_hex, sig_hex)
-                    : GovernanceEngine::BuildProposalOp(address, title, description, ts,
-                                                        signed_height, pubkey_hex, sig_hex);
-            auto op_script = build_op_return_script(payload);
-            return build_gov_tx_template(address, op_script);
-        });
+        methods_
+            ["preparegovproposal"] =
+                RpcMethod([this, build_gov_tx_template, build_op_return_script](const P& params) -> std::
+                                                                                                     string {
+                                                                                                         if (!gov_ ||
+                                                                                                             !gov_->GovernanceBondGateOpen(
+                                                                                                                 NextInclusionHeight(
+                                                                                                                     chain_
+                                                                                                                         .Height())))
+                                                                                                             throw std::
+                                                                                                                 runtime_error(
+                                                                                                                     "Governance is locked until the bonded-validator activation threshold is reached");
+                                                                                                         if (params.size() !=
+                                                                                                                 6 &&
+                                                                                                             params.size() !=
+                                                                                                                 7)
+                                                                                                             throw std::
+                                                                                                                 invalid_argument(
+                                                                                                                     "Usage: preparegovproposal ADDRESS [TYPE] TITLE DESCRIPTION PUBKEY_HEX SIGNATURE_HEX SIGNED_HEIGHT");
+                                                                                                         const bool typed_marker =
+                                                                                                             params
+                                                                                                                 .size() ==
+                                                                                                             7;
+                                                                                                         const std::string&
+                                                                                                             address = params
+                                                                                                                 [0];
+                                                                                                         ProposalType
+                                                                                                             proposal_type =
+                                                                                                                 ProposalType::
+                                                                                                                     GENERAL;
+                                                                                                         size_t offset =
+                                                                                                             1;
+                                                                                                         if (typed_marker) {
+                                                                                                             if (!GovernanceEngine::ParseProposalType(
+                                                                                                                     params
+                                                                                                                         [1],
+                                                                                                                     proposal_type))
+                                                                                                                 throw std::
+                                                                                                                     invalid_argument(
+                                                                                                                         "TYPE must be general|protocol_upgrade");
+                                                                                                             offset =
+                                                                                                                 2;
+                                                                                                         }
+                                                                                                         const std::string&
+                                                                                                             title = params
+                                                                                                                 [offset];
+                                                                                                         const std::string&
+                                                                                                             description = params
+                                                                                                                 [offset +
+                                                                                                                  1];
+                                                                                                         const std::string&
+                                                                                                             pubkey_hex = params
+                                                                                                                 [offset +
+                                                                                                                  2];
+                                                                                                         const std::string&
+                                                                                                             sig_hex = params
+                                                                                                                 [offset +
+                                                                                                                  3];
+                                                                                                         const uint64_t signed_height =
+                                                                                                             ParseCanonicalRpcU64OrThrow(
+                                                                                                                 params
+                                                                                                                     [offset +
+                                                                                                                      4],
+                                                                                                                 "signed_height");
+                                                                                                         if (title
+                                                                                                                 .size() >
+                                                                                                             200)
+                                                                                                             throw std::
+                                                                                                                 invalid_argument(
+                                                                                                                     "Title too long (max 200 chars)");
+                                                                                                         if (description
+                                                                                                                 .size() >
+                                                                                                             4096)
+                                                                                                             throw std::
+                                                                                                                 invalid_argument(
+                                                                                                                     "Description too long (max 4096 chars)");
+                                                                                                         uint64_t tip =
+                                                                                                             (uint64_t)chain_
+                                                                                                                 .Height();
+                                                                                                         if (signed_height >
+                                                                                                             tip +
+                                                                                                                 1)
+                                                                                                             throw std::
+                                                                                                                 runtime_error(
+                                                                                                                     "signed_height is ahead of chain tip");
+                                                                                                         if (tip >
+                                                                                                             signed_height +
+                                                                                                                 GOV_SIG_REPLAY_WINDOW_BLOCKS)
+                                                                                                             throw std::
+                                                                                                                 runtime_error(
+                                                                                                                     "signed_height too stale; re-sign against current tip");
+                                                                                                         const bool framed =
+                                                                                                             SecurityStateMigrationActive(
+                                                                                                                 NextInclusionHeight(
+                                                                                                                     tip));
+                                                                                                         const std::string challenge =
+                                                                                                             GovernanceEngine::BuildProposalChallenge(
+                                                                                                                 proposal_type,
+                                                                                                                 address,
+                                                                                                                 title,
+                                                                                                                 description,
+                                                                                                                 signed_height,
+                                                                                                                 typed_marker,
+                                                                                                                 framed);
+                                                                                                         if (!GovernanceEngine::
+                                                                                                                 VerifyGovSig(
+                                                                                                                     pubkey_hex,
+                                                                                                                     sig_hex,
+                                                                                                                     challenge))
+                                                                                                             throw std::
+                                                                                                                 runtime_error(
+                                                                                                                     "Invalid signature");
+                                                                                                         if (GovernanceEngine::
+                                                                                                                 PubKeyHexToAddress(
+                                                                                                                     pubkey_hex) !=
+                                                                                                             address)
+                                                                                                             throw std::
+                                                                                                                 runtime_error(
+                                                                                                                     "Public key does not derive to claimed address");
+                                                                                                         const bool proposal_pending =
+                                                                                                             mempool_
+                                                                                                                 .HasPendingOpReturn(
+                                                                                                                     "VELD_GOV|P|" +
+                                                                                                                     address +
+                                                                                                                     "|") ||
+                                                                                                             mempool_
+                                                                                                                 .HasPendingOpReturn(
+                                                                                                                     "VELD_GOV|P|general|" +
+                                                                                                                     address +
+                                                                                                                     "|") ||
+                                                                                                             mempool_
+                                                                                                                 .HasPendingOpReturn(
+                                                                                                                     "VELD_GOV|P|protocol_upgrade|" +
+                                                                                                                     address +
+                                                                                                                     "|") ||
+                                                                                                             mempool_
+                                                                                                                 .HasPendingOpReturn(
+                                                                                                                     "VELD_GOV|P2|general|" +
+                                                                                                                     address +
+                                                                                                                     "|") ||
+                                                                                                             mempool_
+                                                                                                                 .HasPendingOpReturn(
+                                                                                                                     "VELD_GOV|P2|protocol_upgrade|" +
+                                                                                                                     address +
+                                                                                                                     "|");
+                                                                                                         if (proposal_pending)
+                                                                                                             throw std::runtime_error(
+                                                                                                                 "A governance proposal from this address is already "
+                                                                                                                 "pending in the mempool. Wait for it to be mined "
+                                                                                                                 "(target block interval " +
+                                                                                                                 std::to_string(
+                                                                                                                     TARGET_BLOCK_TIME) +
+                                                                                                                 " seconds) before submitting another.");
+                                                                                                         uint64_t ts =
+                                                                                                             (uint64_t)
+                                                                                                                 std::time(
+                                                                                                                     nullptr);
+                                                                                                         std::string payload =
+                                                                                                             framed
+                                                                                                                 ? GovernanceEngine::BuildFramedProposalOp(
+                                                                                                                       proposal_type,
+                                                                                                                       address,
+                                                                                                                       title,
+                                                                                                                       description,
+                                                                                                                       signed_height,
+                                                                                                                       pubkey_hex,
+                                                                                                                       sig_hex)
+                                                                                                             : typed_marker
+                                                                                                                 ? GovernanceEngine::BuildProposalOp(
+                                                                                                                       proposal_type,
+                                                                                                                       address,
+                                                                                                                       title,
+                                                                                                                       description,
+                                                                                                                       ts,
+                                                                                                                       signed_height,
+                                                                                                                       pubkey_hex,
+                                                                                                                       sig_hex)
+                                                                                                                 : GovernanceEngine::BuildProposalOp(
+                                                                                                                       address,
+                                                                                                                       title,
+                                                                                                                       description,
+                                                                                                                       ts,
+                                                                                                                       signed_height,
+                                                                                                                       pubkey_hex,
+                                                                                                                       sig_hex);
+                                                                                                         auto op_script =
+                                                                                                             build_op_return_script(
+                                                                                                                 payload);
+                                                                                                         return build_gov_tx_template(
+                                                                                                             address,
+                                                                                                             op_script);
+                                                                                                     });
 
-        methods_["preparegovvote"] = RpcMethod([this, build_gov_tx_template,
-                                                build_op_return_script](
-                                                   const P& params) -> std::string {
-            if (!gov_ || !gov_->GovernanceBondGateOpen())
-                throw std::runtime_error(
-                    "Governance is locked until the bonded-validator activation threshold is reached");
-            if (params.size() < 6)
-                throw std::invalid_argument(
-                    "Usage: preparegovvote ADDRESS PROPOSAL_ID CHOICE PUBKEY_HEX SIGNATURE_HEX SIGNED_HEIGHT [VOTE_IDENTITY]");
-            const std::string& address = params[0];
-            const uint64_t proposal_id = ParseCanonicalRpcU64OrThrow(params[1], "proposal_id");
-            const std::string& choice_str = params[2];
-            const std::string& pubkey_hex = params[3];
-            const std::string& sig_hex = params[4];
-            const uint64_t signed_height = ParseCanonicalRpcU64OrThrow(params[5], "signed_height");
-            VoteChoice choice = VoteChoice::ABSTAIN;
-            if (choice_str == "yes")
-                choice = VoteChoice::YES;
-            else if (choice_str == "no")
-                choice = VoteChoice::NO;
-            else if (choice_str != "abstain")
-                throw std::invalid_argument("choice must be yes|no|abstain");
-            const uint64_t tip = chain_.Height();
-            const uint64_t inclusion_height = tip == UINT64_MAX ? tip : tip + 1;
-            const std::string identity = gov_->VoteIdentityFor(proposal_id, inclusion_height);
-            if ((!identity.empty() && (params.size() != 7 || params[6] != identity)) ||
-                (identity.empty() && params.size() != 6))
-                throw std::invalid_argument(
-                    "Vote identity changed or missing; refresh and sign the current round");
-            const std::string challenge =
-                GovernanceEngine::BuildVoteChallenge(proposal_id, choice, signed_height, identity);
-            if (!GovernanceEngine::VerifyGovSig(pubkey_hex, sig_hex, challenge))
-                throw std::runtime_error("Invalid signature");
-            if (GovernanceEngine::PubKeyHexToAddress(pubkey_hex) != address)
-                throw std::runtime_error("Public key does not derive to claimed address");
-            if (tip > signed_height && tip - signed_height > GOV_SIG_REPLAY_WINDOW_BLOCKS)
-                throw std::runtime_error("Signed height too stale; re-sign against current tip");
-            if (signed_height > inclusion_height)
-                throw std::runtime_error("signed_height is ahead of chain tip");
-            const std::string vote_prefix =
-                std::string("VELD_GOV|") + (identity.empty() ? "V|" : "V2|");
-            if (mempool_.HasPendingOpReturn(vote_prefix + std::to_string(proposal_id) + "|" +
-                                            address + "|"))
-                throw std::runtime_error("A vote from this address on this proposal is already "
-                                         "pending in the mempool. Wait for it to be mined "
-                                         "(target block interval " +
-                                         std::to_string(TARGET_BLOCK_TIME) +
-                                         " seconds) before re-submitting.");
-            std::string payload = GovernanceEngine::BuildVoteOp(
-                proposal_id, address, choice, signed_height, pubkey_hex, sig_hex, identity);
-            auto op_script = build_op_return_script(payload);
-            return build_gov_tx_template(address, op_script);
-        });
+        methods_
+            ["preparegovvote"] =
+                RpcMethod([this, build_gov_tx_template, build_op_return_script](const P&
+                                                                                    params) -> std::
+                                                                                                string {
+                                                                                                    if (!gov_ ||
+                                                                                                        !gov_->GovernanceBondGateOpen(
+                                                                                                            NextInclusionHeight(
+                                                                                                                chain_
+                                                                                                                    .Height())))
+                                                                                                        throw std::
+                                                                                                            runtime_error(
+                                                                                                                "Governance is locked until the bonded-validator activation threshold is reached");
+                                                                                                    if (params
+                                                                                                            .size() <
+                                                                                                        6)
+                                                                                                        throw std::
+                                                                                                            invalid_argument(
+                                                                                                                "Usage: preparegovvote ADDRESS PROPOSAL_ID CHOICE PUBKEY_HEX SIGNATURE_HEX SIGNED_HEIGHT [VOTE_IDENTITY]");
+                                                                                                    const std::string&
+                                                                                                        address = params
+                                                                                                            [0];
+                                                                                                    const uint64_t proposal_id =
+                                                                                                        ParseCanonicalRpcU64OrThrow(
+                                                                                                            params
+                                                                                                                [1],
+                                                                                                            "proposal_id");
+                                                                                                    const std::string&
+                                                                                                        choice_str = params
+                                                                                                            [2];
+                                                                                                    const std::string&
+                                                                                                        pubkey_hex = params
+                                                                                                            [3];
+                                                                                                    const std::string&
+                                                                                                        sig_hex = params
+                                                                                                            [4];
+                                                                                                    const uint64_t signed_height =
+                                                                                                        ParseCanonicalRpcU64OrThrow(
+                                                                                                            params
+                                                                                                                [5],
+                                                                                                            "signed_height");
+                                                                                                    VoteChoice choice =
+                                                                                                        VoteChoice::
+                                                                                                            ABSTAIN;
+                                                                                                    if (choice_str ==
+                                                                                                        "yes")
+                                                                                                        choice =
+                                                                                                            VoteChoice::
+                                                                                                                YES;
+                                                                                                    else if (
+                                                                                                        choice_str ==
+                                                                                                        "no")
+                                                                                                        choice =
+                                                                                                            VoteChoice::
+                                                                                                                NO;
+                                                                                                    else if (
+                                                                                                        choice_str !=
+                                                                                                        "abstain")
+                                                                                                        throw std::
+                                                                                                            invalid_argument(
+                                                                                                                "choice must be yes|no|abstain");
+                                                                                                    const uint64_t tip =
+                                                                                                        chain_
+                                                                                                            .Height();
+                                                                                                    const uint64_t inclusion_height =
+                                                                                                        tip == UINT64_MAX
+                                                                                                            ? tip
+                                                                                                            : tip +
+                                                                                                                  1;
+                                                                                                    const std::string identity =
+                                                                                                        gov_->VoteIdentityFor(
+                                                                                                            proposal_id,
+                                                                                                            inclusion_height);
+                                                                                                    if ((!identity
+                                                                                                              .empty() &&
+                                                                                                         (params.size() !=
+                                                                                                              7 ||
+                                                                                                          params[6] !=
+                                                                                                              identity)) ||
+                                                                                                        (identity
+                                                                                                             .empty() &&
+                                                                                                         params.size() !=
+                                                                                                             6))
+                                                                                                        throw std::
+                                                                                                            invalid_argument(
+                                                                                                                "Vote identity changed or missing; refresh and sign the current round");
+                                                                                                    const std::string challenge =
+                                                                                                        GovernanceEngine::BuildVoteChallenge(
+                                                                                                            proposal_id,
+                                                                                                            choice,
+                                                                                                            signed_height,
+                                                                                                            identity);
+                                                                                                    if (!GovernanceEngine::
+                                                                                                            VerifyGovSig(
+                                                                                                                pubkey_hex,
+                                                                                                                sig_hex,
+                                                                                                                challenge))
+                                                                                                        throw std::
+                                                                                                            runtime_error(
+                                                                                                                "Invalid signature");
+                                                                                                    if (GovernanceEngine::
+                                                                                                            PubKeyHexToAddress(
+                                                                                                                pubkey_hex) !=
+                                                                                                        address)
+                                                                                                        throw std::
+                                                                                                            runtime_error(
+                                                                                                                "Public key does not derive to claimed address");
+                                                                                                    if (tip >
+                                                                                                            signed_height &&
+                                                                                                        tip - signed_height >
+                                                                                                            GOV_SIG_REPLAY_WINDOW_BLOCKS)
+                                                                                                        throw std::
+                                                                                                            runtime_error(
+                                                                                                                "Signed height too stale; re-sign against current tip");
+                                                                                                    if (signed_height >
+                                                                                                        inclusion_height)
+                                                                                                        throw std::
+                                                                                                            runtime_error(
+                                                                                                                "signed_height is ahead of chain tip");
+                                                                                                    const std::string vote_prefix =
+                                                                                                        std::string(
+                                                                                                            "VELD_GOV|") +
+                                                                                                        (identity.empty()
+                                                                                                             ? "V|"
+                                                                                                             : "V2|");
+                                                                                                    if (mempool_
+                                                                                                            .HasPendingOpReturn(
+                                                                                                                vote_prefix +
+                                                                                                                std::to_string(
+                                                                                                                    proposal_id) +
+                                                                                                                "|" +
+                                                                                                                address +
+                                                                                                                "|"))
+                                                                                                        throw std::runtime_error(
+                                                                                                            "A vote from this address on this proposal is already "
+                                                                                                            "pending in the mempool. Wait for it to be mined "
+                                                                                                            "(target block interval " +
+                                                                                                            std::to_string(
+                                                                                                                TARGET_BLOCK_TIME) +
+                                                                                                            " seconds) before re-submitting.");
+                                                                                                    std::string payload =
+                                                                                                        GovernanceEngine::BuildVoteOp(
+                                                                                                            proposal_id,
+                                                                                                            address,
+                                                                                                            choice,
+                                                                                                            signed_height,
+                                                                                                            pubkey_hex,
+                                                                                                            sig_hex,
+                                                                                                            identity);
+                                                                                                    auto op_script =
+                                                                                                        build_op_return_script(
+                                                                                                            payload);
+                                                                                                    return build_gov_tx_template(
+                                                                                                        address,
+                                                                                                        op_script);
+                                                                                                });
 
         methods_["registervalidator"] =
             RpcMethod([](const P&) -> std::string { throw rpc_error(-32601, "method removed"); });
@@ -7501,7 +8151,7 @@ class RpcServer {
             const std::string& address = params[0];
             const auto pubkey_hex = ValidatorPreparationKey_(address, params[1]);
 
-            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            auto transition_guard = AcquireRpcReadTransitionGuard(chain_);
             if (!staking_)
                 throw std::runtime_error("Validator registration state is unavailable");
             const uint64_t prospective_height = ValidatorPreparationHeight_("registration");
@@ -7523,7 +8173,7 @@ class RpcServer {
             if (!preparation_error.empty())
                 throw std::runtime_error(preparation_error);
 
-            uint64_t effective_min = validators_->GetEffectiveMinStake();
+            uint64_t effective_min = validators_->GetEffectiveMinStake(prospective_height);
             bool custodial_bond = prospective_height >= STAKE_VAULT_ACTIVATION_HEIGHT;
             if (!custodial_bond) {
                 if (validators_ && staking_) {
@@ -7611,6 +8261,8 @@ class RpcServer {
                 {"inputs", JB::Array(input_items)},
                 {"total_input", JB::Number(total_input)},
                 {"total_output", JB::Number(total_output)},
+                {"inclusion_height", JB::Number(prospective_height)},
+                {"bond_minimum_units", JB::Number(effective_min)},
                 {"fee", JB::Number(fee)},
                 {"change", JB::Number(coins.change_amount)},
             });
@@ -7623,7 +8275,7 @@ class RpcServer {
 
             const std::string& address = params[0];
             const auto pubkey_hex = ValidatorPreparationKey_(address, params[1]);
-            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            auto transition_guard = AcquireRpcReadTransitionGuard(chain_);
             const uint64_t prospective_height = ValidatorPreparationHeight_("deregistration");
 
             if (mempool_.HasPendingOpReturn("VELD_VALIDATOR|DEREGISTER|" + pubkey_hex))
@@ -7706,6 +8358,26 @@ class RpcServer {
                 {"fee", JB::Number(fee)},
                 {"change", JB::Number(coins.change_amount)},
             });
+        });
+
+        methods_["preparereducevalidatorbond"] = RpcMethod([this](const P& params) -> std::string {
+            if (params.size() != 2)
+                throw std::invalid_argument(
+                    "Usage: preparereducevalidatorbond <address> <pubkey_hex>");
+            const auto& address = params[0];
+            const auto pubkey = ValidatorPreparationKey_(address, params[1]);
+            auto transition = AcquireRpcReadTransitionGuard(chain_);
+            const auto height = ValidatorPreparationHeight_("excess bond return");
+            const auto reduction = validators_->GetBondReductionStatus(pubkey, height);
+            if (!reduction.eligible)
+                throw std::runtime_error(reduction.error);
+            if (reduction.address != address)
+                throw std::runtime_error("Validator bond owner differs");
+            const auto operation = ValidatorRegistry::BuildReduceBondOp(
+                pubkey, reduction.registered_height, reduction.retained_units);
+            if (mempool_.HasPendingOpReturn(operation))
+                throw std::runtime_error("Your excess bond return request is already pending");
+            return PrepareValidatorFeeOperation_(address, operation);
         });
 
         methods_["prepareslashvalidator"] = RpcMethod([this](const P& params) -> std::string {
@@ -8115,14 +8787,32 @@ class RpcServer {
 
 #ifndef VELD_FLEET_NO_MINE
         methods_["getblocktemplate"] = RpcMethod([this](const P& params) -> std::string {
-            if (params.size() != 1 && params.size() != 2)
+            if (params.size() != 1 && params.size() != 2 && params.size() != 4)
                 throw std::invalid_argument(
-                    "Usage: getblocktemplate <miner_address> [issued_template_identity]");
+                    "Usage: getblocktemplate <miner_address> [issued_template_identity] or "
+                    "<miner_address> <signed_carrier_hex> <timestamp> <carrier_fee_cap_atoms>");
 
             std::string miner_addr = params[0];
             auto miner_script = AddressToScript(miner_addr);
             if (miner_script.empty())
                 throw std::invalid_argument("Invalid miner address");
+
+            Transaction auxiliary_carrier;
+            uint64_t auxiliary_time = 0, auxiliary_fee_cap = 0;
+            if (params.size() == 4) {
+                // Public carrier bytes convey no spending authority. The node
+                // verifies the existing signature and funding in its own state.
+                if (params[1].empty() || params[1].size() > 2 * 24576 || params[1].size() % 2 ||
+                    params[1].find_first_not_of("0123456789abcdef") != std::string::npos ||
+                    !ParseCanonicalUint64Text(params[2], auxiliary_time) ||
+                    !ParseCanonicalUint64Text(params[3], auxiliary_fee_cap) ||
+                    auxiliary_time == 0 || auxiliary_fee_cap > MAX_SUPPLY_UNITS)
+                    throw std::invalid_argument("Invalid bounded auxiliary template request");
+                const auto raw = HexToBytes(params[1]);
+                if (Transaction::Deserialize(raw, 0, auxiliary_carrier) != raw.size() ||
+                    auxiliary_carrier.Serialize() != raw)
+                    throw std::invalid_argument("Noncanonical auxiliary carrier");
+            }
 
             // Keep the canonical parent, every module snapshot consulted by
             // mempool selection, the finished template, and its exact module
@@ -8130,7 +8820,7 @@ class RpcServer {
             // this guard AddBlockDirect can publish chain N before on_commit_
             // has advanced modules from N-1, yielding an invalid external
             // template even though the in-process miner is protected.
-            auto transition_guard = chain_.AcquireConsensusTransitionGuard();
+            auto transition_guard = AcquireRpcReadTransitionGuard(chain_);
             if (chain_.IsEmpty())
                 throw std::runtime_error("Chain not ready");
             if (IsSha384KeyScript(miner_script) && !Sha384DestinationsActive(chain_.Height() + 1))
@@ -8188,6 +8878,11 @@ class RpcServer {
                         -32010,
                         "issued template unavailable on this node; never substitute another body");
                 candidate = found->second.block;
+            } else if (params.size() == 4) {
+                if (!AppchainBridgeActive(work_subject.height) || !auxiliary_template_builder_fn_)
+                    throw rpc_error(-32010, "auxiliary mining is not active or wired");
+                candidate = auxiliary_template_builder_fn_(auxiliary_carrier, miner_script,
+                                                           auxiliary_time, auxiliary_fee_cap);
             } else
                 candidate = mining_template_builder_fn_(miner_script);
             if (candidate.height != work_subject.height ||

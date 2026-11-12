@@ -1,4 +1,6 @@
 #pragma once
+#include "../consensus/validator_policy.h"
+#include "../consensus/vault_payout_policy.h"
 #include "../consensus/endorsement_wire.h"
 
 #include "block.h"
@@ -6,8 +8,10 @@
 #include "asert.h"
 #include "constants.h"
 #include "coinbase_allocation.h"
+#include "../consensus/subsidy_schedule.h"
 #include "script.h"
 #include "marker_composition.h"
+#include "appchain/bridge/parent.h"
 #include "stake_marker.h"
 #include "pqc_script.h"
 #include "../mining/veldhash.h"
@@ -578,6 +582,11 @@ class Blockchain {
     class ConsensusTransitionGuard {
       public:
         explicit ConsensusTransitionGuard(std::mutex& connect) : connect_lock_(connect) {}
+        ConsensusTransitionGuard(std::mutex& connect, std::try_to_lock_t)
+            : connect_lock_(connect, std::try_to_lock) {}
+        bool OwnsLock() const {
+            return connect_lock_.owns_lock();
+        }
         ConsensusTransitionGuard(ConsensusTransitionGuard&&) = default;
         ConsensusTransitionGuard(const ConsensusTransitionGuard&) = delete;
         ConsensusTransitionGuard& operator=(const ConsensusTransitionGuard&) = delete;
@@ -587,6 +596,12 @@ class Blockchain {
     };
     ConsensusTransitionGuard AcquireConsensusTransitionGuard() const {
         return ConsensusTransitionGuard(block_connect_mutex_);
+    }
+    // Read-side admission and background maintenance must not accumulate an
+    // unbounded queue behind a canonical transition. No state is read unless
+    // this guard owns the same sequencer used by the blocking consensus path.
+    ConsensusTransitionGuard TryAcquireConsensusTransitionGuard() const {
+        return ConsensusTransitionGuard(block_connect_mutex_, std::try_to_lock);
     }
 
     bool IsEmpty() const {
@@ -1331,7 +1346,8 @@ class Blockchain {
 
     bool NmsNeedsSubmission(const std::vector<uint8_t>& script, const Hash256& parent) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        if (script.empty() || chain_.empty() || chain_.back().GetHash() != parent)
+        if (script.empty() || chain_.empty() || chain_.back().GetHash() != parent ||
+            CoMiningRetired(chain_.size()))
             return false;
         // A payout is computed from the parent state. Claims included in the
         // payout block itself would be cleared without entering that draw.
@@ -1519,7 +1535,8 @@ class Blockchain {
     // even if its funding input is still unspent. This check does no PoW work.
     bool NmsMatchesNextBlockContext(const veld::NmsRecord& rec) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
-        if (chain_.empty() || rec.header.prev_block_hash != chain_.back().GetHash())
+        if (chain_.empty() || CoMiningRetired(chain_.size()) ||
+            rec.header.prev_block_hash != chain_.back().GetHash())
             return false;
         CanonicalPowTarget target;
         return DecodeExpectedVeldTarget(rec.header.bits, ComputeNextBitsAtLocked(chain_.size() - 1),
@@ -1794,7 +1811,7 @@ class Blockchain {
 #endif
         }
 
-        if ((block.height % COMINE_WINDOW_BLOCKS) != 0) {
+        if (!CoMiningPayoutDue(block.height)) {
             for (const auto& tx : block.transactions) {
                 if (tx.IsCoinbase())
                     continue;
@@ -2197,18 +2214,18 @@ class Blockchain {
     //  steady-state semantics modulo ramp/dust thresholds):
     //    1. distributable = (vault_balance − fee_reserve) × DIST_PPM/1e6
     //         where DIST_PPM = 80000 (8%) — see VAULT_DISTRIBUTION_PPM
-    //         in constants.h. (Backstop cap; rarely binds post-.)
-    //    1b. Inflow cap (VAULT-NEVER-DRAINS rule). If
+    //         in constants.h. This backstop remains in force after the upgrade.
+    //    1b. Historical inflow cap. If
     //         boundary_height ≥ VAULT_INFLOW_CAP_ACTIVATION_HEIGHT,
     //         distributable is further bounded:
     //             distributable = min(distributable,
     //                                 prev_cycle_inflow × VAULT_INFLOW_PAYOUT_PPM / 1e6)
-    //         with VAULT_INFLOW_PAYOUT_PPM = 900_000 (90%). Vault retains
-    //         (1 − K) × inflow per cycle. Eliminates the equilibrium-seeking
-    //         8%-of-balance behavior the prior rule produced and prevents
-    //         the mainnet activation drain (the ~50% supply-share reserve
-    //         accumulated pre-activation decaying to the ~12.5×-cycle-inflow
-    //         equilibrium that the prior rule would otherwise cause).
+    //         with VAULT_INFLOW_PAYOUT_PPM = 900_000 (90%).
+    //    1c. After VaultReservePolicyActive(boundary_height), raise that
+    //         historical budget to the available surplus above 20,000 VELD,
+    //         if larger, subject to the same 8% backstop. The target does not
+    //         restrict legacy payouts. Use VaultDistributionBudget for both
+    //         consensus and presentation; recipient limits below still apply.
     //    2. If distributable < VAULT_MIN_DISTRIBUTABLE_UNITS or
     //       weighted_stake is empty → emit one vault consolidation output.
     //       The boundary always consumes the complete parent vault set, which
@@ -2301,6 +2318,43 @@ class Blockchain {
         return ComputeVaultInflowSinceLastDistribution_Locked(boundary_height);
     }
 
+    struct VaultPayoutPreview {
+        uint64_t height = 0;
+        uint64_t next_boundary = 0;
+        uint64_t balance = 0;
+        uint64_t inflow_reference_height = 0;
+        uint64_t reference_inflow = 0;
+        uint64_t budget = 0;
+    };
+
+    // A bounded estimate, not a promised payout. At a boundary's parent this
+    // uses the exact settlement inputs; otherwise use the last completed
+    // cycle's coinbase inflow and the current balance. Future transfers and
+    // recipient weights can change the eventual payout.
+    VaultPayoutPreview GetVaultPayoutPreview() const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        VaultPayoutPreview result;
+        result.height = chain_.empty() ? 0 : chain_.size() - 1;
+        result.next_boundary = result.height + VAULT_DISTRIBUTION_INTERVAL -
+                               result.height % VAULT_DISTRIBUTION_INTERVAL;
+        const auto script = AddressToScript(VaultAddressAtHeight(result.height));
+        for (const auto& utxo : GetUTXOsForScriptLocked_(script))
+            result.balance += utxo.value;
+        result.inflow_reference_height =
+            result.next_boundary == result.height + 1
+                ? result.next_boundary
+                : result.height - result.height % VAULT_DISTRIBUTION_INTERVAL;
+        result.reference_inflow =
+            ComputeVaultInflowSinceLastDistribution_Locked(result.inflow_reference_height);
+        if (IsStakingActive()) {
+            result.budget = VaultDistributionBudget(result.next_boundary, result.balance,
+                                                    result.reference_inflow);
+            if (result.budget < VAULT_MIN_DISTRIBUTABLE_UNITS)
+                result.budget = 0;
+        }
+        return result;
+    }
+
     std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
     ComputeExpectedVaultDistribution(uint64_t boundary_height, uint64_t vault_balance_units,
                                      uint64_t fee_reserve, uint64_t prev_cycle_inflow_units,
@@ -2333,25 +2387,8 @@ class Blockchain {
         if (!IsStakingActive())
             return consolidation_only();
 
-        uint64_t distributable =
-            (uint64_t)((__uint128_t)spendable * (__uint128_t)VAULT_DISTRIBUTION_PPM /
-                       (__uint128_t)1'000'000ULL);
-
-        //  Inflow cap (VAULT-NEVER-DRAINS rule). Activation-gated so
-        // pre-activation chain history remains valid byte-for-byte. Once
-        // active, distributable is bounded by VAULT_INFLOW_PAYOUT_PPM
-        // fraction of the inflow during the cycle ending at boundary_height.
-        // K = 0.90 → vault retains ≥10% of every cycle's inflow as principal,
-        // guaranteeing monotone growth and eliminating the equilibrium
-        // attractor (≈12.5× cycle inflow) that the pure 8%-of-balance rule
-        // produces.
-        if (boundary_height >= VAULT_INFLOW_CAP_ACTIVATION_HEIGHT) {
-            uint64_t inflow_cap =
-                (uint64_t)((__uint128_t)prev_cycle_inflow_units *
-                           (__uint128_t)VAULT_INFLOW_PAYOUT_PPM / (__uint128_t)1'000'000ULL);
-            if (distributable > inflow_cap)
-                distributable = inflow_cap;
-        }
+        const uint64_t distributable =
+            VaultDistributionBudget(boundary_height, spendable, prev_cycle_inflow_units);
 
         if (distributable < VAULT_MIN_DISTRIBUTABLE_UNITS)
             return consolidation_only();
@@ -3097,7 +3134,7 @@ class Blockchain {
     ComputeExpectedPoolOutputs_LockHeld(const Hash256& prev_block_hash, uint64_t pool_balance_units,
                                         uint64_t block_height) const {
         std::vector<std::pair<std::vector<uint8_t>, uint64_t>> out;
-        if (pool_balance_units == 0)
+        if (pool_balance_units == 0 || CoMiningRetired(block_height))
             return out;
 
         if (!IsStakingActive())
@@ -3365,6 +3402,169 @@ class Blockchain {
 #endif
     }
 
+    app::Id AppBridgeDigest() const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        return app_bridge_->digest();
+    }
+    std::shared_ptr<const app::bridge::State> AppBridgeState() const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        return app_bridge_;
+    }
+    app::bridge::View AppBridgeReadView() const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        app::need(!chain_.empty(), "parent chain unavailable");
+        return {
+            chain_.front().GetHash(), {chain_.size() - 1, chain_.back().GetHash()}, app_bridge_};
+    }
+
+  private:
+    bool IsAppAuxiliaryCarrierNoLock_(const Transaction& carrier) const {
+        if (carrier.inputs.size() != 1 || carrier.outputs.size() != 2 ||
+            carrier.Serialize().size() > 24576)
+            return false;
+        const auto& input = carrier.inputs.front();
+        auto coin = GetUTXONoLock(input.prev_tx_hash, input.prev_out_index);
+        if (!coin || !app::bridge::ordinary(coin->script_pubkey))
+            return false;
+        unsigned commitments = 0, changes = 0;
+        for (const auto& out : carrier.outputs) {
+            if (out.value == 0 && out.script_pubkey.size() == 50 && out.script_pubkey[0] == 0x6a &&
+                out.script_pubkey[1] == 48)
+                ++commitments;
+            else if (out.value > 0 && out.script_pubkey == coin->script_pubkey)
+                ++changes;
+            else
+                return false;
+        }
+        return commitments == 1 && changes == 1;
+    }
+
+  public:
+    // Scheduled distributions precede ordinary transactions in a canonical
+    // template. Finding a carrier is only shape selection; the caller must
+    // still run full auxiliary validation for that exact transaction index.
+    std::optional<size_t> AppAuxiliaryCarrierIndex(const Block& block) const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        if (block.transactions.size() > MAX_TRANSACTIONS_PER_BLOCK)
+            return std::nullopt;
+        for (size_t i = 1; i < block.transactions.size(); ++i)
+            if (IsAppAuxiliaryCarrierNoLock_(block.transactions[i]))
+                return i;
+        return std::nullopt;
+    }
+    // Validate the ordinary parent carrier in its canonical context. A child
+    // chain separately verifies its auxiliary VeldHash target; this method
+    // never admits a block or grants a parent-chain PoW exemption.
+    bool AppAuxiliaryTemplate(const Block& block, size_t carrier_index = 1) const {
+        auto transition = AcquireConsensusTransitionGuard();
+        return AppAuxiliaryTemplateUnderTransition(block, carrier_index);
+    }
+    // The native builder and parent relay already own the transition guard.
+    // Full module preflight temporarily changes and restores derived objects,
+    // so hold the chain exclusively as normal canonical admission does.
+    bool AppAuxiliaryTemplateUnderTransition(const Block& block, size_t carrier_index = 1) const {
+        std::unique_lock<std::shared_mutex> lock(chain_mutex_);
+        if (!AppchainBridgeActive(block.height) || chain_.empty() ||
+            block.height != chain_.size() ||
+            block.header.prev_block_hash != chain_.back().GetHash() ||
+            block.header.version != PROTOCOL_VERSION ||
+            block.header.timestamp > static_cast<uint64_t>(std::time(nullptr)) + 600 ||
+            block.SerializedSize() > MAX_BLOCK_SIZE || carrier_index == 0 ||
+            carrier_index >= block.transactions.size())
+            return false;
+        if (!IsAppAuxiliaryCarrierNoLock_(block.transactions[carrier_index]))
+            return false;
+        const bool canonical_modules = bool(module_precommit_validator_);
+        if (ValidateBlockForReplay(block, mining::PowAdmissionContext::Internal(), nullptr, true,
+                                   nullptr,
+                                   canonical_modules) != ReplayValidationDisposition::Valid)
+            return false;
+        if (canonical_modules) {
+            uint64_t projected_supply = total_supply_units_.load();
+            if (!AdvanceCanonicalSupply(block, projected_supply))
+                return false;
+            try {
+                if (!module_precommit_validator_(block, projected_supply)) {
+                    last_reject_tag_ = "auxiliary_module_precommit_failed";
+                    return false;
+                }
+            } catch (...) {
+                last_reject_tag_ = "auxiliary_module_precommit_failed";
+                return false;
+            }
+        }
+        return true;
+    }
+    bool AppBridgeCanonical(const app::bridge::Anchor& a, const app::ParentHash& genesis) const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        return !chain_.empty() && chain_.front().GetHash() == genesis && a.height < chain_.size() &&
+               chain_[a.height].GetHash() == a.hash;
+    }
+    Transaction AppBridgePayment(const app::bridge::View& v, const app::Id& bridge,
+                                 const app::Id& id) const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        app::need(!chain_.empty() && chain_.front().GetHash() == v.genesis() &&
+                      v.anchor().height < chain_.size() &&
+                      chain_[v.anchor().height].GetHash() == v.anchor().hash,
+                  "parent payment anchor is not canonical");
+        const auto& paid = v.state().records.at(bridge).paid.at(id);
+        app::need(paid.second <= v.anchor().height, "payment beyond anchor");
+        auto block = LoadCanonicalBlockNoLock_(paid.second);
+        for (const auto& tx : block.transactions)
+            if (tx.GetTxID() == paid.first.tx)
+                return tx;
+        throw app::Invalid("canonical payment body unavailable");
+    }
+
+  private:
+    std::shared_ptr<const app::bridge::State> app_bridge_ =
+        std::make_shared<const app::bridge::State>();
+    app::bridge::Context AppBridgeContextNoLock_(uint64_t height) const {
+        app::bridge::Context c;
+        c.height = height;
+        c.genesis = CreateGenesisBlock().GetHash();
+        c.blockHash = [this](uint64_t h) {
+            if (h >= chain_.size())
+                throw app::Invalid("unknown parent anchor");
+            return chain_[h].GetHash();
+        };
+        c.coin = [this](const app::bridge::Outpoint& p) -> std::optional<app::bridge::Coin> {
+            auto u = GetUTXONoLock(p.tx, p.index);
+            if (!u)
+                return std::nullopt;
+            return app::bridge::Coin{u->value, u->block_height, u->script_pubkey, u->is_coinbase};
+        };
+        c.ordinaryFunding = [height](const app::Bytes& s) {
+            return app::bridge::ordinary(s) && s != AddressToScript(POOL_ADDRESS) &&
+                   s != AddressToScript(ENDORSEMENT_POOL_ADDRESS) &&
+                   s != AddressToScript(VAULT_ADDRESS) &&
+                   s != AddressToScript(STAKE_VAULT_ADDRESS) &&
+                   s != AddressToScript(BOND_YIELD_ESCROW) &&
+                   s != AddressToScript(PoolAddressAtHeight(height)) &&
+                   s != AddressToScript(EndorsementPoolAddressAtHeight(height)) &&
+                   s != AddressToScript(VaultAddressAtHeight(height)) &&
+                   s != AddressToScript(StakeVaultAddressAtHeight(height)) &&
+                   s != AddressToScript(BondYieldEscrowAtHeight(height));
+        };
+        return c;
+    }
+    bool AppBridgeRelevantNoLock_(const Transaction& tx) const {
+        return AppchainBridgeActive(Height() + 1) &&
+               app_bridge_->relevant(tx, AppBridgeContextNoLock_(Height() + 1));
+    }
+    bool AppBridgeValidateNoLock_(const Transaction& tx) const {
+        try {
+            if (!AppBridgeRelevantNoLock_(tx))
+                return true;
+            auto copy = *app_bridge_;
+            copy.apply(tx, AppBridgeContextNoLock_(Height() + 1));
+            return true;
+        } catch (const app::Invalid&) {
+            return false;
+        }
+    }
+
+  public:
     bool ValidateTransactionLocking(const Transaction& tx, bool allow_coinbase = false,
                                     bool* permanent_failure = nullptr) const {
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
@@ -3382,6 +3582,8 @@ class Blockchain {
         if (tx.IsCoinbase() || tx.inputs.empty())
             return false;
         std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        if (AppBridgeRelevantNoLock_(tx))
+            return ValidateTransaction(tx);
 
         const uint64_t cov_height = Height() + 1;
         const bool covenants_active = cov_height >= COVENANTS_ACTIVATION_HEIGHT;
@@ -3488,6 +3690,9 @@ class Blockchain {
             return MempoolCanonicalInputResult::MISSING_OR_CHANGED;
         }
         const UTXO& utxo = *current;
+        if (AppBridgeRelevantNoLock_(tx))
+            return ValidateTransaction(tx) ? MempoolCanonicalInputResult::VALID
+                                           : MempoolCanonicalInputResult::INVALID;
 
         const uint64_t cov_height = Height() + 1;
         const bool covenants_active = (cov_height >= COVENANTS_ACTIVATION_HEIGHT);
@@ -3551,6 +3756,8 @@ class Blockchain {
         // cardinalities) reached the 0-in == 0-out value check and was accepted
         // in a block despite being impossible to relay through the mempool.
         if (!tx.IsValid())
+            return false;
+        if (!AppBridgeValidateNoLock_(tx))
             return false;
         if (tx.IsCoinbase())
             return allow_coinbase;
@@ -3766,6 +3973,10 @@ class Blockchain {
                 return false;
 
             const auto& script_pubkey = utxo_opt->script_pubkey;
+            // Complete transition already passed; a bare or unknown reserve
+            // output cannot reach this exemption.
+            if (AppchainBridgeActive(cov_height) && app::bridge::reserve(script_pubkey))
+                continue;
 
             // AMM pool covenant input (btcVELD). The pool VELD UTXO is spendable
             // ONLY via a consensus-checked AMM op; amm_block_validator_ is the
@@ -4043,6 +4254,12 @@ class Blockchain {
                 return true;
             return !cb.outputs.empty() && finality_metadata_count == cb.outputs.size();
         }
+        // Once fees belong to the miner, a vault floor based on total coinbase
+        // value would incorrectly reserve part of those fees. Exact categories,
+        // resolved parent inputs and supply conservation are checked by
+        // ValidateCanonicalCoinbaseSplit on every direct/replay admission path.
+        if (MinerFeesActive(block.height))
+            return cb.outputs.size() <= MaximumCoinbaseOutputs(block.height);
         uint64_t vault_floor = (total_out * 10) / 100;
         auto vault_script = AddressToScript(VaultAddressAtHeight(block.height));
 
@@ -4117,7 +4334,7 @@ class Blockchain {
             }
             if (out.script_pubkey == stake_vault_script) {
                 ++stake_vault_outputs;
-                if (stake_vault_outputs > 1 || out.value < MIN_VALIDATOR_STAKE)
+                if (stake_vault_outputs > 1 || out.value < MinimumValidatorBond(height))
                     return false;
             }
         }
@@ -4936,7 +5153,7 @@ class Blockchain {
             // pre-activation blocks (where an honest miner's coinbase
             // may not follow this invariant exactly, e.g. legacy 10%
             // vault minima) don't force a chain split on replay.
-            if (block.height >= FEES_TO_VAULT_ACTIVATES_AT &&
+            if (block.height >= FEES_TO_VAULT_ACTIVATES_AT && !MinerFeesActive(block.height) &&
                 !(block.height > 0 && block.height % VAULT_BLOCK_INTERVAL == 0)) {
                 auto vault_script = AddressToScript(VaultAddressAtHeight(block.height));
                 uint64_t vault_in_coinbase = 0;
@@ -5404,6 +5621,8 @@ class Blockchain {
                     auto nms_rec = ExtractNmsFromTx(tx);
                     if (!nms_rec)
                         continue;
+                    if (CoMiningRetired(blk.height))
+                        return reject("nms_retired");
                     if (++nms_records > MAX_NMS_RECORDS_PER_BLOCK)
                         return reject("too_many_nms_records");
                     auto miner_script = ExtractNmsMinerScript(tx);
@@ -6189,6 +6408,44 @@ class Blockchain {
         return GetUTXOsForScriptLocked_(script_pubkey);
     }
 
+    // The callback must not acquire chain/module locks. Unlike the wallet's
+    // materialized list, this read keeps constant inventory memory.
+    template <class Visitor>
+    void VisitUTXOsForScript(const std::vector<uint8_t>& script_pubkey, Visitor&& visitor) const {
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        const auto found = script_index_.find(ScriptHex(script_pubkey));
+        if (found == script_index_.end())
+            return;
+        for (const auto& key : found->second) {
+            const auto coin = utxo_set_.find(key);
+            if (coin != utxo_set_.end())
+                visitor(coin->second);
+        }
+    }
+
+    // Bounded operator planning only; existing consensus selection is unchanged.
+    std::optional<std::vector<UTXO>>
+    GetUTXOsForScriptBounded(const std::vector<uint8_t>& script_pubkey, size_t maximum) const {
+        if (maximum == 0 || maximum > 16384)
+            throw std::invalid_argument("script UTXO query bound must be between 1 and 16384");
+        std::shared_lock<std::shared_mutex> lock(chain_mutex_);
+        std::vector<UTXO> result;
+        const auto found = script_index_.find(ScriptHex(script_pubkey));
+        if (found == script_index_.end())
+            return result;
+        if (found->second.size() > maximum)
+            return std::nullopt;
+        result.reserve(found->second.size());
+        for (const auto& key : found->second) {
+            const auto coin = utxo_set_.find(key);
+            if (coin != utxo_set_.end())
+                result.push_back(coin->second);
+        }
+        std::sort(result.begin(), result.end(),
+                  [](const UTXO& a, const UTXO& b) { return a.value > b.value; });
+        return result;
+    }
+
     std::vector<UTXO> GetUTXOsForScriptLocked_(const std::vector<uint8_t>& script_pubkey) const {
         std::vector<UTXO> result;
         std::string sh = ScriptHex(script_pubkey);
@@ -6623,10 +6880,7 @@ class Blockchain {
 
   public:
     static uint64_t ExpectedBlockSubsidy(uint64_t height) noexcept {
-        uint64_t s = BLOCK_REWARD_UNITS;
-        if (height > 0 && (height % BLOCKS_PER_YEAR) == 0)
-            s += ANNUAL_EMISSION_REMAINDER;
-        return s;
+        return ScheduledBlockSubsidy(height);
     }
 
     // The single authoritative native-supply transition used by live commit,
@@ -6925,6 +7179,7 @@ class Blockchain {
     }
 
     struct CanonicalBlockUndo {
+        std::shared_ptr<const app::bridge::State> app_bridge_before;
         uint64_t height{0};
         Hash256 hash{};
         uint64_t supply_before{0};
@@ -6991,6 +7246,7 @@ class Blockchain {
             InsertUTXO(u);
         total_supply_units_.store(undo.supply_before);
         total_fees_collected_units_.store(undo.fees_before);
+        app_bridge_ = undo.app_bridge_before;
 
         if (!UndoMinerCoinbaseNoLock_(popped))
             return false;
@@ -7949,7 +8205,8 @@ class Blockchain {
     ReplayValidationDisposition
     ValidateBlockForReplay(const Block& blk, const mining::PowAdmissionContext& pow_admission,
                            const UTXOMapBundle* overlay = nullptr,
-                           bool pow_already_verified = false, bool* pow_verified = nullptr) const {
+                           bool pow_already_verified = false, bool* pow_verified = nullptr,
+                           bool canonical_auxiliary = false) const {
         ValidationOverlayGuard ovr_guard(overlay);
         if (pow_verified)
             *pow_verified = pow_already_verified;
@@ -8155,6 +8412,8 @@ class Blockchain {
                 auto nms_rec = ExtractNmsFromTx(tx);
                 if (!nms_rec)
                     continue;
+                if (CoMiningRetired(blk.height))
+                    return reject_log("nms_retired_vbfr");
                 if (++nms_records > MAX_NMS_RECORDS_PER_BLOCK)
                     return reject_log("too_many_nms_records_vbfr");
                 auto miner_script = ExtractNmsMinerScript(tx);
@@ -8276,7 +8535,10 @@ class Blockchain {
                 return reject_log("supply_cap_overflow_vbfr");
             }
 
-            if ((blk.height % VAULT_BLOCK_INTERVAL) != 0) {
+            // After miner-fee activation the exact coinbase policy above
+            // enforces fee ownership. Preserve this historical vault floor
+            // only before that boundary, matching direct block admission.
+            if (!MinerFeesActive(blk.height) && (blk.height % VAULT_BLOCK_INTERVAL) != 0) {
                 auto vault_script_vbfr = AddressToScript(VaultAddressAtHeight(blk.height));
                 uint64_t vault_in_cb_vbfr = 0;
                 for (const auto& out : blk.transactions[0].outputs) {
@@ -8319,7 +8581,7 @@ class Blockchain {
             // permits the one canonical distribution. POOL is excluded because
             // ValidateExpectedPoolPayout above is already engine-independent and
             // binds its complete input/output set in either mode.
-            if (alt_engine_overlay_ == nullptr) {
+            if (alt_engine_overlay_ == nullptr && !canonical_auxiliary) {
                 const auto ep_s = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
                 const auto vault_s = AddressToScript(VaultAddressAtHeight(blk.height));
                 const auto sv_s = AddressToScript(STAKE_VAULT_ADDRESS);
@@ -8362,7 +8624,11 @@ class Blockchain {
         // chain_/block_index_, so ValidateNms resolves candidate ancestry rather
         // than the orphaned main branch; nms_tally_ and the staking callback are
         // advanced in the same per-alt-block order.
-        if (alt_engine_overlay_ != nullptr) {
+        // Auxiliary work is bound to the exact current tip above and has a
+        // full native module precommit callback. Its live parent-state
+        // callbacks enforce the same exact distribution outputs and inputs.
+        // Ordinary reorg replay continues to require its reconstructed overlay.
+        if (alt_engine_overlay_ != nullptr || canonical_auxiliary) {
             if (!ValidateExpectedEndorsementFlush(blk))
                 return reject_log("endorse_flush_mismatch_vbfr");
             if (!ValidateExpectedVaultDistribution(blk))
@@ -9060,6 +9326,36 @@ class Blockchain {
     }
 
     bool CommitBlock(const Block& block, bool persist_new_body = true) {
+        auto app_bridge_next = app_bridge_;
+        if (AppchainBridgeActive(block.height)) {
+            try {
+                auto context = AppBridgeContextNoLock_(block.height);
+                std::shared_ptr<app::bridge::State> plan;
+                std::set<app::bridge::Outpoint> created_reserves;
+                for (const auto& tx : block.transactions) {
+                    // Internal historical-load callers may omit ordinary
+                    // script checks. That never authorizes bridge funding or
+                    // spending a reserve created earlier in this same block.
+                    for (const auto& in : tx.inputs)
+                        if (created_reserves.count({in.prev_tx_hash, in.prev_out_index}))
+                            return false;
+                    for (size_t i = 0; i < tx.outputs.size(); ++i)
+                        if (app::bridge::reserve(tx.outputs[i].script_pubkey))
+                            created_reserves.insert({tx.GetTxID(), static_cast<uint32_t>(i)});
+                    if (!app_bridge_->relevant(tx, context))
+                        continue;
+                    if (!ValidateTransaction(tx, tx.IsCoinbase()))
+                        return false;
+                    if (!plan)
+                        plan = std::make_shared<app::bridge::State>(*app_bridge_);
+                    plan->apply(tx, context);
+                }
+                if (plan)
+                    app_bridge_next = plan;
+            } catch (const app::Invalid&) {
+                return false;
+            }
+        }
         uint64_t next_supply = total_supply_units_.load();
         if (!AdvanceCanonicalSupply(block, next_supply))
             return false;
@@ -9104,6 +9400,7 @@ class Blockchain {
         }
 
         CanonicalBlockUndo undo;
+        undo.app_bridge_before = app_bridge_;
         undo.height = block.height;
         undo.hash = block.GetHash();
         undo.supply_before = total_supply_units_.load();
@@ -9206,6 +9503,7 @@ class Blockchain {
         }
 
         IndexMinerCoinbaseNoLock(block);
+        app_bridge_ = std::move(app_bridge_next);
 
         block_index_[HashToHex(block.GetHash())] = chain_.size();
         chain_.push_back(block);

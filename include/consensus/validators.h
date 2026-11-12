@@ -54,6 +54,11 @@ struct ValidatorRecord {
     uint64_t deregistered_at_height{0};
     uint64_t last_finality_vote_height{0};
     uint64_t principal_settled_at{0}; // v8: terminal, including migrated payouts
+    // One owner-requested excess return per registration term. The full bond
+    // remains held and slashable until the parent-scheduled settlement fires.
+    uint64_t bond_reduction_requested_at{0};
+    uint64_t bond_reduction_units{0};
+    uint64_t bond_reduction_settled_at{0};
 };
 
 struct EndorsementRecord {
@@ -130,7 +135,7 @@ struct BondSettlement {
     // SLASH_CONFISCATE: it settles at 0% principal return where the ordinary
     // slash returns 50%, and a payout path that reads a boolean wrong is a
     // fund-safety ambiguity. Distinct kinds make the compiler carry the distinction.
-    enum Kind { DEREGISTER_RETURN, SLASH_CONFISCATE, SLASH_EQUIVOCATION };
+    enum Kind { DEREGISTER_RETURN, SLASH_CONFISCATE, SLASH_EQUIVOCATION, EXCESS_RETURN };
     std::string address;
     Kind kind{DEREGISTER_RETURN};
     uint64_t bond_units{0};
@@ -161,7 +166,8 @@ class ValidatorRegistry {
           finality_membership_(src.finality_membership_),
           finality_equivocations_(src.finality_equivocations_),
           security_upgrade_active_(src.security_upgrade_active_),
-          state_migration_active_(src.state_migration_active_) {}
+          state_migration_active_(src.state_migration_active_),
+          bond_policy_active_(src.bond_policy_active_) {}
     ValidatorRegistry& operator=(const ValidatorRegistry&) = delete;
 
     static constexpr const char* VAL_PREFIX = "VELD_VALIDATOR|";
@@ -180,10 +186,10 @@ class ValidatorRegistry {
         std::lock_guard<std::mutex> lk(mutex_);
         min_validator_stake_override_ = units;
     }
-    uint64_t GetEffectiveMinStake() const {
+    uint64_t GetEffectiveMinStake(uint64_t height = 0) const {
         std::lock_guard<std::mutex> lk(mutex_);
         return min_validator_stake_override_ > 0 ? min_validator_stake_override_
-                                                 : MIN_VALIDATOR_STAKE;
+                                                 : MinimumValidatorBond(height);
     }
 
     //  The SLASH branch verifies that both endorsement signatures
@@ -224,23 +230,21 @@ class ValidatorRegistry {
     }
 
     // Σ of active, custodial, non-slashed validators' bonds, each counted UP TO
-    // MIN_VALIDATOR_STAKE. This is the quantity the MAINNET governance-activation
-    // gate compares against GOVERNANCE_ACTIVATION_BONDED_UNITS (= 5 ×
-    // MIN_VALIDATOR_STAKE = 50,000 VELD). Capping per-validator at
-    // MIN_VALIDATOR_STAKE makes the threshold reachable only by >= 5 DISTINCT
-    // validators (an over-bonded whale contributes at most MIN_VALIDATOR_STAKE).
+    // MinimumValidatorBond(height). The MAINNET governance gate requires five
+    // such bonds: 50,000 VELD before the policy change, 25,000 VELD afterward.
+    // Capping each contribution at the height-specific minimum means the gate
+    // requires at least five distinct validators, regardless of excess bonds.
     // Eligibility mirrors GetBondYieldWeight (active && bond_custodial &&
     // bond_units>0 && !slashed). Deterministic: pure read of the replayed
     // validators_ set, so every node computes the same total at a given height.
-    uint64_t GetGovernanceBondedTotal() const {
+    uint64_t GetGovernanceBondedTotal(uint64_t height = 0) const {
         std::lock_guard<std::mutex> lk(mutex_);
         uint64_t total = 0;
         for (const auto& [pk, rec] : validators_) {
             (void)pk;
             if (!rec.active || !rec.bond_custodial || rec.bond_units == 0 || rec.slashed)
                 continue;
-            uint64_t capped =
-                rec.bond_units < MIN_VALIDATOR_STAKE ? rec.bond_units : MIN_VALIDATOR_STAKE;
+            uint64_t capped = std::min(rec.bond_units, MinimumValidatorBond(height));
             if (UINT64_MAX - total < capped)
                 return UINT64_MAX; // saturate, never wrap
             total += capped;
@@ -334,6 +338,7 @@ class ValidatorRegistry {
         last_canonical_endorsement_flush_height_ = staged.last_canonical_endorsement_flush_height_;
         security_upgrade_active_ = staged.security_upgrade_active_;
         state_migration_active_ = staged.state_migration_active_;
+        bond_policy_active_ = staged.bond_policy_active_;
         last_flush_reward_per_endorsement_.store(
             staged.last_flush_reward_per_endorsement_.load(std::memory_order_relaxed),
             std::memory_order_relaxed);
@@ -350,6 +355,7 @@ class ValidatorRegistry {
             return false;
         std::lock_guard<std::mutex> lk(mutex_);
         state_migration_active_ = SecurityStateMigrationActive(block.height);
+        bond_policy_active_ = ValidatorBondPolicyActive(block.height);
 
         // A boundary block's mandatory D' settlement is validated against the
         // PARENT registry.  Consume that exact parent-state schedule before
@@ -448,6 +454,16 @@ class ValidatorRegistry {
                     rec.principal_settled_at = block.height;
             }
             security_upgrade_active_ = true;
+        }
+        if (bond_policy_active_) {
+            for (auto& [pk, rec] : validators_) {
+                if (!BondReductionDueLocked(rec, block.height))
+                    continue;
+                // Consensus validated this payout against the parent registry.
+                // Do not mark the retained principal terminal or reset the term.
+                rec.bond_units -= rec.bond_reduction_units;
+                rec.bond_reduction_settled_at = block.height;
+            }
         }
         ProcessEndorsementPoolStateLocked(block);
 
@@ -721,6 +737,60 @@ class ValidatorRegistry {
         return boundary > UINT64_MAX ? UINT64_MAX : (uint64_t)boundary;
     }
 
+    static uint64_t BondReductionBoundary(uint64_t requested_at) {
+        if (requested_at == 0)
+            return 0;
+        namespace fq = ::veld::finality::qc;
+        // Cover every possible signature in the already frozen current epoch,
+        // including ones absent from canonical certificates. Later epochs use
+        // the 5,000-capped policy and do not indefinitely extend this excess hold.
+        const __uint128_t epoch_end =
+            ((__uint128_t)(requested_at / fq::EPOCH_BLOCKS) + 1) * fq::EPOCH_BLOCKS - 1;
+        const __uint128_t end =
+            std::max(epoch_end + fq::FINALITY_EQUIV_EVIDENCE_WINDOW,
+                     (__uint128_t)requested_at +
+                         std::max(DeregEvidenceCooldown(requested_at), SLASH_EVIDENCE_WINDOW));
+        const __uint128_t due = (end / BOND_SETTLEMENT_INTERVAL + 1) * BOND_SETTLEMENT_INTERVAL;
+        return due > UINT64_MAX ? UINT64_MAX : (uint64_t)due;
+    }
+
+    struct BondReductionStatus {
+        bool found{false}, eligible{false}, pending{false}, cancelled{false};
+        std::string address, error;
+        uint64_t registered_height{0}, bond_units{0}, retained_units{0}, reduction_units{0};
+        uint64_t requested_at{0}, settled_at{0}, return_boundary{0};
+    };
+
+    BondReductionStatus GetBondReductionStatus(const std::string& pubkey_hex,
+                                               uint64_t height) const {
+        std::lock_guard<std::mutex> lk(mutex_);
+        BondReductionStatus out;
+        auto it = validators_.find(pubkey_hex);
+        if (it == validators_.end()) {
+            out.error = "Validator registration not found";
+            return out;
+        }
+        const auto& rec = it->second;
+        out.found = true;
+        out.address = rec.address;
+        out.registered_height = rec.registered_height;
+        out.bond_units = rec.bond_units;
+        out.retained_units = std::max(MinimumValidatorBond(height), min_validator_stake_override_);
+        out.requested_at = rec.bond_reduction_requested_at;
+        out.settled_at = rec.bond_reduction_settled_at;
+        out.reduction_units =
+            out.requested_at
+                ? rec.bond_reduction_units
+                : (rec.bond_units > out.retained_units ? rec.bond_units - out.retained_units : 0);
+        out.pending = out.requested_at && !out.settled_at && rec.active && !rec.slashed &&
+                      rec.deregistered_at_height == 0 && rec.principal_settled_at == 0;
+        out.cancelled = out.requested_at && !out.settled_at && !out.pending;
+        out.return_boundary = out.pending ? BondReductionBoundary(out.requested_at) : 0;
+        out.error = BondReductionPreparationErrorLocked(rec, height);
+        out.eligible = out.error.empty();
+        return out;
+    }
+
     struct BondLifecycleStatus {
         bool found{false};
         bool active{false};
@@ -803,6 +873,14 @@ class ValidatorRegistry {
         for (const auto& [pk, rec] : validators_) {
             if (!rec.bond_custodial || rec.bond_units == 0)
                 continue;
+            if (BondReductionDueLocked(rec, boundary_height)) {
+                BondSettlement bs;
+                bs.address = rec.address;
+                bs.kind = BondSettlement::EXCESS_RETURN;
+                bs.bond_units = rec.bond_reduction_units;
+                out.push_back(std::move(bs));
+                continue;
+            }
             if (ConsensusSecurityUpgradeActive(boundary_height) &&
                 PrincipalSettlementBoundaryLocked(rec, boundary_height) != boundary_height)
                 continue;
@@ -864,8 +942,7 @@ class ValidatorRegistry {
             if (boundary < BOND_YIELD_STAKED_POSITION_HEIGHT &&
                 endorsed_addresses.find(rec.address) == endorsed_addresses.end())
                 continue;
-            uint64_t capped =
-                rec.bond_units < MIN_VALIDATOR_STAKE ? rec.bond_units : MIN_VALIDATOR_STAKE;
+            uint64_t capped = std::min(rec.bond_units, MinimumValidatorBond(boundary));
             uint64_t w = (uint64_t)((__uint128_t)capped * (__uint128_t)D_TOP_TIER_PPM /
                                     (__uint128_t)1'000'000ULL);
             if (w == 0)
@@ -1221,7 +1298,10 @@ class ValidatorRegistry {
         // public-key/signature commitments and the deterministically pruned
         // retention window rather than duplicating multi-kilobyte PQ material
         // in every live record.
-        sd::put_u32_le(body, state_migration_active_ ? 9 : (security_upgrade_active_ ? 8 : 7));
+        sd::put_u32_le(body,
+                       bond_policy_active_
+                           ? 10
+                           : (state_migration_active_ ? 9 : (security_upgrade_active_ ? 8 : 7)));
         if (state_migration_active_)
             sd::put_u8(body, security_upgrade_active_ ? 1 : 0);
         // This mutable instance rule directly controls REGISTER and ENDORSE
@@ -1252,6 +1332,11 @@ class ValidatorRegistry {
             sd::put_u64_le(body, rec.last_finality_vote_height);
             if (security_upgrade_active_)
                 sd::put_u64_le(body, rec.principal_settled_at);
+            if (bond_policy_active_) {
+                sd::put_u64_le(body, rec.bond_reduction_requested_at);
+                sd::put_u64_le(body, rec.bond_reduction_units);
+                sd::put_u64_le(body, rec.bond_reduction_settled_at);
+            }
         }
 
         std::vector<std::string> addresses;
@@ -1483,6 +1568,7 @@ class ValidatorRegistry {
         finality_equivocations_.clear();
         security_upgrade_active_ = false;
         state_migration_active_ = false;
+        bond_policy_active_ = false;
     }
 
     // Atomic block-state snapshot and restore. Captures every
@@ -1512,6 +1598,7 @@ class ValidatorRegistry {
         uint64_t total_staked_units = 0;
         bool security_upgrade_active = false;
         bool state_migration_active = false;
+        bool bond_policy_active = false;
     };
     StateSnapshot SnapshotState() const {
         std::lock_guard<std::mutex> lk(mutex_);
@@ -1531,7 +1618,8 @@ class ValidatorRegistry {
                              finality_equivocations_,
                              total_staked_units_.load(std::memory_order_relaxed),
                              security_upgrade_active_,
-                             state_migration_active_};
+                             state_migration_active_,
+                             bond_policy_active_};
     }
     void RestoreState(const StateSnapshot& s) {
         std::lock_guard<std::mutex> lk(mutex_);
@@ -1551,6 +1639,7 @@ class ValidatorRegistry {
         finality_equivocations_ = s.finality_equivocations;
         security_upgrade_active_ = s.security_upgrade_active;
         state_migration_active_ = s.state_migration_active;
+        bond_policy_active_ = s.bond_policy_active;
         total_staked_units_.store(s.total_staked_units, std::memory_order_relaxed);
     }
 
@@ -1712,6 +1801,12 @@ class ValidatorRegistry {
 
     static std::string BuildDeregisterOp(const std::string& pubkey_hex) {
         return std::string(VAL_PREFIX) + "DEREGISTER|" + pubkey_hex;
+    }
+
+    static std::string BuildReduceBondOp(const std::string& pubkey_hex, uint64_t registered_height,
+                                         uint64_t retained_units) {
+        return std::string(VAL_PREFIX) + "REDUCE_BOND|" + pubkey_hex + "|" +
+               std::to_string(registered_height) + "|" + std::to_string(retained_units);
     }
 
     static std::string BuildSlashOp(const std::string& pubkey_hex, uint64_t height,
@@ -2275,6 +2370,7 @@ class ValidatorRegistry {
 
     bool security_upgrade_active_{false};
     bool state_migration_active_{false};
+    bool bond_policy_active_{false};
 
     static uint64_t LegacyPrincipalBoundary(const ValidatorRecord& rec) {
         if (!rec.bond_custodial || rec.bond_units == 0)
@@ -2329,6 +2425,40 @@ class ValidatorRegistry {
             return false;
         const auto due = PrincipalSettlementBoundaryLocked(rec, height);
         return due == 0 || height < due;
+    }
+
+    std::string BondReductionPreparationErrorLocked(const ValidatorRecord& rec,
+                                                    uint64_t height) const {
+        if (!ValidatorBondPolicyActive(height))
+            return "Excess bond returns are not active at this height";
+        if (!rec.active || rec.slashed || !rec.bond_custodial || rec.deregistered_at_height != 0 ||
+            PrincipalAlreadyPaidLocked(rec, height))
+            return "An active, unslashed custodial validator bond is required";
+        if (rec.bond_reduction_requested_at != 0)
+            return "An excess bond return was already requested for this registration";
+        if (rec.bond_units <= std::max(MinimumValidatorBond(height), min_validator_stake_override_))
+            return "This validator has no excess bond to return";
+        const auto previous = last_op_height_.find(rec.address);
+        if (height < rec.registered_height ||
+            (previous != last_op_height_.end() &&
+             (height < previous->second ||
+              height - previous->second < VALIDATOR_OP_COOLDOWN_BLOCKS)))
+            return "Wait for the validator operation cooldown before requesting an excess return";
+        if (BondReductionBoundary(height) == UINT64_MAX)
+            return "Excess bond return boundary is out of range";
+        return {};
+    }
+
+    bool BondReductionDueLocked(const ValidatorRecord& rec, uint64_t height) const {
+        return ValidatorBondPolicyActive(height) && height > 0 &&
+               height % BOND_SETTLEMENT_INTERVAL == 0 && rec.active && !rec.slashed &&
+               rec.bond_custodial && rec.deregistered_at_height == 0 &&
+               rec.principal_settled_at == 0 && rec.bond_reduction_requested_at != 0 &&
+               rec.bond_reduction_settled_at == 0 && rec.bond_reduction_units > 0 &&
+               rec.bond_reduction_units < rec.bond_units &&
+               rec.bond_units - rec.bond_reduction_units >=
+                   std::max(MinimumValidatorBond(height), min_validator_stake_override_) &&
+               BondReductionBoundary(rec.bond_reduction_requested_at) == height;
     }
 
     std::string CanonicalSlasherForPubkeyLocked(const std::string& pubkey_hex) const {
@@ -2412,7 +2542,7 @@ class ValidatorRegistry {
 
             uint64_t effective_min = min_validator_stake_override_ > 0
                                          ? min_validator_stake_override_
-                                         : MIN_VALIDATOR_STAKE;
+                                         : MinimumValidatorBond(block.height);
             // Custodial bond regime.
             //   Pre-gate  (grandfathered): bond is a LOGICAL lock — require
             //     staking_get_stake(address) >= effective_min, as before.
@@ -2500,6 +2630,26 @@ class ValidatorRegistry {
                         address_to_pubkey_[derived] = pubkey_hex;
                 }
             }
+            TrimExpiredCooldownsLocked(block.height);
+        }
+
+        else if (action == "REDUCE_BOND" && parts.size() == 4 &&
+                 std::count(rest.begin(), rest.end(), '|') == 3) {
+            const auto& pubkey = parts[1];
+            uint64_t term = 0, retain = 0;
+            if (!IsCanonicalLowerHex(pubkey, 3904) || !ParseCanonicalUint64(parts[2], term) ||
+                !ParseCanonicalUint64(parts[3], retain))
+                return;
+            auto it = validators_.find(pubkey);
+            if (it == validators_.end() || term != it->second.registered_height ||
+                retain !=
+                    std::max(MinimumValidatorBond(block.height), min_validator_stake_override_) ||
+                !BondReductionPreparationErrorLocked(it->second, block.height).empty() ||
+                !TxInputMatchesAddress(tx, it->second.address))
+                return;
+            it->second.bond_reduction_requested_at = block.height;
+            it->second.bond_reduction_units = it->second.bond_units - retain;
+            last_op_height_[it->second.address] = block.height;
             TrimExpiredCooldownsLocked(block.height);
         }
 
@@ -3023,7 +3173,7 @@ class ValidatorRegistry {
             {
                 uint64_t effective_min = min_validator_stake_override_ > 0
                                              ? min_validator_stake_override_
-                                             : MIN_VALIDATOR_STAKE;
+                                             : MinimumValidatorBond(block.height);
                 // Custodial-bond model: a validator qualifies via EITHER a logical
                 // stake >= min OR a custodial bond >= min. The bond REPLACES the
                 // logical stake (see the REGISTER path: "the bond replaces it").

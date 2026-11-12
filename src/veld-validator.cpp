@@ -491,8 +491,8 @@ static int cmd_genkey(const std::string& keyfile, const std::string& wallet_addr
               << RST;
     std::cout << "\n";
     std::cout << "Next steps:\n";
-    std::cout << "  1. Fund " << vk.address << " with " << (MIN_VALIDATOR_STAKE / VELD_UNITS)
-              << " VELD for the validator bond, plus the transaction fee\n";
+    std::cout << "  1. Run --status to check the current bond minimum; fund " << vk.address
+              << " with that amount plus the transaction fee\n";
     std::cout << "  2. Run: veld-validator --keyfile " << keyfile << " --register\n";
     std::cout << "  3. Run: veld-validator --keyfile " << keyfile << " (daemon mode)\n";
     return 0;
@@ -775,7 +775,7 @@ static std::optional<FinalityRpcFrame> fetch_finality_frame(const std::string& h
             !json_u64(member, "registered_height", registered) ||
             !json_u64(member, "weight", weight) || !json_string(member, "pubkey", pubkey) ||
             !json_string(member, "commit", commit) || !json_string(member, "address", address) ||
-            registered > UINT64_MAX || weight != fq::BOND_PER_KEY_UNITS ||
+            registered > UINT64_MAX || weight != fq::BondPerKeyAt(snapshot_height) ||
             !veld::btc_buy::IsLowerHex(pubkey, 3904) || address.empty() ||
             address.size() > veld::finality::rpc_limits::kMaxValidatorAddressChars ||
             !lower_hex_hash(commit, entry.pubkey_commit))
@@ -996,6 +996,32 @@ static bool broadcast_op_return(const std::string& host, uint16_t port,
         }
     }
 
+    uint64_t registration_height = 0;
+    if (is_register) {
+        veld::btc_buy::JsonValue chain_root;
+        const auto* chain_info =
+            strict_rpc_result(json_rpc(host, port, "getblockchaininfo", "[]"), chain_root, error);
+        uint64_t current_height = 0;
+        if (!chain_info || !json_u64(*chain_info, "blocks", current_height) ||
+            current_height == UINT64_MAX) {
+            log(RED, "Current registration height is unavailable");
+            return false;
+        }
+        registration_height = current_height + 1;
+        const auto* prepared_height = prep->Get("inclusion_height");
+        const auto* prepared_bond = prep->Get("bond_minimum_units");
+        if (prepared_height || prepared_bond || ValidatorBondPolicyActive(registration_height)) {
+            uint64_t bound_height = 0, bound_bond = 0;
+            if (!prepared_height || !prepared_bond ||
+                !veld::btc_buy::ParseUint(*prepared_height, bound_height) ||
+                !veld::btc_buy::ParseUint(*prepared_bond, bound_bond) ||
+                bound_height != registration_height ||
+                bound_bond != MinimumValidatorBond(registration_height)) {
+                log(RED, "Registration policy or chain height changed; prepare again");
+                return false;
+            }
+        }
+    }
     const auto* unsigned_hex = prep->Get("unsigned_tx_hex");
     const auto* input_meta = prep->Get("inputs");
     const auto* total_input_meta = prep->Get("total_input");
@@ -1036,10 +1062,11 @@ static bool broadcast_op_return(const std::string& host, uint16_t port,
     }
 
     size_t cursor = 0;
-    const uint64_t expected_protocol_output = is_register ? MIN_VALIDATOR_STAKE : 0;
+    const uint64_t expected_protocol_output =
+        is_register ? MinimumValidatorBond(registration_height) : 0;
     if (is_register) {
         if (vault_script.empty() || (tx.outputs.size() != 2 && tx.outputs.size() != 3) ||
-            tx.outputs[0].value != MIN_VALIDATOR_STAKE ||
+            tx.outputs[0].value != expected_protocol_output ||
             tx.outputs[0].script_pubkey != vault_script) {
             log(RED, "Registration proposal changed the exact validator bond");
             return false;
@@ -1286,7 +1313,9 @@ static int cmd_status(const std::string& host, uint16_t port, const ValidatorKey
         std::cout << "  Our pubkey:        " << vk.pubkey_hex.substr(0, 20) << "...\n";
         std::cout << "  Our address:       " << vk.address << "\n";
         std::cout << "  Wallet stake:      " << our_stake << " VELD\n";
-        std::cout << "  Bond minimum:      " << (MIN_VALIDATOR_STAKE / VELD_UNITS) << " VELD\n";
+        std::cout << "  Bond minimum:      "
+                  << (MinimumValidatorBond(height == UINT64_MAX ? height : height + 1) / VELD_UNITS)
+                  << " VELD\n";
         std::cout << "  Registration:      "
                   << (registered ? (std::string(GRN) + "REGISTERED")
                                  : (std::string(RED) + "NOT REGISTERED"))
@@ -1636,6 +1665,10 @@ static void PrintDeploymentInfoJson() {
               << "\"external_value\":" << (DEPLOYMENT_EXTERNAL_VALUE ? "true" : "false") << ","
               << "\"finality_bond_units\":" << veld::finality::qc::BOND_PER_KEY_UNITS << ","
               << "\"finality_min_validators\":" << veld::finality::qc::MIN_VALIDATOR_COUNT << ","
+              << "\"validator_policy_activation_height\":" << VALIDATOR_POLICY_ACTIVATION_HEIGHT
+              << ","
+              << "\"validator_policy_bond_units\":" << 5000ULL * VELD_UNITS << ","
+              << "\"validator_policy_min_validators\":5,"
               << "\"fleet_no_mine\":false,"
               << "\"genesis_fingerprint\":\"" << GENESIS_HASH << "\","
               << "\"mainnet_magic\":" << MAINNET_MAGIC << ","

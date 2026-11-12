@@ -30,8 +30,10 @@ constexpr size_t SNAPSHOT_RETENTION = 2;
 class FinalityState {
   public:
     // ---- activation state machine ---------------------------------------
-    // Consecutive qualified epochs observed. Finality goes live at 2 (960
-    // blocks / 48h); anchors follow one further qualified epoch.
+    // Consecutive qualified epoch snapshots observed. Finality goes live on
+    // the second qualifying boundary; anchors follow one further boundary.
+    // Registration maturity and alignment precede the first qualified snapshot.
+    // Do not interpret the count as two elapsed epochs after that first snapshot.
     //
     // NOTE the reset semantics: a set that falls below the floor RESTARTS this
     // count. It does not resume. Two consecutive qualified epochs means two

@@ -68,7 +68,7 @@ check(
 )
 history_helper = ui[
     ui.index("function publicAddressHistory(address, limit)") : ui.index(
-        "function rpc(method, params)"
+        "function _veldRpcTransport(method, params)"
     )
 ]
 check(
@@ -155,8 +155,9 @@ check(
     "GUI does not expose signed snapshot bootstrap",
 )
 check(
-    "A snapshot is an availability optimization" in explorer
-    and "independent genesis IBD" in explorer,
+    "A snapshot signature does not replace consensus checks" in explorer
+    and "a separate sync checks every block and proof of work from genesis" in explorer
+    and "stay off until the snapshot height, block hash and complete state match" in explorer,
     "Explorer rules omit the public snapshot trust boundary",
 )
 check(
@@ -267,31 +268,25 @@ if binary_value:
         "ordinary public deployment-info probe failed",
     )
 
-    for control in ("--snapshot-bootstrap", "--no-snapshot", "--full-ibd"):
-        controlled = run_node(control, "--deployment-info")
-        check(
-            controlled.returncode == 0
-            and '"snapshot_bootstrap_compiled":true' in controlled.stdout,
-            f"public node rejected exact synchronization control {control}",
-        )
-
-    # Exercise the launcher's retained ordinary-validation selector through
-    # the real parser without opening listeners: offline reindex is expected
+    # Exercise each synchronization selector through the real parser without
+    # opening listeners. Identity/help probes accept no other flags. Reindex
+    # exits before snapshot import or node construction and is expected
     # to stop at the deliberately empty fixture database, after accepting
-    # --full-ibd and binding the public network identity.
-    with tempfile.TemporaryDirectory(prefix="veld-public-full-ibd-") as datadir:
-        full_ibd = run_node("--full-ibd", "--reindex-canonical", "--datadir", datadir)
-        check(
-            full_ibd.returncode == 1
-            and "offline reindex requires an existing" in full_ibd.stderr
-            and "unknown option" not in full_ibd.stderr
-            and "snapshot bootstrap" not in full_ibd.stderr,
-            "ordinary --full-ibd launcher path was rejected by the parser",
-        )
-        check(
-            (Path(datadir) / "network.identity").is_file(),
-            "ordinary --full-ibd path did not bind the public datadir identity",
-        )
+    # the selector and binding the public network identity.
+    for control in ("--snapshot-bootstrap", "--no-snapshot", "--full-ibd"):
+        with tempfile.TemporaryDirectory(prefix="veld-public-sync-control-") as datadir:
+            controlled = run_node(control, "--reindex-canonical", "--datadir", datadir)
+            check(
+                controlled.returncode == 1
+                and "offline reindex requires an existing" in controlled.stderr
+                and "unknown option" not in controlled.stderr
+                and "snapshot bootstrap" not in controlled.stderr,
+                f"public node rejected exact synchronization control {control}",
+            )
+            check(
+                (Path(datadir) / "network.identity").is_file(),
+                f"{control} did not bind the public datadir identity",
+            )
 
     def unused_loopback_port() -> int:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:

@@ -38,7 +38,7 @@ namespace qc {
 inline bool QualifiedAt(const ValidatorRecord& r, uint64_t snapshot_height) {
     if (!r.bond_custodial)
         return false;
-    if (r.bond_units < BOND_PER_KEY_UNITS)
+    if (r.bond_units < BondPerKeyAt(snapshot_height))
         return false;
     if (r.registered_height == 0)
         return false;
@@ -81,8 +81,8 @@ inline EpochSnapshot BuildEpochSnapshot(const ValidatorRegistry& reg, uint64_t e
         e.pubkey_commit = PubkeyCommit(r.pubkey_hex);
         e.address = r.address;
         e.registered_height = r.registered_height;
-        e.weight = BOND_PER_KEY_UNITS; // min == cap
-        e.pubkey_hex = r.pubkey_hex;   // resolvable, not re-transmitted
+        e.weight = BondPerKeyAt(snapshot_height); // min == cap; custody principal is unchanged
+        e.pubkey_hex = r.pubkey_hex;              // resolvable, not re-transmitted
         s.entries.push_back(e);
     }
 

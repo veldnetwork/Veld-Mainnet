@@ -1,5 +1,7 @@
 #pragma once
 #include "constants.h"
+#include "../consensus/miner_fee_activation.h"
+#include "../consensus/co_mining_policy.h"
 #include <algorithm>
 #include <optional>
 
@@ -24,22 +26,33 @@ ComputeCoinbaseAllocation(uint64_t height, uint64_t base_subsidy, uint64_t paren
     out.subsidy = std::min(base_subsidy, MAX_SUPPLY_UNITS - parent_supply);
     if (authenticated_fees > MAX_SUPPLY_UNITS - out.subsidy)
         return std::nullopt;
+    const bool miner_fees = MinerFeesActive(height);
+    const uint64_t legacy_fees = miner_fees ? 0 : authenticated_fees;
     if (out.subsidy == 0) {
-        out.vault = (authenticated_fees * 40) / 100;
-        out.endorsement = (authenticated_fees * 10) / 100;
-        out.miner = authenticated_fees - out.vault - out.endorsement;
+        out.vault = (legacy_fees * 40) / 100;
+        out.endorsement = (legacy_fees * 10) / 100;
+        out.miner = legacy_fees - out.vault - out.endorsement;
     } else if (height > 0 && height % VAULT_BLOCK_INTERVAL == 0) {
-        out.vault = out.subsidy + authenticated_fees;
+        out.vault = out.subsidy + legacy_fees;
+    } else if (CoMiningRetired(height)) {
+        out.vault = (out.subsidy * 20) / 100;
+        out.endorsement = (out.subsidy * 20) / 100;
+        out.miner = out.subsidy - out.vault - out.endorsement;
+        out.vault += legacy_fees;
     } else if (parent_supply < STAKING_UNLOCK_SUPPLY) {
         out.miner = (out.subsidy * 50) / 100;
-        out.vault = out.subsidy - out.miner + authenticated_fees;
+        out.vault = out.subsidy - out.miner + legacy_fees;
     } else {
         out.pool = (out.subsidy * 20) / 100;
         out.vault = (out.subsidy * 20) / 100;
         out.endorsement = (out.subsidy * 10) / 100;
         out.miner = out.subsidy - out.pool - out.vault - out.endorsement;
-        out.vault += authenticated_fees;
+        out.vault += legacy_fees;
     }
+    // This also covers vault-cadence and post-cap blocks. All issuance splits
+    // above apply only to issuance; fees recycle existing units to the winning miner.
+    if (miner_fees)
+        out.miner += authenticated_fees;
     return out;
 }
 

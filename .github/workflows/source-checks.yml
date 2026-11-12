@@ -91,6 +91,8 @@ jobs:
             standalone: true
           - fixture: address_history_index_tests
             standalone: true
+          - fixture: ibd_forward_download_tests
+            standalone: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -196,6 +198,15 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/veld-browser-tests" --ignore-scripts --no-audit --no-fund playwright@1.62.1
           node "$RUNNER_TEMP/veld-browser-tests/node_modules/playwright/cli.js" install --with-deps chromium
           VELD_PLAYWRIGHT_MODULE="$RUNNER_TEMP/veld-browser-tests/node_modules/playwright" node tests/wallet_nms_tests.js
+      - name: Verify wallet help dialogs and mobile presentation
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/veld-help-tests"
+          g++ -std=c++17 -Iinclude tests/help_dialogs_fixture.cpp -o "$RUNNER_TEMP/veld-help-tests/export"
+          "$RUNNER_TEMP/veld-help-tests/export" "$RUNNER_TEMP/veld-help-tests"
+          VELD_PLAYWRIGHT_MODULE="$RUNNER_TEMP/veld-browser-tests/node_modules/playwright" node tests/help_dialogs_browser_tests.cjs "$RUNNER_TEMP/veld-help-tests"
       - name: Verify checkpoint publication and recovery
         if: runner.os == 'Linux'
         shell: bash
@@ -233,7 +244,7 @@ jobs:
           set -euo pipefail
           for profile in VELD_PUBLIC_MAINNET VELD_PUBLIC_TESTNET; do
             c++ -std=c++20 -O1 -pthread -DVELD_MAINNET_POW -DVELD_PUBLIC_RELEASE -D"$profile" \
-              -Iinclude tests/compiled_checkpoint_tests.cpp -o "$RUNNER_TEMP/checkpoints-$profile"
+              -Iinclude -Ivendor/pqc tests/compiled_checkpoint_tests.cpp -o "$RUNNER_TEMP/checkpoints-$profile"
             "$RUNNER_TEMP/checkpoints-$profile"
           done
       - name: Compile and run mining nonce tests
@@ -289,7 +300,7 @@ jobs:
               -lcrypto -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"
           done
-          for test in co_mining_stake_floor_tests nms_mempool_lifecycle_tests nms_template_refresh_tests coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests constellation_layout_tests nms_proof_file_tests; do
+          for test in co_mining_stake_floor_tests nms_mempool_lifecycle_tests nms_template_refresh_tests coinbase_policy_tests coinbase_output_limit_tests block_ingest_diagnostic_tests client_diagnostics_tests constellation_layout_tests nms_proof_file_tests ibd_forward_download_tests; do
             c++ -std=c++20 -O1 -pthread -Iinclude -Ivendor/pqc "tests/$test.cpp" "${objects[@]}" \
               -lssl -lcrypto -o "$RUNNER_TEMP/$test"
             "$RUNNER_TEMP/$test"

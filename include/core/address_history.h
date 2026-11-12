@@ -497,11 +497,36 @@ inline bool Advance(db::KVStore& store, const Block& block) {
 inline bool Rollback(db::KVStore& store, const Block& popped) {
     if (!MarkersMatch(store, popped.height, popped.GetHash()))
         return false;
+    // Reconstruct the bounded expected writes instead of trusting an incomplete
+    // reverse index. Missing undo rows must close history, not leave orphaned
+    // transfers visible after an otherwise successful rollback.
+    db::WriteBatch expected;
+    const OutputLookup lookup = [&store](const Hash256& txid,
+                                         uint32_t index) -> std::optional<OutputRecord> {
+        const auto raw = store.Get(OutpointKey(txid, index));
+        return raw ? DecodeOutput(*raw) : std::nullopt;
+    };
+    if (!AppendBlock(popped, lookup, expected))
+        return false;
+    for (const auto& op : expected.ops) {
+        const auto value = store.Get(op.key);
+        if (!value || *value != op.value)
+            return false;
+    }
     db::WriteBatch batch;
     const std::string reverse_prefix = BlockReversePrefix(popped.GetHash());
     bool malformed = false;
+    size_t reverse_count = 0;
+    size_t expected_reverse_count = 0;
+    for (const auto& op : expected.ops)
+        if (op.key.rfind(reverse_prefix, 0) == 0)
+            ++expected_reverse_count;
     store.Iterate(
         reverse_prefix, [&](const std::string& reverse_key, const std::string& target_key) {
+            if (++reverse_count > expected_reverse_count) {
+                malformed = true;
+                return false;
+            }
             if (target_key.rfind(ROW_PREFIX, 0) != 0 && target_key.rfind(OUTPOINT_PREFIX, 0) != 0) {
                 malformed = true;
                 return false;
@@ -510,7 +535,7 @@ inline bool Rollback(db::KVStore& store, const Block& popped) {
             batch.Delete(reverse_key);
             return true;
         });
-    if (malformed)
+    if (malformed || reverse_count != expected_reverse_count)
         return false;
     if (popped.height == 0) {
         batch.Delete(TIP_HEIGHT_KEY);

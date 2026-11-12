@@ -1069,6 +1069,20 @@ class NodeServer {
     // this transport layer cannot manufacture or inspect node authority.
     using PeerWorkViewTransitionPermit = std::shared_ptr<void>;
     using PeerWorkViewTransitionFn = std::function<PeerWorkViewTransitionPermit()>;
+    using ValidatedOutboundServePermit = std::shared_ptr<void>;
+    using ValidatedOutboundServeFn = std::function<ValidatedOutboundServePermit()>;
+
+    // An independently validated, outbound-only parent may answer bounded
+    // block/transaction requests and admit ordinary transactions while its
+    // owner retains a canonical transition permit.
+    // Ordinary background snapshot downloads remain quarantined by default.
+    void SetValidatedOutboundServeFn(ValidatedOutboundServeFn fn) {
+        std::unique_lock<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        if (running_.load(std::memory_order_acquire) || veld::compat::IsValidSocket(listen_fd_) ||
+            accept_thread_.joinable() || !el_accept_threads_.empty() || !el_workers_.empty())
+            throw std::runtime_error("outbound serving policy must be configured before Start");
+        validated_outbound_serve_fn_ = std::move(fn);
+    }
 
   private:
     class PeerWorkViewWriteGuard_ {
@@ -5148,6 +5162,7 @@ class NodeServer {
     std::atomic<bool> running_;
     std::atomic<bool> activation_guard_refused_{false};
     bool background_sync_mode_{false};
+    ValidatedOutboundServeFn validated_outbound_serve_fn_;
     SocketHandle listen_fd_;
     // Start/Stop generation serialization is separate from worker publication:
     // Stop may join a tracked producer, so handoff must never wait on the mutex
@@ -6533,21 +6548,29 @@ class NodeServer {
 
     P2PMessage BuildChainLocatorGetBlocks(const Connection* connection = nullptr) const {
         // The locally committed tip is the only safe primary locator. A
-        // validated body may be ahead of it (or on another branch); using
-        // that peer-specific download cursor can skip the missing parent and
-        // strand an otherwise healthy near-tip node.
-        (void)connection;
+        // validated body may be ahead of it (or on another branch); replacing
+        // this primary locator with that cursor can skip a missing parent.
+        // Secondary validated cursors let a different serving branch continue
+        // beyond one batch without displacing the canonical primary locator.
         PeerManager pm(magic_, chain_.Height());
         if (chain_.IsEmpty()) {
             Hash256 zero{};
             zero.fill(0);
             return pm.BuildGetBlocksMessage(zero);
         }
-        uint64_t h = chain_.Height();
-
+        const uint64_t h = chain_.Height();
+        const Hash256 tip = chain_.TipCopy().GetHash();
         std::vector<Hash256> extra;
+        if (connection) {
+            for (const auto& cursor : connection->ValidatedDownloadCursors()) {
+                if (cursor && *cursor != tip &&
+                    chain_.GetKnownBlockHeightByHash(*cursor).has_value())
+                    extra.push_back(*cursor);
+            }
+        }
         uint64_t step = 1;
-        while (h > step && extra.size() < 16) {
+        size_t ancestors = 0;
+        while (h > step && ancestors++ < 16) {
             try {
                 extra.push_back(chain_.GetBlock(h - step).GetHash());
             } catch (...) {
@@ -6560,7 +6583,6 @@ class NodeServer {
         } catch (...) {
         }
 
-        const Hash256 tip = chain_.TipCopy().GetHash();
         return pm.BuildGetBlocksMessage(tip, extra);
     }
 
@@ -6682,12 +6704,30 @@ class NodeServer {
     enum class StepResult : uint8_t { Handled = 0, NotHandled = 1, DropPeer = 2 };
     StepResult PeerProtocolStep(PeerState& ps, Connection& conn, PeerManager& pm,
                                 const P2PMessage& msg, const std::string& key, bool) {
+        ValidatedOutboundServePermit outbound_serve;
         if (background_sync_mode_ && !IsBackgroundValidationInboundCommand(msg.command)) {
             // Deliberately consume instead of falling through to the legacy
             // dispatcher. The connection remains useful for block download,
             // but an unvalidated snapshot can neither serve nor mutate any
             // unrelated protocol surface.
-            return StepResult::Handled;
+            // A fully replayed outbound parent must also answer bounded
+            // canonical locator requests. Bootstrap peers may request a
+            // missing suffix with GETBLOCKS after a tip announcement; serving
+            // only GETDATA can leave that suffix permanently unavailable.
+            // Once fully replayed, it must also consume transactions from its
+            // peers and answer bounded mempool requests. Otherwise checkpoint
+            // finalizations can reach the fleet but never enter local templates.
+            // TX still passes the unchanged byte, fee, signature, and native
+            // mempool admission checks below, under the owner's sequencer.
+            if (!IsValidatedOutboundParentCommand(msg.command) || !validated_outbound_serve_fn_)
+                return StepResult::Handled;
+            try {
+                outbound_serve = validated_outbound_serve_fn_();
+            } catch (...) {
+                outbound_serve.reset();
+            }
+            if (!outbound_serve)
+                return StepResult::Handled;
         }
         if (msg.command == MessageType::PING) {
             uint64_t nonce = 0;
@@ -8246,7 +8286,7 @@ class NodeServer {
                         const auto downloaded = conn.ValidatedDownloadCount();
                         if (IbdGetBlocksRequestDue(ps, chain_.Height(), PendingIbdValidationWork_(),
                                                    now) &&
-                            conn.TrySend(BuildChainLocatorGetBlocks())) {
+                            conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                             ps.last_getblocks = now;
                             ps.ibd_requested_download_count = downloaded;
                             conn.NoteIbdGetBlocksRequest();
@@ -8257,7 +8297,12 @@ class NodeServer {
                 }
 
                 const bool already_have_their_tip = known_tip_height.has_value();
-                if (!already_have_their_tip) {
+                // During initial download the canonical locator drives forward
+                // batches. Walking backward from an unverified distant tip can
+                // fill the orphan window before those batches arrive, reducing
+                // catch-up to a few blocks per retry. Keep tip-pull recovery for
+                // synchronized nodes; IBD already has bounded idle retries.
+                if (!already_have_their_tip && ibd_complete_flag_.load()) {
                     Hash256 fetch_target = their_hash;
                     {
                         std::lock_guard<std::mutex> ol(orphan_mutex_);
@@ -8668,8 +8713,13 @@ class NodeServer {
                                 // unauthenticated orphan across all peers.
                                 {
                                     std::string parent_key = src_ip + ":" + prev_hex;
-                                    const bool send_parent_getdata = TakeKeyCooldown(
-                                        orphan_parent_getdata_at_, parent_key, 10, 600, 4096);
+                                    // An unsolicited distant body must not start
+                                    // the same backward walk while IBD is using
+                                    // this window for ordered forward batches.
+                                    const bool send_parent_getdata =
+                                        ibd_complete_flag_.load() &&
+                                        TakeKeyCooldown(orphan_parent_getdata_at_, parent_key, 10,
+                                                        600, 4096);
                                     if (send_parent_getdata) {
                                         const bool queued = SendBoundedRecoveryGetData_(
                                             conn, new_block.header.prev_block_hash);
@@ -9031,10 +9081,13 @@ class NodeServer {
         // checkpoint downloads, UI polling, and block validation.
         if (ps.handshake_done && !chain_.IsEmpty() &&
             (ps.last_tipsig == PeerState::tp_t{} ||
-             now - ps.last_tipsig >= std::chrono::seconds(30))) {
+             now - ps.last_tipsig >= std::chrono::seconds(1))) {
             const auto tip = chain_.TipCopy();
-            if (conn.TrySend(pm.BuildTipsigMessage(tip.height, tip.GetHash())))
-                ps.last_tipsig = now;
+            const auto hash = tip.GetHash();
+            if (TipAnnouncementDue(ps, tip.height, hash, now) &&
+                conn.TrySend(pm.BuildTipsigMessage(tip.height, hash))) {
+                TipAnnouncementSent(ps, tip.height, hash, now);
+            }
         }
         if (ps.handshake_done && !ps.getaddr_sent) {
             if (conn.TrySend(pm.BuildGetAddrMessage())) {
@@ -9065,7 +9118,7 @@ class NodeServer {
                 if (!conn.IsInbound()) {
                     continued_batch = ibd_batch_gate_.TryContinue(chain_.Height(), now, [&] {
                         return IbdContinuationPeerEligible_(conn, chain_.Height()) &&
-                               conn.TrySend(BuildChainLocatorGetBlocks());
+                               conn.TrySend(BuildChainLocatorGetBlocks(&conn));
                     });
                 }
             } else {
@@ -9077,8 +9130,7 @@ class NodeServer {
                 ps.ibd_requested_download_count = downloaded;
                 conn.NoteIbdGetBlocksRequest();
             } else if (should_request) {
-                if (conn.TrySend(in_ibd ? BuildChainLocatorGetBlocks()
-                                        : BuildChainLocatorGetBlocks(&conn))) {
+                if (conn.TrySend(BuildChainLocatorGetBlocks(&conn))) {
                     ps.last_getblocks = now;
                     ps.ibd_requested_download_count = downloaded;
                     if (in_ibd)

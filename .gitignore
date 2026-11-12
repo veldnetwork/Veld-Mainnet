@@ -93,6 +93,7 @@ Thumbs.db
 # Public source boundary
 /include/test/
 /src/*
+!/src/veld-appchain-parent.cpp
 !/src/veld-node.cpp
 !/src/veld-desktop.cpp
 !/src/veld-node-gui.cpp

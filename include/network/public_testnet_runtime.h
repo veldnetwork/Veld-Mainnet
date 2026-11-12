@@ -13,6 +13,7 @@
 #include "../core/constants.h"
 #include "../core/hash.h"
 #include "../core/version.h"
+#include "chainparams.h"
 #include "../wallet/secure_channel_file.h"
 #include "public_testnet_json.h"
 
@@ -249,8 +250,13 @@ inline bool ParseCanonicalUtc(const std::string& value, int64_t& unix_seconds) n
 // testnet stops without a signed record, a credential file, or any
 // per-launch authorization.  The lease identity is derived from those exact
 // bytes, which is what binds a datadir to the lease it was created under.
+#if defined(VELD_DEVELOPER_TESTNET)
+inline constexpr uint64_t COMPILED_LEASE_NOT_AFTER_HEIGHT = developer_testnet::LEASE_HEIGHT;
+inline constexpr const char* COMPILED_LEASE_NOT_AFTER_UTC = developer_testnet::LEASE_UTC;
+#else
 inline constexpr uint64_t COMPILED_LEASE_NOT_AFTER_HEIGHT = 20000;
 inline constexpr const char* COMPILED_LEASE_NOT_AFTER_UTC = "2026-08-30T18:00:00Z";
+#endif
 
 inline bool CompiledRuntimeLimits(int64_t now_unix, RuntimeLimits& out,
                                   std::string* error = nullptr) {
@@ -779,11 +785,11 @@ inline bool LoadRuntimeLimitsFromStartIndex(const std::string& start_index_path,
         !exact_string(root, "release_version", CLIENT_VERSION) ||
         !exact_string(root, "display_name", DEPLOYMENT_DISPLAY_NAME) ||
         !exact_string(root, "warning_banner", DEPLOYMENT_WARNING) ||
-        !exact_string(root, "data_directory", "./veld-public-testnet-data") ||
+        !exact_string(root, "data_directory", PUBLIC_TESTNET_DATA_DIR) ||
         !exact_string(root, "result", "PASS") || !exact_bool(root, "disposable", true) ||
         !exact_bool(root, "external_value", false) ||
-        !exact_number(root, "network_magic", "1381387332") || !schema ||
-        schema->kind != runtime_json::Value::Kind::Number || schema->text != "2" ||
+        !exact_number(root, "network_magic", std::to_string(PUBLIC_TESTNET_MAGIC).c_str()) ||
+        !schema || schema->kind != runtime_json::Value::Kind::Number || schema->text != "2" ||
         !exact_string_array(root.Get("platform_scope"), PLATFORM_SCOPE) ||
         !exact_string_array(root.Get("allowed_services"), ALLOWED_SERVICES) ||
         !exact_string_array(root.Get("forbidden_services"), FORBIDDEN_SERVICES)) {
@@ -795,8 +801,9 @@ inline bool LoadRuntimeLimitsFromStartIndex(const std::string& start_index_path,
 
     const auto* ports = root.Get("ports");
     static const std::set<std::string> PORT_FIELDS = {"p2p", "rpc"};
-    if (!ports || !exact_keys(*ports, PORT_FIELDS) || !exact_number(*ports, "p2p", "19333") ||
-        !exact_number(*ports, "rpc", "19334")) {
+    if (!ports || !exact_keys(*ports, PORT_FIELDS) ||
+        !exact_number(*ports, "p2p", std::to_string(PUBLIC_TESTNET_P2P_PORT).c_str()) ||
+        !exact_number(*ports, "rpc", std::to_string(PUBLIC_TESTNET_RPC_PORT).c_str())) {
         if (error)
             *error = "START index ports do not match this testnet binary";
         return false;

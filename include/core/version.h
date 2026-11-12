@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../network/developer_testnet_profile.h"
+
 #include <string_view>
 
 namespace veld {
@@ -26,8 +28,8 @@ namespace veld {
 // Canonical runtime/package release identity. The signed package-manifest
 // generator reads CLIENT_VERSION directly from this header, and the release
 // gate requires every launcher/RPC/P2P identity to agree with it.
-inline constexpr const char* CLIENT_VERSION = "3.3.3";
-inline constexpr const char* CLIENT_USER_AGENT = "/Veld:3.3.3/";
+inline constexpr const char* CLIENT_VERSION = "3.3.4";
+inline constexpr const char* CLIENT_USER_AGENT = "/Veld:3.3.4/";
 
 // Deployment-role identity is deliberately separate from consensus identity.
 // VELD_PUBLIC_TESTNET preserves the July genesis, address encoding, and
@@ -39,7 +41,14 @@ inline constexpr const char* CLIENT_USER_AGENT = "/Veld:3.3.3/";
 inline constexpr const char* PUBLIC_TESTNET_WARNING =
     "PUBLIC TESTNET — DISPOSABLE — NO VALUE — NO BALANCE/KEY MIGRATION";
 
-#if defined(VELD_PUBLIC_TESTNET)
+#if defined(VELD_DEVELOPER_TESTNET)
+inline constexpr const char* DEPLOYMENT_ROLE = "public-testnet";
+inline constexpr const char* DEPLOYMENT_PROFILE_ID = developer_testnet::PROFILE;
+inline constexpr const char* DEPLOYMENT_DISPLAY_NAME = developer_testnet::DISPLAY_NAME;
+inline constexpr const char* DEPLOYMENT_WARNING = PUBLIC_TESTNET_WARNING;
+inline constexpr bool DEPLOYMENT_DISPOSABLE = true;
+inline constexpr bool DEPLOYMENT_EXTERNAL_VALUE = false;
+#elif defined(VELD_PUBLIC_TESTNET)
 inline constexpr const char* DEPLOYMENT_ROLE = "public-testnet";
 inline constexpr const char* DEPLOYMENT_PROFILE_ID = "veld-public-testnet-v1";
 inline constexpr const char* DEPLOYMENT_DISPLAY_NAME = "Veld Public Testnet v1";

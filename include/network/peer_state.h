@@ -7,6 +7,7 @@
 #pragma once
 
 #include <chrono>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -48,6 +49,9 @@ struct PeerState {
     tp_t last_ping = clock_t::now();
     // Connection-owned liveness, including independent background chainstates.
     tp_t last_tipsig{};
+    uint64_t last_tipsig_height{0};
+    std::array<uint8_t, 32> last_tipsig_hash{};
+    tp_t tip_progress_retry{};
     tp_t last_getblocks = clock_t::now();
     tp_t last_ibd_progress = clock_t::now();
     tp_t last_mempool_req = clock_t::now();
@@ -58,6 +62,31 @@ struct PeerState {
     // walk a large fee index.  Zero means this peer has not yet been served.
     tp_t last_mempool_served{};
 };
+
+// Announce canonical progress promptly, with a one-second per-connection
+// ceiling. Idle peers still receive the existing thirty-second heartbeat.
+inline bool TipAnnouncementDue(const PeerState& state, uint64_t height,
+                               const std::array<uint8_t, 32>& hash, PeerState::tp_t now) {
+    if (state.last_tipsig == PeerState::tp_t{})
+        return true;
+    const auto elapsed = now - state.last_tipsig;
+    return elapsed >= std::chrono::seconds(30) ||
+           (state.tip_progress_retry != PeerState::tp_t{} && now >= state.tip_progress_retry) ||
+           (elapsed >= std::chrono::seconds(1) &&
+            (height != state.last_tipsig_height || hash != state.last_tipsig_hash));
+}
+
+inline void TipAnnouncementSent(PeerState& state, uint64_t height,
+                                const std::array<uint8_t, 32>& hash, PeerState::tp_t now) {
+    const bool changed = height != state.last_tipsig_height || hash != state.last_tipsig_hash;
+    // A receiver rate-limits tip processing for five seconds. One bounded
+    // repeat after six seconds covers a prompt announcement that arrived
+    // inside that window. No acknowledgment or validation is inferred here.
+    state.tip_progress_retry = changed ? now + std::chrono::seconds(6) : PeerState::tp_t{};
+    state.last_tipsig = now;
+    state.last_tipsig_height = height;
+    state.last_tipsig_hash = hash;
+}
 
 // Observe canonical progress from the peer event loop. While expensive block
 // verification is advancing the chain, the former per-peer 500 ms retry cadence

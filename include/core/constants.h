@@ -1,11 +1,15 @@
 #pragma once
 
+#include "../network/developer_testnet_profile.h"
+
 #if defined(VELD_LOCAL_TEST_NETWORK) &&                                                            \
     (!defined(VELD_TEST_HOOKS) || !defined(VELD_TEST_CHAIN_BUILD) ||                               \
      !defined(VELD_REGTEST_FIXED_DIFF) || defined(VELD_PUBLIC_RELEASE) ||                          \
      defined(VELD_PUBLIC_MAINNET) || defined(VELD_PUBLIC_TESTNET))
 #error "local test networking requires an isolated non-public regtest build"
 #endif
+
+#include "../consensus/appchain_activation.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -611,9 +615,16 @@ constexpr uint32_t MIN_PEER_CONNECTIONS = 4;
 constexpr uint32_t MAX_PEER_CONNECTIONS = 125;
 constexpr uint32_t MAINNET_MAGIC = 0x56454C44;
 constexpr uint32_t TESTNET_MAGIC = 0x74564C44;
-#if defined(VELD_ASERT_TESTCHAIN)
+#if defined(VELD_DEVELOPER_TESTNET)
+constexpr const char* GENESIS_TIMESTAMP_STR = developer_testnet::TIMESTAMP;
+constexpr const char* GENESIS_MESSAGE = developer_testnet::MESSAGE;
+#elif defined(VELD_ASERT_TESTCHAIN)
 constexpr const char* GENESIS_TIMESTAMP_STR = "2026-01-01T00:00:00Z";
+#ifdef VELD_APPCHAIN_BRIDGE_DEVNET
+constexpr const char* GENESIS_MESSAGE = "Veld appchain bridge v0.4 disposable parent 2026-09-29";
+#else
 constexpr const char* GENESIS_MESSAGE = "Veld isolated ASERT qualification 2026-09-08";
+#endif
 constexpr uint64_t ASERT_TEST_ACTIVATION_HEIGHT = 144;
 constexpr uint32_t ASERT_TEST_HALF_LIFE = 2700;
 #else
@@ -662,9 +673,19 @@ constexpr uint64_t parse(const char* s) {
 }
 static_assert(genesis_iso::parse(GENESIS_TIMESTAMP_STR) != 0,
               "GENESIS_TIMESTAMP_STR must parse as YYYY-MM-DDTHH:MM:SSZ");
-#if defined(VELD_ASERT_TESTCHAIN)
+#if defined(VELD_DEVELOPER_TESTNET)
+constexpr uint64_t GENESIS_NONCE = developer_testnet::NONCE;
+constexpr const char* GENESIS_HASH = developer_testnet::HASH;
+#elif defined(VELD_ASERT_TESTCHAIN)
+#ifdef VELD_APPCHAIN_BRIDGE_DEVNET
+// Pinned after full-parameter genesis mining; never shares the ASERT genesis.
+constexpr uint64_t GENESIS_NONCE = 5ULL;
+constexpr const char* GENESIS_HASH =
+    "a9588f07b0c1331f8405e791952c1ea234c41f5cf96fdaca3f3baadf8d224728";
+#else
 constexpr uint64_t GENESIS_NONCE = VELD_ASERT_GENESIS_NONCE;
 constexpr const char* GENESIS_HASH = VELD_ASERT_GENESIS_HASH;
+#endif
 #else
 constexpr uint64_t GENESIS_NONCE = 187948ULL;
 constexpr const char* GENESIS_HASH =
@@ -677,7 +698,9 @@ constexpr const char* GENESIS_HASH =
 constexpr uint64_t SNAPSHOT_LAUNCH_ANCHOR_HEIGHT = 1;
 constexpr const char* SNAPSHOT_LAUNCH_ANCHOR_HASH =
     "c595cc31fe47999186a402ee7c6fb8bdf97415e4e9d9e643733a828e2ce573d1";
-#if defined(VELD_ASERT_TESTCHAIN)
+#if defined(VELD_DEVELOPER_TESTNET)
+constexpr uint64_t GENESIS_TIME = developer_testnet::TIME;
+#elif defined(VELD_ASERT_TESTCHAIN)
 constexpr uint64_t GENESIS_TIME = 1767225600;
 #else
 constexpr uint64_t GENESIS_TIME = 1785599160;
@@ -685,7 +708,9 @@ constexpr uint64_t GENESIS_TIME = 1785599160;
 static_assert(sizeof(std::time_t) >= 8, "Veld requires 64-bit time_t");
 static_assert(genesis_iso::parse(GENESIS_TIMESTAMP_STR) == GENESIS_TIME,
               "GENESIS_TIMESTAMP_STR must equal GENESIS_TIME — bump both together");
-#if defined(VELD_ASERT_TESTCHAIN)
+#if defined(VELD_DEVELOPER_TESTNET)
+constexpr uint32_t GENESIS_BITS = developer_testnet::BITS;
+#elif defined(VELD_ASERT_TESTCHAIN)
 constexpr uint32_t GENESIS_BITS = 0x200fffff;
 #else
 constexpr uint32_t GENESIS_BITS = 0x1e390000;
@@ -693,7 +718,7 @@ constexpr uint32_t GENESIS_BITS = 0x1e390000;
 static_assert((GENESIS_BITS & 0x00FFFFFFu) != 0, "GENESIS_BITS mantissa is zero");
 static_assert((GENESIS_BITS & 0x00800000u) == 0, "GENESIS_BITS mantissa sign bit is set");
 static_assert(((GENESIS_BITS >> 24) & 0xFFu) >= 0x1cu && ((GENESIS_BITS >> 24) & 0xFFu) <=
-#if defined(VELD_ASERT_TESTCHAIN)
+#if defined(VELD_ASERT_TESTCHAIN) || defined(VELD_DEVELOPER_TESTNET)
                                                              0x20u,
 #else
                                                              0x1fu,
@@ -818,7 +843,9 @@ inline constexpr bool ProtocolUpgradeActive(uint64_t inclusion_height) noexcept 
 inline constexpr uint64_t MinimumStakeAtHeight(uint64_t inclusion_height) noexcept {
     return ProtocolUpgradeActive(inclusion_height) ? MIN_STAKE_UNITS / 2 : MIN_STAKE_UNITS;
 }
-#if defined(VELD_ASERT_LEGACY_CONTROL)
+#if defined(VELD_DEVELOPER_TESTNET)
+inline constexpr uint64_t ASERT_ACTIVATION_HEIGHT = developer_testnet::ASERT_HEIGHT;
+#elif defined(VELD_ASERT_LEGACY_CONTROL)
 inline constexpr uint64_t ASERT_ACTIVATION_HEIGHT = 0;
 #elif defined(VELD_ASERT_TESTCHAIN) && !defined(VELD_PROTOCOL_UPGRADE_TEST_HEIGHT)
 inline constexpr uint64_t ASERT_ACTIVATION_HEIGHT = ASERT_TEST_ACTIVATION_HEIGHT;

@@ -23,10 +23,12 @@ inline GenesisPowVerification VerifyGenesisPoW(const Block& genesis) {
         !HashIsZero(genesis.header.prev_block_hash)) {
         return result;
     }
-    result.target_valid = BlockHeader::DecodeBits(genesis.header.bits, result.target);
+    CanonicalPowTarget target;
+    result.target_valid = DecodeCanonicalVeldTarget(genesis.header.bits, target);
     if (!result.target_valid)
         return result;
-    result.pow_hash = VeldHash(genesis.header.Serialize(), 0);
+    result.target = target.bytes;
+    result.pow_hash = VeldHashForVerification(genesis.header.Serialize(), 0, target);
     result.dataset_ok = g_veldhash_last_dataset_ok();
     result.passed = result.dataset_ok && result.pow_hash < result.target;
     return result;

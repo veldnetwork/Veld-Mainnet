@@ -1,3 +1,36 @@
+## 3.3.4 - Consensus upgrade and vault accounting
+
+Update before mainnet block **34,750**, targeting **Friday, November 13, 2026, around noon MST
+(19:00 UTC)**. Block height governs activation; its arrival time is approximate.
+See [the activation schedule](release-3.3.4-activation.md).
+
+- Add the 5,000 VELD validator bond and equal capped finality weights, with a
+  five-key minimum and a strict greater-than-two-thirds quorum. Finality stays
+  in standby when the eligible quorum is unavailable.
+- Require at least ten participating upgrade votes, retain the approval
+  threshold and seven-protocol-day timelock, and preserve historical evidence.
+- Route native transaction fees entirely to miners after activation. Retain
+  the two launch-based halvings, retire co-mining at the first halving and use
+  the approved 60% miner / 20% vault / 20% validator ordinary subsidy allocation.
+  The every-100th-block vault allocation is unchanged.
+- Return eligible excess validator bonds after the complete evidence window,
+  preserving registration, principal accounting and slash/exit constraints.
+  The wallet gateway supports the unsigned return-request preparation method;
+  the wallet verifies and signs the request locally.
+- Add a 20,000 VELD rewards-vault target. Surplus can increase payouts within
+  the existing 8% cycle limit and recipient caps; the target is not locked
+  principal or a guaranteed minimum balance.
+- Align vault RPC and explorer estimates with integer consensus accounting.
+  Wallet staking APR uses ordinary-recipient payouts, excludes bond escrow and
+  unused budget, and does not assume compounding. Vault explanations wrap on
+  mobile screens.
+- Correct Windows peer-sync handling and locator recovery during catch-up.
+- Keep wallet-cleanup explanations behind an explicit help button. Wallet and
+  explorer help opens in accessible dialogs, with keyboard navigation and
+  mobile layouts; existing wallet transaction controls remain in place.
+- Show the applicable reward allocation on mining, rules and validator pages,
+  including the validator share after co-mining retirement.
+
 ## 3.3.3 - Windows update package verification
 
 - Windows updates use one consistent file-list check for downloaded and staged

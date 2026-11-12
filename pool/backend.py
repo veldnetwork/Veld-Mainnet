@@ -197,13 +197,29 @@ class Node:
             'pool signing requires an operational transaction index; enable --txindex and finish validation',
         )
 
-    def template(self, address, identity=None):
+    def template(self, address, identity=None, *, carrier=None, timestamp=None, fee_cap=None):
+        auxiliary = carrier is not None or timestamp is not None or fee_cap is not None
+        if auxiliary:
+            require(
+                identity is None and type(carrier) is bytes and 0 < len(carrier) <= 24576,
+                'bounded signed auxiliary carrier; renewal uses the retained identity',
+            )
+            require(
+                type(timestamp) is int
+                and 0 < timestamp < 2**64
+                and type(fee_cap) is int
+                and 0 <= fee_cap <= 21000000 * 100000000,
+                'canonical auxiliary time and fee limit',
+            )
         self.check_chain()
-        result = (
-            self.call('getblocktemplate', address, hex64(identity))
-            if identity is not None
-            else self.call('getblocktemplate', address)
-        )
+        if auxiliary:
+            result = self.call(
+                'getblocktemplate', address, carrier.hex(), str(timestamp), str(fee_cap)
+            )
+        elif identity is not None:
+            result = self.call('getblocktemplate', address, hex64(identity))
+        else:
+            result = self.call('getblocktemplate', address)
         require(isinstance(result, dict), 'template object')
         for key in (
             'block_hex',

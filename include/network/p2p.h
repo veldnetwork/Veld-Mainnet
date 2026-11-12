@@ -117,6 +117,13 @@ inline bool IsBackgroundValidationInboundCommand(std::string_view command) {
            command == MessageType::REJECT;
 }
 
+// These additional commands require the owner's live full-validation permit.
+// A snapshot downloader without that permit keeps the quarantine above.
+inline bool IsValidatedOutboundParentCommand(std::string_view command) {
+    return command == MessageType::GETDATA || command == MessageType::GETBLOCKS ||
+           command == MessageType::TX || command == MessageType::MEMPOOL;
+}
+
 enum class InvType : uint32_t {
     INV_ERROR = 0,
     TX = 1,

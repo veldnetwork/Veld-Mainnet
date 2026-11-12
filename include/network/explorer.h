@@ -1,4 +1,6 @@
 #pragma once
+#include "help_dialogs.h"
+#include "subsidy_view.h"
 
 #include "../core/blockchain.h"
 #include "../core/mempool.h"
@@ -1125,7 +1127,7 @@ html[data-theme="light"] .crumbs a{color:var(--cob-1)!important}
         "</body>\n"
         "</html>\n";
 
-    return head + header_html + content + footer_html;
+    return WithHelpDialogs(head + header_html + content + footer_html);
 }
 
 class BlockExplorer {
@@ -2374,8 +2376,8 @@ private:
 
     HttpResponse ServeMiningPage() {
         double supply = (double)chain_.TotalSupplyUnits() / VELD_UNITS;
-        double reward = (double)BLOCK_REWARD_UNITS / VELD_UNITS;
         uint64_t height = chain_.Height();
+        const auto reward = SubsidyView::Next(height, chain_.TotalSupplyUnits());
 
         std::ostringstream page;
         page << "<div class=\"container\">";
@@ -2384,21 +2386,17 @@ private:
 
         page << "<div class=\"stat-grid\">";
         page << "<div class=\"stat\"><div class=\"stat-label\">Block Height</div><div class=\"stat-value em\">" << height << "</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Block Reward</div><div class=\"stat-value gold\" title=\"Exact block reward: 3.13926940 VELD; displayed to two decimals without rounding\">" << std::fixed << std::setprecision(2) << (static_cast<double>(BLOCK_REWARD_UNITS / (VELD_UNITS / 100)) / 100.0) << " VELD</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Miner Share</div><div class=\"stat-value\">50%</div><div class=\"stat-sub\">of block reward</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Next Block Subsidy</div><div class=\"stat-value gold\" title=\"Subsidy at block " << reward.height << ": " << std::fixed << std::setprecision(8) << (double)reward.allocation.subsidy / VELD_UNITS << " VELD, excluding transaction fees\">" << std::setprecision(2) << (static_cast<double>(reward.allocation.subsidy / (VELD_UNITS / 100)) / 100.0) << " VELD</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Next Miner Subsidy</div><div class=\"stat-value\">" << std::setprecision(8) << (double)reward.allocation.miner / VELD_UNITS << "</div><div class=\"stat-sub\">VELD, transaction fees excluded</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Algorithm</div><div class=\"stat-value sm\">VeldHash</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Total Supply</div><div class=\"stat-value\">" << std::setprecision(2) << supply << "</div><div class=\"stat-sub\">/ 21,000,000 VELD</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Hard Cap</div><div class=\"stat-value\">21M</div><div class=\"stat-sub\">flat reward, no halving</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Hard Cap</div><div class=\"stat-value\">21M</div><div class=\"stat-sub\">" << (SUBSIDY_ACTIVATION_HEIGHT == 0 ? "current emission schedule" : "two scheduled halvings") << "</div></div>";
         page << "</div>";
 
         page << "<div class=\"card\" style=\"margin-top:18px\">";
-        page << "<div class=\"card-title\">Coinbase Split</div>";
-        page << "<div class=\"tbl-scroll\"><table class=\"tbl\"><thead><tr><th>Recipient</th><th>Share</th><th>Description</th></tr></thead><tbody>";
-        page << "<tr><td style=\"color:var(--em)!important;-webkit-text-fill-color:var(--em)!important;font-weight:600\">Miner</td><td><strong>50%</strong></td><td>Direct reward to block finder</td></tr>";
-        page << "<tr><td style=\"color:#4CB8FF;font-weight:600\">Co-Mining Pool</td><td><strong>20%</strong></td><td>Shared among uniformly drawn eligible near-miss miners every 100 blocks</td></tr>";
-        page << "<tr><td style=\"color:var(--gold)!important;-webkit-text-fill-color:var(--gold)!important;font-weight:600\">Vault</td><td><strong>20%</strong></td><td>Distributed to stakers every 480 blocks (daily)</td></tr>";
-        page << "<tr><td style=\"color:#B07CFF;font-weight:600\">Validators</td><td><strong>10%</strong></td><td>Paid to active validators every 480 blocks (daily)</td></tr>";
-        page << "</tbody></table></div></div>";
+        page << "<div class=\"card-title\">Subsidy allocation</div>";
+        page << SubsidySplitHtml(reward.height, chain_.TotalSupplyUnits());
+        page << "<p>" << FeeRulesHtml(reward.height) << "</p></div>";
 
         page << "<div class=\"card\">";
         page << "<div class=\"card-title\">Recent Blocks</div>";
@@ -2427,7 +2425,7 @@ private:
 
         page << "<div class=\"card\">";
         page << "<div class=\"card-title\">Mining Tiers</div>";
-        page << "<details class=\"veld-details\"><summary>How mining tiers work</summary><p style=\"color:var(--text);font-size:14px;line-height:1.6;margin-bottom:16px\">Mining tier is one of the two inputs to your <strong>staking multiplier</strong> (the other is lockup tier). Your tier rises with consistent mining activity over rolling windows, and a higher tier means a bigger share of every vault distribution paid out to your staked balance &mdash; it does <em>not</em> change the miner share of ordinary block subsidy. Every 100th block sends its full subsidy to the vault. A mining day is a 480-block protocol day.</p></details>";
+        page << "<section data-veld-help class=\"veld-details\"><button type=button>How mining tiers work</button><p style=\"color:var(--text);font-size:14px;line-height:1.6;margin-bottom:16px\">Mining tier is one of the two inputs to your <strong>staking multiplier</strong> (the other is lockup tier). Your tier rises with consistent mining activity over rolling windows, and a higher tier means a bigger share of every vault distribution paid out to your staked balance &mdash; it does <em>not</em> change the miner share of ordinary block subsidy. Every 100th block sends its full subsidy to the vault. A mining day is a 480-block protocol day.</p></section>";
         page << "<div class=\"tbl-scroll\"><table class=\"tbl\"><thead><tr><th>Tier</th><th>Active Days</th><th>Window</th><th>Multiplier</th></tr></thead><tbody>";
         page << "<tr><td class=\"tier-name tier-none\">None</td><td>0</td><td>&mdash;</td><td>1.00&times;</td></tr>";
         page << "<tr><td class=\"tier-name tier-bronze\">Bronze</td><td>7</td><td>14 days</td><td>1.10&times;</td></tr>";
@@ -2445,9 +2443,9 @@ private:
         static const std::string PAGE = R"HTML(
 <div class="card">
   <div class="card-title">Mining Tier System</div>
-<details class="veld-details"><summary>How tiers work</summary>  <p style="color:var(--text);font-size:13px;line-height:1.6;margin-bottom:14px">
+<section data-veld-help class="veld-details"><button type=button>How tiers work</button>  <p style="color:var(--text);font-size:13px;line-height:1.6;margin-bottom:14px">
     Mining tiers reward consistent mining over time. Mine at least one block in a 480-block protocol day and that day counts as <strong>active</strong>. Your tier is recomputed every block from a rolling window of recent days &mdash; keep mining to climb, stop mining and the tier drops. There&rsquo;s no permanent milestone.
-  </p></details>
+  </p></section>
   <div class="tbl-scroll"><table class="tbl">
     <thead><tr><th>Name</th><th>Requirement</th><th>Type</th><th>Multiplier</th></tr></thead>
     <tbody>
@@ -2593,44 +2591,36 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
 </div>
 
 <div class="card rule-card">
-  <h2 id="emission">1. Block reward &amp; emission</h2><details class="veld-details"><summary>Details</summary>
-<p>Veld targets a block every <strong>180 seconds</strong>. The base subsidy is <strong>3.13926940 VELD</strong>, with no halving. A small rounding adjustment every 175,200 blocks gives 550,000 VELD per protocol year before the <strong>21,000,000 VELD hard cap</strong>; the last subsidy is limited by remaining issuance.</p>
-  <p>At target speed this is about 1,507 VELD per day and 38 years of issuance. These are estimates, not a fixed calendar schedule. There is no premine; new VELD is issued through block subsidy, which ends at the cap.</p>
-</details></div>
+  <h2 id="emission">1. Block reward &amp; emission</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
+__VELD_SUBSIDY_RULES__
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="splits">2. Where each block reward goes</h2><details class="veld-details"><summary>Details</summary>
-  <p>Ordinary block subsidies use the split below. <strong>Every 100th block routes its full subsidy to the vault</strong>.</p>
-  <table class="tbl-rules">
-    <tr><th>Stream</th><th>Share</th><th>Goes to</th></tr>
-    <tr><td style="color:var(--em);font-weight:600">Block winner</td><td style="color:var(--em)"><strong>50%</strong></td><td>Whoever solved this block&#39;s proof-of-work</td></tr>
-    <tr><td style="color:#4CB8FF;font-weight:600">Co-mining pool</td><td style="color:#4CB8FF"><strong>20%</strong></td><td>Pays out to near-miss miners every 100 blocks (see &sect;11)</td></tr>
-    <tr><td style="color:var(--gold);font-weight:600">Vault</td><td style="color:var(--gold)"><strong>20%</strong></td><td>Eligible staking distributions every 480 blocks</td></tr>
-    <tr><td style="color:#B07CFF;font-weight:600">Validator pool</td><td style="color:#B07CFF"><strong>10%</strong></td><td>Eligible endorsement distributions every 480 blocks</td></tr>
-  </table>
-  <p style="color:var(--muted);font-size:12px">During the subsidy era, transaction fees flow to the vault on top of its block share. When effective subsidy is zero, fee routing is 50% miner, 40% vault, and 10% validator pool, subject to integer rounding. The state-aware policy applies that fee-only allocation at every height, including every 100th block. Exact permitted subsidy plus authenticated fees remain mandatory.</p>
-</details></div>
+  <h2 id="splits">2. Where each block reward goes</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
+__VELD_SPLIT_RULES__
+  <p style="color:var(--muted);font-size:12px">__VELD_FEE_RULES__</p>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="vault">3. How vault distributions work</h2><details class="veld-details"><summary>Details</summary>
+  <h2 id="vault">3. How vault distributions work</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
 <p>Staking is active on public mainnet. The minimum ordinary stake is <strong>500 VELD</strong>. The maximum ordinary stake is <strong>10,000 VELD per address</strong>. Keep additional spendable funds for the transaction fee.</p>
   <p>Every <strong>480 blocks</strong>, the vault can distribute a budget to eligible stakes and validator yield escrow. Ordinary stake weight is <span class="formula">stake &times; mining multiplier &times; lockup multiplier</span>, with the combined multiplier capped at 3.00&times;.</p>
   <p>The budget, concentration limit, recipient limits, fees, and integer rounding determine actual payments. A multiplier changes your relative weight; it does not promise a fixed yield or a payment in every cycle.</p>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="caps">4. Vault distribution limits</h2><details class="veld-details"><summary>Details</summary>
-<p>The distribution budget is bounded by both <strong>90% of the previous cycle’s vault inflow</strong> and <strong>8% of the spendable vault balance</strong>. The smaller limit applies, with transaction costs and payout rules also accounted for.</p>
+  <h2 id="caps">4. Vault distribution limits</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
+<p>__VELD_VAULT_BUDGET_RULES__</p>
   <p>Undistributed funds remain in the vault. A cycle needs sufficient spendable funds and eligible payout weight; very small payments can round to zero. Multipliers cannot increase the budget. These limits restrict distributions but do not guarantee perpetual growth or future returns.</p>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="whale">5. Concentration limit</h2><details class="veld-details"><summary>Details</summary>
+  <h2 id="whale">5. Concentration limit</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
 <p>No eligible recipient can receive more than <strong>75% of the cycle’s distribution budget</strong>. If its calculated share exceeds that cap, the excess stays in the vault; it is not redistributed to the other recipients in that cycle.</p>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="multiplier">6. How the staking multiplier is built</h2><details class="veld-details"><summary>Details</summary>
+  <h2 id="multiplier">6. How the staking multiplier is built</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
   <p>Your <strong>staking multiplier</strong> is the value that boosts your share of every vault distribution. It comes from two ladders:</p>
   <ul>
     <li><strong>Mining tier</strong> &mdash; rewards you for being an <em>active miner</em> over time (see &sect;8).</li>
@@ -2645,10 +2635,10 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <tr><td class="tier-name tier-platinum">Platinum</td><td>90 days</td><td>2.70&times;</td></tr>
     <tr><td><span class="diamond-prismatic">Diamond</span></td><td>30 days</td><td><span class="diamond-prismatic">3.00&times;</span></td></tr>
   </table>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="stakelock">7. Stake lockup tiers</h2><details class="veld-details"><summary>Details</summary>
+  <h2 id="stakelock">7. Stake lockup tiers</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
   <p>When you stake, you pick how long to lock it. Longer commitment = bigger multiplier. You can&#39;t unstake before the lockup expires.</p>
   <table class="tbl-rules">
     <tr><th>Lockup</th><th>Duration</th><th>Multiplier</th></tr>
@@ -2658,10 +2648,10 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <tr><td>Long</td><td>90 days</td><td>1.50&times;</td></tr>
   </table>
   <p style="color:var(--muted);font-size:12px">You can hold multiple stakes at the same address with different lockups. Each one unlocks on its own schedule &mdash; adding a new stake doesn't reset older ones.</p>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="minetier">8. Mining tier ladder</h2><details class="veld-details"><summary>Details</summary>
+  <h2 id="minetier">8. Mining tier ladder</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
   <p>Mining tiers reward consistent mining over time. A 480-block protocol day counts as <strong>active</strong> for your address if you mined at least one canonical block during it &mdash; it doesn't matter whether you found 1 or 100. Your tier is recomputed every block from a rolling window of recent days.</p>
   <table class="tbl-rules tier-ladder">
     <tr><th>Tier</th><th>Requirement</th><th>Multiplier</th></tr>
@@ -2673,21 +2663,21 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <tr><td class="diamond-prismatic">Diamond</td><td>1,000 out of last 1,095</td><td class="diamond-prismatic">3.00&times;</td></tr>
   </table>
   <p style="color:var(--muted);font-size:12px">Tiers are not permanent: each tier is recalculated as active days enter and leave its rolling window. The full rolling-window logic is in the <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a>.</p>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="endorse">9. Validators &amp; the validator pool</h2><details class="veld-details"><summary>Details</summary>
-  <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool collects <strong>10% of ordinary block subsidy</strong> and pays it out every <strong>480 blocks</strong> in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle.</p>
+  <h2 id="endorse">9. Validators &amp; the validator pool</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
+  <p>Validators run a daemon that signs each new block &mdash; an <em>endorsement</em>. The validator pool receives its share of ordinary block subsidy and pays it out every <strong>480 blocks</strong> in proportion to each validator&#39;s endorsement count over the trailing 480-block window. Idle validators earn nothing for that cycle. The share is 10% before co-mining retirement and 20% afterward when the two-halving schedule above is activated.</p>
   <ul>
     <li><strong>Register on-chain.</strong> You submit a <span class="formula">VELD_VALIDATOR|REGISTER</span> transaction binding your ML-DSA-65 public key. A matching <span class="formula">DEREGISTER</span> exits cleanly.</li>
-    <li><strong>Bond the minimum.</strong> Registration requires posting the minimum validator bond of <strong>10,000 VELD</strong> (see &sect;10) into the sigless custody vault. The live value is shown on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a>.</li>
+    <li><strong>Bond the minimum.</strong> Registration sends the required validator bond into the protocol custody vault. Check the current minimum on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a> before funding your wallet.</li>
     <li><strong>Stay online.</strong> Endorsement share is your count &divide; the network&#39;s count over the last 480 blocks &mdash; consistent uptime is what pays.</li>
   </ul>
-  <p style="color:var(--muted);font-size:12px">Endorsement is one of three independent reward streams: the <em>co-mining lottery</em> is a flat draw (&sect;11), the <em>vault</em> distributes by eligible stake weight (&sect;3), and only the <em>validator pool</em> is endorsement-gated. They do not overlap and you can earn from more than one.</p>
-</details></div>
+  <p style="color:var(--muted);font-size:12px">While co-mining remains active, endorsement is one of three independent reward streams: the <em>co-mining lottery</em> is a flat draw (&sect;11), the <em>vault</em> distributes by eligible stake weight (&sect;3), and only the <em>validator pool</em> is endorsement-gated. They do not overlap and you can earn from more than one.</p>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="valbond">10. Validator bond, slashing &amp; yield escrow</h2><details class="veld-details"><summary>Details</summary>
+  <h2 id="valbond">10. Validator bond, slashing &amp; yield escrow</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
   <p>A validator&#39;s registration bond is not just a balance check &mdash; it is real, slashable capital. Custody, slashing, and reporter-bounty rules are enforced by consensus.</p>
   <h3>The bond (custody)</h3>
   <p>At registration the minimum bond is sent into a <strong>sigless custody vault</strong> &mdash; an address whose key nobody holds, so the principal cannot be moved arbitrarily. It sits there as collateral for as long as you validate. After a clean deregistration it remains slashable through the complete <strong>43,200-block (~90-day) finality-equivocation evidence horizon</strong>, measured from the validator's last counted finality vote when that is later. It is then <strong>returned to you in full</strong> by the mandatory, zero-fee canonical transaction at the first 480-block settlement boundary strictly after that horizon (up to about 91 days after the controlling event).</p>
@@ -2708,18 +2698,18 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <li>Yield already released before the slash is not clawed back.</li>
   </ul>
   <p style="color:var(--muted);font-size:12px">Live custody-vault and yield-escrow balances, per-validator bond status (custodial / slashed), and the slashing-evidence ledger are all on the <a href="/validators" style="color:var(--em);text-decoration:underline">Validators page</a>. Full vesting schedule and confiscation derivation are in the <a href="https://veld.network/whitepaper.pdf" style="color:var(--em);text-decoration:underline">whitepaper</a>.</p>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="poolflush">11. Co-mining lottery</h2><details class="veld-details"><summary>Details</summary>
-<p>The co-mining pool receives <strong>20% of ordinary block subsidies</strong>. A draw runs every <strong>100 blocks</strong>.</p>
+  <h2 id="poolflush">11. Co-mining lottery</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
+<p>While co-mining is active, its pool receives <strong>20% of ordinary block subsidies</strong> and a draw runs every <strong>100 blocks</strong>. Under an activated two-halving schedule, the final draw is immediately before the first halving. New entries and draws then stop; previous payouts, stake principal and the unassigned reserve remain intact. The following entry rules apply only while co-mining is active.</p>
   <ul><li>Keep at least <strong>1,000 VELD of ordinary stake locked at the mining address</strong>. The same stake can qualify for vault distributions.</li><li>The client submits qualifying near-miss proofs automatically. At least one valid proof must be <strong>included in the canonical chain during the draw window</strong>; submission alone does not qualify.</li><li>Each eligible address gets one entry regardless of its near-miss count. Up to four near-miss records can be included per block.</li></ul>
   <p>The draw selects up to five distinct addresses, or up to 20 when at least 1,000 addresses qualify. Each winner receives one slot; unfilled slots carry forward, subject to the protocol’s rounding rule. Finding a block or receiving a lottery payment is not guaranteed.</p>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="governance">12. Governance</h2><details class="veld-details"><summary>Details</summary>
-  <p>Governance activates when at least five validators have bonded an aggregate <strong>50,000 VELD</strong>. Each validator contributes at most its 10,000 VELD minimum bond toward that activation threshold.</p>
+  <h2 id="governance">12. Governance</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
+  <p>Governance requires at least five qualifying validator bonds. Each validator contributes at most the minimum bond applicable at that block toward the activation threshold. Existing larger bonds retain their principal.</p>
   <div class="peg-grid">
     <div class="peg-item"><span class="k">Who participates</span><span class="v">Registered, recently active validators submit proposals and vote.</span></div>
     <div class="peg-item"><span class="k">Voting window</span><span class="v"><strong>6,720 blocks</strong>, approximately 14 days.</span></div>
@@ -2727,10 +2717,10 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <div class="peg-item"><span class="k">Protocol upgrades</span><span class="v"><strong>67% yes</strong> with a hard minimum of ten votes, followed by a 3,360-block (approximately seven-day) timelock.</span></div>
   </div>
   <p>Passing a protocol-upgrade proposal records on-chain approval after the timelock. It does not automatically replace node binaries or mutate consensus parameters; a software upgrade still requires published source, signed artifacts, operator adoption, and an activation plan.</p>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="privacy">13. Privacy &amp; safety</h2><details class="veld-details"><summary>Details</summary>
+  <h2 id="privacy">13. Privacy &amp; safety</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
 <ul>
     <li><strong>Local signing.</strong> Wallet keys stay on the device; the wallet sends signed transaction bytes. Protect the device, passphrase, and encrypted backups.</li>
     <li><strong>Reorganization limits.</strong> A branch removing 100 or more blocks is rejected. Qualified validator finality and a locally verified Bitcoin anchor can add stronger boundaries once activated and observed. They are not implied by block height or a dashboard label.</li>
@@ -2738,17 +2728,17 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <li><strong>Reward maturity.</strong> Coinbase-class rewards require 100 confirmations before spending. Ordinary transactions can still be affected by a reorganization before they are sufficiently confirmed.</li>
     <li><strong>Signature security.</strong> Native transaction and finality signatures use ML-DSA-65. Address hashes, proof of work, and Bitcoin custody have their own security assumptions; this is not a guarantee against every future quantum attack.</li>
   </ul>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="difficulty">14. Difficulty adjustment and ASERT</h2><details class="veld-details"><summary>Details</summary>
+  <h2 id="difficulty">14. Difficulty adjustment and ASERT</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
   <p>Veld targets <strong>180 seconds per block</strong>. <strong>ASERT adjusts the target after every accepted block</strong>, with a <strong>2,700-second (45-minute) half-life</strong>.</p>
   <p>ASERT compares accepted branch time and height progression with the 180-second schedule from a canonical anchor. Blocks ahead of schedule raise difficulty; blocks behind schedule lower it. Deterministic integer arithmetic, canonical target encoding, and the proof-of-work limit constrain the calculation.</p>
   <p>The half-life controls the response to accumulated timing error; it does not promise a three-minute interval. The next target does not continuously decrease merely because wall-clock time passes without an accepted block.</p>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="btcveld">15. btcVELD &mdash; the Bitcoin peg</h2><details class="veld-details"><summary>Details</summary>
+  <h2 id="btcveld">15. btcVELD &mdash; the Bitcoin peg</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
   <div class="peg-status"><strong>Activation:</strong> btcVELD becomes available after seven qualified validators complete the finality warm-up. This is a one-time qualification threshold; a later count drop alone does not deactivate it. A finality-liveness stall can stop new mint exposure. Existing completion and redemption paths retain their own validation rules.</div>
   <div class="peg-grid">
     <div class="peg-item"><span class="k">Backing</span><span class="v"><strong>1 btcVELD = 1 BTC</strong> held in peg custody.</span></div>
@@ -2765,10 +2755,10 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
   </ul>
   <h3>Liquidity</h3>
   <p>The on-chain VELD/btcVELD pool shares the same 10 BTC aggregate custody cap. Swaps use a <strong>flat 0.30% fee</strong> in either direction; price deviation from the initial ratio does not set the fee. Swap fees remain in the pool for liquidity providers and are separate from the native VELD transaction fee. Reserve-based pricing and price impact still apply.</p>
-</details></div>
+</section></div>
 
 <div class="card rule-card">
-  <h2 id="syncing">16. Syncing &amp; trust</h2><details class="veld-details"><summary>Details</summary>
+  <h2 id="syncing">16. Syncing &amp; trust</h2><section data-veld-help class="veld-details"><button type=button>Details</button>
   <p>Veld validates the chain locally. An eligible clearnet start can use an <strong>official signed snapshot</strong>; otherwise, the node syncs from peers.</p>
   <ul>
     <li><strong>Before use:</strong> the node checks the snapshot signature, network identity and launch anchor, then rebuilds its stored state locally.</li>
@@ -2776,18 +2766,29 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
     <li><strong>When complete:</strong> the node records the result and restarts once to enable its services. Mining still waits for normal peer synchronization.</li>
   </ul>
   <p><strong>At the tip does not mean fully verified.</strong> Independent validation can continue even when the displayed height matches the network.</p>
-  <details>
-    <summary>Sync options and trust</summary>
+  <section data-veld-help>
+    <button type=button>Sync options and trust</button>
     <p><code>--full-ibd</code> and <code>--no-snapshot</code> skip snapshot import. Previously imported data still requires validation; verified progress can be reused on restart. The client saves independent validation progress, recovers interrupted snapshot cleanup, bounds Windows recovery restarts, and reports daemon and connection status. Tor-only mode syncs from peers without HTTPS snapshot downloads. If existing data fails startup checks, the node stops and reports the error.</p>
     <p>A snapshot signature does not replace consensus checks. Public-mainnet clients enforce a compiled checkpoint at height 2,800. A chain that conflicts with that block is rejected. Downloaded signed checkpoints remain advisory and cannot move this compiled pin. Before validator finality, nodes rely on verified proof of work and reorganization limits. Once a node verifies a confirmed Bitcoin anchor for a finalized Veld tip (see &sect;15), it retains that checkpoint and rejects conflicting histories.</p>
-  </details>
-</details></div>
+  </section>
+</section></div>
 
 )HTML";
         // Render compiled identifiers with their matching RPC field names.
         // The launch anchor distinguishes histories sharing the same genesis.
         std::ostringstream identity;
-        identity << PAGE
+        std::string rules = PAGE;
+        const auto subsidy_pos = rules.find("__VELD_SUBSIDY_RULES__");
+        rules.replace(subsidy_pos, sizeof("__VELD_SUBSIDY_RULES__") - 1, SubsidyRulesHtml(NextInclusionHeight(chain_.Height())));
+        const auto fee_pos = rules.find("__VELD_FEE_RULES__");
+        rules.replace(fee_pos, sizeof("__VELD_FEE_RULES__") - 1, FeeRulesHtml(NextInclusionHeight(chain_.Height())));
+        const auto split_pos = rules.find("__VELD_SPLIT_RULES__");
+        rules.replace(split_pos, sizeof("__VELD_SPLIT_RULES__") - 1,
+                      SubsidySplitHtml(NextInclusionHeight(chain_.Height()), chain_.TotalSupplyUnits()));
+        const auto budget_pos = rules.find("__VELD_VAULT_BUDGET_RULES__");
+        rules.replace(budget_pos, sizeof("__VELD_VAULT_BUDGET_RULES__") - 1,
+                      VaultBudgetRulesHtml(chain_.GetVaultPayoutPreview().next_boundary));
+        identity << rules
                  << "<div class=\"card rule-card\">"
                     "<h2 id=\"chain-identity\">17. Chain identity</h2>"
                     "<p><strong>Network:</strong> <code>"
@@ -2800,7 +2801,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
                     "<code style=\"display:block;overflow-wrap:anywhere;white-space:normal\">"
                  << GENESIS_HASH
                  << "</code></p>"
-                    "<details><summary>Verify a node's chain identity</summary>"
+                    "<section data-veld-help><button type=button>Verify a node's chain identity</button>"
                     "<p>Compare the <code>profile_id</code> and <code>genesis_fingerprint</code>"
                     " fields from <code>getnetworkinfo</code> with the values above."
                     " <code>getblockhash 0</code> displays the same genesis bytes in reverse order.</p>";
@@ -2814,7 +2815,7 @@ html[data-theme="light"] .tier-ladder td:not(.diamond-prismatic){color:#000!impo
                  << "</code>. Signed snapshots must match this launch history as well as the genesis fingerprint.</p>";
 #endif
         identity << "<p>These identifiers confirm which chain is being checked; synchronization and independent validation must still complete.</p>"
-                    "</details></div>";
+                    "</section></div>";
         return HttpResponse::HTML(
             HtmlWrapArcade("Rules", identity.str(), "rules"));
     }
@@ -4644,7 +4645,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function(b){b.onclic
         out += ArcadePrimaryTabs(active_nav);
         out += body;
         out += ArcadeFoot();
-        return out;
+        return WithHelpDialogs(std::move(out));
     }
 
     HttpResponse ServeLanding() {
@@ -5964,7 +5965,10 @@ setInterval(loadStats,2000);
         j << "\"next_pool_dist_in\":" << next_pool_dist << ",";
         j << "\"staking_active\":" << (staking_active ? "true" : "false") << ",";
         j << "\"staking_activation_supply\":" << STAKING_ACTIVATION_VELD << ",";
-        j << "\"block_reward_veld\":" << std::setprecision(8) << (double)BLOCK_REWARD_UNITS / VELD_UNITS << ",";
+        const auto reward = SubsidyView::Next(height, s_units);
+        j << SubsidyProjection::Next480(height, s_units).Fields() << ",";
+        j << "\"block_reward_veld\":" << std::setprecision(8) << (double)reward.allocation.subsidy / VELD_UNITS << ",";
+        j << reward.Fields() << ",";
         uint64_t local_mempool = mempool_.Size();
         size_t   local_peers   = LivePeerCount();
         uint64_t fleet_mempool_max = local_mempool;
@@ -6050,16 +6054,18 @@ setInterval(loadStats,2000);
     }
 
     HttpResponse ServeAPIMining() {
+        const auto reward = SubsidyView::Next(chain_.Height(), chain_.TotalSupplyUnits());
         std::ostringstream j;
         j << "{";
         j << "\"algorithm\":\"VeldHash\",";
         j << "\"phase\":\"" << (chain_.TotalSupplyUnits() < chain_.GetStakingActivationUnits() ? "bootstrap" : "standard") << "\",";
 
         j << "\"max_reward_per_miner\":" << std::fixed << std::setprecision(8)
-          << (double)BLOCK_REWARD_UNITS / VELD_UNITS << ",";
+          << (double)reward.allocation.miner / VELD_UNITS << ",";
         j << "\"min_miners_per_block\":1,";
         j << "\"block_reward\":" << std::fixed << std::setprecision(8)
-          << (double)BLOCK_REWARD_UNITS / VELD_UNITS << ",";
+          << (double)reward.allocation.subsidy / VELD_UNITS << ",";
+        j << reward.Fields() << ",";
         j << "\"staking_active\":" << (chain_.TotalSupplyUnits() >= chain_.GetStakingActivationUnits() ? "true" : "false");
         j << "}";
         return HttpResponse::JSON(j.str());
@@ -6160,7 +6166,8 @@ setInterval(loadStats,2000);
                  << std::fixed << std::setprecision(4) << supply_pct << "%\"></div></div>";
             page << "<div style=\"margin-top:8px;font-size:11px;color:var(--muted)\">"
                  << std::setprecision(2) << supply_pct << "% complete &mdash; staking activates at &asymp; block ";
-            double blocks_left = (live_unlock_veld - supply) / 3.13926940;
+            const double next_subsidy = (double)SubsidyView::Next(chain_.Height(), chain_.TotalSupplyUnits()).allocation.subsidy / VELD_UNITS;
+            double blocks_left = next_subsidy > 0 ? (live_unlock_veld - supply) / next_subsidy : 0;
             if (blocks_left < 0) blocks_left = 0;
             uint64_t target_block = chain_.Height() + (uint64_t)(blocks_left + 0.5);
             page << target_block << " (" << std::setprecision(0) << blocks_left << " blocks to go)</div></div>";
@@ -6184,7 +6191,11 @@ setInterval(loadStats,2000);
                  << " VELD</td><td style=\"color:var(--muted)\">10,000 VELD per address &mdash; protocol-wide cap</td></tr>";
         }
         page << R"HTML(      <tr><td>Lockup Periods</td><td style="color:var(--em)">7 / 14 / 30 / 90 days</td><td style="color:var(--muted)">3,360 / 6,720 / 14,400 / 43,200 blocks</td></tr>
-      <tr><td>Distribution Budget</td><td style="color:var(--em)">Up to 90% of cycle inflow</td><td style="color:var(--muted)">Also limited to 8% of vault balance and 75% per staker</td></tr>
+      <tr><td>Distribution Budget</td><td style="color:var(--em)">Up to 8% of spendable vault funds</td><td style="color:var(--muted)">)HTML"
+             << (VaultReservePolicyActive(chain_.GetVaultPayoutPreview().next_boundary)
+                     ? "20,000 VELD reserve target; surplus can increase payouts. "
+                     : "Also limited to 90% of cycle inflow. ")
+             << R"HTML(<a href="/vault">View payout policy</a></td></tr>
       <tr><td>Distribution Interval</td><td style="color:var(--em)">480 blocks</td><td style="color:var(--muted)">~24 hours</td></tr>
       <tr><td>Multiplier Range</td><td style="color:var(--em)">1.0× &ndash; 3.0×</td><td style="color:var(--muted)">All tiers use rolling windows &mdash; mine consistently to earn and keep each tier</td></tr>
     </tbody>
@@ -6311,81 +6322,74 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
     }
 
     HttpResponse ServeVaultPage() {
-        uint64_t height = chain_.Height();
-        uint64_t best_h = BestKnownHeight();
-        const std::string& current_vault_addr =
-            VaultAddressAtHeight(best_h > 0 ? best_h : height);
-        double vault_bal = 0.0;
-        {
-            auto script = AddressToScript(current_vault_addr);
-            if (!script.empty()) {
-                auto utxos = chain_.GetUTXOsForScript(script);
-                for (auto& u : utxos) vault_bal += (double)u.value / VELD_UNITS;
-            }
-        }
-        double supply = (double)chain_.TotalSupplyUnits() / VELD_UNITS;
-        double vault_pct = supply > 0 ? vault_bal / supply * 100.0 : 0.0;
-        uint64_t next_dist = VAULT_DISTRIBUTION_INTERVAL - (best_h % VAULT_DISTRIBUTION_INTERVAL);
-        uint64_t next_vault_blk = VAULT_BLOCK_INTERVAL - (best_h % VAULT_BLOCK_INTERVAL);
-        constexpr double BLOCKS_PER_DAY      = 480.0;
-        constexpr double VAULT_BLOCK_FRACTION = 1.0 / 100.0;
-        const double reward_veld = (double)BLOCK_REWARD_UNITS / VELD_UNITS;
-        double daily_inflow = BLOCKS_PER_DAY * reward_veld * 0.20;
-        daily_inflow += BLOCKS_PER_DAY * VAULT_BLOCK_FRACTION * reward_veld * 0.80;
-        double payout_rate = (best_h >= VAULT_INFLOW_CAP_ACTIVATION_HEIGHT)
-                           ? (double)VAULT_INFLOW_PAYOUT_PPM / 1'000'000.0
-                           : 0.90;
-        double daily_payout    = daily_inflow * payout_rate;
-        double daily_retention = daily_inflow - daily_payout;
-
+        const auto preview = chain_.GetVaultPayoutPreview();
+        const auto height = preview.height;
+        const auto& address = VaultAddressAtHeight(height);
+        const double balance = (double)preview.balance / VELD_UNITS;
+        const double supply = chain_.TotalSupplyVeld();
+        const auto next = preview.next_boundary - height;
+        const bool reserve = VaultReservePolicyActive(preview.next_boundary);
+        const bool miner_fees = MinerFeesActive(NextInclusionHeight(height));
+        const double projected =
+            (double)SubsidyProjection::Next480(height, chain_.TotalSupplyUnits()).vault /
+            VELD_UNITS;
         std::ostringstream page;
-        page << "<div class=\"stat-grid\" style=\"margin-bottom:20px\">";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Vault Balance</div><div class=\"stat-value gold\">" << std::fixed << std::setprecision(2) << vault_bal << " VELD</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">% of Supply</div><div class=\"stat-value\">" << std::setprecision(3) << vault_pct << "%</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Next Distribution</div><div class=\"stat-value em\">" << next_dist << "</div><div class=\"stat-sub\">blocks (~" << (next_dist*3) << " min)</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Next Vault Block</div><div class=\"stat-value\">" << next_vault_blk << "</div><div class=\"stat-sub\">blocks</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Inflow</div><div class=\"stat-value\">~" << std::setprecision(1) << daily_inflow << "</div><div class=\"stat-sub\">VELD/day into vault</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Payout</div><div class=\"stat-value em\">~" << std::setprecision(1) << daily_payout << "</div><div class=\"stat-sub\">VELD/day to stakers (90% inflow cap)</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Daily Retention</div><div class=\"stat-value gold\">~" << std::setprecision(1) << daily_retention << "</div><div class=\"stat-sub\">VELD/day vault growth (10%)</div></div>";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Dist. Interval</div><div class=\"stat-value\">480</div><div class=\"stat-sub\">blocks (~24h)</div></div>";
+        page << std::fixed << std::setprecision(2);
+        page << R"HTML(<style>
+.vault-policy .tbl{width:100%;min-width:0;table-layout:fixed}
+.vault-policy .tbl th,.vault-policy .tbl td{white-space:normal;overflow-wrap:anywhere;vertical-align:top}
+.vault-policy .tbl th:first-child,.vault-policy .tbl td:first-child{width:32%}
+.vault-policy p+p{margin-top:12px}
+</style><div class="vault-policy"><div class="stat-grid" style="margin-bottom:20px">)HTML";
+        auto stat = [&](const char* label, double value, const char* detail) {
+            page << "<div class=\"stat\"><div class=\"stat-label\">" << label
+                 << "</div><div class=\"stat-value\">" << value << "</div><div class=\"stat-sub\">"
+                 << detail << "</div></div>";
+        };
+        stat("Vault balance", balance, "VELD in the rewards vault");
+        stat("Share of supply", supply > 0 ? balance / supply * 100.0 : 0, "% of issued VELD");
+        stat("Next distribution", (double)next, "blocks remaining");
+        stat("Estimated payout budget", (double)preview.budget / VELD_UNITS,
+             "VELD before recipient limits; not a guaranteed payout");
+        stat("Projected subsidy", projected,
+             "VELD over the next 480 blocks; other incoming funds excluded");
         page << "</div>";
-
-        page << "<div class=\"card\" style=\"border-color:var(--gold)\">";
-        page << "<div class=\"card-title\">Vault Address</div>";
-        page << "<div style=\"font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--gold);word-break:break-all;padding:10px 14px;background:var(--surface2);border-radius:4px;border:1px solid #c9a84c33\">" << current_vault_addr << "</div>";
-        page << "<div style=\"margin-top:12px\"><a href=\"/address/" << current_vault_addr << "\" style=\"display:inline-flex;align-items:center;gap:7px;text-decoration:none;padding:9px 16px;border:1px solid var(--b2);border-radius:10px;background:var(--s2);color:var(--text);font-size:12px;font-weight:600;font-family:var(--sans)\">View full history <span style=\"color:var(--em);font-weight:700\">&rarr;</span></a></div>";
-        page << "</div>";
-
-        page << R"HTML(
-<div class="card">
-  <div class="card-title">Vault Funding Sources</div>
-  <div class="tbl-scroll"><table class="tbl">
-    <thead><tr><th>Source</th><th>Amount</th><th>Frequency</th></tr></thead>
-    <tbody>
-      <tr><td>Block reward cut (20%)</td><td style="color:var(--em)">~0.62785 VELD</td><td style="color:var(--muted)">Every block</td></tr>
-      <tr><td>Vault block (100% reward)</td><td style="color:var(--em)">3.1393 VELD</td><td style="color:var(--muted)">Every 100th block</td></tr>
-      <tr><td>Transaction fees</td><td style="color:var(--em)">Variable (0.001 VELD/tx)</td><td style="color:var(--muted)">Per transaction</td></tr>
-    </tbody>
-  </table>
-</div>
-
-<div class="card">
-  <div class="card-title">Vault Protection System</div>
-  <div class="tbl-scroll"><table class="tbl">
-    <thead><tr><th>#</th><th>Rule</th><th>Effect</th></tr></thead>
-    <tbody>
-      <tr><td style="color:var(--em)">1</td><td>Inflow cap 90%</td><td style="color:var(--muted)">At most 90% of cycle inflow paid out; vault retains &ge;10% as principal growth</td></tr>
-      <tr><td style="color:var(--em)">2</td><td>Backstop ceiling 8%</td><td style="color:var(--muted)">Never more than 8% of vault balance per cycle (defence-in-depth)</td></tr>
-      <tr><td style="color:var(--em)">3</td><td>One dist per cycle</td><td style="color:var(--muted)">No catch-up on missed distributions</td></tr>
-      <tr><td style="color:var(--em)">4</td><td>Liveness check</td><td style="color:var(--muted)">Skip if chain stalled for 2+ hours</td></tr>
-      <tr><td style="color:var(--em)">5</td><td>Min threshold</td><td style="color:var(--muted)">Skip if distribution &lt; 0.0001 VELD</td></tr>
-      <tr><td style="color:var(--em)">6</td><td>Concentration cap 75%</td><td style="color:var(--muted)">No staker receives &gt; 75% of any cycle; excess stays in vault</td></tr>
-      <tr><td style="color:var(--em)">7</td><td>Post-emission inheritance</td><td style="color:var(--muted)">Vault principal accumulated during emission era funds stakers from fees alone after year ~38</td></tr>
-    </tbody>
-  </table>
-</div>
-
+        page << "<div class=\"card\"><div class=\"card-title\">Payout policy</div><p>";
+        if (reserve) {
+            page << "The next distribution uses the 20,000 VELD reserve target. Ordinary payouts "
+                    "continue while the vault builds toward it. Available surplus can increase "
+                    "the payout, subject to the 8% limit per cycle. The target is not a locked "
+                    "balance: ordinary payouts can cross it, and unused payouts stay in the vault.";
+        } else {
+            page << "The next distribution uses the current policy: up to 90% of the cycle's "
+                    "coinbase inflow, limited to 8% of the available rewards-vault balance.";
+        }
+        page << "</p><p class=\"muted\">The estimate uses the current balance and coinbase inflow "
+                "referenced at block "
+             << preview.inflow_reference_height
+             << ". Incoming funds and eligible stake can change before settlement. Validator "
+                "bond principal is held separately and is not part of this budget.</p></div>";
+        page << "<div class=\"card\"><div class=\"card-title\">Vault address</div>"
+             << "<a style=\"word-break:break-all\" href=\"/address/" << address << "\">" << address
+             << "</a></div>";
+        page << R"HTML(<div class="card"><div class="card-title">Where the funds come from</div>
+<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Source</th><th>How it works</th></tr></thead><tbody>
+<tr><td>Block subsidy</td><td>The allocation follows the block's active issuance schedule. Every 100th block allocates its full subsidy to the vault.</td></tr>
+<tr><td>Unclaimed validator rewards</td><td>Endorsement rewards without eligible recipients return to the vault at settlement.</td></tr>
 )HTML";
+        page
+            << "<tr><td>Transaction fees</td><td>"
+            << (miner_fees
+                    ? "Paid entirely to miners; excluded from vault income."
+                    : "Allocated under the current fee policy; future fees are not included in the subsidy projection.")
+            << "</td></tr></tbody></table></div></div>";
+        page << R"HTML(<div class="card"><div class="card-title">Distribution rules</div>
+<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Rule</th><th>Effect</th></tr></thead><tbody>
+<tr><td>8% cycle limit</td><td>The payout budget cannot exceed 8% of available rewards-vault funds.</td></tr>
+<tr><td>480-block interval</td><td>Settlement uses the parent block's state. Funds arriving in the settlement block enter a later cycle.</td></tr>
+<tr><td>75% recipient limit</td><td>No recipient receives more than 75% of the budget. Eligible validator bond yield shares the budget through its separate escrow.</td></tr>
+<tr><td>Unused funds remain</td><td>Rounding, recipient limits and absent eligible stake leave funds in the vault. Budgets below the minimum settle without a payout.</td></tr>
+</tbody></table></div></div></div>)HTML";
         return HttpResponse::HTML(HtmlWrapArcade("Vault", page.str(), "vault"));
     }
 
@@ -6567,29 +6571,63 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 </div>
 <p class="pool-note" id="pool-public-comining-note">The pool needs 1,000 VELD staked to qualify for co-mining. Lottery winnings and staking rewards are shared with contributors.</p>
 <h3>Start pool mining</h3><div class="card"><ol><li>Open Veld Node and select <strong>Pool</strong>.</li><li>Use <code>https://pool.veld.network</code> and enter your own payout address.</li><li>Choose your CPU workers, then select <strong>Start pool mining</strong>.</li></ol><p class="pool-note">No deposit or personal stake required. Multiple machines can use the same payout address. Keep your private keys.</p></div>
-<h3>Your rewards</h3><div class="card"><p>Select <strong>Copy view access</strong> in your node, then open the dashboard to see your balances and payment history.</p><details class="veld-details"><summary>Payment timing</summary><p><span id="pool-public-policy">Loading payment policy…</span> Earned receipts need at least 120 confirmations and must be spendable. Daily processing does not guarantee daily earnings.</p></details><a class="btn" href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Open pool dashboard →</a></div></section>
+<h3>Your rewards</h3><div class="card"><p>Select <strong>Copy view access</strong> in your node, then open the dashboard to see your balances and payment history.</p><section data-veld-help class="veld-details"><button type=button>Payment timing</button><p><span id="pool-public-policy">Loading payment policy…</span> Earned receipts need at least 120 confirmations and must be spendable. Daily processing does not guarantee daily earnings.</p></section><a class="btn" href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Open pool dashboard →</a></div></section>
 <script nonce="__CSP_NONCE__">// Shared public Pool-tab view, embedded in Explorer and portal by the source generator.
 // No account identifiers, cookies, pairing credentials or private tokens leave the page.
 (function(){
   'use strict';
-  var busy=false, next=0, last=null, failed=false;
+  var page=document.querySelector('.pool-page');
+  if(!page||page.dataset.poolStatusController)return;
+  page.dataset.poolStatusController='2';
+  var busy=false, next=0, last=null, failed=false, lastAt=0, operator=null, operatorFailed=false;
   function put(id,value){var e=document.getElementById(id);if(e)e.textContent=value;}
   function render(){
-    put('pool-public-status',failed?'Pool status unavailable. Retrying.':last?last.status:'Connecting to Veld Pool…');
+    var paused=operator&&operator.state==='paused_by_operator';
+    var stale=failed||paused;
+    page.dataset.poolOperatorState=paused?'paused':'unknown';
+    page.dataset.poolStatisticsState=last?(stale?'stale':'fresh'):'unavailable';
+    var message=paused?'Pool mining is paused by the operator. New work and payouts are stopped.':
+      failed?'The statistics refresh is delayed. This does not confirm a pool outage. Retrying automatically.':
+      last?last.status:'Connecting to Veld Pool…';
+    if(paused&&operatorFailed)message+=' The operator notice could not be refreshed.';
+    if(lastAt)message+=(stale?' Last received ':' Updated ')+new Date(lastAt).toLocaleString()+'.';
+    if(stale&&lastAt)message+=' Figures below are the last received values.';
+    put('pool-public-status',message);
     ['active_accounts','verified_shares','reconciled_height'].forEach(function(k){
-      put('pool-public-'+k,!failed&&last&&last[k]!==null?BigInt(last[k]).toLocaleString():'—');
+      put('pool-public-'+k,last&&last[k]!==null?BigInt(last[k]).toLocaleString():'—');
     });
-    put('pool-public-payments',failed||!last?'Unknown':last.payments_enabled?'Enabled':'Not enabled');
-    put('pool-public-comining',failed||!last?'Unknown':last.co_mining_enabled?'Participating':'Not participating yet');
-    var p=!failed&&last&&last.payment_policy;
+    put('pool-public-payments',paused?'Paused':!last?'Unknown':(failed?'Last reported: ':'')+(last.payments_enabled?'Enabled':'Not enabled'));
+    put('pool-public-comining',paused?'Paused':!last?'Unknown':(failed?'Last reported: ':'')+(last.co_mining_enabled?'Participating':'Not participating yet'));
+    put('pool-public-comining-note',paused?'Pool participation is paused. Earlier earned rewards remain recorded.':
+      last?(failed?'Last reported: ':'')+(last.co_mining_enabled?'The pool is participating in co-mining. Only confirmed winnings create earnings.':'The pool needs 1,000 VELD staked to qualify for co-mining.'):
+      'Co-mining participation has not loaded yet.');
+    var intro=page.querySelector('.pool-intro');if(intro)intro.textContent='Pool activity, setup and rewards.';
+    page.querySelectorAll('h3').forEach(function(h){if(h.textContent==='Start pool mining'||h.dataset.poolSetup){h.dataset.poolSetup='true';h.textContent=paused?'Pool setup for when mining resumes':'Start pool mining';}});
+    var p=last&&last.payment_policy;
     put('pool-public-minimum',p?amount(p.minimum_units,8)+' VELD':'—');
     function amount(v,scale){var n=BigInt(v),d=10n**BigInt(scale);return (n/d+'.'+(n%d).toString().padStart(scale,'0')).replace(/\.?0+$/,'');}
-    put('pool-public-policy',p?amount(p.fee_ppm,4)+'% service fee · '+amount(p.minimum_units,8)+' VELD minimum · batches every '+(Number(p.batch_seconds)/3600)+' hours.':'Payment policy unavailable. Check the pool dashboard.');
+    put('pool-public-policy',p?(stale?'Last reported policy: ':'')+amount(p.fee_ppm,4)+'% service fee · '+amount(p.minimum_units,8)+' VELD minimum per payout address · batches every '+(Number(p.batch_seconds)/3600)+' hours.':paused?'Payout processing is paused.':'Payment policy has not loaded yet.');
+  }
+  async function operatorStatus(){
+    if(document.hidden)return;
+    var stop=new AbortController(),timer=setTimeout(function(){stop.abort();},4000);
+    try{
+      var r=await fetch('/assets/pool-service-state.json',{credentials:'omit',redirect:'error',cache:'no-store',signal:stop.signal});
+      if(!r.ok||!r.body)throw Error('notice unavailable');
+      var reader=r.body.getReader(),parts=[],size=0;
+      for(;;){var part=await reader.read();if(part.done)break;size+=part.value.length;if(size>2048){await reader.cancel();throw Error('notice size');}parts.push(part.value);}
+      var bytes=new Uint8Array(size),offset=0;parts.forEach(function(p){bytes.set(p,offset);offset+=p.length;});
+      var value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+      if(value.version!==1||!['paused_by_operator','no_operator_pause'].includes(value.state)||
+         value.chain!=='7be77ab9e820bd9ffb60b269b45ced48288056e5839a1135fafc2f8557000a88'||
+         typeof value.updated_at!=='string'||!Number.isFinite(Date.parse(value.updated_at)))throw Error('notice invalid');
+      operator=value;operatorFailed=false;
+    }catch(_){operatorFailed=true;}finally{clearTimeout(timer);render();document.dispatchEvent(new Event('veld-pool-state'));}
   }
   async function refresh(){
     if(!document.getElementById('pool-public-status')||document.hidden)return;
     render();if(busy||Date.now()<next)return;busy=true;next=Date.now()+15000;
-    var stop=new AbortController(),timer=setTimeout(function(){stop.abort();},5000);
+    var stop=new AbortController(),timer=setTimeout(function(){stop.abort();},8000);
     try{
       var r=await fetch('https://pool.veld.network/v1/public',{credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',redirect:'error',signal:stop.signal});
       if(!r.ok||!r.body)throw Error('unavailable');
@@ -6606,14 +6644,14 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         ['fee_ppm','minimum_units','batch_seconds','revision'].forEach(function(k){if(typeof s.payment_policy[k]!=='string'||!/^(0|[1-9][0-9]{0,19})$/.test(s.payment_policy[k]))throw Error('policy value');});
         if(BigInt(s.payment_policy.fee_ppm)>100000n||BigInt(s.payment_policy.minimum_units)<100000000n||BigInt(s.payment_policy.minimum_units)>1000000000000n||BigInt(s.payment_policy.batch_seconds)<3600n||BigInt(s.payment_policy.batch_seconds)>604800n)throw Error('policy bounds');
       }
-      last=s;failed=false;
-    }catch(_){failed=true;last=null;}finally{clearTimeout(timer);busy=false;render();}
+      last=s;lastAt=Date.now();failed=false;
+    }catch(_){failed=true;}finally{clearTimeout(timer);busy=false;render();}
   }
-  setInterval(refresh,1000);refresh();
+  setInterval(refresh,1000);setInterval(operatorStatus,30000);operatorStatus();refresh();
 })();
 </script>)VLDPOOL";
         page += std::string("<style>") + VELD_POOL_OVERVIEW_CSS + "</style><script nonce=\"__CSP_NONCE__\">" + VELD_POOL_OVERVIEW_JS + "</script>";
-        return HttpResponse::HTML(page + ArcadeFoot());
+        return HttpResponse::HTML(WithHelpDialogs(page + ArcadeFoot()));
     }
 
     HttpResponse ServeMempoolPage() {
@@ -6759,7 +6797,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         bool registration_known = false;
         bool existing_operations_active = false;
         double total_staked = 0.0;
-        double min_stake = (double)MIN_VALIDATOR_STAKE / VELD_UNITS;
+        double min_stake = (double)MinimumValidatorBond(NextInclusionHeight(chain_.Height())) / VELD_UNITS;
         size_t val_count = 0;
         struct VInfo { std::string address; std::string pubkey; uint64_t reg_height = 0; double staked = 0.0; };
         std::vector<VInfo> vlist;
@@ -6863,7 +6901,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
         page << "<div class=\"stat\"><div class=\"stat-label\">Validators</div><div class=\"stat-value em\">" << val_count << "</div></div>";
         {
             double live_min_validator =
-                (double)MIN_VALIDATOR_STAKE / (double)VELD_UNITS;
+                (double)MinimumValidatorBond(NextInclusionHeight(chain_.Height())) / (double)VELD_UNITS;
             page << "<div class=\"stat\"><div class=\"stat-label\">Min Stake to Register</div>"
                  << "<div class=\"stat-value\">" << std::fixed << std::setprecision(0)
                  << live_min_validator << " VELD</div>"
@@ -6896,7 +6934,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
         page << "<div class=\"card\" style=\"margin-bottom:16px\">";
         page << "<div class=\"card-title\">Validator Rewards</div>";
-        page << "<details class=\"veld-details\"><summary>How validator rewards work</summary><p style=\"color:var(--text);font-size:13px;line-height:1.6\">Active validators earn from a shared validator pool funded by <span style=\"color:var(--gold);font-weight:600\">10% of ordinary block subsidy</span>. The pool is flushed every 480 blocks and split proportionally by each validator&#39;s endorsement count over the last 480 blocks.</p></details>";
+        page << "<section data-veld-help class=\"veld-details\"><button type=button>How validator rewards work</button><p style=\"color:var(--text);font-size:13px;line-height:1.6\">Active validators earn from a shared validator pool funded by <span style=\"color:var(--gold);font-weight:600\">" << (CoMiningRetired(NextInclusionHeight(chain_.Height())) ? 20 : chain_.TotalSupplyUnits() >= STAKING_UNLOCK_SUPPLY ? 10 : 0) << "% of ordinary block subsidy</span>. The pool is flushed every 480 blocks and split proportionally by each validator&#39;s endorsement count over the last 480 blocks.</p></section>";
         page << "</div>";
 
         {

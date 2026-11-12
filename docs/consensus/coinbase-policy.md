@@ -6,8 +6,9 @@ existing units; only effective subsidy increases issued supply. The effective
 subsidy is the scheduled reward, including the existing annual adjustment,
 limited by the remaining supply headroom.
 
-`ComputeCoinbaseAllocation` defines the integer allocations. For a positive
-subsidy, the established rules remain:
+`ComputeCoinbaseAllocation` defines the integer allocations. The following
+table describes the historical allocation before the separate miner-fee and
+subsidy-schedule activations:
 
 | Context | Miner | Co-mining pool | Vault | Validator pool |
 | --- | --- | --- | --- | --- |
@@ -19,6 +20,16 @@ Once effective subsidy is zero, every height uses the existing fee-only policy:
 40% of fees to the vault, 10% to the validator pool, and the remainder to the
 miner. Percentage allocations round down in integer units. This takes precedence
 over the periodic subsidy rule, including on a multiple of 100.
+
+The update candidate coordinates two height-gated changes at mainnet block 34,750.
+`MinerFeesActive` sends all authenticated fees to the block miner, permanently,
+including vault-only subsidy blocks and fee-only blocks after the cap. The
+subsidy schedule retires co-mining at its first halving and changes ordinary
+subsidies to 60% miner, 20% vault and 20% validator pool. Vault and validator
+shares round down; the miner receives the remainder. Every 100th block's
+all-vault subsidy is preserved. See [co-mining retirement](co-mining-retirement.md)
+for the final lottery draw and retained reserve. Publication and deployment
+remain pending; see the [activation schedule](../release-3.3.4-activation.md).
 
 Each positive category has exactly one output. The miner output is canonical
 P2PKH. Zero-value payment categories are omitted. When there is neither subsidy

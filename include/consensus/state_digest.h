@@ -24,6 +24,7 @@
 // concurrent readers (each class's existing mutex_ guards the read).
 
 #include "../core/hash.h"
+#include "appchain_activation.h"
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -327,6 +328,20 @@ inline Hash256 ComposeV8(uint64_t height, const Hash256& best_block_hash, const 
     put_bytes(buf, d_finality.data(), d_finality.size());
     put_bytes(buf, d_redeem_bond.data(), d_redeem_bond.size());
     return sha256_of(buf);
+}
+
+// Retain the exact historical digest below activation. The new envelope binds
+// the native bridge ledger as well as every component of the existing digest.
+inline Hash256 WithAppchainBridge(uint64_t height, const Hash256& previous,
+                                  const std::array<uint8_t, 48>& bridge) {
+    if (!AppchainBridgeActive(height))
+        return previous;
+    std::vector<uint8_t> body;
+    put_bytes(body, previous.data(), previous.size());
+    put_bytes(body, bridge.data(), bridge.size());
+    put_u64_le(body, APPCHAIN_BRIDGE_ACTIVATION_HEIGHT);
+    put_bytes(body, APPCHAIN_BRIDGE_DESCRIPTOR.data(), APPCHAIN_BRIDGE_DESCRIPTOR.size());
+    return sha256_domain("VELD_STATE_DIGEST_v9|", body);
 }
 
 namespace tags {

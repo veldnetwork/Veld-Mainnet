@@ -12,20 +12,21 @@ const browserName = process.env.VELD_TEST_BROWSER === 'webkit' ? 'WebKit' : 'Chr
 const {extractFunction} = require('./javascript_function_source');
 const sourcePath = process.env.VELD_WALLET_TEST_SOURCE || path.join(__dirname, '../include/network/ui_desktop.h');
 const source = fs.readFileSync(sourcePath, 'utf8').split(')HTMLEOF"')[0];
+const ownerAddress = process.env.VELD_TEST_OWNER || 'fixture-owner';
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'veld-outbox-controls-'));
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const functions = ['_veldKeyCommitmentToScriptHex', 'hexToBytes', 'bytesToHex', 'sha256Compress', 'sha256', 'sha256d',
   '_veldHexToBytes', '_veldBytesToHex', '_veldParseVarint', '_veldParseUnsignedTx',
-  '_veldAssertPreparedRelaySize', '_veldJournal', '_veldJournalOperation',
+  '_veldAssertPreparedRelaySize', '_veldJournal', '_veldJournalOperation', '_veldNmsTransaction', '_veldNmsReplacement',
   '_veldGetSingleCanonicalOpReturnPayload', '_veldRecoverLegacyTransactions',
-  '_veldJournalSign', '_veldJournalBroadcast', '_veldRetryJournalTransaction',
+  '_veldJournalSign', '_veldJournalBroadcast', '_veldSavedTransactionReceipt', '_veldRetryJournalTransaction',
   '_veldBroadcastExactSigned', 'injectSignatures', 'rpc'];
 const constants = source.slice(source.indexOf('  var K256 = ['), source.indexOf('  function sha256Compress('));
 const application = constants + functions.map(name => extractFunction(source, name)).join('\n');
 const fixture = `
 var VELD_GENESIS_HASH='${'a1'.repeat(32)}', VELD_DEPLOYMENT_PROFILE_ID='disposable-outbox-controls';
-var currentAddr='fixture-owner';
-var owner='fixture-owner', generation=7, signatureCalls=0, sends=[], notifications=[];
+var currentAddr=${JSON.stringify(ownerAddress)};
+var owner=${JSON.stringify(ownerAddress)}, generation=7, signatureCalls=0, sends=[], notifications=[];
 var unavailable=false, selected=[], nodeSpendable=0;
 var __veldTxChannel={postMessage:function(message){notifications.push(message);}};
 var __veldKey={get:function(){return '${'1a'.repeat(32)}';}};
@@ -84,6 +85,29 @@ const results = [];
   origin='http://127.0.0.1:'+server.address().port;
   await launch();
   let p = await page();
+  if(process.env.VELD_TEST_BEFORE_SOURCE){
+    const oldSource=fs.readFileSync(process.env.VELD_TEST_BEFORE_SOURCE,'utf8');
+    await p.evaluate('globalThis._veldJournal = ('+extractFunction(oldSource,'_veldJournal')+');');
+    const broken=await p.evaluate(async()=>{
+      let message='';
+      try{await injectSignatures(unsigned,metadata,__veldKey.get(),null,generation);}
+      catch(error){message=error.message;}
+      return {message,sends:sends.length};
+    });
+    assert.match(broken.message,/recovery data needs attention/);
+    assert.equal(broken.sends,0);
+    await p.evaluate('globalThis._veldJournal = ('+extractFunction(source,'_veldJournal')+');');
+    const preserved=await p.evaluate(async()=>{
+      const entry=await _veldJournal().get(veldCrypto.sha256d(unsigned));
+      signatureCalls=0;
+      return {owner:entry.record.owner,state:entry.record.state,unsigned:entry.payload.unsigned,signed:entry.payload.signed,guards:(await _veldJournal().guards(owner)).size};
+    });
+    assert.equal(preserved.owner,ownerAddress);
+    assert.equal(preserved.state,'reserved');
+    assert.equal(preserved.signed,'');
+    assert.equal(preserved.guards,1);
+    results.push({case:'pre-fix-interrupted-long-address-record-recovered-without-clearing-storage',result:'PASS'});
+  }
   let first = await p.evaluate(async () => {
     const start = performance.now();
     const signed = await injectSignatures(unsigned, metadata, __veldKey.get(), null, generation);
@@ -105,6 +129,16 @@ const results = [];
   await browserContext.close();
   await launch();
   p = await page();
+  const oversizedOwner = await p.evaluate(async () => {
+    let calls=0,message='';
+    try {await _veldJournal().sign(ordinaryTransaction(250,19),metadata,'a'.repeat(76),async()=>{calls++;return unsigned;});}
+    catch(error){message=error.message;}
+    return {calls,message,claims:(await _veldJournal().guards('a'.repeat(76))).size};
+  });
+  assert.match(oversizedOwner.message,/recovery data needs attention/);
+  assert.equal(oversizedOwner.calls,0);
+  assert.equal(oversizedOwner.claims,0);
+  results.push({case:'oversized-owner-rejected-before-persistence-or-signing',result:'PASS'});
   const resumed = await p.evaluate(async txid => {
     await _veldRetryJournalTransaction(txid);
     const row = await _veldJournal().get(txid);
@@ -266,6 +300,6 @@ const results = [];
   await browserContext.close();
   server.close();
   console.log(JSON.stringify({status:'PASS',sourceSHA256:hash(Buffer.from(source)),sourcePath,
-    browser:browserName,version,profile,results,storage,realKeys:0,cryptographicSignatures:0,
+    browser:browserName,version,profile,ownerAddress,results,storage,realKeys:0,cryptographicSignatures:0,
     productionRequests:0,limit:'Disposable browser-engine controls; installed iOS PWA, storage deletion and downgrade remain separate.'},null,2));
 })().catch(async error=>{try{await browserContext?.close();}catch(_){} server.close(); console.error(error);process.exitCode=1;});

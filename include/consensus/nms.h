@@ -6,6 +6,7 @@
 #include "../core/pqc_script.h"
 #include "../core/pow_target.h"
 #include "nms_pow.h"
+#include "co_mining_policy.h"
 #include "../mining/veldhash.h"
 #include "../crypto/ripemd160.h"
 #include <cstdint>
@@ -252,6 +253,10 @@ inline bool ValidateNms(const NmsRecord& rec, const ChainT& chain, uint64_t encl
                         mining::ExpensivePowUse pow_use = mining::ExpensivePowUse::PeerNms) {
     if (local_work_deferred)
         *local_work_deferred = false;
+    // Refuse before cache lookup or memory-hard work. Historical replay uses
+    // its own inclusion height, never the current tip's retirement state.
+    if (CoMiningRetired(enclosing_block_height))
+        return false;
     auto prev_height_opt = chain.GetHeightByHashLocked(rec.header.prev_block_hash);
     if (!prev_height_opt)
         return false;
@@ -314,7 +319,7 @@ inline bool ValidateNms(const NmsRecord& rec, const ChainT& chain, uint64_t encl
     // bypass only the probabilistic near-miss hash comparison itself.
     return true;
 #endif
-    Hash256 pow = mining::VeldHash(hdr_bytes, claim_height, canonical_target);
+    Hash256 pow = mining::VeldHashForVerification(hdr_bytes, claim_height, canonical_target);
     if (!mining::g_veldhash_last_dataset_ok()) {
         // Dataset allocation/generation is local work state, never a negative
         // consensus result and never eligible for the negative NMS cache.

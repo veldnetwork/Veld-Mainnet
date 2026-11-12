@@ -9,6 +9,7 @@
 #include "../core/leveldb.h"
 #include "../core/miner_archive.h"
 #include "../core/address_history.h"
+#include "../core/display_index_repair.h"
 #include "../core/script.h"
 #include "../core/pqc_script.h"
 #include "../core/onchain_tokens.h"
@@ -2003,7 +2004,7 @@ class VeldNode {
             (void)BuildBondSettlementTx(settlement_probe);
             (void)BuildBondYieldSettlementTx(settlement_probe);
         }
-        if (expected_height % COMINE_WINDOW_BLOCKS == 0) {
+        if (CoMiningPayoutDue(expected_height)) {
             (void)BuildPoolPayoutTx(settlement_probe, AddressToScript(POOL_ADDRESS), mempool_);
         }
         std::vector<Transaction> mandatory_settlements = std::move(settlement_probe.transactions);
@@ -2216,6 +2217,39 @@ class VeldNode {
     }
     bool TestRollbackMinerArchiveIndex(const Block& block) {
         return RollbackMinerArchiveIndex_(block);
+    }
+    display_index::ReorgResult TestDisplayIndexReadiness() const {
+        return {miner_archive_ready_.load(), address_history_ready_.load()};
+    }
+    std::string TestDisplayIndexDigest() {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        std::string rows;
+        for (const std::string prefix : {"miner:", "ah2:"})
+            db_.GetIndexDB().Iterate(prefix, [&](const std::string& key, const std::string& value) {
+                rows += std::to_string(key.size()) + ":" + key + std::to_string(value.size()) +
+                        ":" + value;
+                return true;
+            });
+        return HashToHex(Hash256d(reinterpret_cast<const uint8_t*>(rows.data()), rows.size()));
+    }
+    void TestRecoverDisplayIndexesStep() {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        RecoverDisplayIndexesStep_();
+    }
+    void TestInvalidateDisplayIndexes() {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        CloseMinerArchive_();
+        CloseAddressHistory_();
+        miner_rebuild_cursor_.Reset();
+        history_rebuild_cursor_.Reset();
+    }
+    void TestStartDisplayIndexRecoveryOnly() {
+        running_.store(true);
+        StartDisplayIndexRecovery_();
+    }
+    void TestRejectReorgBeforePublication(bool reject) {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        reject_reorg_publication_test_ = reject;
     }
     std::optional<Blockchain::MinerArchiveRecord>
     TestReadMinerArchiveRecord(const std::string& script_hex) {
@@ -3634,6 +3668,7 @@ class VeldNode {
             }
         }
         StartReorgFixupWorker();
+        StartDisplayIndexRecovery_();
     }
 
     void Stop() {
@@ -3650,6 +3685,15 @@ class VeldNode {
         }
         ClearActiveRemoteSigningLeases_();
         NotifyPrewarm_();
+        display_rebuild_cv_.notify_all();
+        std::thread display_to_join;
+        {
+            std::lock_guard<std::mutex> lock(display_rebuild_thread_mutex_);
+            if (display_rebuild_thread_.joinable())
+                display_to_join = std::move(display_rebuild_thread_);
+        }
+        if (display_to_join.joinable())
+            display_to_join.join();
 
         // Oracle and dataset prewarm closures capture this and may touch the
         // chain/TCP/global dataset.  Take ownership under their launch mutexes
@@ -5390,20 +5434,26 @@ class VeldNode {
         Hash256 tip_hash{};
         if (!chain_.IsEmpty())
             tip_hash = chain_.TipCopy().GetHash();
-        if constexpr (btcveld::reserve::TRANSITION_V1_REQUIRED)
-            return state_digest::ComposeV8(
-                chain_.Height(), tip_hash, chain_.UtxoDigest(), validators_.ValidatorsDigest(),
-                staking_.StakingDigest(), validators_.BondYieldEscrowDigest(),
-                chain_.NmsTallyDigest(), onchain_tokens_.Digest(), chain_.SupplyDigest(),
-                governance_.GovernanceDigest(), chain_.NmsExtendedDigest(),
-                btc_headers_.StateDigest(), anchors_.Digest(), amm_.Digest(), fin_state_.Digest(),
-                bond_covenant_.Digest());
-        return state_digest::ComposeV7(
-            chain_.Height(), tip_hash, chain_.UtxoDigest(), validators_.ValidatorsDigest(),
-            staking_.StakingDigest(), validators_.BondYieldEscrowDigest(), chain_.NmsTallyDigest(),
-            onchain_tokens_.Digest(), chain_.SupplyDigest(), governance_.GovernanceDigest(),
-            chain_.NmsExtendedDigest(), btc_headers_.StateDigest(), anchors_.Digest(),
-            amm_.Digest(), fin_state_.Digest(), bond_covenant_.Digest());
+        const Hash256 previous =
+            btcveld::reserve::TRANSITION_V1_REQUIRED
+                ? state_digest::ComposeV8(chain_.Height(), tip_hash, chain_.UtxoDigest(),
+                                          validators_.ValidatorsDigest(), staking_.StakingDigest(),
+                                          validators_.BondYieldEscrowDigest(),
+                                          chain_.NmsTallyDigest(), onchain_tokens_.Digest(),
+                                          chain_.SupplyDigest(), governance_.GovernanceDigest(),
+                                          chain_.NmsExtendedDigest(), btc_headers_.StateDigest(),
+                                          anchors_.Digest(), amm_.Digest(), fin_state_.Digest(),
+                                          bond_covenant_.Digest())
+                : state_digest::ComposeV7(chain_.Height(), tip_hash, chain_.UtxoDigest(),
+                                          validators_.ValidatorsDigest(), staking_.StakingDigest(),
+                                          validators_.BondYieldEscrowDigest(),
+                                          chain_.NmsTallyDigest(), onchain_tokens_.Digest(),
+                                          chain_.SupplyDigest(), governance_.GovernanceDigest(),
+                                          chain_.NmsExtendedDigest(), btc_headers_.StateDigest(),
+                                          anchors_.Digest(), amm_.Digest(), fin_state_.Digest(),
+                                          bond_covenant_.Digest());
+        return state_digest::WithAppchainBridge(chain_.Height(), previous,
+                                                chain_.AppBridgeDigest());
     }
 
   public:
@@ -5695,6 +5745,14 @@ class VeldNode {
     std::atomic<bool> address_history_ready_{false};
     std::atomic<uint64_t> address_history_revision_{0};
     std::atomic<uint32_t> address_history_queries_{0};
+    display_index::ReorgResult reorg_display_ready_;
+#ifdef VELD_TEST_HOOKS
+    bool reject_reorg_publication_test_{false};
+#endif
+    display_index::RebuildCursor miner_rebuild_cursor_, history_rebuild_cursor_;
+    std::thread display_rebuild_thread_;
+    std::mutex display_rebuild_thread_mutex_, display_rebuild_wait_mutex_;
+    std::condition_variable display_rebuild_cv_;
 
     mutable std::mutex on_commit_serial_mutex_;
 
@@ -6818,6 +6876,127 @@ class VeldNode {
     }
 
 #endif // VELD_ENABLE_SNAPSHOT_BOOTSTRAP
+
+    // The private appchain runtime supplies an already signed ordinary carrier.
+    // Build with the normal settlement, mempool and coinbase machinery in a
+    // temporary selection. This does not broadcast or admit to either chain.
+    Block BuildAppchainCarrierTemplate(const Transaction& carrier,
+                                       const std::vector<uint8_t>& miner_script, uint64_t timestamp,
+                                       uint64_t fee_cap) {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        return BuildAppchainCarrierTemplateUnderTransition_(carrier, miner_script, timestamp,
+                                                            fee_cap);
+    }
+
+    // RPC holds the canonical transition guard across construction, retention
+    // and authorization. Callers must not reacquire it inside this callback.
+    Block BuildAppchainCarrierTemplateUnderTransition_(const Transaction& carrier,
+                                                       const std::vector<uint8_t>& miner_script,
+                                                       uint64_t timestamp, uint64_t fee_cap) {
+#if defined(VELD_FLEET_NO_MINE)
+        throw std::runtime_error("VELD_FLEET_NO_MINE: appchain work disabled");
+#else
+        if (!ChainFullyValidated() || FailStopRequired() || chain_.IsEmpty())
+            throw std::runtime_error("full native carrier context unavailable");
+        app::need(AppchainBridgeActive(chain_.Height() + 1) &&
+                      app::bridge::ordinary(miner_script) && carrier.inputs.size() == 1 &&
+                      carrier.outputs.size() == 2 && carrier.Serialize().size() <= 24576,
+                  "bounded active ordinary carrier required");
+        const auto& input = carrier.inputs.front();
+        const auto coin = chain_.GetUTXO(input.prev_tx_hash, input.prev_out_index);
+        const auto outputs = carrier.TotalOutput();
+        app::need(coin && app::bridge::ordinary(coin->script_pubkey) && outputs <= coin->value &&
+                      coin->value - outputs <= fee_cap && coin->value - outputs >= MIN_TX_FEE,
+                  "native carrier funding or fee limit");
+        Mempool isolated;
+        app::need(isolated.Add(carrier, coin->value - outputs, chain_.Height(), chain_) ==
+                      Mempool::AddResult::ACCEPTED,
+                  "native carrier signature or admission refused");
+        RealKeyPair recipient;
+        recipient.script_override = miner_script;
+        const auto settlements = PrepareMiningSettlements_();
+        const auto metadata = PendingFinalityCoinbaseMetadataUnderTransition_(settlements.height);
+        size_t bytes = 0, count = 0;
+        const auto coinbase_bytes = MaxCanonicalMiningCoinbaseSize(
+            settlements.height, miner_script, AddressToScript(POOL_ADDRESS),
+            AddressToScript(VaultAddressAtHeight(settlements.height)),
+            AddressToScript(ENDORSEMENT_POOL_ADDRESS), metadata);
+        app::need(
+            ComputeMiningMempoolBudget(coinbase_bytes, settlements.transactions, &bytes, &count) &&
+                bytes >= carrier.Serialize().size() && count > 0,
+            "native carrier template capacity");
+        // Reserve the already funded carrier before selecting ordinary work.
+        // A full mempool must not silently turn every merged block into an
+        // empty block. The common selector still applies full-module preflight.
+        for (const auto& [tx, fee] : mempool_.GetBlockTransactionsWithFees(
+                 std::min<size_t>(count, 999) - 1, bytes - carrier.Serialize().size(), &chain_)) {
+            if (tx.GetTxID() != carrier.GetTxID())
+                isolated.Add(tx, fee, chain_.Height(), chain_);
+        }
+        auto result = MineOnly(
+            chain_, isolated, recipient, 0, nullptr, AddressToScript(POOL_ADDRESS), 1, nullptr, {},
+            nullptr, nullptr, settlements.transactions,
+            [this](const Block& block) { return PreflightMiningCandidateUnderTransition_(block); },
+            metadata, true);
+        app::need(result.success, "native carrier template could not be built");
+        result.block.header.timestamp = timestamp;
+        const auto selected =
+            std::find_if(result.block.transactions.begin() + 1, result.block.transactions.end(),
+                         [&](const Transaction& tx) { return tx.GetTxID() == carrier.GetTxID(); });
+        app::need(std::count_if(result.block.transactions.begin() + 1,
+                                result.block.transactions.end(),
+                                [&](const Transaction& tx) {
+                                    return tx.GetTxID() == carrier.GetTxID();
+                                }) == 1,
+                  "native carrier was omitted by canonical template selection");
+        app::need(PreflightMiningCandidateUnderTransition_(result.block),
+                  "native carrier template module preflight refused");
+        if (!chain_.AppAuxiliaryTemplateUnderTransition(
+                result.block, size_t(selected - result.block.transactions.begin())))
+            throw app::Invalid("native carrier template consensus preflight: " +
+                               Blockchain::GetLastRejectTag());
+        return result.block;
+#endif
+    }
+#if defined(VELD_APPCHAIN_FULL_QUALIFICATION) || defined(VELD_DEVELOPER_TESTNET)
+#if defined(VELD_APPCHAIN_FULL_QUALIFICATION)
+#if !defined(VELD_APPCHAIN_BRIDGE_DEVNET) || !defined(VELD_DSTATE_QUALIFICATION) ||                \
+    !defined(VELD_USE_LEVELDB) || defined(VELD_PUBLIC_RELEASE) || defined(VELD_LIGHT_VERIFY) ||    \
+    defined(VELD_TEST_HOOKS) || defined(VELD_TEST_DATASET_BYTES)
+#error "Full bridge qualification requires isolated full native validation"
+#endif
+#endif
+    // Isolated integration obtains the production all-module candidate without
+    // opening listeners or bypassing the proof/signature/admission validators.
+    // The caller must mine it and submit it through ordinary AddBlockDirect.
+#ifdef VELD_DEVELOPER_TESTNET
+    Block BuildDeveloperTestnetCandidate(const std::vector<uint8_t>& script,
+#else
+    Block BuildAppchainQualificationCandidate(const std::vector<uint8_t>& script,
+#endif
+                                         uint64_t timestamp) {
+        if (!ChainFullyValidated() || FailStopRequired() || chain_.IsEmpty())
+            throw std::runtime_error("full native qualification context is unavailable");
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        RealKeyPair recipient;
+        recipient.script_override = script;
+        const auto settlements = PrepareMiningSettlements_();
+        const auto metadata = PendingFinalityCoinbaseMetadataUnderTransition_(settlements.height);
+        auto result = MineOnly(
+            chain_, mempool_, recipient, 0, nullptr, AddressToScript(POOL_ADDRESS), 1, nullptr, {},
+            nullptr, nullptr, settlements.transactions,
+            [this](const Block& candidate) {
+                return PreflightMiningCandidateUnderTransition_(candidate);
+            },
+            metadata, true);
+        if (!result.success)
+            throw std::runtime_error("full native qualification candidate: " + result.error);
+        result.block.header.timestamp = timestamp;
+        if (!PreflightMiningCandidateUnderTransition_(result.block))
+            throw std::runtime_error("full native qualification module preflight failed");
+        return result.block;
+    }
+#endif
 
     bool DurableWriteControlFile_(const std::string& path, const std::string& body) const {
         const std::string tmp = path + ".new";
@@ -10564,6 +10743,9 @@ class VeldNode {
 
 #ifdef VELD_TEST_HOOKS
   public:
+    VaultLedger::StateSnapshot TestVaultAccountingSnapshot() const {
+        return vault_.SnapshotState();
+    }
 #if defined(VELD_DSTATE_QUALIFICATION) && defined(VELD_ENABLE_SNAPSHOT_BOOTSTRAP)
     void TestCaptureBackgroundValidationTarget() {
         MaybeCaptureBackgroundValidationTarget_();
@@ -11800,7 +11982,7 @@ class VeldNode {
         CloseAddressHistory_();
         try {
             if (!was_ready)
-                return RebuildAddressHistoryIndex_();
+                return block.height == 0 ? RebuildAddressHistoryIndex_() : false;
             const bool ok = address_history::Advance(db_.GetIndexDB(), block);
             if (ok)
                 OpenAddressHistory_();
@@ -11851,7 +12033,7 @@ class VeldNode {
             // the newly published marker must not close a healthy index.
             // Release the sequencer before formatting the response. The
             // four-query admission bound above also limits waiting readers.
-            auto transition = chain_.AcquireConsensusTransitionGuard();
+            auto transition = AcquireRpcReadTransitionGuard(chain_);
             if (!address_history_ready_.load(std::memory_order_acquire))
                 throw std::runtime_error("address history index is rebuilding; retry shortly");
             if (chain_.IsEmpty())
@@ -12139,282 +12321,147 @@ class VeldNode {
     }
 
     bool RebuildMinerArchiveIndex_() {
-        {
-            CloseMinerArchive_();
-            try {
-                std::optional<std::pair<uint64_t, Hash256>> tip;
-                if (!chain_.IsEmpty())
-                    tip = std::make_pair(chain_.Height(), chain_.TipCopy().GetHash());
-                const bool ok = miner_archive::Rebuild(
-                    db_.GetIndexDB(), tip, [this](uint64_t h) { return chain_.GetBlock(h); },
-                    [this](uint64_t h, const Hash256& hash) {
-                        return !chain_.IsEmpty() && chain_.Height() == h &&
-                               chain_.TipCopy().GetHash() == hash;
-                    });
-                if (ok)
-                    OpenMinerArchive_();
-                return ok;
-            } catch (...) {
-                miner_archive_ready_.store(false, std::memory_order_release);
-                return false;
-            }
-        }
         CloseMinerArchive_();
         try {
-            // Remove completion markers first. A crash during any later page
-            // leaves a visibly incomplete archive which startup must rebuild;
-            // it can never expose a stale tip over partially replaced rows.
-            veld::db::WriteBatch invalidate;
-            invalidate.Delete(MINER_ARCHIVE_HEIGHT_KEY_);
-            invalidate.Delete(MINER_ARCHIVE_HASH_KEY_);
-            if (!db_.GetIndexDB().Write(invalidate) ||
-                !DeleteMinerArchivePrefixBatched_(MINER_ARCHIVE_COUNT_PREFIX_) ||
-                !DeleteMinerArchivePrefixBatched_(MINER_ARCHIVE_LAST_PREFIX_) ||
-                !DeleteMinerArchivePrefixBatched_(MINER_ARCHIVE_UNDO_PREFIX_))
-                return false;
-
-            if (chain_.IsEmpty()) {
-                OpenMinerArchive_();
-                return true;
-            }
-
-            const uint64_t tip_height = chain_.Height();
-            const Hash256 tip_hash = chain_.TipCopy().GetHash();
-            std::unordered_map<std::string, Blockchain::MinerArchiveRecord> pending;
-            std::vector<std::pair<std::string, std::string>> pending_undo;
-            size_t blocks_buffered = 0;
-            auto flush = [&]() -> bool {
-                if (pending.empty() && pending_undo.empty()) {
-                    blocks_buffered = 0;
-                    return true;
-                }
-                std::vector<std::string> scripts;
-                scripts.reserve(pending.size());
-                for (const auto& [script, _record] : pending)
-                    scripts.push_back(script);
-                std::sort(scripts.begin(), scripts.end());
-                std::sort(pending_undo.begin(), pending_undo.end());
-                veld::db::WriteBatch page;
-                for (const auto& script : scripts) {
-                    const auto& record = pending.at(script);
-                    page.Put(std::string(MINER_ARCHIVE_COUNT_PREFIX_) + script,
-                             std::to_string(record.blocks_mined));
-                    page.Put(std::string(MINER_ARCHIVE_LAST_PREFIX_) + script,
-                             std::to_string(record.last_block_mined));
-                }
-                for (const auto& [key, value] : pending_undo)
-                    page.Put(key, value);
-                if (!db_.GetIndexDB().Write(page))
-                    return false;
-                pending.clear();
-                pending_undo.clear();
-                blocks_buffered = 0;
-                return true;
-            };
-
-            for (uint64_t h = 0; h <= tip_height; ++h) {
-                const Block block = chain_.GetBlock(h);
-                for (const auto& script : Blockchain::MinerScriptsForArchive(block)) {
-                    auto found = pending.find(script);
-                    if (found == pending.end()) {
-                        Blockchain::MinerArchiveRecord current;
-                        if (!ReadMinerArchiveRecordRaw_(script, current))
-                            return false;
-                        found = pending.emplace(script, current).first;
-                    }
-                    auto& record = found->second;
-                    if (record.blocks_mined == UINT64_MAX)
-                        return false;
-                    const Blockchain::MinerArchiveRecord prior = record;
-                    ++record.blocks_mined;
-                    record.last_block_mined = h;
-                    if (tip_height - h <= MAX_REORG_DEPTH) {
-                        pending_undo.emplace_back(MinerArchiveUndoKey_(h, script),
-                                                  EncodeMinerArchiveUndo_(prior));
-                    }
-                }
-                ++blocks_buffered;
-                if (blocks_buffered >= MINER_ARCHIVE_REBUILD_BATCH_BLOCKS_ && !flush())
-                    return false;
-            }
-            if (!flush())
-                return false;
-            if (chain_.Height() != tip_height || chain_.TipCopy().GetHash() != tip_hash)
-                return false;
-
-            veld::db::WriteBatch complete;
-            complete.Put(MINER_ARCHIVE_HEIGHT_KEY_, std::to_string(tip_height));
-            complete.Put(MINER_ARCHIVE_HASH_KEY_, HashToHex(tip_hash));
-            const bool ok = db_.GetIndexDB().Write(complete);
+            std::optional<std::pair<uint64_t, Hash256>> tip;
+            if (!chain_.IsEmpty())
+                tip = std::make_pair(chain_.Height(), chain_.TipCopy().GetHash());
+            const bool ok = miner_archive::Rebuild(
+                db_.GetIndexDB(), tip, [this](uint64_t h) { return chain_.GetBlock(h); },
+                [this](uint64_t h, const Hash256& hash) {
+                    return !chain_.IsEmpty() && chain_.Height() == h &&
+                           chain_.TipCopy().GetHash() == hash;
+                });
             if (ok)
                 OpenMinerArchive_();
             return ok;
         } catch (...) {
-            miner_archive_ready_.store(false, std::memory_order_release);
             return false;
         }
     }
 
     bool AdvanceMinerArchiveIndex_(const Block& block) {
-        {
-            const bool was_ready = miner_archive_ready_.load(std::memory_order_acquire);
-            CloseMinerArchive_();
-            if (!was_ready)
-                return RebuildMinerArchiveIndex_();
-            const auto result = miner_archive::Advance(db_.GetIndexDB(), block);
-            if (result == miner_archive::AdvanceResult::ParentMismatch)
-                return RebuildMinerArchiveIndex_();
-            const bool ok = result == miner_archive::AdvanceResult::Ok;
-            if (ok)
-                OpenMinerArchive_();
-            return ok;
-        }
         const bool was_ready = miner_archive_ready_.load(std::memory_order_acquire);
         CloseMinerArchive_();
-        try {
-            // Once any reader/rollback has detected corruption, do not reopen
-            // by validating only the current miner's row. Rebuild every row
-            // from canonical bodies before publishing this tip.
-            if (!was_ready)
-                return RebuildMinerArchiveIndex_();
-            auto stored_height = db_.GetIndexDB().Get(MINER_ARCHIVE_HEIGHT_KEY_);
-            auto stored_hash = db_.GetIndexDB().Get(MINER_ARCHIVE_HASH_KEY_);
-            bool parent_matches = false;
-            if (block.height == 0) {
-                parent_matches = !stored_height && !stored_hash;
-            } else if (stored_height && stored_hash) {
-                uint64_t parsed_height = 0;
-                parent_matches = ParseMinerArchiveUint64_(*stored_height, parsed_height) &&
-                                 parsed_height == block.height - 1 &&
-                                 *stored_hash == HashToHex(block.header.prev_block_hash);
-            }
-            if (!parent_matches)
-                return RebuildMinerArchiveIndex_();
-
-            veld::db::WriteBatch batch;
-            for (const auto& script : Blockchain::MinerScriptsForArchive(block)) {
-                const std::string count_key = std::string(MINER_ARCHIVE_COUNT_PREFIX_) + script;
-                const std::string last_key = std::string(MINER_ARCHIVE_LAST_PREFIX_) + script;
-                auto count_raw = db_.GetIndexDB().Get(count_key);
-                auto last_raw = db_.GetIndexDB().Get(last_key);
-                Blockchain::MinerArchiveRecord prior;
-                if (count_raw || last_raw) {
-                    if (!count_raw || !last_raw ||
-                        !ParseMinerArchiveUint64_(*count_raw, prior.blocks_mined) ||
-                        !ParseMinerArchiveUint64_(*last_raw, prior.last_block_mined) ||
-                        prior.blocks_mined == 0 || prior.blocks_mined == UINT64_MAX ||
-                        prior.last_block_mined >= block.height)
-                        return false;
-                }
-                batch.Put(MinerArchiveUndoKey_(block.height, script),
-                          EncodeMinerArchiveUndo_(prior));
-                batch.Put(count_key, std::to_string(prior.blocks_mined + 1));
-                batch.Put(last_key, std::to_string(block.height));
-            }
-            if (block.height > MAX_REORG_DEPTH) {
-                const std::string expired =
-                    MinerArchiveUndoHeightPrefix_(block.height - MAX_REORG_DEPTH - 1);
-                db_.GetIndexDB().Iterate(expired, [&](const std::string& key, const std::string&) {
-                    batch.Delete(key);
-                    return true;
-                });
-            }
-            batch.Put(MINER_ARCHIVE_HEIGHT_KEY_, std::to_string(block.height));
-            batch.Put(MINER_ARCHIVE_HASH_KEY_, HashToHex(block.GetHash()));
-            const bool ok = db_.GetIndexDB().Write(batch);
-            if (ok)
-                OpenMinerArchive_();
-            return ok;
-        } catch (...) {
-            miner_archive_ready_.store(false, std::memory_order_release);
-            return false;
-        }
+        if (!was_ready)
+            return block.height == 0 ? RebuildMinerArchiveIndex_() : false;
+        const bool ok =
+            miner_archive::Advance(db_.GetIndexDB(), block) == miner_archive::AdvanceResult::Ok;
+        if (ok)
+            OpenMinerArchive_();
+        return ok;
     }
 
     bool RollbackMinerArchiveIndex_(const Block& popped) {
-        {
-            if (!miner_archive_ready_.load(std::memory_order_acquire))
-                return false;
-            CloseMinerArchive_();
-            const bool ok = miner_archive::Rollback(db_.GetIndexDB(), popped);
-            if (ok)
-                OpenMinerArchive_();
-            return ok;
-        }
-        // Called from Blockchain while its unique consensus lock is held.
-        // This path must use only the bounded archival undo row; never call
-        // chain_.Height/GetBlock/Rebuild here or it will self-deadlock.
         if (!miner_archive_ready_.load(std::memory_order_acquire))
             return false;
         CloseMinerArchive_();
-        try {
-            auto stored_height = db_.GetIndexDB().Get(MINER_ARCHIVE_HEIGHT_KEY_);
-            auto stored_hash = db_.GetIndexDB().Get(MINER_ARCHIVE_HASH_KEY_);
-            uint64_t parsed_height = 0;
-            // AddBlockDirect invokes on_rollback after any on_commit failure.
-            // If that failure happened before AdvanceMinerArchiveIndex_, the
-            // archive is already at the exact parent (or empty for a failed
-            // genesis commit). Treat that frame as an idempotent successful
-            // rollback. Anything else is corruption/staleness and fails
-            // closed; notably this does not relax GetLastBlockMined policy.
-            if (!stored_height && !stored_hash) {
-                const bool exact_empty_parent = popped.height == 0;
-                if (exact_empty_parent)
-                    OpenMinerArchive_();
-                return exact_empty_parent;
-            }
-            if (!stored_height || !stored_hash ||
-                !ParseMinerArchiveUint64_(*stored_height, parsed_height))
-                return false;
-            if (popped.height > 0 && parsed_height == popped.height - 1 &&
-                *stored_hash == HashToHex(popped.header.prev_block_hash)) {
-                OpenMinerArchive_();
-                return true;
-            }
-            if (parsed_height != popped.height || *stored_hash != HashToHex(popped.GetHash()))
-                return false;
+        const bool ok = miner_archive::Rollback(db_.GetIndexDB(), popped);
+        if (ok)
+            OpenMinerArchive_();
+        return ok;
+    }
 
-            veld::db::WriteBatch batch;
-            for (const auto& script : Blockchain::MinerScriptsForArchive(popped)) {
-                const std::string count_key = std::string(MINER_ARCHIVE_COUNT_PREFIX_) + script;
-                const std::string last_key = std::string(MINER_ARCHIVE_LAST_PREFIX_) + script;
-                const std::string undo_key = MinerArchiveUndoKey_(popped.height, script);
-                auto count_raw = db_.GetIndexDB().Get(count_key);
-                auto last_raw = db_.GetIndexDB().Get(last_key);
-                auto undo_raw = db_.GetIndexDB().Get(undo_key);
-                uint64_t count = 0, last = 0;
-                Blockchain::MinerArchiveRecord prior;
-                if (!count_raw || !last_raw || !undo_raw ||
-                    !ParseMinerArchiveUint64_(*count_raw, count) ||
-                    !ParseMinerArchiveUint64_(*last_raw, last) ||
-                    !ParseMinerArchiveUndo_(*undo_raw, prior) || count == 0 ||
-                    last != popped.height || prior.blocks_mined + 1 != count ||
-                    (prior.blocks_mined > 0 && prior.last_block_mined >= popped.height))
-                    return false;
-                if (prior.blocks_mined == 0) {
-                    batch.Delete(count_key);
-                    batch.Delete(last_key);
-                } else {
-                    batch.Put(count_key, std::to_string(prior.blocks_mined));
-                    batch.Put(last_key, std::to_string(prior.last_block_mined));
-                }
-                batch.Delete(undo_key);
-            }
-            if (popped.height == 0) {
-                batch.Delete(MINER_ARCHIVE_HEIGHT_KEY_);
-                batch.Delete(MINER_ARCHIVE_HASH_KEY_);
-            } else {
-                batch.Put(MINER_ARCHIVE_HEIGHT_KEY_, std::to_string(popped.height - 1));
-                batch.Put(MINER_ARCHIVE_HASH_KEY_, HashToHex(popped.header.prev_block_hash));
-            }
-            const bool ok = db_.GetIndexDB().Write(batch);
-            if (ok)
-                OpenMinerArchive_();
-            return ok;
+    void RestoreDisplayReadinessAfterAbort_(const Block& old_tip) {
+        if (reorg_display_ready_.miner &&
+            MinerArchiveMarkersMatch_(old_tip.height, old_tip.GetHash()))
+            OpenMinerArchive_();
+        if (reorg_display_ready_.history &&
+            address_history::MarkersMatch(db_.GetIndexDB(), old_tip.height, old_tip.GetHash()))
+            OpenAddressHistory_();
+    }
+
+    void RepairDisplayIndexesAfterReorg_() {
+        const auto started = std::chrono::steady_clock::now();
+        display_index::ReorgResult result;
+        try {
+            if (!reorg_derived_index_frame_)
+                throw std::runtime_error("missing derived reorg frame");
+            const auto& f = *reorg_derived_index_frame_;
+            result = display_index::RepairReorg(
+                db_.GetIndexDB(), f.ancestor_height, f.ancestor_hash, f.old_height, f.old_hash,
+                f.new_height, f.new_hash, reorg_display_ready_,
+                [this](uint64_t h, const Hash256& hash) {
+                    const auto block = chain_.GetBlockByHash(hash);
+                    if (!block || block->height != h)
+                        throw std::runtime_error("displaced block unavailable");
+                    return *block;
+                },
+                [this](uint64_t h) { return chain_.GetBlock(h); });
         } catch (...) {
-            miner_archive_ready_.store(false, std::memory_order_release);
-            return false;
+            result = {};
         }
+        if (result.miner)
+            OpenMinerArchive_();
+        if (result.history)
+            OpenAddressHistory_();
+        // A cursor started on a different branch must not reuse an old partial
+        // cleanup or prefix. Recovery takes one bounded step after this commit.
+        miner_rebuild_cursor_.Reset();
+        history_rebuild_cursor_.Reset();
+        std::cerr << "  [display-index] reorg repair ms="
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now() - started)
+                         .count()
+                  << " miner=" << result.miner << " history=" << result.history
+                  << " deferred=" << (!result.miner || !result.history) << "\n";
+        display_rebuild_cv_.notify_all();
+    }
+
+    void RecoverDisplayIndexesStep_() try {
+        if (chain_.IsEmpty() || FailStopRequired())
+            return;
+        const auto height = chain_.Height();
+        const auto hash = chain_.TipCopy().GetHash();
+        const auto step = [&](display_index::Kind kind, display_index::RebuildCursor& cursor) {
+            auto result = cursor.Step(db_.GetIndexDB(), kind, height, hash,
+                                      [this](uint64_t h) { return chain_.GetBlock(h); });
+            if (result == display_index::StepResult::Failed) {
+                cursor.Reset();
+                throw std::runtime_error("derived index recovery step failed");
+            }
+            return result == display_index::StepResult::Complete;
+        };
+        if (!miner_archive_ready_.load(std::memory_order_acquire) &&
+            step(display_index::Kind::Miner, miner_rebuild_cursor_))
+            OpenMinerArchive_();
+        if (!address_history_ready_.load(std::memory_order_acquire) &&
+            step(display_index::Kind::History, history_rebuild_cursor_))
+            OpenAddressHistory_();
+    } catch (...) {
+        // This helper is always called under the transition guard, including
+        // exception cleanup. Commit callbacks touch these same cursors.
+        miner_rebuild_cursor_.Reset();
+        history_rebuild_cursor_.Reset();
+        throw;
+    }
+
+    void StartDisplayIndexRecovery_() {
+        std::lock_guard<std::mutex> lock(display_rebuild_thread_mutex_);
+        if (display_rebuild_thread_.joinable() || !running_.load())
+            return;
+        display_rebuild_thread_ = std::thread([this]() {
+            while (running_.load(std::memory_order_acquire)) {
+                auto delay = std::chrono::milliseconds(250);
+                const bool needed = !miner_archive_ready_.load(std::memory_order_acquire) ||
+                                    !address_history_ready_.load(std::memory_order_acquire);
+                if (needed) {
+                    try {
+                        auto transition = chain_.TryAcquireConsensusTransitionGuard();
+                        if (transition.OwnsLock() && running_.load())
+                            RecoverDisplayIndexesStep_();
+                        delay = std::chrono::milliseconds(2);
+                    } catch (...) {
+                        // Cursor state and the derived DB may be partial. Keep
+                        // reads closed and restart cleanup on the next attempt.
+                        delay = std::chrono::milliseconds(1000);
+                    }
+                }
+                std::unique_lock<std::mutex> wait_lock(display_rebuild_wait_mutex_);
+                display_rebuild_cv_.wait_for(wait_lock, delay,
+                                             [this]() { return !running_.load(); });
+            }
+        });
     }
 
     void WireDB() {
@@ -12464,6 +12511,12 @@ class VeldNode {
                 throw std::runtime_error("canonical mining builder: " + result.error);
             return result.block;
 #endif
+        });
+        rpc_.SetAuxiliaryTemplateBuilderFn([this](const Transaction& carrier,
+                                                  const std::vector<uint8_t>& miner_script,
+                                                  uint64_t timestamp, uint64_t fee_cap) {
+            return BuildAppchainCarrierTemplateUnderTransition_(carrier, miner_script, timestamp,
+                                                                fee_cap);
         });
         rpc_.SetMiningTemplatePreflightFn([this](const Block& candidate) {
             // RpcServer owns the consensus transition guard across the exact
@@ -12571,11 +12624,10 @@ class VeldNode {
                                  const Hash256& ancestor_hash, const Block& old_tip,
                                  uint64_t old_supply, const Block& intended_new_tip,
                                  uint64_t intended_new_supply) {
-            // Archive rows still name the old canonical tip until the complete
-            // replacement branch publishes. Hide them throughout the staged
-            // reorg; the final on-commit rebuild, or an identity-checked abort,
-            // is the only operation allowed to reopen display reads.
-            miner_archive_ready_.store(false, std::memory_order_release);
+            reorg_display_ready_ = {miner_archive_ready_.load(std::memory_order_acquire),
+                                    address_history_ready_.load(std::memory_order_acquire)};
+            CloseMinerArchive_();
+            CloseAddressHistory_();
             try {
                 if (reorg_utxo_pending_ || reorg_derived_index_frame_ ||
                     reorg_transaction_modules_ || !reorg_block_publication_stages_.empty() ||
@@ -12666,9 +12718,7 @@ class VeldNode {
                         reorg_block_publication_stages_.clear();
                         reorg_displaced_txindex_rows_.clear();
                         reorg_derived_index_frame_.reset();
-                        miner_archive_ready_.store(
-                            MinerArchiveMarkersMatch_(old_tip.height, old_tip.GetHash()),
-                            std::memory_order_release);
+                        RestoreDisplayReadinessAfterAbort_(old_tip);
                     }
                     return untouched;
                 }
@@ -12691,9 +12741,7 @@ class VeldNode {
                 reorg_block_publication_stages_.clear();
                 reorg_displaced_txindex_rows_.clear();
                 reorg_derived_index_frame_.reset();
-                miner_archive_ready_.store(
-                    MinerArchiveMarkersMatch_(old_tip.height, old_tip.GetHash()),
-                    std::memory_order_release);
+                RestoreDisplayReadinessAfterAbort_(old_tip);
                 return true;
             } catch (const db::DurableWriteUncertain& e) {
                 FailStopDurableCommitInvariant_(
@@ -12973,6 +13021,10 @@ class VeldNode {
             if (from_reorg && reorg_publication_uncertain_.load(std::memory_order_acquire)) {
                 return true;
             }
+#ifdef VELD_TEST_HOOKS
+            if (from_reorg && reject_reorg_publication_test_)
+                return false;
+#endif
 
             // Wrap entire callback in try/catch — a LevelDB IO error or any other
             // exception must NOT propagate out of on_commit_ into AddBlockDirect callers
@@ -13097,8 +13149,9 @@ class VeldNode {
                     throw std::runtime_error("module/canonical supply mismatch at h=" +
                                              std::to_string(block.height));
                 }
-                // Fee routing: 100% of tx fees go to vault via coinbase.
-                // MineOnly adds total_tx_fees directly into the vault coinbase output.
+                // Before miner-fee activation, fees follow the historical
+                // coinbase allocation. After activation they belong to miners
+                // and must not be published as vault income below.
                 // The on_commit_ callback does NOT need to separately deposit fees —
                 // they are already on-chain as a vault UTXO via the coinbase split.
                 // vault_.Deposit() is only used for the in-memory accounting ledger.
@@ -13154,7 +13207,8 @@ class VeldNode {
                     current_publication_stage.hash = block.GetHash();
                     current_publication_stage.bits = block.header.bits;
                     current_publication_stage.module_supply = module_supply_after;
-                    current_publication_stage.vault_fees = block_fees;
+                    current_publication_stage.vault_fees =
+                        MinerFeesActive(block.height) ? 0 : block_fees;
                     current_publication_stage.vault_reserve_payout =
                         staking_.GetReserveBlockPayout(module_supply_after);
                     current_publication_stage.redeems = onchain_tokens_.LastBlockRedeemsCopy();
@@ -13524,37 +13578,17 @@ class VeldNode {
                     }
                 }
 
-                // Lifetime miner totals are a display-only, rebuildable archival
-                // index. Linear commits advance atomically. Reorg callbacks leave
-                // the old canonical index untouched until the complete new branch
-                // is durable, then rebuild it from canonical block bodies once.
-                if (from_reorg)
-                    miner_archive_ready_.store(false, std::memory_order_release);
-                const bool archive_ok =
-                    from_reorg
-                        ? (block.height == chain_.Height() ? RebuildMinerArchiveIndex_() : true)
-                        : AdvanceMinerArchiveIndex_(block);
-                if (!archive_ok) {
-                    miner_archive_ready_.store(false, std::memory_order_release);
-                    std::cerr << "  [miner-archive] index unavailable at h=" << block.height
-                              << "; count/last display disabled until rebuild\n";
-                    std::cerr.flush();
-                }
-
-                // This is a display-only, rebuildable index. Linear commits add
-                // one atomic set of rows. A completed reorg rebuilds once from
-                // the new canonical chain, with reads closed throughout.
-                if (from_reorg)
-                    address_history_ready_.store(false, std::memory_order_release);
-                const bool history_ok =
-                    from_reorg
-                        ? (block.height == chain_.Height() ? RebuildAddressHistoryIndex_() : true)
-                        : AdvanceAddressHistoryIndex_(block);
-                if (!history_ok) {
-                    address_history_ready_.store(false, std::memory_order_release);
-                    std::cerr << "  [address-history] index unavailable at h=" << block.height
-                              << "; bounded history disabled until rebuild\n";
-                    std::cerr.flush();
+                // Derived display work never scans the full chain while holding
+                // the canonical transition sequencer. Repair only the replaced
+                // suffix, after the complete new branch is durably published.
+                if (from_reorg) {
+                    if (publishes_final_frame)
+                        RepairDisplayIndexesAfterReorg_();
+                } else {
+                    if (!AdvanceMinerArchiveIndex_(block))
+                        miner_archive_ready_.store(false, std::memory_order_release);
+                    if (!AdvanceAddressHistoryIndex_(block))
+                        address_history_ready_.store(false, std::memory_order_release);
                 }
 
                 if (publishes_final_frame && ibd_complete_.load() && block.height > 0 &&
@@ -14345,7 +14379,7 @@ class VeldNode {
             (void)BuildBondSettlementTx(block);
             (void)BuildBondYieldSettlementTx(block);
         }
-        if (block.height > 0 && block.height % COMINE_WINDOW_BLOCKS == 0)
+        if (CoMiningPayoutDue(block.height))
             (void)BuildPoolPayoutTx(block, AddressToScript(POOL_ADDRESS), mempool_);
         return block;
     }
@@ -14730,8 +14764,8 @@ class VeldNode {
         uint64_t window_start = h - (h % COMINE_WINDOW_BLOCKS) + 1;
         uint64_t window_end = h;
         uint64_t blocks_in_window = (COMINE_WINDOW_BLOCKS == 0) ? 0 : (h % COMINE_WINDOW_BLOCKS);
-        uint64_t blocks_until_payout =
-            (COMINE_WINDOW_BLOCKS == 0) ? 0 : (COMINE_WINDOW_BLOCKS - blocks_in_window);
+        const bool retired = CoMiningRetired(NextInclusionHeight(h));
+        uint64_t blocks_until_payout = retired ? 0 : (COMINE_WINDOW_BLOCKS - blocks_in_window);
 
         double pool_veld = 0.0;
         {
@@ -14775,7 +14809,9 @@ class VeldNode {
           << "\"blocks_in_window\":" << blocks_in_window << ","
           << "\"blocks_until_payout\":" << blocks_until_payout << ","
           << "\"window_size\":" << COMINE_WINDOW_BLOCKS << ","
-          << "\"pool_pct\":20,"
+          << "\"co_mining_retired\":" << (retired ? "true" : "false") << ","
+          << "\"co_mining_retirement_height\":" << CoMiningRetirementHeight() << ","
+          << "\"pool_pct\":" << (retired ? 0 : 20) << ","
           << "\"participants\":" << chain_entries.size() << ","
           << "\"total_near_misses\":" << total_near_misses << ","
           << "\"entries\":[";
@@ -15390,12 +15426,14 @@ class VeldNode {
                 }
                 NmsBroadcastCb nms_cb = nullptr;
                 if constexpr (OPTION_B_CONSENSUS_GATE_ENABLED) {
-                    nms_cb = [this](const BlockHeader& hdr) {
-                        try {
-                            this->BuildAndBroadcastNmsTx(hdr);
-                        } catch (...) {
-                        }
-                    };
+                    if (!CoMiningRetired(NextInclusionHeight(chain_.Height()))) {
+                        nms_cb = [this](const BlockHeader& hdr) {
+                            try {
+                                this->BuildAndBroadcastNmsTx(hdr);
+                            } catch (...) {
+                            }
+                        };
+                    }
                 }
 
                 // Derive every mandatory protocol settlement against the
@@ -15505,11 +15543,13 @@ class VeldNode {
                 auto vault_script = AddressToScript(VaultAddressAtHeight(result.new_height));
                 auto pool_script = AddressToScript(POOL_ADDRESS);
                 bool is_vault_block = (result.new_height % VAULT_BLOCK_INTERVAL == 0);
-                bool is_pool_dist = (result.new_height % COMINE_WINDOW_BLOCKS == 0);
+                bool is_pool_dist = CoMiningPayoutDue(result.new_height);
 
-                uint64_t comine_cut = (effective_reward * 20) / 100;
+                uint64_t comine_cut =
+                    CoMiningRetired(result.new_height) ? 0 : (effective_reward * 20) / 100;
                 uint64_t vault_cut = (effective_reward * 20) / 100;
-                uint64_t endorse_cut = (effective_reward * 10) / 100;
+                uint64_t endorse_cut =
+                    (effective_reward * (CoMiningRetired(result.new_height) ? 20 : 10)) / 100;
                 uint64_t winner_cut = effective_reward - comine_cut - vault_cut - endorse_cut;
 
                 auto endorse_pool_script = AddressToScript(ENDORSEMENT_POOL_ADDRESS);
@@ -15639,10 +15679,16 @@ class VeldNode {
                 const bool needs_rebuild = n_cominers > 0;
 
                 if (needs_rebuild) {
-                    result.block.transactions[0] = Transaction::CreateProportionalCoinbase(
-                        coinbase_outputs, "Veld block " + std::to_string(result.new_height));
-                    for (const auto& script : finality_metadata)
-                        result.block.transactions[0].outputs.push_back(TxOutput(0, script));
+                    if (MinerFeesActive(result.new_height)) {
+                        result.block.transactions[0] = Blockchain::BuildCanonicalCoinbase(
+                            result.new_height, total_supply_now, block_tx_fees, winner_script,
+                            finality_metadata);
+                    } else {
+                        result.block.transactions[0] = Transaction::CreateProportionalCoinbase(
+                            coinbase_outputs, "Veld block " + std::to_string(result.new_height));
+                        for (const auto& script : finality_metadata)
+                            result.block.transactions[0].outputs.push_back(TxOutput(0, script));
+                    }
                     result.block.UpdateMerkleRoot();
 
                     result.block.header.nonce = 0;

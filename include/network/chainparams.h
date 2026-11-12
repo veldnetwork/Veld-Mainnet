@@ -11,6 +11,15 @@ namespace veld {
 // disposable testnet retain the same native signing/address machinery, but
 // testnet consensus rejects every external-value protocol and the two roles
 // cannot share P2P sockets, RPC defaults, or datadirs.
+#if defined(VELD_DEVELOPER_TESTNET)
+inline constexpr uint32_t PUBLIC_TESTNET_MAGIC = developer_testnet::MAGIC;
+inline constexpr uint16_t PUBLIC_TESTNET_P2P_PORT = developer_testnet::P2P_PORT;
+inline constexpr uint16_t PUBLIC_TESTNET_RPC_PORT = developer_testnet::RPC_PORT;
+inline constexpr uint16_t PUBLIC_TESTNET_EXPLORER_PORT = developer_testnet::EXPLORER_PORT;
+inline constexpr uint16_t PUBLIC_TESTNET_WALLET_UI_PORT = developer_testnet::WALLET_PORT;
+inline constexpr uint16_t PUBLIC_TESTNET_MINER_UI_PORT = developer_testnet::MINER_PORT;
+inline constexpr const char* PUBLIC_TESTNET_DATA_DIR = developer_testnet::DATA_DIR;
+#else
 inline constexpr uint32_t PUBLIC_TESTNET_MAGIC = 0x52564C44u;
 inline constexpr uint16_t PUBLIC_TESTNET_P2P_PORT = 19333;
 inline constexpr uint16_t PUBLIC_TESTNET_RPC_PORT = 19334;
@@ -18,6 +27,7 @@ inline constexpr uint16_t PUBLIC_TESTNET_EXPLORER_PORT = 19080;
 inline constexpr uint16_t PUBLIC_TESTNET_WALLET_UI_PORT = 19090;
 inline constexpr uint16_t PUBLIC_TESTNET_MINER_UI_PORT = 19095;
 inline constexpr const char* PUBLIC_TESTNET_DATA_DIR = "./veld-public-testnet-data";
+#endif
 inline constexpr uint16_t PUBLIC_MAINNET_RPC_PORT = 8334;
 inline constexpr uint16_t PUBLIC_MAINNET_EXPLORER_PORT = 8080;
 inline constexpr uint16_t PUBLIC_MAINNET_WALLET_UI_PORT = 8090;
@@ -131,7 +141,11 @@ inline NetworkConfig MainnetConfig() {
     NetworkConfig config;
     config.kind = NetworkKind::Mainnet;
 #if defined(VELD_PUBLIC_TESTNET)
+#if defined(VELD_DEVELOPER_TESTNET)
+    config.name = developer_testnet::DISPLAY_NAME;
+#else
     config.name = "Veld Public Testnet v1";
+#endif
     config.magic = PUBLIC_TESTNET_MAGIC;
     config.port = CompiledPublicP2PPort();
     config.rpc_port = CompiledPublicRpcPort();

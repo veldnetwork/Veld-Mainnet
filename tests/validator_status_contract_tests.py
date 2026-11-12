@@ -2,6 +2,7 @@
 """Exercise the native status renderer with inert, current RPC responses."""
 
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -13,8 +14,14 @@ source = (root / 'src/veld-validator.cpp').read_text()
 
 
 def section(begin, end):
-    start = source.index(begin)
-    return source[start : source.index(end, start)]
+    pattern = lambda text: r'\s+'.join(re.escape(word) for word in text.split())
+    found = re.search(pattern(begin), source)
+    if found is None:
+        raise ValueError('Missing function: ' + begin)
+    finish = re.search(pattern(end), source[found.start() :])
+    if finish is None:
+        raise ValueError('Missing next function: ' + end)
+    return source[found.start() : found.start() + finish.start()]
 
 
 helpers = section(
@@ -24,6 +31,7 @@ helpers += section('static bool json_u64(', 'static bool json_string(')
 renderer = section('static int cmd_status(', 'static std::string sign_block(')
 program = r'''
 #include "core/constants.h"
+#include "consensus/validator_policy.h"
 #include "network/strict_json.h"
 #include <cmath>
 #include <iomanip>
