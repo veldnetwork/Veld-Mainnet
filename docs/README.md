@@ -22,6 +22,10 @@
 - [Release notes](release-notes.md): client changes and upgrade requirements.
 - [Release verification](release-verification.md): trusted verifiers, signatures, hashes, and source identity.
 - [Automatic updates](operations/automatic-updates.md): opt-in, mining resume, and recovery limits.
+- [3.3.4 activation](release-3.3.4-activation.md): block 34,750, bond registration and finality snapshots.
+- [Validator signing safety](operations/validator-signing-safety.md): one active signer, durable history and machine migration.
+- [Excess-bond returns](validator-excess-bond-return.md): eligibility, evidence window and settlement.
+- [Vault reserve policy](vault-reserve-policy.md): payout target, limits and accounting.
 - [Changelog](../CHANGELOG.md): versioned changes and unreleased maintenance.
 
 ## Qualification

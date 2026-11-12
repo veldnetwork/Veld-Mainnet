@@ -40,6 +40,7 @@ SUITES = {
         "tests/wallet_authorization_tests.js",
         "tests/security_state_migration_wallet_tests.js",
         "tests/network_display_refresh_tests.js",
+        "tests/validator_refresh_tests.js",
         "tests/portal_network_status_tests.js",
         "tests/constellation_tests.js",
         "tests/portal_pair_machine_tests.js",

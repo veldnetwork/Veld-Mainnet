@@ -3,6 +3,23 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
+## Unreleased maintenance
+
+- Refresh the active wallet Validators page when the chain advances or the
+  app returns to the foreground, while preserving in-progress operations.
+- Refresh the hosted Explorer when the registration minimum or validator count
+  changes. Remove obsolete browser calculations that could replace the node's
+  current subsidy and vault displays with older rules.
+- Correct the published 3.3.4 activation guide, index validator operating
+  instructions, and exclude local qualification output and caches from source.
+
+## 3.3.4 - Consensus upgrade and vault accounting
+
+The signed release activates at mainnet block **34,750**. See the
+[release notes](docs/release-notes.md) and [activation guide](docs/release-3.3.4-activation.md)
+for validator bonds, finality snapshots, miner fees, the two halvings, co-mining
+retirement, governance, excess-bond returns and vault accounting.
+
 ## 3.3.1 - Linux graphical wallet launcher
 
 - Add a Veld Wallet application-menu shortcut and portable launch scripts.

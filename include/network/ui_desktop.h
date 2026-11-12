@@ -16787,12 +16787,15 @@ loadDashboard = loadDashboardAdaptive;
     var pgStaking   = document.getElementById('page-staking');
     var pgComining  = document.getElementById('page-comining');
     var pgSend     = document.getElementById('page-send');
+    var pgValidators = document.getElementById('page-validators');
     if (pgExplorer && pgExplorer.classList.contains('active')) loadExplorerBlocks();
     if (pgStaking && pgStaking.classList.contains('active')) loadStakingPage();
     if (pgComining && pgComining.classList.contains('active')) loadCominingPage();
     // A confirmed payment releases its change. Keep the active send balance
     // and spendable outputs current without requiring a page change.
     if (pgSend && pgSend.classList.contains('active')) onFromChange();
+    if (pgValidators && pgValidators.classList.contains('active') &&
+        !(typeof __opLocks !== 'undefined' && __opLocks['validator-op'])) loadValidatorsPage();
   }
   function tick() {
     var now = Date.now();
@@ -16833,14 +16836,15 @@ loadDashboard = loadDashboardAdaptive;
       var pgWallet    = document.getElementById('page-wallet');
       var pgEarnings  = document.getElementById('page-earnings');
       var pgGov       = document.getElementById('page-governance');
-      var pgValidator = document.getElementById('page-validator');
+      var pgValidator = document.getElementById('page-validators');
       var pgHistory   = document.getElementById('page-history');
       if (pgExplorer  && pgExplorer.classList.contains('active')  && typeof loadExplorerBlocks === 'function') loadExplorerBlocks();
       if (pgStaking   && pgStaking.classList.contains('active')   && typeof loadStakingPage    === 'function') loadStakingPage();
       if (pgComining  && pgComining.classList.contains('active')  && typeof loadCominingPage   === 'function') loadCominingPage();
       if (pgEarnings  && pgEarnings.classList.contains('active')  && window.currentAddr && typeof loadEarningsPage === 'function') loadEarningsPage(window.currentAddr);
       if (pgGov       && pgGov.classList.contains('active')       && typeof loadProposals      === 'function') loadProposals();
-      if (pgValidator && pgValidator.classList.contains('active') && typeof loadValidatorPage  === 'function') loadValidatorPage();
+      if (pgValidator && pgValidator.classList.contains('active') && typeof loadValidatorsPage === 'function' &&
+          !(typeof __opLocks !== 'undefined' && __opLocks['validator-op'])) loadValidatorsPage();
       if (pgHistory   && pgHistory.classList.contains('active')   && typeof loadHistory        === 'function') loadHistory(true);
       if (typeof loadActivityFeed === 'function' && window.currentAddr) loadActivityFeed();
     } catch(_){}

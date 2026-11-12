@@ -59,6 +59,10 @@ vault.key
 Thumbs.db
 
 # Local operational artifacts
+/development/
+/artifacts/
+/.ruff_cache/
+/.pytest_cache/
 /.*-ops/
 /security-remediation/
 /output/

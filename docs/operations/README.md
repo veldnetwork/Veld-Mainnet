@@ -17,6 +17,10 @@ The terminal launchers have separate behavior:
 
 Keep encrypted wallet backups and the client data directory when updating.
 Use the signed update path; retain all files in the package together.
+Preserve the separate validator signing-safety directory as well. Use one
+active signing machine per validator key; additional miners can use address-only
+mode with the same payout address. Read [validator signing safety](validator-signing-safety.md)
+before moving an identity or restoring a backup.
 
 ## Pool mining
 
