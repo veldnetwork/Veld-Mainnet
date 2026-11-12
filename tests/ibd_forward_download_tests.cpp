@@ -17,8 +17,8 @@ static void Check(bool condition, const char* label) {
 static size_t Requests(bool synchronized, bool orphan_body) {
     Blockchain chain;
     auto genesis = CreateGenesisBlock();
-    Check(chain.AddBlockDirect(genesis, true, true, false,
-                               mining::PowAdmissionContext::Internal()).IsAccepted(),
+    Check(chain.AddBlockDirect(genesis, true, true, false, mining::PowAdmissionContext::Internal())
+              .IsAccepted(),
           "genesis locator fixture");
     Mempool pool;
     net::NodeServer server(0, MAINNET_MAGIC, chain, pool);
@@ -56,5 +56,6 @@ int main() {
     Check(Requests(true, false) == 2, "synchronized tip recovery retains locator and exact fetch");
     Check(Requests(false, true) == 1, "IBD orphan requests forward locator only");
     Check(Requests(true, true) == 2, "synchronized orphan recovery still requests its parent");
-    std::cout << "IBD_FORWARD_DOWNLOAD: PASS (actual handlers; queued frames; no network/PoW claim)\n";
+    std::cout
+        << "IBD_FORWARD_DOWNLOAD: PASS (actual handlers; queued frames; no network/PoW claim)\n";
 }

@@ -8717,8 +8717,9 @@ class NodeServer {
                                     // the same backward walk while IBD is using
                                     // this window for ordered forward batches.
                                     const bool send_parent_getdata =
-                                        ibd_complete_flag_.load() && TakeKeyCooldown(
-                                            orphan_parent_getdata_at_, parent_key, 10, 600, 4096);
+                                        ibd_complete_flag_.load() &&
+                                        TakeKeyCooldown(orphan_parent_getdata_at_, parent_key, 10,
+                                                        600, 4096);
                                     if (send_parent_getdata) {
                                         const bool queued = SendBoundedRecoveryGetData_(
                                             conn, new_block.header.prev_block_hash);

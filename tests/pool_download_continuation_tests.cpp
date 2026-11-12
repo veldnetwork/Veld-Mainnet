@@ -128,8 +128,7 @@ int main() {
               "late duplicate cannot rewind canonical locator");
         Hash256 second{};
         std::copy_n(continued.payload.begin() + 37, 32, second.begin());
-        Check(second == common,
-              "validated download is a secondary locator, never the primary");
+        Check(second == common, "validated download is a secondary locator, never the primary");
         Check(response_frames(continued, "127.0.0.5") == 0,
               "recognized canonical tip wins over the earlier download cursor");
         // A remote branch may not recognize our canonical tip. It can still
