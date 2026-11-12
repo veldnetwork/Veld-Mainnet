@@ -1,10 +1,8 @@
-## 3.3.4 candidate - Consensus upgrade and vault accounting
+## 3.3.4 - Consensus upgrade and vault accounting
 
-This candidate is not yet published. Its mainnet policy activation is pinned to
-block **34,750**, targeting **Friday, November 13, 2026, around noon MST
+Update before mainnet block **34,750**, targeting **Friday, November 13, 2026, around noon MST
 (19:00 UTC)**. Block height governs activation; its arrival time is approximate.
-The activation-pinned build still requires shipping qualification and coordinated
-operator readiness. See [the activation schedule](release-3.3.4-activation.md).
+See [the activation schedule](release-3.3.4-activation.md).
 
 - Add the 5,000 VELD validator bond and equal capped finality weights, with a
   five-key minimum and a strict greater-than-two-thirds quorum. Finality stays
@@ -17,6 +15,8 @@ operator readiness. See [the activation schedule](release-3.3.4-activation.md).
   The every-100th-block vault allocation is unchanged.
 - Return eligible excess validator bonds after the complete evidence window,
   preserving registration, principal accounting and slash/exit constraints.
+  The wallet gateway supports the unsigned return-request preparation method;
+  the wallet verifies and signs the request locally.
 - Add a 20,000 VELD rewards-vault target. Surplus can increase payouts within
   the existing 8% cycle limit and recipient caps; the target is not locked
   principal or a guaranteed minimum balance.

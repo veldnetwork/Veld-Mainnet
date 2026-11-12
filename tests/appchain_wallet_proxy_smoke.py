@@ -1,4 +1,4 @@
-"""Exercise bridge RPC admission through an actual packaged desktop binary.
+"""Exercise bridge or excess-bond RPC admission through a packaged desktop binary.
 
 The upstream is a loopback transport fixture, not a simulated financial chain.
 No wallet key, transaction, mining or public endpoint is used.
@@ -37,6 +37,7 @@ def main(a):
         binary_sha256=a.sha256,
         real_funds=False,
         upstream='controlled loopback RPC fixture',
+        suite=a.suite,
         source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
     )
     if os.name != 'nt':
@@ -165,15 +166,18 @@ def main(a):
             and headers.get('X-Frame-Options') == 'DENY',
             'wallet embedding protections remain present',
         )
-        for index, (method, params) in enumerate(
-            (
+        requests = (
+            (('preparereducevalidatorbond', ['test-address', 'ab' * 1952]),)
+            if a.suite == 'bond'
+            else (
                 ('getappchainbridgeinfo', ['ab' * 48]),
                 (
                     'prepareappchaindeposit',
                     ['test-address', 'ab' * 48, 'cd' * 48, 'ef' * 48, '12' * 48, '1.25', '0.02'],
                 ),
             )
-        ):
+        )
+        for index, (method, params) in enumerate(requests):
             body = dict(jsonrpc='2.0', id=index + 1, method=method, params=params)
             before = len(calls)
             status, _, raw = request('POST', '/rpc', body, {'Cookie': cookie})
@@ -190,7 +194,20 @@ def main(a):
                     status == 200
                     and reply.get('result', {}).get('forwarded') == body
                     and calls[before:] == [body],
-                    'packaged wallet forwards exact bridge request: ' + method,
+                    'packaged wallet forwards exact unsigned request: ' + method,
+                )
+                before = len(calls)
+                status, _, raw = request(
+                    'POST',
+                    '/rpc',
+                    body,
+                    {'Cookie': cookie, 'Origin': 'https://wallet.veld.network'},
+                )
+                check(
+                    status == 200
+                    and json.loads(raw).get('result', {}).get('forwarded') == body
+                    and calls[before:] == [body],
+                    'official wallet origin forwards the same request: ' + method,
                 )
         for method in (
             'stop',
@@ -222,16 +239,16 @@ def main(a):
             status, _, _ = request(
                 'POST',
                 '/rpc',
-                dict(jsonrpc='2.0', id=10, method='prepareappchaindeposit', params=[]),
+                dict(jsonrpc='2.0', id=10, method=requests[0][0], params=[]),
                 dict(extra, Cookie=cookie),
             )
             check(
                 status == expected and len(calls) == before, label + ' rejected before forwarding'
             )
         report.update(
-            status='REPRODUCED_PACKAGED_WALLET_MISSING_BRIDGE_RPC'
+            status='REPRODUCED_PACKAGED_WALLET_MISSING_' + a.suite.upper() + '_RPC'
             if a.expect_missing
-            else 'PASS_PACKAGED_WALLET_BRIDGE_RPC'
+            else 'PASS_PACKAGED_WALLET_' + a.suite.upper() + '_RPC'
         )
     except BaseException as error:
         report.update(status='FAILED', error=repr(error))
@@ -262,4 +279,5 @@ if __name__ == '__main__':
     parser.add_argument('--sha256', required=True)
     parser.add_argument('--evidence', type=Path, required=True)
     parser.add_argument('--expect-missing', action='store_true')
+    parser.add_argument('--suite', choices=('bridge', 'bond'), default='bridge')
     main(parser.parse_args())
