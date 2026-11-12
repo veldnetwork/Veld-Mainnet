@@ -26,7 +26,31 @@ portal, btcVELD services, and public web applications for `veld-public-mainnet-v
 
 ## Releases and network identity
 
-Pool and Solo modes remain available. Pool members use their own payout address
+The signed [3.3.4 release](https://github.com/veldnetwork/Veld-Mainnet/releases/tag/v3.3.4)
+was published on November 12, 2026. **Upgrade before mainnet block 34,750.**
+Block height controls activation; November 13 at noon Denver/MST is an estimate.
+
+- Validator registration falls to 5,000 VELD. Finality uses five eligible keys,
+  capped weights, maturity, snapshots, warm-up and a strict greater-than-two-thirds quorum.
+- Native transaction fees go entirely to miners permanently. Exchange trading
+  fees and AMM liquidity-provider fees are separate.
+- A 20,000 VELD rewards-vault target can increase payouts within the existing
+  8% cycle limit. It is not a locked reserve or a guaranteed payout.
+- Halvings begin at blocks 700,801 and 1,401,601. Co-mining retires at the first;
+  ordinary subsidies then split 60% miners / 20% vault / 20% validators.
+- Excess bonds require an owner-signed request and the full evidence window.
+  Existing bond principal does not return automatically.
+
+See the [activation and snapshot boundaries](docs/release-3.3.4-activation.md),
+[release notes](docs/release-notes.md), and [whitepaper](docs/WHITEPAPER.md).
+The btcVELD seven-validator gate, ten-vote protocol-upgrade minimum, and
+100-block reorganization rejection horizon remain separate requirements.
+
+Production appchain hosting remains paused. The developer workspace uses a
+separate, valueless testnet; native 3.3.4 does not launch production contracts.
+
+Solo and Pool modes are supported by the client. The official production pool
+is currently stopped; check its status before connecting. Pool members use their own payout address
 without providing a private key or personal stake. See
 [pool.veld.network](https://pool.veld.network/) for setup and private account views.
 

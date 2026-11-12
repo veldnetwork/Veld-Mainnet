@@ -16,20 +16,19 @@ subsidy-schedule activations:
 | Ordinary block before staking activation | Half the subsidy, rounded down | 0 | Remaining subsidy and all fees | 0 |
 | Ordinary block after staking activation | Subsidy remaining after the other shares | 20% of subsidy, rounded down | 20% of subsidy, rounded down, plus all fees | 10% of subsidy, rounded down |
 
-Once effective subsidy is zero, every height uses the existing fee-only policy:
+Before miner-fee activation, a zero effective subsidy uses the historical fee-only policy:
 40% of fees to the vault, 10% to the validator pool, and the remainder to the
 miner. Percentage allocations round down in integer units. This takes precedence
 over the periodic subsidy rule, including on a multiple of 100.
 
-The update candidate coordinates two height-gated changes at mainnet block 34,750.
+Veld 3.3.4 coordinates two height-gated changes at mainnet block 34,750.
 `MinerFeesActive` sends all authenticated fees to the block miner, permanently,
 including vault-only subsidy blocks and fee-only blocks after the cap. The
 subsidy schedule retires co-mining at its first halving and changes ordinary
 subsidies to 60% miner, 20% vault and 20% validator pool. Vault and validator
 shares round down; the miner receives the remainder. Every 100th block's
 all-vault subsidy is preserved. See [co-mining retirement](co-mining-retirement.md)
-for the final lottery draw and retained reserve. Publication and deployment
-remain pending; see the [activation schedule](../release-3.3.4-activation.md).
+for the final lottery draw and retained reserve. The signed release was published on November 12, 2026; see the [activation schedule](../release-3.3.4-activation.md).
 
 Each positive category has exactly one output. The miner output is canonical
 P2PKH. Zero-value payment categories are omitted. When there is neither subsidy

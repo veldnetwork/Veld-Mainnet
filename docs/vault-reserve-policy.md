@@ -1,9 +1,9 @@
-# Rewards-vault payout candidate
+# Rewards-vault payout policy
 
-This candidate adds a 20,000 VELD reserve target to rewards-vault distribution.
+Veld 3.3.4 adds a 20,000 VELD reserve target to rewards-vault distribution.
 Its public-mainnet activation height is **34,750**. Historical blocks retain
-their existing payout rule. Publication and deployment remain pending; see the
-[candidate activation schedule](release-3.3.4-activation.md).
+their existing payout rule. The signed release was published on November 12, 2026; see the
+[activation schedule](release-3.3.4-activation.md).
 
 ## Budget
 

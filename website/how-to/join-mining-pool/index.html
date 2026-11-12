@@ -26,7 +26,7 @@ html[data-theme="light"] details.veld-details>summary{color:#45604c;background:t
 <header class="guide-hero">
   <div class="breadcrumb"><a href="/how-to/">How-to</a> / Pool mining</div>
   <h1>Join Veld Pool</h1>
-  <p class="lede">Use your own payout address, choose your CPU workers and mine together. Your wallet keys stay with you.</p>
+  <p class="lede">The official pool is currently paused. These instructions apply when service resumes or when using another compatible pool. Your wallet keys stay with you.</p>
   <div class="guide-actions"><span class="guide-meta">About 5 minutes</span></div>
   <nav class="guide-progress" style="--progress-count:4" aria-label="Guide progress">
     <a class="progress-item" href="#connect"><span class="progress-index">01</span><span class="progress-label">Connect</span></a>
@@ -43,7 +43,7 @@ html[data-theme="light"] details.veld-details>summary{color:#45604c;background:t
       <li class="step"><div><h3>Enter your payout address</h3><p>Use an address from your own Veld wallet. Use the same address on your PC and laptop if you want both machines paid to that wallet. Do not enter the pool operator’s wallet address.</p></div></li>
       <li class="step"><div><h3>Select CPU workers</h3><p>Start with enough spare capacity for your other apps. Leave the optional certificate authority field blank for Veld Pool. Choose <strong>Start pool mining</strong>.</p></div></li>
     </ol>
-    <div id="linux"><h3>Linux</h3><p>In the extracted signed Linux package, run <code>./bin/veld-desktop --wallet</code> and choose <strong>[5] Pool mining</strong>. Enter the HTTPS endpoint, your payout address and CPU worker count. Accepted work is recorded in <code>pool-status.json</code> in the private pool state folder. Press Ctrl+C to stop.</p><details class="veld-details"><summary>Linux account access</summary><p>The private pool state folder also contains <code>pool-account.json</code>. Use its account ID and viewing token under <strong>My rewards → Enter account details manually</strong>. Never share that file or its mining credential. Keep the same state folder when restarting or updating.</p></details></div>
+    <div id="linux"><h3>Linux</h3><p>In the extracted signed Linux package, run <code>./bin/veld-desktop --wallet</code> and choose <strong>[5] Pool mining</strong>. Enter the HTTPS endpoint, your payout address and CPU worker count. Accepted work is recorded in <code>pool-status.json</code> in the private pool state folder. Press Ctrl+C to stop.</p><section class="direct-section veld-details"><h3>Linux account access</h3><p>The private pool state folder also contains <code>pool-account.json</code>. Use its account ID and viewing token under <strong>My rewards → Enter account details manually</strong>. Never share that file or its mining credential. Keep the same state folder when restarting or updating.</p></section></div>
     <div class="note"><strong>No wallet import or deposit.</strong> Joining does not require your keyfile, private key, wallet passphrase or a personal stake. Installing the client does not connect or start mining automatically.</div>
   </section>
   <section class="content-section" id="work">
@@ -64,8 +64,8 @@ html[data-theme="light"] details.veld-details>summary{color:#45604c;background:t
       <div class="compare-row"><dt>Available</dt><dd>Mature, reconciled earnings that can enter a payment batch once the threshold and schedule are met.</dd></div>
       <div class="compare-row"><dt>Paid</dt><dd>A payment confirmed on the canonical chain. Follow its transaction ID and confirm it in your wallet.</dd></div>
     </dl>
-    <details class="veld-details"><summary>Reward details</summary><p>Block rewards use verified work in the pool’s recent PPLNS window. Two machines can earn different amounts even when they use the same payout address. Work from earlier contributors can still fall inside that window; only the miner-category output is shared as block income.</p></details>
-    <details class="veld-details"><summary>Reward details</summary><p>When the pool identity qualifies for co-mining, actual lottery winnings and its ordinary staking yield are shared with the contributors in their recorded windows. Members do not need a personal stake. Operator-contributed stake principal remains separate.</p></details>
+    <section class="direct-section veld-details"><h3>Reward details</h3><p>Block rewards use verified work in the pool’s recent PPLNS window. Two machines can earn different amounts even when they use the same payout address. Work from earlier contributors can still fall inside that window; only the miner-category output is shared as block income.</p></section>
+    <section class="direct-section veld-details"><h3>Reward details</h3><p>When the pool identity qualifies for co-mining, actual lottery winnings and its ordinary staking yield are shared with the contributors in their recorded windows. Members do not need a personal stake. Operator-contributed stake principal remains separate.</p></section>
     <p>The settings are <strong>1% service fee</strong>, <strong>1 VELD payment threshold</strong>, daily batches and at least <strong>120 confirmations plus actual spendability</strong>. Eligible accounts using the same payout address are combined for the destination threshold. Earnings below it remain recorded. Check the dashboard for the active terms; daily batches do not guarantee daily earnings.</p>
   </section>
   <section class="content-section" id="account">
@@ -75,7 +75,7 @@ html[data-theme="light"] details.veld-details>summary{color:#45604c;background:t
     <p>Stopping, disconnecting or restarting does not erase earned balances. Preserve the client’s account records when moving installations. Changing a payout address starts a separate account profile; it does not transfer or rewrite earlier entitlements.</p>
     <div class="guide-actions"><a class="button" href="https://pool.veld.network" target="_blank" rel="noopener noreferrer">Open Veld Pool</a><a class="button" href="/how-to/start-cpu-mining/">Solo mining guide</a></div>
   </section>
-  <p class="article-foot">Source-reviewed <time datetime="2026-11-11">11 November 2026</time> for Veld Mainnet and Windows 3.3.4 candidate. Pool setup, private access and payment policy are checked against the current client source and service configuration.</p>
+  <p class="article-foot">Source-reviewed <time datetime="2026-11-11">11 November 2026</time> for Veld Mainnet and Windows 3.3.4. Pool setup, private access and payment policy are checked against the current client source and service configuration.</p>
 </article></div>
 </main>
 <footer><div class="footer-inner"><div>Veld · Where value is earned.</div><div class="footer-links"><a href="/how-to/">All guides</a><a href="/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Whitepaper</a><a href="https://explorer.veld.network" target="_blank" rel="noopener noreferrer">Explorer</a><a href="https://wallet.veld.network" target="_blank" rel="noopener noreferrer">Wallet</a></div></div></footer>

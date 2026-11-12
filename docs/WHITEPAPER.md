@@ -4,6 +4,10 @@
 
 **Network:** veld-public-mainnet-v2
 
+**Release:** Veld 3.3.4, published 12 November 2026
+
+**Activation:** Mainnet block 34,750
+
 **Ordinary staking minimum:** 500 VELD
 
 ---
@@ -12,7 +16,7 @@
 
 VELD is a proof-of-work network with a maximum native supply of 21,000,000 VELD and no premine. Its UTXO ledger combines CPU-oriented, memory-hard mining with native staking, a co-mining lottery, and bonded validators. Qualified validator finality can support Bitcoin anchoring and activation of btcVELD, a representation of Bitcoin held in custody. An on-chain automated market maker provides VELD/btcVELD exchange once its activation conditions are satisfied.
 
-The target block interval is 180 seconds. ASERT adjusts difficulty after every accepted block using a 2,700-second half-life. Ordinary staking is active with a minimum of 500 VELD and a maximum of 10,000 VELD per address. Co-mining requires 1,000 VELD of ordinary stake at the mining address. Validator registration requires a separate 10,000 VELD bond.
+The target block interval is 180 seconds. ASERT adjusts difficulty after every accepted block using a 2,700-second half-life. Ordinary staking is active with a minimum of 500 VELD and a maximum of 10,000 VELD per address. Co-mining requires 1,000 VELD of ordinary stake at the mining address. Validator registration requires a separate 10,000 VELD bond before block 34,750 and 5,000 VELD from that block. The 3.3.4 activation is governed by block height; the requested 13 November 2026 noon Denver/MST time is an estimate, not a timestamp rule.
 
 Nodes independently validate proof of work, transactions, monetary accounting, and participation state. Signed snapshots support synchronization, while independent validation from genesis remains mandatory before a snapshot-backed node can mine, endorse, or serve its normal interfaces. Durable progress and verified recovery records allow that validation to continue across restarts.
 
@@ -42,7 +46,7 @@ Operators can inspect `getnetworkinfo` and the release identity records to compa
 | Minimum new ordinary stake | 500 VELD |
 | Maximum ordinary stake per address | 10,000 VELD |
 | Co-mining stake minimum | 1,000 VELD at the mining address |
-| Validator registration bond | 10,000 VELD |
+| Validator registration bond | 10,000 VELD before block 34,750; 5,000 VELD from that block |
 | Vault and validator settlement interval | 480 blocks |
 
 Staking positions retain their chosen lockup conditions. Reaching the unlock height permits an unstake transaction; funds do not withdraw automatically.
@@ -61,9 +65,9 @@ VELD uses an unspent-transaction-output ledger. Inputs must reference spendable 
 
 Native transaction signatures use ML-DSA-65. The same signature family is used for validator messages and signed release artifacts where required. Address hashes, proof of work, Bitcoin custody, and endpoint security have separate assumptions; the use of post-quantum signatures does not remove those dependencies.
 
-At activation, a version-one key destination commits to the complete 1,952-byte ML-DSA-65 public key with SHA-384. The preimage binds the destination version, network and compiled genesis identity. Its authorization script contains the full 48-byte commitment; it does not truncate it to HASH160. The existing signature and full-transaction signing commitment remain required.
+Under the separately activated SHA-384 destination rules, a version-one key destination commits to the complete 1,952-byte ML-DSA-65 public key with SHA-384. The preimage binds the destination version, network and compiled genesis identity. Its authorization script contains the full 48-byte commitment; it does not truncate it to HASH160. The existing signature and full-transaction signing commitment remain required.
 
-Legacy destinations remain valid. Creating a new-format wallet is opt-in and does not move existing funds. This release adds a key destination, not a general spending-policy format. Staking, validator, governance, token, AMM and custody identities retain their existing formats, and unsupported operations from a new-format identity are refused. The five system addresses and Bitcoin custody descriptors are not automatically migrated. It would therefore be incorrect to describe every existing address or the entire system as quantum resistant.
+Legacy destinations remain valid. Creating a new-format wallet is opt-in and does not move existing funds. The opt-in destination format is not a general spending-policy format. Staking, validator, governance, token, AMM and custody identities retain their existing formats, and unsupported operations from a new-format identity are refused. The five system addresses and Bitcoin custody descriptors are not automatically migrated. It would therefore be incorrect to describe every existing address or the entire system as quantum resistant.
 
 | Parameter | Value |
 |---|---:|
@@ -100,7 +104,9 @@ Reorganization and independent replay must select the target from the same candi
 
 ### 3.1 Issuance
 
-The maximum supply is 21,000,000 VELD. There is no premine or separately minted founder allocation. The scheduled base subsidy is 3.13926940 VELD per block. An integer remainder adjustment at the 175,200-block annual boundary produces 550,000 VELD per protocol year until the supply cap limits issuance. This is a block-based schedule, not a guaranteed calendar issuance rate.
+The maximum supply is 21,000,000 VELD. There is no premine or separately minted founder allocation. Veld 3.3.4 enables two launch-based halvings at activation block 34,750. The first reduced block is 700,801, after four complete protocol years; the second is 1,401,601, after eight. There is no third halving.
+
+Each protocol year contains 175,200 blocks. Annual issuance is 550,000 VELD for the first four years, 275,000 for the next four, and 137,500 thereafter until the supply cap limits issuance. The corresponding ordinary base subsidies are 3.13926940, 1.56963470 and 0.78481735 VELD. The final block of each protocol year receives the integer division remainder. Height zero retains its historical subsidy. This is a block-based schedule, not a guaranteed calendar issuance rate.
 
 The effective subsidy is the scheduled subsidy limited by remaining supply headroom. The final subsidized block can therefore issue less than the ordinary reward. Transaction fees redistribute existing units and do not increase issued supply.
 
@@ -110,12 +116,13 @@ Staking is active on public mainnet. Ordinary block subsidies use four participa
 
 | Context with positive subsidy | Miner | Co-mining | Vault | Validator pool |
 |---|---:|---:|---:|---:|
-| Ordinary block | 50% | 20% | 20% | 10% |
+| Ordinary block before height 700,801 | 50% | 20% | 20% | 10% |
+| Ordinary block from height 700,801 | 60% | 0% | 20% | 20% |
 | Every 100th block | 0% | 0% | 100% | 0% |
 
-During the subsidy era, included transaction fees go to the vault in addition to its subsidy allocation. Allocations use integer atomic units: prescribed category percentages round down and the miner receives the applicable subsidy remainder.
+From block 34,750, 100% of authenticated native transaction fees go to the block miner permanently. This includes every 100th block, partial final subsidies and the fee-only era after the supply cap. Fee routing does not change subsidy allocations. Prescribed subsidy percentages round down in atomic units and the miner receives the applicable remainder.
 
-When effective subsidy is zero, the fee-only policy gives 40% of authenticated fees to the vault, 10% to the validator pool, and the remainder to the miner. This policy takes precedence at every height, including a periodic vault boundary. A block with no subsidy and no fees uses the canonical zero-value representation rather than inventing a payment category.
+Historical blocks retain their original rules: before activation, subsidy-era fees go to the vault, and the zero-subsidy fee allocation is 40% vault, 10% validators and the remainder to the miner. A block with no subsidy and no fees uses the canonical zero-value representation. Internal exchange trading fees and AMM swap fees are separate from native transaction fees.
 
 ### 3.3 Coinbase validation
 
@@ -158,7 +165,16 @@ Ordinary distribution weight combines eligible stake, mining multiplier, and loc
 
 ### 4.4 Distribution limits
 
-The vault settles every 480 blocks. The budget is bounded by both 90% of the preceding cycle's vault inflow and 8% of spendable vault balance. Transaction costs, available inputs, eligible weight, recipient bounds, and integer rounding further determine the actual payments.
+The rewards vault settles every 480 blocks. Before block 34,750, its budget is the smaller of 90% of the cycle's coinbase inflow and 8% of available parent-state funds. From activation, surplus above a 20,000 VELD reserve target can increase that budget, still within the 8% limit. With available balance B, cycle coinbase inflow I and target R, all in atomic units:
+
+```
+backstop = floor(B * 8 / 100)
+ordinary = min(backstop, floor(I * 9 / 10))
+surplus = min(backstop, max(0, B - R))
+budget = max(ordinary, surplus)
+```
+
+The target is not locked principal or an exact maximum balance. Ordinary payouts continue below it and can cross it. The boundary block's own incoming rewards are not spendable by that boundary's payout. Validator bond principal is held separately. Available inputs, eligible weight, recipient bounds and integer rounding determine actual payments.
 
 One eligible recipient cannot receive more than 75% of the cycle's distribution budget. Excess remains in the vault rather than being redistributed to the remaining recipients in that cycle. Undistributed amounts are retained. These limits constrain spending; they do not establish perpetual reserve growth or a fixed future payment.
 
@@ -166,7 +182,7 @@ Ordinary wallet stakes remain on-chain while the browser is closed. The hosted w
 
 ## 5. Co-mining lottery
 
-The co-mining pool receives 20% of ordinary block subsidies. It distributes through a draw every 100 blocks. Qualification combines ordinary stake at the mining address with valid near-miss proof of work included in the canonical chain during the relevant window.
+Until its retirement at block 700,801, the co-mining pool receives 20% of ordinary block subsidies. It distributes through a draw every 100 blocks. Qualification combines ordinary stake at the mining address with valid near-miss proof of work included in the canonical chain during the relevant window.
 
 A near miss satisfies the protocol's share target without satisfying the full block target. It must refer to eligible recent chain state, meet signature and uniqueness requirements, and be admitted on-chain. The client submits qualifying work automatically. A locally found or merely broadcast share is not yet an included share.
 
@@ -176,13 +192,15 @@ Each eligible address receives one entry, regardless of the number of qualifying
 
 Qualification requires the stake, signature, work, inclusion, uniqueness, and lockup checks described above. One address is an accounting identity, not proof of one independent person or one physical computer.
 
+The final normal draw is block 700,800. Retirement stops new lottery entries and draws; previous payouts and stake principal remain intact. Unassigned pool reserves are retained, not redistributed by this update. A future governance-approved software upgrade could restore co-mining with explicit rules and an activation height; no automatic return is enabled.
+
 ## 6. Validators, finality, and checkpoints
 
 ### 6.1 Validator participation
 
-Every validator supplies its own correctly funded and authorized 10,000 VELD custodial bond. This bond is distinct from ordinary stake and remains slashable. Funding, identity, signatures, synchronization, independent validation, applicable maturity and the 480-block settlement schedule remain enforced. Registration alone does not earn endorsement rewards.
+Every validator supplies its own correctly funded and authorized custodial bond: 10,000 VELD before block 34,750 and 5,000 VELD from that block. Registration uses the transaction inclusion height; at tip 34,749 the next block uses the new minimum, plus the transaction fee. This bond is distinct from ordinary stake and remains slashable. Funding, identity, signatures, synchronization, independent validation, applicable maturity and the 480-block settlement schedule remain enforced. Registration alone does not earn endorsement rewards.
 
-The validator pool receives 10% of ordinary block subsidy. Payouts depend on eligible endorsements in the settlement window. A pool allocation is not evidence that a validator has qualified for payment. Where no eligible endorsement recipient exists, the applicable settlement rules determine routing; the allocation must not be interpreted as an unconditional payout to operators.
+The validator pool receives 10% of ordinary block subsidy before the first halving and 20% from block 700,801. Payouts depend on eligible endorsements in the settlement window. A pool allocation is not evidence that a validator has qualified for payment. Where no eligible endorsement recipient exists, the applicable settlement rules determine routing; the allocation must not be interpreted as an unconditional payout to operators.
 
 Validator and governance operations bind their required identity, signature, and inclusion context. Reorganization and replay reconstruct the corresponding state. Governance, finality, and btcVELD each have separate participation requirements.
 
@@ -194,11 +212,17 @@ Bonded principal participates in vault distributions with a 1.50x lockup weight.
 
 Deregistering stops active participation but does not immediately return the principal. The bond remains held through the complete applicable evidence window, including finality votes, and returns only at its canonical settlement boundary. A pending bond cannot be reused to fund another registration. Durable local signing journals record intent before signing and refuse conflicting claims after restart; their protection depends on preserving and reconciling the journal rather than restoring an old file and immediately resuming signing.
 
+An existing 10,000 VELD bond remains recorded at its full amount. From activation, its owner can request return of eligible excess above 5,000 VELD without deregistering. Return waits through the full 43,200-block evidence horizon covering the request epoch, then the applicable 480-block settlement boundary. The full bond remains slashable while waiting; a slash or deregistration cancels the partial-return path. Activation does not automatically return funds.
+
+Keep one active signing machine per validator key and preserve its signing journals when updating or moving machines. Other miners can share the payout address in address-only mode. Separate machines with the same key do not share a local journal and can sign conflicting histories.
+
 ### 6.3 Qualified validator finality
 
-Finality requires at least seven eligible validators and caps voting weight at 10,000 VELD per validator. The set is determined from chain state at epoch boundaries. Validators use signed PREVOTE and PRECOMMIT messages that bind the network, epoch, phase, round, validator-set snapshot, source, and target.
+Finality uses the policy at each frozen epoch snapshot. Pre-activation snapshots require seven eligible validators and cap weight at 10,000 VELD per key. Snapshots from block 34,750 use a five-key minimum and equal weights capped at the new 5,000 VELD bond minimum. Existing larger bonds do not gain extra voting weight. Validators use signed PREVOTE and PRECOMMIT messages that bind the network, epoch, phase, round, validator-set snapshot, source, and target.
 
-A quorum certificate requires strictly more than two-thirds of eligible capped voting weight. Equal-weight membership therefore requires five signatures out of seven. Qualification and warm-up rules apply before the service becomes active. Certificates must be authenticated and retained; an observed certificate or dashboard label cannot replace those checks.
+A quorum certificate requires strictly more than two-thirds of eligible capped weight: four signatures from a five-key set, or five from seven. Registration maturity, consecutive qualifying snapshots and warm-up remain mandatory. Epoch 72 retains its old-policy snapshot at 34,559; epoch 73 uses the new-policy snapshot at 35,039. Three validators do not enable finality.
+
+Standby means qualified finality is not available; validated proof-of-work operation continues under the existing rules. Certificates must be authenticated and retained. Neither height nor a dashboard label proves a qualifying set. btcVELD retains its separate seven-validator activation requirement.
 
 ### 6.4 Checkpoint protection
 
@@ -258,9 +282,9 @@ Liquidity provision exposes the owner to changing asset proportions, adverse pri
 
 ## 9. Governance
 
-Governance activates when at least five validators have bonded an aggregate 50,000 VELD of qualifying weight. Each validator contributes at most the 10,000 VELD minimum bond toward this activation threshold. Ordinary staking and governance participation are separate roles.
+Governance requires at least five qualifying validator bonds. Before block 34,750, the aggregate threshold is 50,000 VELD with at most 10,000 counted per key. From that height, the threshold is 25,000 VELD with at most 5,000 counted per key. Ordinary staking and governance participation are separate roles.
 
-Registered, recently active validators submit proposals and vote. The voting window is 6,720 blocks. General proposals require 51% yes; the quorum is seven votes when at least seven validators are recently active and otherwise follows the majority rule for the active set. Protocol-upgrade proposals require 67% yes with at least ten votes, followed by a 3,360-block timelock.
+Registered, recently active validators submit proposals and vote. The voting window is 6,720 blocks. General proposals require 51% yes; the quorum is seven votes when at least seven validators are recently active and otherwise follows the majority rule for the active set. Protocol-upgrade proposals require 67% yes and at least ten participating YES/NO votes, followed by a 3,360-block timelock. The dynamic participation requirement can be higher; five-key finality does not lower the upgrade-vote floor.
 
 A passing proposal records on-chain approval; it does not replace binaries or silently rewrite compiled consensus parameters. Protocol changes require published source, an activation plan, and operator adoption.
 
@@ -302,6 +326,8 @@ For service health, height alone is insufficient. Useful evidence includes a sta
 
 ### 11.1 Shared mining pool
 
+The official production pool is paused as of this revision. The following describes the supported client and accounting design, not a claim that the service is accepting work.
+
 Veld Node supports Solo and Pool modes. Pool mode accepts a TLS endpoint, a miner-owned payout address and CPU settings. Members do not need to buy VELD, stake personal funds, deposit coins, upload a keyfile or reveal private keys. Joining a payout address is not authorization to inspect private account details or alter another account.
 
 The gateway serves versioned jobs with durable, non-overlapping 64-bit nonce assignments. The full node creates complete canonical candidates, including mandatory settlement and finality information. Workers receive neither backend template-authorization credentials nor signing keys. Native VeldHash verifies submissions against the network target and the frozen accounting target; invalid, duplicate, stale and temporarily busy outcomes remain distinct.
@@ -310,11 +336,17 @@ Block income uses expected-work-weighted PPLNS with a candidate lookback equal t
 
 The pool uses one co-mining identity with a separately operator-funded stake of at least 1,000 VELD. A genuine near miss must be signed, included and eligible in the canonical window before it constitutes an entry. Workers do not receive separate on-chain entries. Actual lottery winnings use a separate frozen qualification-window contribution record. Ordinary staking yield earned by the pool identity is also shared with contributors under its recorded distribution policy. Operator-contributed principal and fee funds remain separate from miner liabilities.
 
-The settings are a 0% service fee, a 1 VELD automatic payment threshold, daily batching, and at least 120 canonical confirmations plus actual spendability. The threshold applies to the eligible amount at a payout destination across its accounts; separate private account access is retained. Sub-threshold earnings are retained. Daily processing is not a promise of daily earnings.
+The published settings are a 1% service fee, a 1 VELD automatic payment threshold, daily batching, and at least 120 canonical confirmations plus actual spendability. The threshold applies to the eligible amount at a payout destination across its accounts; separate private account access is retained. Sub-threshold earnings are retained. Daily processing is not a promise of daily earnings.
 
 Pending means attributed income that is not yet payable. Available means matured, reconciled earnings eligible for payment. Paid requires a canonical confirmed payment. Input reservations and durable payment intentions prevent concurrent spending. Exact signed bytes are stored before broadcast; a lost response triggers reconciliation or identical rebroadcast, never an automatic second economic payment. Backup recovery must reconcile the signer journal and independently validated chain before spending resumes. Unexplained income or a deficit is quarantined rather than silently assigned to other miners.
 
 Public monitoring shows pool work, chain progress, rewards, payment history and service health. Private account information and operator settings require separate authenticated access. A mined block or an accepted share alone does not prove a completed payout. The qualification evidence must cover the actual recipient wallet, native Windows client, restart and payment recovery.
+
+### 11.2 Exchange and developer platform
+
+Veld Exchange maintains custodial trading balances and an off-chain order book separately from the native chain. Confirmed deposits and withdrawals connect those balances to their respective networks. Internal trades produce exchange operator fees; they are not native miner execution activity.
+
+The developer workspace and SDK target a separate, valueless application-chain testnet with wallet approvals, token actions, FUEL accounting and developer-program deployment. FUEL represents execution credit backed by appchain VELD claims; one VELD corresponds to 1,000 FUEL before execution fees. Native mainnet balances and custodial exchange balances are separate. Production appchain hosting remains paused; the native 3.3.4 release does not launch production contracts, merged-mining income, a creator marketplace or collectibles.
 
 ## 12. Security assumptions and protocol limits
 
@@ -330,7 +362,9 @@ The software is subject to implementation and operational failure. Source review
 
 | Area | Source reference |
 |---|---|
-| Network and monetary parameters | `include/core/constants.h` |
+| Network and monetary parameters | `include/core/constants.h`, `include/consensus/subsidy_schedule.h` |
+| Coordinated 3.3.4 activation | `docs/release-3.3.4-activation.md` |
+| Vault reserve and excess bonds | `docs/vault-reserve-policy.md`, `docs/validator-excess-bond-return.md` |
 | ASERT integer calculation | `include/core/asert.h` |
 | VeldHash | `include/mining/veldhash.h` |
 | Block admission and replay | `include/core/blockchain.h` |
@@ -351,7 +385,9 @@ Public references:
 - Network rules: https://explorer.veld.network/rules
 - How-to library: https://veld.network/how-to/
 - Staking guide: https://veld.network/how-to/stake-veld/
-- Candidate source/build/release identity: consult the manifest supplied with the selected signed package.
+- Veld 3.3.4 signed release: https://github.com/veldnetwork/Veld-Mainnet/releases/tag/v3.3.4
+- Release source: `83fad356169eaf42e7bc83b652d687837b02d9f9`. Later maintenance on main does not replace signed binaries.
+- Developer testnet documentation: https://veld.network/developers/
 
 ## 14. Glossary
 

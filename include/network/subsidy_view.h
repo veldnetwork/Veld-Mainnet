@@ -89,9 +89,15 @@ inline std::string VaultBudgetRulesHtml(uint64_t next_boundary) {
                "Surplus above the target can increase that budget, still within the 8% limit. "
                "The target is not a locked balance or a cap. Recipient limits, transaction costs "
                "and integer rounding also apply.";
-    return "The next distribution budget is limited to 90% of the previous cycle's vault inflow "
-           "and 8% of spendable vault funds, whichever is lower. Recipient limits, transaction "
-           "costs and integer rounding also apply.";
+    std::string text =
+        "The next distribution budget is limited to 90% of the previous cycle's vault inflow "
+        "and 8% of spendable vault funds, whichever is lower. Recipient limits, transaction "
+        "costs and integer rounding also apply.";
+    if (VAULT_RESERVE_ACTIVATION_HEIGHT != 0)
+        text += " From block " + std::to_string(VAULT_RESERVE_ACTIVATION_HEIGHT) +
+                ", surplus above a 20,000 VELD reserve target can increase the budget within "
+                "the 8% cycle limit. The target is not a locked balance or a maximum.";
+    return text;
 }
 
 inline std::string SubsidyRulesHtml(uint64_t height) {
@@ -128,9 +134,15 @@ inline std::string FeeRulesHtml(uint64_t height) {
     if (MinerFeesActive(height))
         return "Transaction fees go to the block winner, including every 100th block and after the supply cap. "
                "Fees recycle existing VELD and do not change the subsidy allocation.";
-    return "During the subsidy era, transaction fees flow to the vault on top of its block share. "
-           "When effective subsidy is zero, fee routing is 50% miner, 40% vault, and 10% validator pool, "
-           "subject to integer rounding. The fee-only allocation applies at every height, including "
-           "every 100th block. Exact permitted subsidy plus authenticated fees remain mandatory.";
+    std::string text =
+        "During the subsidy era, transaction fees flow to the vault on top of its block share. "
+        "When effective subsidy is zero, fee routing is 50% miner, 40% vault, and 10% validator pool, "
+        "subject to integer rounding. The fee-only allocation applies at every height, including "
+        "every 100th block. Exact permitted subsidy plus authenticated fees remain mandatory.";
+    if (MINER_FEE_ACTIVATION_HEIGHT != 0)
+        text += " From block " + std::to_string(MINER_FEE_ACTIVATION_HEIGHT) +
+                ", 100% of native transaction fees go to the block miner permanently, including "
+                "every 100th block and the fee-only era. Exchange trading fees are separate.";
+    return text;
 }
 } // namespace veld

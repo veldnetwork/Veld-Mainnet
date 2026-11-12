@@ -21,6 +21,7 @@
 - [Pool administration](../pkg/pool/ADMIN.md): authenticated operator controls.
 - [Release notes](release-notes.md): client changes and upgrade requirements.
 - [Release verification](release-verification.md): trusted verifiers, signatures, hashes, and source identity.
+- [Public content maintenance](public-content.md): homepage, wallet, Explorer, whitepaper and UI approval boundaries.
 - [Automatic updates](operations/automatic-updates.md): opt-in, mining resume, and recovery limits.
 - [3.3.4 activation](release-3.3.4-activation.md): block 34,750, bond registration and finality snapshots.
 - [Validator signing safety](operations/validator-signing-safety.md): one active signer, durable history and machine migration.
