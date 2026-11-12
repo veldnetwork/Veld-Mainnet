@@ -1794,7 +1794,7 @@ private:
         } else if (method == "OPTIONS") {
             resp = "HTTP/1.1 200 OK\r\n" + cors + "Content-Length: 0\r\n\r\n";
         } else if (path == "/" || path.empty()) {
-            std::string html = DESKTOP_HTML;
+            std::string html = veld::WithHelpDialogs(DESKTOP_HTML);
             {
                 auto pos = html.find("var RPC_URL = ");
                 if (pos != std::string::npos) {
@@ -2159,7 +2159,7 @@ private:
             // for identical content (reproducible builds keep matching) and
             // different the moment the page changes.
             static const std::string ui_revision = [] {
-                const std::string body(DESKTOP_HTML);
+                const std::string body = veld::WithHelpDialogs(DESKTOP_HTML);
                 uint8_t digest[32];
                 veld::vendored_crypto::Sha256 h;
                 h.update(reinterpret_cast<const uint8_t*>(body.data()),

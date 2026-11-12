@@ -24,6 +24,12 @@ operator readiness. See [the activation schedule](release-3.3.4-activation.md).
   Wallet staking APR uses ordinary-recipient payouts, excludes bond escrow and
   unused budget, and does not assume compounding. Vault explanations wrap on
   mobile screens.
+- Correct Windows peer-sync handling and locator recovery during catch-up.
+- Keep wallet-cleanup explanations behind an explicit help button. Wallet and
+  explorer help opens in accessible dialogs, with keyboard navigation and
+  mobile layouts; existing wallet transaction controls remain in place.
+- Show the applicable reward allocation on mining, rules and validator pages,
+  including the validator share after co-mining retirement.
 
 ## 3.3.3 - Windows update package verification
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "help_dialogs.h"
 
 static const char* DESKTOP_HTML = R"HTMLEOF(<!DOCTYPE html>
 <html lang="en">
@@ -455,7 +456,7 @@ body.gyro-active .prism-sub{animation:none}
 .spx-coin:focus-visible{outline:2px solid rgba(50,240,110,.45);outline-offset:1px}
 .spx-coin:active{transform:scale(.97)}
 /* Collapsible help: supplementary explainer prose tucks behind a "?" button. OPT-IN
-   only — author marks a block with data-help (or writes <details class="spx-help">);
+   only — author marks a block with data-help (or writes <section data-veld-help class="spx-help">);
    primary content is never auto-hidden (see initHelpTips). */
 .help-tip{display:inline-block;position:relative;vertical-align:middle;margin:0 0 0 5px}
 .help-tip>summary{list-style:none;cursor:pointer;display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:50%;border:1px solid var(--b1,#2a2a2a);color:var(--muted);font-size:10px;font-weight:700;line-height:1;vertical-align:middle;-webkit-tap-highlight-color:transparent;transition:border-color .15s,color .15s,box-shadow .15s}
@@ -464,7 +465,7 @@ body.gyro-active .prism-sub{animation:none}
 .help-tip>summary:hover{border-color:var(--em);color:var(--em)}
 .help-tip>summary:focus-visible{outline:2px solid rgba(50,240,110,.5);outline-offset:2px}
 .help-tip[open]>summary{color:var(--em);border-color:var(--em);box-shadow:0 0 10px rgba(50,240,110,.12)}
-/* explicit toggle — JS-created <details> doesn't always get the UA closed-hiding.
+/* explicit toggle — JS-created <section data-veld-help> doesn't always get the UA closed-hiding.
    Open body is an absolutely-positioned popover just BELOW the inline "?" so it never
    shoves surrounding layout and the "?" stays at the end of the text it annotates. */
 .history-footer{display:flex;justify-content:center;margin-top:16px}
@@ -2743,13 +2744,13 @@ __VELD_DEPLOYMENT_BANNER_HTML__
     <div class="card tokens-card">
       <!-- Reassurance line tucked behind a "?" on the Tokens title (operator
  request). The balance rows below speak for themselves; the explanation is one
- tap away via a marker-less <details> toggle (reuses .spx-help / .spx-qmark). -->
-      <details class="spx-help">
-        <summary class="card-title" style="cursor:pointer;display:flex;align-items:center;gap:8px">Tokens <span class="spx-qmark" title="What do these rows mean?">?</span></summary>
+ tap away via a marker-less <section data-veld-help> toggle (reuses .spx-help / .spx-qmark). -->
+      <section data-veld-help class="spx-help">
+        <button type=button class="card-title" style="cursor:pointer;display:flex;align-items:center;gap:8px">Tokens <span class="spx-qmark" title="What do these rows mean?">?</span></button>
         <div style="font-size:12px;color:var(--muted);line-height:1.45;margin:8px 2px 10px;padding:8px 10px;border:1px solid var(--b1);border-radius:8px;background:rgba(50,240,110,.05)">
           Every VELD below is <b style="color:var(--em)">yours</b>. <b>Spendable</b> is what you can send this second; the rest is locked <i>by you</i>, maturing, or briefly settling — it all comes back. Nothing is ever taken or held by anyone else.
         </div>
-      </details>
+      </section>
       <div class="tok-row" title="Coin you can send right now — confirmed, mature, and not tied up in staking or a pending transaction.">
         <div class="tok-ic ic-veld">V</div>
         <div class="tok-info">
@@ -2932,15 +2933,18 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
     <!-- Wallet cleanup is manual unless explicitly enabled in this browser. -->
     <div class="card" id="w-cleanup-card" style="margin-top:14px;min-width:0">
       <div class="card-title">Wallet cleanup <span id="w-utxo-dust-chip" style="display:none;font-weight:400"></span></div>
-      <p class="cleanup-copy">Combine small outputs already in your wallet.</p>
+      <section data-veld-help style="margin-bottom:12px">
+        <button type="button" aria-label="About wallet cleanup">About wallet cleanup</button>
+        <div><p>Combine small outputs already in your wallet. Fewer outputs make future transactions smaller and easier to process.</p><p>Each cleanup pays a network fee. Review the fee before approving. Funds being combined become spendable after confirmation.</p></div>
+      </section>
       <div id="w-utxo-consolidate" style="display:none;margin-bottom:12px" role="status"><span id="w-utxo-dust-msg" style="color:var(--muted);line-height:1.5;overflow-wrap:anywhere"></span></div>
-      <p class="cleanup-help">Fewer outputs make future transactions smaller and easier to process.</p>
+
       <button class="btn" id="w-utxo-consolidate-btn" data-act-click="hconsolidate">Combine my outputs</button>
       <div id="w-utxo-consolidate-msg" aria-live="polite" style="margin-top:10px;overflow-wrap:anywhere"></div>
       <div class="cleanup-auto">
         <div class="cleanup-auto-heading">
           <label id="w-auto-consolidate-label" for="w-auto-consolidate">Automatic cleanup</label>
-        <details class="help-tip"><summary aria-label="About automatic cleanup" title="About automatic cleanup">?</summary><div class="help-body" id="w-auto-consolidate-help">Off by default. Enabling this authorizes automatic cleanup and network fees for wallets you unlock in this browser while the app is open. Each transaction pays a fee; larger cleanups may need several transactions. Funds being combined become spendable after confirmation. Turning this off stops new batches; a transaction already in progress may still complete.</div></details>
+        <section data-veld-help class="help-tip"><button type=button aria-label="About automatic cleanup" title="About automatic cleanup">?</button><div class="help-body" id="w-auto-consolidate-help">Off by default. Enabling this authorizes automatic cleanup and network fees for wallets you unlock in this browser while the app is open. Each transaction pays a fee; larger cleanups may need several transactions. Funds being combined become spendable after confirmation. Turning this off stops new batches; a transaction already in progress may still complete.</div></section>
         </div>
         <label class="cleanup-toggle" for="w-auto-consolidate">
           <input type="checkbox" role="switch" id="w-auto-consolidate" data-act-change="hauto_consolidate" aria-labelledby="w-auto-consolidate-label" aria-describedby="w-auto-consolidate-help w-auto-consolidate-pref-status">
@@ -3318,12 +3322,12 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <div id="bv-wrap-msg"></div>
       <button class="btn btn-em" id="bv-wrap-btn" type="button" data-act-click="hbv_get_deposit" style="width:100%;margin-top:14px">Get my BTC deposit address</button>
       </div>
-      <details class="veld-details bv-aside"><summary>How settlement works</summary><div>
+      <section data-veld-help class="veld-details bv-aside"><button type=button>How settlement works</button><div>
         <div class="ba-t">Settlement path</div>
         <div class="ba-step"><span class="ba-n">1</span><div class="ba-s"><h5>Choose one exact amount</h5><p>The service reserves your amount against the chain's available custody capacity before it reveals a fresh address. Never overpay or reuse it.</p></div></div>
         <div class="ba-step"><span class="ba-n">2</span><div class="ba-s"><h5>It confirms on Bitcoin</h5><p>After the compiled Bitcoin confirmation depth, the exact deposit is credited to your Veld wallet as btcVELD, 1:1.</p></div></div>
         <div class="ba-step"><span class="ba-n">3</span><div class="ba-s"><h5>Use it on Veld</h5><p>Send it, swap it in an available VELD/btcVELD pool, or request redemption when the peg service is available.</p></div></div>
-      </div></details>
+      </div></section>
     </div>
 
     <!-- REDEEM (btcVELD -> BTC, burn) -->
@@ -3346,12 +3350,12 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <button class="btn btn-em" id="bv-redeem-btn" type="button" data-act-click="hbv_redeem" style="width:100%;margin-top:6px" disabled>Enter an amount</button>
       <div id="bv-redeem-pending" style="margin-top:16px"></div>
       </div>
-      <details class="veld-details bv-aside"><summary>How settlement works</summary><div>
+      <section data-veld-help class="veld-details bv-aside"><button type=button>How settlement works</button><div>
         <div class="ba-t">Redemption path</div>
         <div class="ba-step"><span class="ba-n">1</span><div class="ba-s"><h5>Burn btcVELD</h5><p>The redeem destroys your btcVELD on-chain and records the Bitcoin address you chose. It cannot be reversed.</p></div></div>
         <div class="ba-step"><span class="ba-n">2</span><div class="ba-s"><h5>The burn finalizes</h5><p>The service verifies the canonical burn and required finality before preparing the Bitcoin payout.</p></div></div>
         <div class="ba-step"><span class="ba-n">3</span><div class="ba-s"><h5>BTC is paid out</h5><p>Real BTC is sent from peg custody to your address. Standard addresses only (bc1…, 1…, 3…).</p></div></div>
-      </div></details>
+      </div></section>
     </div>
 
     <!-- SWAP (VELD <-> btcVELD AMM) — pool-gated -->
@@ -3432,11 +3436,11 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
             <div class="bv-lp-cell"><span>Your btcVELD</span><b id="bv-lp-btc-val">—</b></div>
           </div>
           <div class="bv-stat" style="border-top:1px solid var(--b1);margin-top:12px;padding-top:10px"><span>Total value</span><span id="bv-lp-total-val">—</span></div>
-          <details class="veld-details"><summary>How fees are shared</summary><div class="bv-lp-earn">Every fee stays in the pool in the asset the trader receives. You own <b id="bv-lp-fee">0.30% in the output asset</b> pro rata through your LP shares; there is no protocol cut.</div></details>
+          <section data-veld-help class="veld-details"><button type=button>How fees are shared</button><div class="bv-lp-earn">Every fee stays in the pool in the asset the trader receives. You own <b id="bv-lp-fee">0.30% in the output asset</b> pro rata through your LP shares; there is no protocol cut.</div></section>
         </div>
         <div class="card">
-          <details id="bv-lp-details">
-            <summary class="card-title" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">Provide liquidity <span style="font-weight:400;font-size:11px;color:var(--muted)">— earn a share of fees ▾</span></summary>
+          <section id="bv-lp-details">
+            <h3 class="card-title">Provide liquidity</h3>
             <div style="margin-top:12px">
               <div style="font-size:11.5px;color:var(--muted);line-height:1.65;margin-bottom:14px">If the pool price moves while your liquidity sits in it, you'll take out a different mix of VELD and btcVELD than you put in. Your position can be worth less than holding those assets separately. Swap fees may offset that difference, but do not guarantee a profit.</div>
               <div class="form-row">
@@ -3448,7 +3452,7 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
               <button class="btn btn-em" id="bv-lp-add-btn" data-act-click="hbv_lp_add" type="button" style="width:100%" disabled>Enter an amount</button>
               <button class="btn btn-ghost" id="bv-lp-rm-btn" data-act-click="hbv_lp_remove" type="button" style="width:100%;margin-top:10px;display:none">Withdraw all my liquidity</button>
             </div>
-          </details>
+          </section>
         </div>
       </div>
     </div>
@@ -3620,12 +3624,12 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
         <div class="prev-row"><span class="k">Staking multiplier <span style="color:var(--muted);font-size:11px">(Diamond-only 3.00&times; cap)</span></span><span class="v em" id="sk-proj-combined">1.00&times;</span></div>
         <div class="prev-row"><span class="k">Predicted avg. staking multiplier</span><span class="v em" id="sk-proj-weighted">&mdash;</span></div>
         <div class="prev-row"><span class="k">Distribution interval</span><span class="v">480 blk &middot; ~24h</span></div>
-        <details class="veld-details"><summary>Projection details</summary><div class="prev-note">The projection uses the current vault inflow estimate. Actual payouts depend on mined blocks, the active fee policy and eligible stake.</div></details>
+        <section data-veld-help class="veld-details"><button type=button>Projection details</button><div class="prev-note">The projection uses the current vault inflow estimate. Actual payouts depend on mined blocks, the active fee policy and eligible stake.</div></section>
       </div>
 
       <div class="prev" style="margin-top:12px">
         <div class="card-title" style="margin-bottom:6px">Staking multiplier ladder</div>
-        <details class="veld-details"><summary>How the multiplier works</summary><div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Your <strong>staking multiplier</strong> is your mining tier &times; your lockup tier &mdash; both ladders contribute to it, and it boosts your share of vault distributions. Mining tier does not change the ordinary-block miner share. Every 100th block sends its subsidy to the vault.</div></details>
+        <section data-veld-help class="veld-details"><button type=button>How the multiplier works</button><div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Your <strong>staking multiplier</strong> is your mining tier &times; your lockup tier &mdash; both ladders contribute to it, and it boosts your share of vault distributions. Mining tier does not change the ordinary-block miner share. Every 100th block sends its subsidy to the vault.</div></section>
         <div class="prev-row"><span class="k">Lockup tier &middot; 7d</span><span class="v">1.00&times;</span></div>
         <div class="prev-row"><span class="k">Lockup tier &middot; 14d</span><span class="v">1.10&times;</span></div>
         <div class="prev-row"><span class="k">Lockup tier &middot; 30d</span><span class="v">1.25&times;</span></div>
@@ -3815,13 +3819,13 @@ html[data-theme="light"] #w-utxo-consolidate-btn:hover,html[data-theme="light"] 
       <span>Slashing Evidence Ledger</span>
       <span id="val-slash-phase" style="font-weight:400;font-size:11px;color:var(--muted2)">enforced · bond slashed</span>
     </div>
-    <details class="veld-details"><summary>Slashing details</summary><div style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.5">
+    <section data-veld-help class="veld-details"><button type=button>Slashing details</button><div style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.5">
       Verified conflicting signatures permanently ban the validator key.
       Ordinary endorsement double-signing pays 25% of the bond to the reporter,
       25% to the vault and returns 50% to the offender. Locked-finality
       equivocation pays 25% to the reporter and burns 75%, with no return to
       the offender. The ledger below records verified evidence.
-    </div></details>
+    </div></section>
     <div id="val-slash-list"><div style="color:var(--muted);font-size:11px;text-align:center;padding:14px">Loading&hellip;</div></div>
   </div>
 </div>
@@ -10160,7 +10164,7 @@ function initHelpTips(scope) {
   // (The old heuristic auto-folded any muted/desc/intro/note block ≥90 chars behind a
   // block "?" that sat UNDER the text — it swallowed real content, e.g. the co-mine
   // "how to mine" steps and other primary descriptions. That heuristic is gone;
-  // genuine help is now either this inline data-help or a hand-written <details class="spx-help">.)
+  // genuine help is now either this inline data-help or a hand-written <section data-veld-help class="spx-help">.)
   var nodes = scope.querySelectorAll('[data-help]');
   for (var i = 0; i < nodes.length; i++) {
     var el = nodes[i];
@@ -10168,8 +10172,8 @@ function initHelpTips(scope) {
     el.dataset.hqd = '1';
     var txt = el.getAttribute('data-help') || '';
     if (!txt) continue;
-    var det  = document.createElement('details'); det.className = 'help-tip';
-    var sum  = document.createElement('summary'); sum.textContent = '?'; sum.title = 'What is this?'; sum.setAttribute('aria-label', 'Show help');
+    var det  = document.createElement('section'); det.setAttribute('data-veld-help','');
+    var sum  = document.createElement('button'); sum.type='button'; sum.textContent = '?'; sum.title = 'What is this?'; sum.setAttribute('aria-label', 'Show help');
     var body = document.createElement('div');     body.className = 'help-body'; body.textContent = txt;
     det.appendChild(sum); det.appendChild(body);
     el.appendChild(det);                                // "?" rides at the end of the element's own text

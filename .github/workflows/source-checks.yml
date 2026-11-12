@@ -198,6 +198,15 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/veld-browser-tests" --ignore-scripts --no-audit --no-fund playwright@1.62.1
           node "$RUNNER_TEMP/veld-browser-tests/node_modules/playwright/cli.js" install --with-deps chromium
           VELD_PLAYWRIGHT_MODULE="$RUNNER_TEMP/veld-browser-tests/node_modules/playwright" node tests/wallet_nms_tests.js
+      - name: Verify wallet help dialogs and mobile presentation
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/veld-help-tests"
+          g++ -std=c++17 -Iinclude tests/help_dialogs_fixture.cpp -o "$RUNNER_TEMP/veld-help-tests/export"
+          "$RUNNER_TEMP/veld-help-tests/export" "$RUNNER_TEMP/veld-help-tests"
+          VELD_PLAYWRIGHT_MODULE="$RUNNER_TEMP/veld-browser-tests/node_modules/playwright" node tests/help_dialogs_browser_tests.cjs "$RUNNER_TEMP/veld-help-tests"
       - name: Verify checkpoint publication and recovery
         if: runner.os == 'Linux'
         shell: bash
