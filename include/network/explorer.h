@@ -6651,7 +6651,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 })();
 </script>)VLDPOOL";
         page += std::string("<style>") + VELD_POOL_OVERVIEW_CSS + "</style><script nonce=\"__CSP_NONCE__\">" + VELD_POOL_OVERVIEW_JS + "</script>";
-        return HttpResponse::HTML(page + ArcadeFoot());
+        return HttpResponse::HTML(WithHelpDialogs(page + ArcadeFoot()));
     }
 
     HttpResponse ServeMempoolPage() {
