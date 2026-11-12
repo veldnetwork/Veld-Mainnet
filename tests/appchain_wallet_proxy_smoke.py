@@ -84,6 +84,36 @@ def main(a):
             port = reserve.getsockname()[1]
         data = Path(tempfile.mkdtemp(prefix='veld-wallet-bridge-proxy-'))
         report['disposable_data'] = str(data)
+        if os.name == 'nt':
+            # Elevated hosted runners create Administrators-owned directories.
+            # Give only this new, empty fixture its actual user's ownership.
+            ownership_script = a.evidence / 'fixture-owner.ps1'
+            ownership_script.write_text(
+                "param([string]$Path)\n$ErrorActionPreference='Stop'\n"
+                "$item = Get-Item -LiteralPath $Path\n"
+                "if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or "
+                "!$item.Name.StartsWith('veld-wallet-bridge-proxy-') -or "
+                "@(Get-ChildItem -LiteralPath $Path -Force).Count) "
+                "{ throw 'Not an empty disposable wallet fixture' }\n"
+                "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User\n"
+                "$acl = Get-Acl -LiteralPath $Path\n"
+                "$acl.SetOwner($sid)\n"
+                "Set-Acl -LiteralPath $Path -AclObject $acl\n"
+                "if ((Get-Acl -LiteralPath $Path).GetOwner("
+                "[Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) "
+                "{ throw 'Fixture ownership mismatch' }\n",
+                encoding='utf-8',
+            )
+            ps = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+            ps_env = os.environ.copy()
+            ps_env.pop('PSModulePath', None)
+            ps_env.pop('PSMODULEPATH', None)
+            subprocess.run(
+                [str(ps), '-NoProfile', '-File', str(ownership_script), str(data)],
+                check=True, capture_output=True, timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW, env=ps_env,
+            )
+            report['disposable_directory_owner_verified'] = True
         token = secrets.token_urlsafe(32)
         env = os.environ.copy()
         env.update(VELD_LOCAL_SIGNER_TOKEN=token)
@@ -127,7 +157,11 @@ def main(a):
 
         deadline = time.monotonic() + 60
         while True:
-            assert proc.poll() is None, 'Desktop process exited before startup'
+            assert proc.poll() is None, (
+                'Desktop process exited before startup: '
+                + str(proc.returncode) + '\n'
+                + (a.evidence / 'wallet.log').read_text(errors='replace')[-2000:]
+            )
             try:
                 status, headers, html = request('GET', '/')
                 break
@@ -239,7 +273,9 @@ def main(a):
             status, _, _ = request(
                 'POST',
                 '/rpc',
-                dict(jsonrpc='2.0', id=10, method=requests[0][0], params=[]),
+                # Header refusal precedes body parsing. Sending no body avoids
+                # a Windows TCP reset from unread bytes obscuring the status.
+                None,
                 dict(extra, Cookie=cookie),
             )
             check(
