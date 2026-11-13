@@ -33,6 +33,21 @@ function fixture(entries, handler) {
 }
 const settle = async () => {for (let i=0; i<20; i++) await Promise.resolve();};
 (async () => {
+  // The ordinary validator-list RPC stops at 100 rows. Bond-vault records are
+  // unpaginated and also retain inactive custodial registrations through exit.
+  for (const active of [true,false]) {
+    const rows = Array.from({length:150},(_,i)=>({address:'other-'+i,registered_height:50+i}));
+    rows.push({address:'owner',registered_height:100,active,principal_held:true});
+    const f = fixture([{...entry(),prepare_method:'prepareregistervalidator'}],(method,params)=>{
+      if(method==='getrawmempool')return [];
+      if(method==='getbondvaultinfo')return {validators:rows};
+      if(method==='gettransaction'){assert.deepEqual(Array.from(params),[txid,'100']);return confirmed(txid,100);}
+      return missing();
+    });
+    await f.context.loadPendingSends(); assert.deepEqual(f.saved(),[]);
+    assert.equal(f.calls.filter(c=>c.method==='getbondvaultinfo').length,1);
+    assert(!f.calls.some(c=>c.method==='getvalidators'||c.method==='getaddresshistory'));cases++;
+  }
   // Registration is older than 1,000 history rows and the recent lookup range.
   // Both legacy metadata and the durable journal retain their operation label.
   for (const journalOnly of [false, true]) {
@@ -40,7 +55,7 @@ const settle = async () => {for (let i=0; i<20; i++) await Promise.resolve();};
     let resolved = [];
     const f = fixture(journalOnly ? [] : [registration], (method, params) => {
       if (method === 'getrawmempool') return [];
-      if (method === 'getvalidators') return {validators:[{address:'owner', registered_height:100}]};
+      if (method === 'getbondvaultinfo') return {validators:[{address:'owner', registered_height:100}]};
       if (method === 'gettransaction') {assert.deepEqual(Array.from(params), [txid, '100']); return confirmed(txid, 100);}
       return missing();
     });
@@ -56,7 +71,7 @@ const settle = async () => {for (let i=0; i<20; i++) await Promise.resolve();};
     for (const fallback of [false, true]) {
       const f = fixture([{...entry(), prepare_method:'prepareregistervalidator'}], (method, params) => {
         if (method === 'getrawmempool') return [];
-        if (method === 'getvalidators') return {validators:validator ? [validator] : []};
+        if (method === 'getbondvaultinfo') return {validators:validator ? [validator] : []};
         if (method === 'getaddresshistory') return page(fallback ? [{txid, block_height:4997}] : []);
         if (method === 'gettransaction' && params[1] === '100') return confirmed(other, 100);
         if (method === 'gettransaction' && params[1] === '4997') return confirmed();
@@ -71,7 +86,7 @@ const settle = async () => {for (let i=0; i<20; i++) await Promise.resolve();};
     let checks = 0, cleared = [];
     const f = fixture([{...entry(), prepare_method:'prepareregistervalidator'}], method => {
       if (method === 'getrawmempool') return [];
-      if (method === 'getvalidators') return {validators:[{address:'owner', registered_height:100}]};
+      if (method === 'getbondvaultinfo') return {validators:[{address:'owner', registered_height:100}]};
       if (method === 'gettransaction') return ++checks === 1 ? confirmed(txid,100) : invalid;
       return missing();
     });
@@ -82,7 +97,7 @@ const settle = async () => {for (let i=0; i<20; i++) await Promise.resolve();};
   let finishRegistry;
   const switched = fixture([{...entry(), prepare_method:'prepareregistervalidator'}], method => {
     if (method === 'getrawmempool') return [];
-    if (method === 'getvalidators') return new Promise(resolve => {finishRegistry = resolve;});
+    if (method === 'getbondvaultinfo') return new Promise(resolve => {finishRegistry = resolve;});
     return missing();
   });
   const switching = switched.context.loadPendingSends(); await settle();

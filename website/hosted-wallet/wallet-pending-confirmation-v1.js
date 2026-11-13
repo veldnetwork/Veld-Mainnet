@@ -16,7 +16,9 @@ async function _veldPendingHistoryHints(address, entries, isCurrent) {
   }).map(function(e) { return e.txid; }));
   if (registrations.size && isCurrent()) {
     try {
-      var registry = await rpc('getvalidators', []);
+      // The bond-vault surface includes all custodial registration records;
+      // getvalidators is paginated and defaults to only the first 100 rows.
+      var registry = await rpc('getbondvaultinfo', []);
       if (!isCurrent()) return hints;
       var matches = registry && Array.isArray(registry.validators)
         ? registry.validators.filter(function(v) { return v && v.address === address; }) : [];
