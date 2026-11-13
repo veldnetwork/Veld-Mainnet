@@ -8,5 +8,6 @@
   "wallet-rewards-v1.css": "fdf18ce3c4e5c1c055532ef4d98ed8c94db23dafd0cd8bbbf90396243e9f5f64",
   "wallet-desktop-type-v1.css": "6d2fe5d8a78e66ec8a28d8304ea202cc61ef8b68dc3b1eae517fc686316fbb33",
   "wallet-desktop-login-v1.js": "af907121d081216ed7925562fba466ad81f4a94702d9d6480f916e82e9456913",
-  "wallet-pending-confirmation-v1.js": "4f64acdbe4f8a19e1304511ed49088f0c93271c9d75cd3dabbe986a49a7618ab"
+  "wallet-pending-confirmation-v1.js": "4f64acdbe4f8a19e1304511ed49088f0c93271c9d75cd3dabbe986a49a7618ab",
+  "wallet-bond-balance-v1.js": "fe23bc716c27839fba667d64696f7c2df22b514ccf53fed07465a5022a0f9174"
 }

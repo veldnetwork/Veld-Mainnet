@@ -10526,6 +10526,44 @@ function copyAddr() {
 }
 
 var walletBalanceRevision = 0;
+function _veldWalletBondBalance(vault, address) {
+  if (!vault || !Array.isArray(vault.validators)) throw new Error('Bond balance unavailable');
+  var total = 0;
+  vault.validators.forEach(function(v) {
+    if (!v || v.address !== address) return;
+    if (typeof v.principal_held !== 'boolean' || typeof v.bond_veld !== 'number' ||
+        !Number.isFinite(v.bond_veld) || v.bond_veld < 0) throw new Error('Invalid bond balance');
+    if (v.principal_held) total += v.bond_veld;
+  });
+  return total;
+}
+
+function _veldApplyWalletBondBalance(state) {
+  if (!state.isCurrent()) return;
+  var bonded = state.bonded == null ? 0 : state.bonded;
+  var row = document.getElementById('w-bal-bonded-row');
+  var value = document.getElementById('w-bal-bonded');
+  if (value) value.textContent = fmt(bonded, 2);
+  if (row) row.style.display = bonded > 0.000005 ? '' : 'none';
+  if (state.addressTotal == null) return;
+  var total = state.addressTotal + bonded;
+  var hero = document.getElementById('w-total-bal');
+  if (hero) hero.innerHTML = fmt(total, 2) + ' <span>VELD</span>';
+  window._statusBalance = total;
+}
+
+function _veldLoadWalletBondBalance(state) {
+  return rpc('getbondvaultinfo', []).then(function(vault) {
+    if (!state.isCurrent()) return;
+    state.bonded = _veldWalletBondBalance(vault, state.address);
+    _veldApplyWalletBondBalance(state);
+  }).catch(function() {
+    if (!state.isCurrent()) return;
+    state.bonded = null;
+    _veldApplyWalletBondBalance(state);
+  });
+}
+
 function loadWalletAddr(addr) {
   if (!addr) addr = document.getElementById('w-addr-input').value.trim();
   if (!addr) return;
@@ -10556,6 +10594,8 @@ function loadWalletAddr(addr) {
   if (!_setCurrentAddr(addr)) return;
   var balanceRevision = ++walletBalanceRevision;
   var balanceIsCurrent = function() { return balanceRevision === walletBalanceRevision && addr === currentAddr; };
+  var bondBalance = {address:addr, isCurrent:balanceIsCurrent, addressTotal:null, bonded:null};
+  _veldApplyWalletBondBalance(bondBalance);
   if (savedAddrs.indexOf(addr) === -1) {
     savedAddrs.unshift(addr);
     if (savedAddrs.length > 5) savedAddrs.pop();
@@ -10602,14 +10642,12 @@ function loadWalletAddr(addr) {
       fmt(effective,2) + ' <span>VELD</span>';
     // cache total balance for the enriched status bar.
     window._statusBalance = effective;
-    // Bonded hook. Cache this address's true UTXO total + the
-    // address it belongs to, so the async getvalidators lookup below can
-    // recompute the hero as (addressTotal + bonded) WITHOUT re-reading
-    // getbalance. The address coins reconcile EXACTLY as before from this
-    // value (Spendable+Staked+Maturing+PendingOut+Settling == effective);
-    // Bonded is layered on top as a separate vault-held amount.
+    // The vault-held principal is separate from address coins. Reconcile both
+    // responses regardless of which finishes first, using this refresh only.
     window._wAddressTotal = effective;
     window._wBalanceAddr  = addr;
+    bondBalance.addressTotal = effective;
+    _veldApplyWalletBondBalance(bondBalance);
     // backup-nag visibility decision. Three states
     // tracked in localStorage:
     //   veld_backed_up   = '1'   user clicked "I've backed up"
@@ -10732,42 +10770,9 @@ function loadWalletAddr(addr) {
     var spendEl = document.getElementById('w-spendable');
     if (spendEl) { spendEl.textContent = ''; spendEl.style.display = 'none'; }
   });
-  // "Bonded" row. A validator's custodial bond
-  // (== min_stake_veld) is NOT in this address's UTXO balance — it was
-  // sent to the protocol stake vault at registration and is recoverable
-  // on a clean deregister. We surface it as a SEPARATE additive amount:
-  // if the loaded address is a registered validator, bonded =
-  // min_stake_veld, else 0. The hero total becomes (addressTotal + bonded)
-  // so the visible rows (incl. Bonded) still sum to the headline. The
-  // address-coin reconcile above is untouched. Best-effort: on RPC
-  // failure (or old node) the row stays hidden and the hero shows the
-  // address total exactly as before.
-  rpc('getvalidators', []).then(function(vd) {
-    if (!balanceIsCurrent()) return;
-    var bonded = 0;
-    if (vd && typeof vd === 'object' && Array.isArray(vd.validators)) {
-      for (var i = 0; i < vd.validators.length; i++) {
-        if (vd.validators[i] && vd.validators[i].address === addr) {
-          bonded = parseFloat(vd.min_stake_veld) || 0;
-          break;
-        }
-      }
-    }
-    var bRow = document.getElementById('w-bal-bonded-row');
-    var bEl  = document.getElementById('w-bal-bonded');
-    if (bEl)  bEl.textContent = fmt(bonded, 2);
-    if (bRow) bRow.style.display = (bonded > 0.000005) ? '' : 'none';
-    // Recompute the hero as addressTotal + bonded so the headline accounts
-    // for the vault-held principal. Guard on the cached address still
-    // matching (the user may have switched wallets while this resolved).
-    if (window._wBalanceAddr === addr) {
-      var addrTotal = (typeof window._wAddressTotal === 'number') ? window._wAddressTotal : 0;
-      var heroTotal = addrTotal + bonded;
-      var heroEl = document.getElementById('w-total-bal');
-      if (heroEl) heroEl.innerHTML = fmt(heroTotal, 2) + ' <span>VELD</span>';
-      window._statusBalance = heroTotal;
-    }
-  }).catch(function(){ /* old node / network glitch — leave hero at address total, hide Bonded */ });
+  // Read actual held principal, including pending returns. The registration
+  // minimum can change while an existing validator still holds a larger bond.
+  _veldLoadWalletBondBalance(bondBalance);
   // Cache vault-ETA for the enriched status bar
   // (cell removed from balance grid; still surfaced in the top status
   // bar so users see "next draw" countdown there without duplicating

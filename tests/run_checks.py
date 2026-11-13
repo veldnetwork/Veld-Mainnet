@@ -51,6 +51,7 @@ SUITES = {
         "tests/wallet_governance_activity_tests.js",
         "tests/wallet_history_pagination_tests.js",
         "tests/wallet_pending_confirmation_tests.js",
+        "tests/wallet_bond_balance_tests.js",
         "tests/wallet_stake_navigation_tests.js",
         "tests/wallet_stake_intent_tests.js",
         "tests/wallet_transaction_policy_tests.js",
