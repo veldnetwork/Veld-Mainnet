@@ -7,5 +7,6 @@
   "obsidian-moss-a462a703c478.css": "a462a703c47869943669f3dbee98bf1bdeb1792b6e68bf9b9fc009b72cfd7e8c",
   "wallet-rewards-v1.css": "fdf18ce3c4e5c1c055532ef4d98ed8c94db23dafd0cd8bbbf90396243e9f5f64",
   "wallet-desktop-type-v1.css": "6d2fe5d8a78e66ec8a28d8304ea202cc61ef8b68dc3b1eae517fc686316fbb33",
-  "wallet-desktop-login-v1.js": "af907121d081216ed7925562fba466ad81f4a94702d9d6480f916e82e9456913"
+  "wallet-desktop-login-v1.js": "af907121d081216ed7925562fba466ad81f4a94702d9d6480f916e82e9456913",
+  "wallet-pending-confirmation-v1.js": "4f64acdbe4f8a19e1304511ed49088f0c93271c9d75cd3dabbe986a49a7618ab"
 }

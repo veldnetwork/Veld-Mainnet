@@ -11791,6 +11791,33 @@ function _veldPruneConfirmedPending(address, txids) {
 async function _veldPendingHistoryHints(address, entries, isCurrent) {
   var wanted = new Set(entries.map(function(e) { return e.txid; }));
   var hints = new Map(), cursors = new Set(), cursor = '';
+  // Active validators can produce more history than the bounded window below.
+  // Their registration height is a locator, never proof of this transaction.
+  var registrations = new Set(entries.filter(function(e) {
+    return e.prepare_method === 'prepareregistervalidator' || e.label === 'Validator Register';
+  }).map(function(e) { return e.txid; }));
+  if (registrations.size && isCurrent()) {
+    try {
+      var registry = await rpc('getvalidators', []);
+      if (!isCurrent()) return hints;
+      var matches = registry && Array.isArray(registry.validators)
+        ? registry.validators.filter(function(v) { return v && v.address === address; }) : [];
+      var registered = matches.length === 1 ? matches[0].registered_height : null;
+      if (Number.isSafeInteger(registered) && registered > 0) {
+        for (var txid of registrations) {
+          if (!isCurrent()) return hints;
+          try {
+            var registration = await rpc('gettransaction', [txid, String(registered)]);
+            if (!isCurrent()) return hints;
+            if (_veldIsConfirmedTransaction(registration, txid, registered)) {
+              hints.set(txid, registered);
+              wanted.delete(txid);
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
   // Indexed, bounded pages avoid repeated whole-chain transaction searches.
   for (var pageNo = 0; wanted.size && pageNo < 20 && isCurrent(); pageNo++) {
     try {

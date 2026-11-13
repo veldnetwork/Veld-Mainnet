@@ -11,3 +11,10 @@ Keep the existing HTTPS origin, CSP, RPC method restrictions, host checks,
 request limits and proxy metadata controls. The new navigation bootstrap calls
 the native external-value-aware landing-page function; all operation-specific
 activation gates stay in the native page and node.
+
+`wallet-pending-confirmation-v1.js` supplies the native pending-confirmation
+lookup fix to hosted clients while released binaries remain unchanged. It uses
+the validator registration height to locate older registrations, then requires
+the exact transaction's canonical confirmation before the existing journal and
+pending list reconcile it. The regression suite enforces native/hosted parity.
+It does not sign, broadcast, change bond state, or change the page layout.
