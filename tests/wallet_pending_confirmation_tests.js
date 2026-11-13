@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const {extractFunction} = require('./javascript_function_source');
 const source = fs.readFileSync(process.env.VELD_WALLET_TEST_SOURCE || path.join(__dirname, '../include/network/ui_desktop.h'), 'utf8');
+const hosted = fs.readFileSync(path.join(__dirname, '../website/hosted-wallet/wallet-pending-confirmation-v1.js'), 'utf8');
+assert.equal(extractFunction(hosted, '_veldPendingHistoryHints'), extractFunction(source, '_veldPendingHistoryHints'), 'Hosted and native confirmation lookup must match');
 const names = ['_veldIsConfirmedTransaction', '_veldPruneConfirmedPending', '_veldPendingHistoryHints', 'loadPendingSends', 'renderPendingSends', '__waitForTxConfirm'];
 const txid = 'e779cb772ea851b977365c082f03df0a696ed40e9db40c2eb7668d21a9539370';
 const other = 'b'.repeat(64), newSend = 'c'.repeat(64);
@@ -25,10 +27,84 @@ function fixture(entries, handler) {
     rpc(method, params) { calls.push({method, params}); return Promise.resolve().then(() => handler(method, params)); }
   });
   vm.runInContext(names.map(name => extractFunction(source, name)).join('\n'), context);
+  context.window = context;
+  vm.runInContext(hosted, context);
   return {context, storage, calls, element, timers, saved:() => JSON.parse(storage.get('veld_pending_txs'))};
 }
 const settle = async () => {for (let i=0; i<20; i++) await Promise.resolve();};
 (async () => {
+  // The ordinary validator-list RPC stops at 100 rows. Bond-vault records are
+  // unpaginated and also retain inactive custodial registrations through exit.
+  for (const active of [true,false]) {
+    const rows = Array.from({length:150},(_,i)=>({address:'other-'+i,registered_height:50+i}));
+    rows.push({address:'owner',registered_height:100,active,principal_held:true});
+    const f = fixture([{...entry(),prepare_method:'prepareregistervalidator'}],(method,params)=>{
+      if(method==='getrawmempool')return [];
+      if(method==='getbondvaultinfo')return {validators:rows};
+      if(method==='gettransaction'){assert.deepEqual(Array.from(params),[txid,'100']);return confirmed(txid,100);}
+      return missing();
+    });
+    await f.context.loadPendingSends(); assert.deepEqual(f.saved(),[]);
+    assert.equal(f.calls.filter(c=>c.method==='getbondvaultinfo').length,1);
+    assert(!f.calls.some(c=>c.method==='getvalidators'||c.method==='getaddresshistory'));cases++;
+  }
+  // Registration is older than 1,000 history rows and the recent lookup range.
+  // Both legacy metadata and the durable journal retain their operation label.
+  for (const journalOnly of [false, true]) {
+    const registration = {...entry(), prepare_method:'prepareregistervalidator'};
+    let resolved = [];
+    const f = fixture(journalOnly ? [] : [registration], (method, params) => {
+      if (method === 'getrawmempool') return [];
+      if (method === 'getbondvaultinfo') return {validators:[{address:'owner', registered_height:100}]};
+      if (method === 'gettransaction') {assert.deepEqual(Array.from(params), [txid, '100']); return confirmed(txid, 100);}
+      return missing();
+    });
+    f.context._veldJournal = () => ({pending:async () => journalOnly ? [{...entry(), prepare_method:'transaction', label:'Validator Register'}] : [], confirmed:async ids => {resolved = Array.from(ids);}});
+    await f.context.loadPendingSends();
+    assert.deepEqual(f.saved(), []); assert.deepEqual(resolved, [txid]);
+    assert(!f.calls.some(c => c.method === 'getaddresshistory' || c.method === 'gettransactionrecent'));
+    cases++;
+  }
+  // Registry state alone, another wallet, or an obsolete registration never
+  // clears the saved transaction. History remains the fallback after bad hints.
+  for (const validator of [null, {address:'different-wallet', registered_height:100}, {address:'owner', registered_height:'100'}, {address:'owner', registered_height:0}, {address:'owner', registered_height:100}]) {
+    for (const fallback of [false, true]) {
+      const f = fixture([{...entry(), prepare_method:'prepareregistervalidator'}], (method, params) => {
+        if (method === 'getrawmempool') return [];
+        if (method === 'getbondvaultinfo') return {validators:validator ? [validator] : []};
+        if (method === 'getaddresshistory') return page(fallback ? [{txid, block_height:4997}] : []);
+        if (method === 'gettransaction' && params[1] === '100') return confirmed(other, 100);
+        if (method === 'gettransaction' && params[1] === '4997') return confirmed();
+        return missing();
+      });
+      await f.context.loadPendingSends(); assert.equal(f.saved().length, fallback ? 0 : 1); cases++;
+    }
+  }
+  // A reorganization between the registry locator and final canonical lookup
+  // must retain the record and its reservations.
+  for (const invalid of [null, confirmed(other,100), {...confirmed(txid,100), confirmations:0}, confirmed(txid,101)]) {
+    let checks = 0, cleared = [];
+    const f = fixture([{...entry(), prepare_method:'prepareregistervalidator'}], method => {
+      if (method === 'getrawmempool') return [];
+      if (method === 'getbondvaultinfo') return {validators:[{address:'owner', registered_height:100}]};
+      if (method === 'gettransaction') return ++checks === 1 ? confirmed(txid,100) : invalid;
+      return missing();
+    });
+    f.context._veldJournal = () => ({pending:async () => [], confirmed:async ids => {cleared = Array.from(ids);}});
+    await f.context.loadPendingSends(); assert.equal(f.saved().length, 1); assert.deepEqual(cleared, []); cases++;
+  }
+  // Changing wallets while registry lookup is in flight cannot mutate storage.
+  let finishRegistry;
+  const switched = fixture([{...entry(), prepare_method:'prepareregistervalidator'}], method => {
+    if (method === 'getrawmempool') return [];
+    if (method === 'getbondvaultinfo') return new Promise(resolve => {finishRegistry = resolve;});
+    return missing();
+  });
+  const switching = switched.context.loadPendingSends(); await settle();
+  switched.context.currentAddr = 'different-wallet';
+  finishRegistry({validators:[{address:'owner', registered_height:100}]}); await switching;
+  assert.equal(switched.saved().length,1);
+  assert(!switched.calls.some(c => c.method === 'gettransaction')); cases++;
   let f = fixture([entry()], (method, params) => {
     if (method === 'getrawmempool') return [];
     if (method === 'getaddresshistory') return page([{txid, block_height:4997}]);
