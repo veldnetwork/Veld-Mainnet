@@ -116,14 +116,40 @@
     }
     return page('', 1);
   }
-  function setFee(cell, entry, coinbase, height) {
+  function minerFeeSummary(table) {
+    var heading = Array.from(document.querySelectorAll('.card-title')).find(function (item) {
+      return /^Coinbase(?:\s|\u00b7|$)/i.test(item.textContent.trim());
+    });
+    var card = heading ? heading.closest('.card') : table.closest('.card');
+    if (!card) return null;
+    var summary = document.createElement('div');
+    summary.className = 'miner-fee-summary';
+    summary.style.cssText = 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 16px;margin-top:14px;padding-top:14px;border-top:1px solid var(--b1)';
+    var label = document.createElement('div');
+    var name = document.createElement('div');
+    name.textContent = 'Fees paid to miner';
+    name.style.cssText = 'font-size:11.5px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase';
+    var note = document.createElement('div');
+    note.textContent = 'Included in miner payout';
+    note.style.cssText = 'margin-top:4px;font-size:11px;color:var(--muted);line-height:1.4';
+    label.appendChild(name);
+    label.appendChild(note);
+    var amount = document.createElement('span');
+    amount.className = 'miner-fee-total';
+    amount.textContent = 'Checking…';
+    amount.style.cssText = 'font-family:var(--font);font-size:16px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap';
+    summary.appendChild(label);
+    summary.appendChild(amount);
+    card.appendChild(summary);
+    return amount;
+  }
+  function setFee(cell, entry, coinbase) {
     if (coinbase) { cell.textContent = 'Not applicable'; return; }
     var fee = entry ? feeText(entry.fee_veld) : null;
-    var toMiner = Number.isSafeInteger(height) && height >= MINER_FEE_ACTIVATION_HEIGHT;
-    cell.textContent = fee == null ? 'Unavailable' : fee + ' VELD' + (toMiner ? '\nto miner' : '');
+    cell.textContent = fee == null ? 'Unavailable' : fee + ' VELD';
     cell.title = fee == null ? 'The fee could not be verified from transaction history.' :
-      toMiner ? 'Confirmed transaction fee paid to the block miner.' : 'Confirmed network fee';
-    if (toMiner) cell.style.whiteSpace = 'pre';
+      'Confirmed network fee';
+    cell.style.whiteSpace = 'nowrap';
     cell.style.color = fee == null ? 'var(--muted)' : 'var(--text)';
   }
   function blockRows() {
@@ -137,13 +163,13 @@
       if (headers.join('|') !== 'TXID|Type|Flow|Total|Fee') return;
       table.classList.add('transaction-table');
       table.parentElement.classList.add('transaction-table-wrap');
-      var txids = [], fees = new Map(), coinbaseCell = null, block = null;
+      var txids = [], fees = new Map(), minerTotal = null, block = null;
       function updateMinerFee() {
-        if (!coinbaseCell || !coinbaseCell.isConnected) return;
+        if (!minerTotal || !minerTotal.isConnected) return;
         var total = minerFeeTotal(block, height, txids, fees);
-        coinbaseCell.textContent = total == null ? 'Fees unavailable' : total + ' VELD\nto miner';
-        coinbaseCell.style.whiteSpace = 'pre';
-        coinbaseCell.title = total == null ? 'Every transaction fee must be verified before showing the block total.' :
+        minerTotal.textContent = total == null ? 'Unavailable' : total + ' VELD';
+        minerTotal.style.color = total == null ? 'var(--muted)' : 'var(--text)';
+        minerTotal.title = total == null ? 'Every transaction fee must be verified before showing the block total.' :
           'Total transaction fees received by the miner in this block, already included in the coinbase output. This is separate from the block subsidy.';
       }
       table.querySelectorAll('tbody tr').forEach(function (row, ordinal) {
@@ -155,10 +181,8 @@
         txids.push(txid);
         var badge = cells[1].querySelector('span') || cells[1];
         if (badge.textContent.trim() === 'COINBASE') {
-          if (ordinal === 0 && height >= MINER_FEE_ACTIVATION_HEIGHT) {
-            coinbaseCell = cells[4];
-            coinbaseCell.textContent = 'Checking fees…';
-          } else setFee(cells[4], null, true, height);
+          setFee(cells[4], null, true);
+          if (ordinal === 0 && height >= MINER_FEE_ACTIVATION_HEIGHT) minerTotal = minerFeeSummary(table);
           return;
         }
         var sender = Array.from(cells[2].querySelectorAll('a[href^="/address/"]'))[0];
@@ -168,15 +192,15 @@
         var knownFee = /^[−-]?(\d+(?:\.\d+)?)(?:\s+VELD)?$/.exec(initialFee);
         if (knownFee && feeUnits(knownFee[1]) != null) {
           fees.set(txid, knownFee[1]);
-          setFee(cells[4], {fee_veld:knownFee[1]}, false, height);
-        } else setFee(cells[4], null, false, height);
+          setFee(cells[4], {fee_veld:knownFee[1]}, false);
+        } else setFee(cells[4], null, false);
         if (ordinal > 25 || !addressPattern.test(address || '')) return;
         historyEntry(address, txid, height).then(function (entry) {
           if (!row.isConnected || !entry) return;
           var verifiedFee = indexedFee(entry);
           if (!fees.has(txid) && verifiedFee != null) {
             fees.set(txid, verifiedFee);
-            setFee(cells[4], {fee_veld:verifiedFee}, false, height);
+            setFee(cells[4], {fee_veld:verifiedFee}, false);
           }
           updateMinerFee();
           if (entry.type !== 'self' || badge.textContent.trim() !== 'TRANSFER') return;
@@ -187,7 +211,7 @@
           });
         }).catch(function () {});
       });
-      if (coinbaseCell) read('/api/v1/block/' + height).then(function (data) {
+      if (minerTotal) read('/api/v1/block/' + height).then(function (data) {
         block = data;
         updateMinerFee();
       }).catch(function () { updateMinerFee(); });
