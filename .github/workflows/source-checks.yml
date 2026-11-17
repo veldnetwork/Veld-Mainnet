@@ -84,6 +84,9 @@ jobs:
           - fixture: pool_scroll_paint_tests
             standalone: true
           - fixture: stake_fragmentation_tests
+          - fixture: validator_fee_funding_tests
+          - fixture: validator_endorsement_binding_tests
+            standalone: true
           - fixture: wallet_pending_spend_tests
           - fixture: nms_mempool_lifecycle_tests
             standalone: true
@@ -421,6 +424,12 @@ jobs:
             members: ''
           - name: explorer full holder count
             fixture: explorer_holder_count_tests
+            standalone: true
+          - name: validator fee funding with locked stake
+            fixture: validator_fee_funding_tests
+            members: ''
+          - name: validator endorsement work binding
+            fixture: validator_endorsement_binding_tests
             standalone: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

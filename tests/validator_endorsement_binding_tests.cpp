@@ -63,7 +63,7 @@ std::string MakeRpcRequest(const std::string& method, const std::vector<std::str
 
 int main() {
     const std::string hash_text(64, '2');
-    const std::string signature_text(128, '3');
+    const std::string signature_text(6618, '3');
     const std::string payload = "VELD_VALIDATOR|ENDORSE|7|" + hash_text + "|" + signature_text;
     const Transaction canonical = EndorsementTx(payload);
 

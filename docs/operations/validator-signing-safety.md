@@ -68,6 +68,16 @@ to recover availability can put the bond and yield at risk.
 
 ## Verification
 
+Automatic endorsements need a small available balance for transaction fees.
+They use the wallet's spendable-output accounting so an ordinary stake's
+principal, immature rewards and inputs reserved by pending transactions remain
+unavailable. A wallet can hold a large stake and still lack available fee funds.
+The node reports funding or admission failures once per new height in its normal
+log. Do not unlock a stake or delete signing history to work around a funding
+failure. `tests/validator_fee_funding_tests.cpp` reproduces a wallet whose largest
+output is a locked stake and checks fee funding, pending-input exclusion and
+failure when backing state is inconsistent.
+
 At the 3.3.4 activation, the registration minimum changes to 5,000 VELD;
 signing-history preservation and slashing rules do not reset. An identical
 endorsement retried for the same height and hash is not a conflicting signature.

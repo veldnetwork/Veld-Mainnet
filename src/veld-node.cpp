@@ -5177,7 +5177,7 @@ int main(int argc, char* argv[]) {
 
             int total_endorsed = 0;
             int total_unregistered = 0, total_already = 0, total_no_coins = 0, total_mp_reject = 0;
-            const char* last_mp_reject = "";
+            std::string last_mp_reject;
             std::vector<uint64_t> endorsed_heights;
 
             for (uint64_t eh = start_h; eh <= end_h; ++eh) {
@@ -5318,13 +5318,18 @@ int main(int argc, char* argv[]) {
                     eop_script.insert(eop_script.end(), eop_bytes.begin(), eop_bytes.end());
 
                     uint64_t fee = MIN_TX_FEE;
-                    auto coins = SelectCoins(node.GetChain(), ekp_script, 0, fee,
-                                             node.GetMempoolMut().GetSpentOutputs());
-                    if (!coins.sufficient) {
-                        coins = SelectCoins(node.GetChain(), miner_kp.GetP2PKHScript(), 0, fee,
-                                            node.GetMempool().GetSpentOutputs());
-                        if (coins.sufficient)
-                            ekp_script = miner_kp.GetP2PKHScript();
+                    CoinSelection coins;
+                    try {
+                        coins = node.GetRPC().SelectSpendableCoins(ekp.address, 0, fee);
+                        if (!coins.sufficient && ekp.address != miner_kp.address) {
+                            coins = node.GetRPC().SelectSpendableCoins(miner_kp.address, 0, fee);
+                            if (coins.sufficient)
+                                ekp_script = miner_kp.GetP2PKHScript();
+                        }
+                    } catch (const std::exception&) {
+                        ++total_mp_reject;
+                        last_mp_reject = "FUNDING_STATE_UNAVAILABLE";
+                        continue;
                     }
                     if (!coins.sufficient) {
                         // Fail closed.  Endorsements must be funded and signed
@@ -5384,7 +5389,7 @@ int main(int argc, char* argv[]) {
                         }
                     } else {
                         ++total_mp_reject;
-                        last_mp_reject = sink.deferred ? "WORK_ADMISSION_DEFERRED" : "INVALID";
+                        last_mp_reject = sink.reason;
                     }
                 }
                 if (round_endorsed > 0) {
@@ -5409,6 +5414,14 @@ int main(int argc, char* argv[]) {
                           << "\n";
                 std::cout.flush();
             } else if (log_this_round) {
+                if (total_no_coins || total_mp_reject) {
+                    std::cerr << "  [endorse] Waiting at height " << cur_height
+                              << ": unavailable fee funding=" << total_no_coins
+                              << ", refused attempts=" << total_mp_reject;
+                    if (total_mp_reject)
+                        std::cerr << " (" << last_mp_reject << ")";
+                    std::cerr << '\n';
+                }
                 if (veld::DiagVerbose().load())
                     veld::vcerr() << "  [endorse-diag] window=" << start_h << "-" << end_h
                                   << " keys=" << endorser_keys.size()
