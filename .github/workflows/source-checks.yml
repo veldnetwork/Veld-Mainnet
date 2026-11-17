@@ -418,6 +418,9 @@ jobs:
           - name: rejected snapshot startup barrier
             fixture: snapshot_startup_barrier_tests
             members: ''
+          - name: explorer full holder count
+            fixture: explorer_holder_count_tests
+            standalone: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

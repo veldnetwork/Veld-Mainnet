@@ -6472,28 +6472,27 @@ class Blockchain {
         return balances;
     }
 
-    std::vector<std::pair<std::string, double>> GetTopHolders(size_t top_n = 50) const {
+    struct HolderSummary {
+        size_t non_system_count = 0;
+        std::vector<std::pair<std::string, double>> top_holders;
+    };
+
+    HolderSummary GetHolderSummary(size_t top_n = 50) const {
+        // Count the complete balance snapshot independently of the bounded ranking.
+        // Canonical address scripts map one-to-one to addresses; GetAllBalances
+        // already combines every output belonging to the same script.
         auto balances = GetAllBalances();
-        using Entry = std::pair<uint64_t, const std::string*>;
+        HolderSummary summary;
+        using Entry = std::pair<uint64_t, std::string>;
         struct MinFirst {
             bool operator()(const Entry& a, const Entry& b) const {
-                return a.first > b.first;
+                return a > b;
             }
         };
         std::priority_queue<Entry, std::vector<Entry>, MinFirst> heap;
-        for (const auto& kv : balances) {
-            if (heap.size() < top_n) {
-                heap.push({kv.second, &kv.first});
-            } else if (kv.second > heap.top().first) {
-                heap.pop();
-                heap.push({kv.second, &kv.first});
-            }
-        }
-        std::vector<std::pair<std::string, double>> result;
-        result.reserve(heap.size());
-        while (!heap.empty()) {
-            const auto& [units, hex_ptr] = heap.top();
-            const std::string& script_hex = *hex_ptr;
+        for (const auto& [script_hex, units] : balances) {
+            if (units == 0)
+                continue;
             std::vector<uint8_t> script;
             script.reserve(script_hex.size() / 2);
             for (size_t i = 0; i + 1 < script_hex.size(); i += 2) {
@@ -6507,12 +6506,33 @@ class Blockchain {
                 script.push_back((hc(script_hex[i]) << 4) | hc(script_hex[i + 1]));
             }
             std::string addr = ScriptToAddress(script);
-            if (!addr.empty())
-                result.emplace_back(std::move(addr), (double)units / VELD_UNITS);
+            if (addr.empty())
+                continue;
+            if (addr != VAULT_ADDRESS && addr != STAKE_VAULT_ADDRESS && addr != BOND_YIELD_ESCROW &&
+                addr != POOL_ADDRESS && addr != ENDORSEMENT_POOL_ADDRESS)
+                ++summary.non_system_count;
+            if (top_n == 0)
+                continue;
+            Entry entry{units, std::move(addr)};
+            if (heap.size() < top_n) {
+                heap.push(std::move(entry));
+            } else if (entry > heap.top()) {
+                heap.pop();
+                heap.push(std::move(entry));
+            }
+        }
+        summary.top_holders.reserve(heap.size());
+        while (!heap.empty()) {
+            const auto& [units, addr] = heap.top();
+            summary.top_holders.emplace_back(addr, (double)units / VELD_UNITS);
             heap.pop();
         }
-        std::reverse(result.begin(), result.end());
-        return result;
+        std::reverse(summary.top_holders.begin(), summary.top_holders.end());
+        return summary;
+    }
+
+    std::vector<std::pair<std::string, double>> GetTopHolders(size_t top_n = 50) const {
+        return GetHolderSummary(top_n).top_holders;
     }
 
     // Test-only: fast-forward the supply counter so phase-transition tests
