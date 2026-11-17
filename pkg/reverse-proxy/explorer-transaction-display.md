@@ -20,6 +20,15 @@ multiple inputs and one output to that wallet. Unknown fees remain unavailable;
 they are never displayed as zero. Output labels require a matching block event,
 transaction ID, and credited address. Existing navigation assets are unchanged.
 
+From mainnet block 34,750, the fee column identifies fees paid to the miner. The
+coinbase row shows the sum received from the block's other transactions; that
+amount is already included in the coinbase outputs and is separate from subsidy.
+The sum uses integer base units and requires the complete, ordered transaction
+list to match the canonical block API. Missing fees never become zero. Existing
+resolved input/output fees take precedence over history lookups. An indexed
+recipient's zero fee does not establish the transaction's fee; protocol payouts
+are looked up against their funding pool and must establish a payer-side entry.
+
 Qualification includes the reported 36-input consolidation in block 4405, invalid
 and missing fees, transfers that must not be classified as consolidations, phone
 layouts, history pagination, and rejection of malformed or write requests by an
