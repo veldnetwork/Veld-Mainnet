@@ -6412,7 +6412,8 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
     }
 
     HttpResponse ServeRichListBuild(uint64_t requested_height) {
-        auto holders = chain_.GetTopHolders(50);
+        auto summary = chain_.GetHolderSummary(50);
+        auto holders = std::move(summary.top_holders);
         auto pin_address = [&](const std::string& addr) {
             for (const auto& [a, b] : holders) {
                 if (a == addr) return;
@@ -6462,7 +6463,7 @@ fetch('/api/v1/staking').then(r=>r.json()).then(function(d){
 
         std::ostringstream page;
         page << "<div class=\"stat-grid\" style=\"margin-bottom:20px\">";
-        page << "<div class=\"stat\"><div class=\"stat-label\">Unique Holders</div><div class=\"stat-value em\">" << real_count << "</div><div class=\"stat-sub\">excl. system addresses</div></div>";
+        page << "<div class=\"stat\"><div class=\"stat-label\">Unique Holders</div><div class=\"stat-value em\">" << summary.non_system_count << "</div><div class=\"stat-sub\">excl. system addresses</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Total Supply</div><div class=\"stat-value gold\">" << std::fixed << std::setprecision(2) << total_supply << " VELD</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Top 10 Hold</div><div class=\"stat-value\">" << std::setprecision(1) << top10pct << "%</div><div class=\"stat-sub\">of supply</div></div>";
         page << "<div class=\"stat\"><div class=\"stat-label\">Largest Holder</div><div class=\"stat-value\">" << std::setprecision(1) << top1pct << "%</div><div class=\"stat-sub\">of supply</div></div>";
