@@ -1141,6 +1141,19 @@ class RpcServer {
         return w;
     }
 
+    // Local automatic signers must use the same confirmed, unreserved funds
+    // as wallet transaction preparation. Raw chain coin selection includes
+    // exact stake principal and can repeatedly produce inadmissible spends.
+    CoinSelection SelectSpendableCoins(const std::string& address, uint64_t target_units,
+                                      uint64_t fee_units) const {
+        auto transition = chain_.AcquireConsensusTransitionGuard();
+        const auto state = ComputeWalletState(address);
+        if (target_units > UINT64_MAX - fee_units ||
+            target_units + fee_units > state.spendable_units)
+            return CoinSelection{};
+        return SelectWalletStateCoins_(state, target_units, fee_units);
+    }
+
     std::vector<uint8_t> AuthenticatedParentRaw(const UTXO& utxo) const {
         const Block block = chain_.GetBlock(utxo.block_height);
         for (const auto& transaction : block.transactions) {

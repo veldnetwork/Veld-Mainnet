@@ -5,6 +5,9 @@ are tracked separately; publishing source does not release new binaries.
 
 ## Unreleased maintenance
 
+- Fund automatic validator endorsements from available wallet outputs, excluding
+  locked stake principal and pending spends. Report funding or admission failures
+  in the normal node log instead of silently skipping endorsements.
 - Count all non-system addresses with a positive native balance in the Explorer's
   Unique Holders statistic, independently of the displayed top-50 ranking.
   Keep the five pinned protocol balances outside the ranking's 50 holder slots.
