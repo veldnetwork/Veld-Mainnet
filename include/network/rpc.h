@@ -1145,7 +1145,7 @@ class RpcServer {
     // as wallet transaction preparation. Raw chain coin selection includes
     // exact stake principal and can repeatedly produce inadmissible spends.
     CoinSelection SelectSpendableCoins(const std::string& address, uint64_t target_units,
-                                      uint64_t fee_units) const {
+                                       uint64_t fee_units) const {
         auto transition = chain_.AcquireConsensusTransitionGuard();
         const auto state = ComputeWalletState(address);
         if (target_units > UINT64_MAX - fee_units ||
