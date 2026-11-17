@@ -101,10 +101,18 @@ jobs:
           if (Test-Path -LiteralPath $testRoot) { throw 'Qualification directory already exists' }
           New-Item -ItemType Directory -Path $testRoot | Out-Null
           $inputs = Get-Content -LiteralPath "$env:RUNNER_TEMP/package-inputs/inputs.json" -Raw | ConvertFrom-Json
-          python tests/windows_package_restart_tests.py --previous $inputs.previous --target $inputs.target --verifier $inputs.verifier --ticket-writer "$env:RUNNER_TEMP/resume-ticket.exe" --output "$testRoot/package-results" --flow $env:QUALIFICATION_FLOW --temp-path $env:QUALIFICATION_TEMP_PATH
-          $testExit = $LASTEXITCODE
-          if (Test-Path -LiteralPath "$testRoot/package-results") {
-            Copy-Item -LiteralPath "$testRoot/package-results" -Destination "$env:RUNNER_TEMP/package-results" -Recurse
+          $originalRunnerTemp = $env:RUNNER_TEMP
+          $ticketWriter = Join-Path $originalRunnerTemp 'resume-ticket.exe'
+          try {
+            # Keep the fixture's ownership boundary on the same disposable root.
+            $env:RUNNER_TEMP = $testRoot
+            python tests/windows_package_restart_tests.py --previous $inputs.previous --target $inputs.target --verifier $inputs.verifier --ticket-writer $ticketWriter --output "$testRoot/package-results" --flow $env:QUALIFICATION_FLOW --temp-path $env:QUALIFICATION_TEMP_PATH
+            $testExit = $LASTEXITCODE
+          } finally {
+            $env:RUNNER_TEMP = $originalRunnerTemp
+            if (Test-Path -LiteralPath "$testRoot/package-results") {
+              Copy-Item -LiteralPath "$testRoot/package-results" -Destination "$originalRunnerTemp/package-results" -Recurse
+            }
           }
           if ($testExit -ne 0) { exit $testExit }
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
