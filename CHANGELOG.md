@@ -3,7 +3,7 @@
 Notable changes to published source. Hosted updates and signed client packages
 are tracked separately; publishing source does not release new binaries.
 
-## Unreleased maintenance
+## 3.3.5 - Validator fee funding and Explorer maintenance
 
 - Fund automatic validator endorsements from available wallet outputs, excluding
   locked stake principal and pending spends. Report funding or admission failures

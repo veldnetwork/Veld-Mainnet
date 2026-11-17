@@ -1,3 +1,21 @@
+## 3.3.5 - Validator fee funding and Explorer maintenance
+
+Automatic validator endorsements now pay their fee from available wallet funds.
+A locked ordinary stake could previously become the largest output and be
+repeatedly selected, causing endorsements to stop despite an available balance.
+The fix excludes locked principal, immature rewards and pending spends. Normal
+logs report funding or admission failures. Signing history and anti-equivocation
+protections are preserved.
+
+This maintenance release also includes the published wallet/Explorer refresh
+fixes, the complete funded-address count, 50 ranked wallets separate from protocol
+balances, and confirmed fees to miners in Explorer transactions.
+
+The 3.3.4 consensus rules, activation height, validator minimum, halvings, subsidy
+allocation and fee recipient are unchanged. No new fork or activation is needed.
+Keep the existing data directory, encrypted key and complete signing history.
+The general-purpose contract runtime and production appchain are not activated.
+
 ## 3.3.4 - Consensus upgrade and vault accounting
 
 Update before mainnet block **34,750**, targeting **Friday, November 13, 2026, around noon MST
