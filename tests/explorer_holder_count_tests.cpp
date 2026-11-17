@@ -37,6 +37,23 @@ static void CheckPage(Blockchain& chain, size_t expected) {
     }
     assert(response.body.find("Top 50 holders") != std::string::npos);
     assert(service.Route(request).body == response.body); // Same-tip cache keeps the full count.
+    const size_t ranked = std::min(expected, size_t{50});
+    const auto api = service.Route(explorer::HttpRequest::Parse(
+        "GET /api/v1/richlist HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+    auto count = [](const std::string& text, const std::string& needle) {
+        size_t total = 0;
+        for (size_t pos = 0; (pos = text.find(needle, pos)) != std::string::npos;
+             pos += needle.size())
+            ++total;
+        return total;
+    };
+    assert(count(response.body, "class=\"rl-ic ic-h\"") == ranked);
+    assert(count(response.body, "class=\"rl-ic ic-s\"") == 5);
+    assert(count(api.body, "\"rank\":") == ranked + 5);
+    assert(count(api.body, "\"is_system\":true") == 5);
+    if (ranked != 0)
+        assert(api.body.find("\"rank\":" + std::to_string(ranked) + ",") != std::string::npos);
+    assert(api.body.find("\"rank\":" + std::to_string(ranked + 1) + ",") == std::string::npos);
 }
 
 int main() {
@@ -60,7 +77,7 @@ int main() {
     assert(chain.GetHolderSummary(1).non_system_count == 70);
     assert(chain.GetHolderSummary(0).non_system_count == 70);
     assert(chain.GetHolderSummary(0).top_holders.empty());
-    assert(chain.GetTopHolders(1000).size() == 75);
+    assert(chain.GetTopHolders(1000).size() == 70);
     for (size_t i = 1; i < summary.top_holders.size(); ++i)
         assert(summary.top_holders[i - 1].second >= summary.top_holders[i].second);
 #endif
@@ -72,7 +89,7 @@ int main() {
     Insert(chain, {0x51}, 1000000 * VELD_UNITS);
     CheckPage(chain, 70);
 #ifndef VELD_HOLDER_BASELINE_TEST
-    assert(chain.GetTopHolders(1000).size() == 75);
+    assert(chain.GetTopHolders(1000).size() == 70);
 #endif
 
     DestinationCommitment384 digest{};

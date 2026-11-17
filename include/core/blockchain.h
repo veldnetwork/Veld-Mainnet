@@ -6506,11 +6506,13 @@ class Blockchain {
                 script.push_back((hc(script_hex[i]) << 4) | hc(script_hex[i + 1]));
             }
             std::string addr = ScriptToAddress(script);
-            if (addr.empty())
+            // The displayed holder limit applies to wallet addresses. Explorer
+            // pins protocol balances separately, outside the numbered ranking.
+            if (addr.empty() || addr == VAULT_ADDRESS || addr == STAKE_VAULT_ADDRESS ||
+                addr == BOND_YIELD_ESCROW || addr == POOL_ADDRESS ||
+                addr == ENDORSEMENT_POOL_ADDRESS)
                 continue;
-            if (addr != VAULT_ADDRESS && addr != STAKE_VAULT_ADDRESS && addr != BOND_YIELD_ESCROW &&
-                addr != POOL_ADDRESS && addr != ENDORSEMENT_POOL_ADDRESS)
-                ++summary.non_system_count;
+            ++summary.non_system_count;
             if (top_n == 0)
                 continue;
             Entry entry{units, std::move(addr)};

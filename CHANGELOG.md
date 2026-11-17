@@ -7,6 +7,7 @@ are tracked separately; publishing source does not release new binaries.
 
 - Count all non-system addresses with a positive native balance in the Explorer's
   Unique Holders statistic, independently of the displayed top-50 ranking.
+  Keep the five pinned protocol balances outside the ranking's 50 holder slots.
 - Refresh the active wallet Validators page when the chain advances or the
   app returns to the foreground, while preserving in-progress operations.
 - Refresh the hosted Explorer when the registration minimum or validator count
