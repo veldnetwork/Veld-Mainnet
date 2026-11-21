@@ -25,3 +25,11 @@ and its small bond helpers, with source parity enforced by
 principal, including pending returns, independently of the current registration
 minimum or RPC completion order. Remove these compatibility assets once the
 hosted native binary includes the same fixes.
+
+`wallet-unstake-maturity-v1.js` supplies the native unstake batch planner and
+submission function to hosted clients on earlier released binaries. Batch
+maturity uses each active record's node-reported status, independently of the
+dashboard height display. Record-loading failures remain visible, and integer
+planning must cover the complete requested amount before any batch is submitted.
+The existing signer-session, destination, fee and backend maturity checks remain
+in place. `wallet_unstake_maturity_tests.js` enforces native/hosted parity.

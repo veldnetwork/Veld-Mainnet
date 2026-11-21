@@ -15528,14 +15528,26 @@ function sleepMs(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
 
 function planIncrementalUnstake(matureRecords, totalAmount) {
   // Given sorted mature stake records and a total requested amount, produce
-  // a list of per-batch amounts that consume records from oldest to newest.
+  // exact per-batch amounts. Never submit a partial plan as the full request.
+  function units(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 ||
+        !Number.isSafeInteger(Math.round(value * 100000000)))
+      throw new Error('Invalid unstake record amount. Refresh staking and try again.');
+    var parsed = _veldParseVeldUnitsExact(value.toFixed(8));
+    if (parsed <= 0n)
+      throw new Error('Invalid unstake record amount. Refresh staking and try again.');
+    return parsed;
+  }
   var batches = [];
-  var remaining = totalAmount;
-  for (var i = 0; i < matureRecords.length && remaining > 1e-8; ++i) {
-    var take = Math.min(matureRecords[i].amount_veld, remaining);
-    batches.push(take);
+  var remaining = units(totalAmount);
+  for (var i = 0; i < matureRecords.length && remaining > 0n; ++i) {
+    var available = units(matureRecords[i].amount_veld);
+    var take = available < remaining ? available : remaining;
+    batches.push(Number(take) / 100000000);
     remaining -= take;
   }
+  if (remaining !== 0n)
+    throw new Error('Requested amount exceeds the mature stake records. Refresh staking and try again.');
   return batches;
 }
 
@@ -15547,21 +15559,42 @@ async function doIncrementalUnstake(addr, totalAmount, keyHex, msgEl, unstakeBtn
     if (unstakeBtn) unstakeBtn.disabled = false;
     return;
   }
-  // Fetch mature stake records so we know how to split
+  // Maturity comes from the node's stake snapshot, not a dashboard label that
+  // may be empty, stale or absent when opening Staking directly.
   var history;
-  try { history = await rpc('getstakehistory', [addr]); } catch (e) { history = []; }
-  var curHeight = parseInt(document.getElementById('d-height')?.textContent?.replace(/,/g,'')||'0');
-  var mature = (Array.isArray(history) ? history : []).filter(function(r){
-    return r.type === 'stake' && r.active && r.unlock_at <= curHeight;
-  }).sort(function(a,b){ return a.block - b.block; });
+  try { history = await rpc('getstakehistory', [addr]); }
+  catch (e) {
+    msgEl.innerHTML = '<div class="alert alert-err">Unable to load stake records: ' +
+      escHtml(e.message || 'Refresh staking and try again.') + '</div>';
+    if (unstakeBtn) unstakeBtn.disabled = false;
+    return;
+  }
+  var mature;
+  try {
+    _veldAssertActiveSignerSeed(keyHex, signerGeneration);
+    if (!Array.isArray(history)) throw new Error('Stake records are unavailable. Refresh staking and try again.');
+    mature = history.filter(function(r){
+      if (!r || typeof r !== 'object') throw new Error('Invalid stake record. Refresh staking and try again.');
+      if (r.type !== 'stake' || r.active !== true) return false;
+      if ((r.status !== 'locked' && r.status !== 'unlocked') ||
+          !Number.isSafeInteger(r.block) || r.block < 0)
+        throw new Error('Stake record maturity is unavailable. Refresh staking and try again.');
+      return r.status === 'unlocked';
+    }).sort(function(a,b){ return a.block - b.block; });
+  } catch (e) {
+    msgEl.innerHTML = '<div class="alert alert-err">' + escHtml(e.message) + '</div>';
+    if (unstakeBtn) unstakeBtn.disabled = false;
+    return;
+  }
   if (!mature.length) {
     msgEl.innerHTML = '<div class="alert alert-err">No mature stake records available to unstake.</div>';
     if (unstakeBtn) unstakeBtn.disabled = false;
     return;
   }
-  var batches = planIncrementalUnstake(mature, totalAmount);
-  if (!batches.length) {
-    msgEl.innerHTML = '<div class="alert alert-err">Unable to build unstake batches.</div>';
+  var batches;
+  try { batches = planIncrementalUnstake(mature, totalAmount); }
+  catch (e) {
+    msgEl.innerHTML = '<div class="alert alert-err">' + escHtml(e.message) + '</div>';
     if (unstakeBtn) unstakeBtn.disabled = false;
     return;
   }
