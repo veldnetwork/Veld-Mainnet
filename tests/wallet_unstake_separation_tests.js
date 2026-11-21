@@ -49,8 +49,8 @@ function fixture() {
     rpc:async (method, params) => {
       calls.push({method, params});
       assert.equal(method, 'getstakehistory');
-      return [{type:'stake', active:true, unlock_at:40000, block:1000, amount_veld:1000},
-        {type:'stake', active:true, unlock_at:41000, block:1100, amount_veld:1500}];
+      return [{type:'stake', active:true, status:'unlocked', unlock_at:40000, block:1000, amount_veld:1000},
+        {type:'stake', active:true, status:'unlocked', unlock_at:41000, block:1100, amount_veld:1500}];
     },
     signAndBroadcast:async (...args) => {
       calls.push({signed:args[0], args});
